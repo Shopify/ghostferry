@@ -1,0 +1,47 @@
+hash: fb9f9f836856bb20aaec8638570aff927723bc294bff94405b9345e121b379ca
+updated: 2017-07-24T14:19:49.570675885-04:00
+imports:
+- name: github.com/gorilla/mux
+  version: bcd8bc72b08df0f70df986b97f95590779502d31
+- name: github.com/juju/errors
+  version: 6f54ff6318409d31ff16261533ce2c8381a4fd5d
+- name: github.com/lann/builder
+  version: f22ce00fd9394014049dad11c244859432bd6820
+- name: github.com/lann/ps
+  version: 62de8c46ede02a7675c4c79c84883eb164cb71e3
+- name: github.com/Masterminds/squirrel
+  version: 20f192218cf52a73397fa2df45bdda720f3e47c8
+- name: github.com/ngaut/log
+  version: cec23d3e10b016363780d894a0eb732a12c06e02
+- name: github.com/satori/go.uuid
+  version: 879c5887cd475cd7864858769793b2ceb0d44feb
+- name: github.com/siddontang/go
+  version: 354e14e6c093c661abb29fd28403b3c19cff5514
+  subpackages:
+  - hack
+  - ioutil2
+  - sync2
+- name: github.com/siddontang/go-mysql
+  version: 96156dbfdf7556c67eb0889781c072f93295078d
+  subpackages:
+  - client
+  - driver
+  - mysql
+  - packet
+  - replication
+  - schema
+- name: github.com/sirupsen/logrus
+  version: a3f95b5c423586578a4e099b11a46c2479628cac
+- name: github.com/stretchr/testify
+  version: 69483b4bd14f5845b5a1e55bca19e954e827f1d0
+  subpackages:
+  - assert
+- name: golang.org/x/net
+  version: 6acef71eb69611914f7a30939ea9f6e194c78172
+  subpackages:
+  - context
+- name: golang.org/x/sys
+  version: c4489faa6e5ab84c0ef40d6ee878f7a030281f0f
+  subpackages:
+  - unix
+testImports: []
