@@ -209,7 +209,7 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 	rows.Close()
 
 	primaryKeyColumn := table.GetPKColumn(0)
-	logger.Info("getting min/max for primary key %s", primaryKeyColumn.Name)
+	logger.Infof("getting min/max for primary key %s", primaryKeyColumn.Name)
 	query, args, err := sq.Select(fmt.Sprintf("MIN(%s), MAX(%s)", primaryKeyColumn.Name, primaryKeyColumn.Name)).From(table.String()).ToSql()
 	if err != nil {
 		logger.WithError(err).Errorf("failed to build query to get min/max primary key %s", primaryKeyColumn.Name)
