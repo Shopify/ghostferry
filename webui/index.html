@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Ghostferry: {{.SourceHostPort}} -> {{.TargetHostPort}}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="static/css/normalize.css">
+  <link rel="stylesheet" href="static/css/skeleton.css">
+  <link rel="stylesheet" href="static/css/app.css">
+
+  <script>
+    var CheckTime = {{.CurrentTime.Unix}};
+    var OverallState = "{{.OverallState}}";
+  </script>
+</head>
+<body>
+  <div class="container">
+    <div class="row">
+      <div class="twelve columns">
+        <h4>Ghostferry Run Information</h4>
+        <table class="u-full-width vertical-thead">
+          <tbody>
+            <tr>
+              <th>Source DB</th>
+              <td>{{.SourceHostPort}}</td>
+            </tr>
+            <tr>
+              <th>Target DB</th>
+              <td>{{.TargetHostPort}}</td>
+            </tr>
+            <tr>
+              <th>Applicable Databases</th>
+              <td>
+                {{if not .ApplicableDatabases}}
+                  *
+                {{else}}
+                  {{.ApplicableDatabases}}
+                {{end}}
+              </td>
+            </tr>
+            <tr>
+              <th>Applicable Tables</th>
+              <td>
+                {{if not .ApplicableTables}}
+                  *
+                {{else}}
+                  {{.ApplicableTables}}
+                {{end}}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="twelve columns">
+        <h4>Overall State: <span class="state state-{{.OverallState}}"></span></h4>
+        <table class="u-full-width vertical-thead">
+          <tbody>
+            <tr>
+              <th>Last Updated</th>
+              <td><span id="last-updated">just now</span> - <a href="javascript:window.location.reload(true)">Manual Refresh &#8635;</a></td>
+            </tr>
+            <tr>
+              <th>Started At</th>
+              <td>{{.StartTime}}</td>
+            </tr>
+            <tr>
+              <th>Time Taken</th>
+              <td>{{.TimeTaken}}</td>
+            </tr>
+            <tr>
+              <th><abbr title="This number is just an estimate, it probably is not accurate.">ETA</abbr></th>
+              <td>{{.ETA}}</td>
+            </tr>
+            <tr>
+              <th>Throttling</th>
+              <td>??</td>
+            </tr>
+            <tr>
+              <th>Tables Copied</th>
+              <td>{{.CompletedTableCount}}/{{.TotalTableCount}}</td>
+            </tr>
+            <tr>
+              <th>Binlog Streaming Lag</th>
+              <td>??</td>
+            </tr>
+            <tr>
+              <th>Automatic Cutover Allowed</th>
+              <td>{{.AutomaticCutover}}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="twelve columns">
+        <!-- NOTE: there are not CSRF protection against these routes -->
+        <form action="/api/actions/pause" method="POST">
+          <input type="submit" value="Pause" />
+        </form>
+        <form action="/api/actions/throttle" method="POST">
+          <input type="submit" value="Throttle for 5 min" />
+        </form>
+        {{if .AutomaticCutover}}
+        <form action="/api/actions/cutover?type=manual" method="POST">
+          <input type="submit" value="Disallow Automatic Cutover" />
+        </form>
+        {{else}}
+        <form action="/api/actions/cutover?type=automatic" method="POST">
+          <input type="submit" value="Allow Automatic Cutover" />
+        </form>
+        {{end}}
+        <form action="/api/actions/stop" method="POST">
+          <input type="submit" class="button-destroy" value="Emergency Stop" />
+        </form>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="twelve columns">
+        <h4>BinlogStreamer</h4>
+        <table class="u-full-width vertical-thead">
+          <tbody>
+            <tr>
+              <th>Stop Requested</th>
+              <td>{{.BinlogStreamerStopRequested}}</td>
+            </tr>
+            <tr>
+              <th>Last Successful Binlog Pos</th>
+              <td>{{.LastSuccessfulBinlogPos}}</td>
+            </tr>
+            <tr>
+              <th>Target Binlog Position</th>
+              <td>{{.TargetBinlogPos}}</td>
+            </tr>
+            <tr>
+              <th>Binlog Streaming Lag</th>
+              <td>??</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="twelve columns">
+        <h4>TableIterators</h4>
+        <table class="u-full-width">
+          <thead>
+            <tr>
+              <th>Table</th>
+              <th><abbr title="Primary Key Column">PK</abbr></th>
+              <th>Status</th>
+              <th>Last Successful PK</th>
+              <th>Target PK</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .TableStatuses}}
+              <tr>
+                <td><code>{{.TableName}}</code></td>
+                <td><code>{{.PrimaryKeyName}}</code></td>
+                <td>{{.Status}}</td>
+                <td>{{.LastSuccessfulPK}}</td>
+                <td>{{.TargetPK}}</td>
+              </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var lastUpdatedSpan = document.getElementById("last-updated");
+    var autorefresh = false;
+
+    if (OverallState !== "done") {
+      autorefresh = true;
+      window.setTimeout(function() {
+        window.location.reload(true);
+      }, 60000);
+    }
+
+    window.setInterval(function() {
+      var d = Math.round(new Date().getTime() / 1000 - CheckTime);
+      var txt = d + "s ago";
+      if (autorefresh) {
+       txt += "- Refresh in: " + (60 - d) + "s";
+      }
+      lastUpdatedSpan.innerHTML = txt;
+    }, 1000);
+  </script>
+</body>
+</html>

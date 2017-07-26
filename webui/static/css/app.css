@@ -1,0 +1,87 @@
+body {
+  padding-top: 1rem;
+}
+
+table {
+  margin-bottom: 1rem;
+}
+
+h4 {
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+
+form {
+  display: inline;
+}
+
+span.green {
+  color: green;
+}
+
+span.state {
+  color: orange;
+}
+
+span.state-starting:after {
+  content: 'STARTING';
+}
+
+span.state-copying:after {
+  content: 'COPYING ⌛';
+}
+
+span.state-wait-for-cutover:after {
+  content: 'WAITING FOR CUTOVER ⌛';
+}
+
+span.state-cutover:after {
+  content: 'CUTOVER ⌛';
+}
+
+span.state-done:after {
+  content: 'DONE';
+}
+
+.button,
+button,
+input[type="submit"],
+input[type="reset"],
+input[type="button"] {
+  padding: 0 10px;
+}
+
+.button.button-destroy,
+button.button-destroy,
+input[type="submit"].button-destroy,
+input[type="reset"].button-destroy,
+input[type="button"].button-destroy {
+  color: #FFF;
+  background-color: #FF7D7A;
+  border-color: #FF7D7A; }
+.button.button-destroy:hover,
+button.button-destroy:hover,
+input[type="submit"].button-destroy:hover,
+input[type="reset"].button-destroy:hover,
+input[type="button"].button-destroy:hover,
+.button.button-destroy:focus,
+button.button-destroy:focus,
+input[type="submit"].button-destroy:focus,
+input[type="reset"].button-destroy:focus,
+input[type="button"].button-destroy:focus {
+  color: #FFF;
+  background-color: #FF4944;
+  border-color: #FF4944; }
+
+button[disabled="disabled"] {
+  background-color: #bbb;
+  color: #555;
+  border-color: #bbb;
+}
+
+button[disabled="disabled"]:hover {
+  background-color: #bbb;
+  color: #555;
+  border-color: #bbb;
+}
