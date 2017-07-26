@@ -1,0 +1,17 @@
+{
+  "SourceHost": "127.0.0.1",
+  "SourcePort": 29291,
+  "SourceUser": "ghostferry",
+  "SourcePass": "ghostferry",
+
+  "TargetHost": "127.0.0.1",
+  "TargetPort": 29292,
+  "TargetUser": "ghostferry",
+  "TargetPass": "ghostferry",
+
+  "MyServerId": 99399,
+
+  "ApplicableDatabases": {
+    "abc": true
+  }
+}
