@@ -49,6 +49,9 @@ type StatusPage struct {
 	LastSuccessfulBinlogPos     mysql.Position
 	TargetBinlogPos             mysql.Position
 
+	Throttled      bool
+	ThrottledUntil time.Time
+
 	CompletedTableCount int
 	TotalTableCount     int
 	TableStatuses       []*TableStatus
@@ -82,7 +85,7 @@ func (this *ControlServer) Initialize() (err error) {
 	this.router.PathPrefix("/static/").Handler(staticFiles)
 
 	this.router.HandleFunc("/api/actions/pause", this.HandlePause).Methods("POST")
-	this.router.HandleFunc("/api/actions/unpause", this.HandlePause).Methods("POST")
+	this.router.HandleFunc("/api/actions/unpause", this.HandleUnpause).Methods("POST")
 	this.router.HandleFunc("/api/actions/throttle", this.HandleThrottle).Methods("POST")
 	this.router.HandleFunc("/api/actions/cutover", this.HandleCutover).Queries("type", "{type:automatic|manual}").Methods("POST")
 	this.router.HandleFunc("/api/actions/stop", this.HandleStop).Methods("POST")
@@ -128,6 +131,7 @@ func (this *ControlServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
+
 	page := &StatusPage{
 		SourceHostPort:      fmt.Sprintf("%s:%d", this.F.SourceHost, this.F.SourcePort),
 		TargetHostPort:      fmt.Sprintf("%s:%d", this.F.TargetHost, this.F.TargetPort),
@@ -146,6 +150,8 @@ func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
 		TargetBinlogPos:             this.F.BinlogStreamer.targetBinlogPosition,
 		// BinlogStreamerLag
 
+		ThrottledUntil: this.F.Throttler.ThrottleUntil(),
+
 		TableStatuses: make([]*TableStatus, 0),
 
 		VerifierAvailable: this.F.Verifier != nil,
@@ -162,6 +168,8 @@ func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	} else {
 		page.TimeTaken = this.F.DoneTime.Sub(page.StartTime)
 	}
+
+	page.Throttled = page.ThrottledUntil.After(page.CurrentTime)
 
 	// Getting all the table statuses
 	// In the order of completed, running, waiting
@@ -217,15 +225,21 @@ func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (this *ControlServer) HandlePause(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
+	this.F.Throttler.Pause()
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (this *ControlServer) HandleUnpause(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
+	this.F.Throttler.Unpause()
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (this *ControlServer) HandleThrottle(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
+	this.F.Throttler.AddThrottleDuration(5 * time.Minute)
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (this *ControlServer) HandleCutover(w http.ResponseWriter, r *http.Request) {

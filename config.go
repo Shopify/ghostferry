@@ -31,6 +31,9 @@ type Config struct {
 	// Config for the ControlServer
 	ServerBindAddr string
 	WebBasedir     string
+
+	// Config for Throttler
+	MaxVariableLoad map[string]int64
 }
 
 func (c *Config) ValidateConfig() error {
@@ -84,6 +87,10 @@ func (c *Config) ValidateConfig() error {
 
 	if c.WebBasedir == "" {
 		c.WebBasedir = "."
+	}
+
+	if c.MaxVariableLoad == nil {
+		c.MaxVariableLoad = make(map[string]int64)
 	}
 
 	return nil

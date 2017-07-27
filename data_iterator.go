@@ -97,11 +97,12 @@ func (this *DataIteratorState) CompletedTables() map[string]bool {
 }
 
 type DataIterator struct {
-	Db     *sql.DB
-	Config *Config
+	Db           *sql.DB
+	Config       *Config
+	ErrorHandler *ErrorHandler
+	Throttler    *Throttler
 
 	Tables       []*schema.Table
-	ErrorHandler *ErrorHandler
 	SelectFilter func(sq.SelectBuilder) sq.SelectBuilder
 
 	CurrentState *DataIteratorState
@@ -238,6 +239,8 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 		var err error
 		var rowEvents []DMLEvent
 		var pkpos int64
+
+		this.Throttler.ThrottleIfNecessary()
 
 		for i := 0; i < this.Config.MaxIterationReadRetries; i++ {
 			// TODO: add throttler code here

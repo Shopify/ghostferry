@@ -13,11 +13,12 @@ import (
 )
 
 type BinlogStreamer struct {
-	Db     *sql.DB
-	Config *Config
-
-	EventFilter  DMLEventFilter
+	Db           *sql.DB
+	Config       *Config
 	ErrorHandler *ErrorHandler
+	Throttler    *Throttler
+
+	EventFilter DMLEventFilter
 
 	binlogSyncer               *replication.BinlogSyncer
 	binlogStreamer             *replication.BinlogStreamer
@@ -79,6 +80,8 @@ func (s *BinlogStreamer) Run(wg *sync.WaitGroup) {
 	s.logger.Info("starting binlog streamer")
 
 	for !s.stopRequested || (s.stopRequested && s.lastStreamedBinlogPosition.Compare(s.targetBinlogPosition) < 0) {
+		s.Throttler.ThrottleIfNecessary()
+
 		ctx, _ := context.WithTimeout(context.Background(), 500*time.Millisecond)
 		ev, err := s.binlogStreamer.GetEvent(ctx)
 		if err != nil {
