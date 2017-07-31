@@ -92,6 +92,14 @@ func (this *TestFerry) Start() error {
 		return err
 	}
 
+	tables := make([]string, 0)
+	for table := range this.Ferry.Tables {
+		tables = append(tables, table)
+	}
+	this.Ferry.Verifier = &ghostferry.ChecksumTableVerifier{
+		TablesToCheck: tables,
+	}
+
 	if this.AfterRowCopyListener != nil {
 		this.Ferry.DataIterator.AddEventListener(this.AfterRowCopyListener)
 	}

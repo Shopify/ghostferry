@@ -28,6 +28,7 @@ type Ferry struct {
 	DataIterator   *DataIterator
 	ErrorHandler   *ErrorHandler
 	ControlServer  *ControlServer
+	Verifier       Verifier
 
 	Tables TableSchemaCache
 

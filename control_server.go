@@ -52,6 +52,12 @@ type StatusPage struct {
 	CompletedTableCount int
 	TotalTableCount     int
 	TableStatuses       []*TableStatus
+
+	VerifierAvailable   bool
+	VerificationStarted bool
+	VerificationDone    bool
+	VerifiedCorrect     bool
+	VerificationErr     error
 }
 
 type ControlServer struct {
@@ -80,6 +86,7 @@ func (this *ControlServer) Initialize() (err error) {
 	this.router.HandleFunc("/api/actions/throttle", this.HandleThrottle).Methods("POST")
 	this.router.HandleFunc("/api/actions/cutover", this.HandleCutover).Queries("type", "{type:automatic|manual}").Methods("POST")
 	this.router.HandleFunc("/api/actions/stop", this.HandleStop).Methods("POST")
+	this.router.HandleFunc("/api/actions/verify", this.HandleVerify).Methods("POST")
 
 	this.templates, err = template.ParseFiles(filepath.Join(this.Basedir, "webui", "index.html"))
 	if err != nil {
@@ -140,6 +147,14 @@ func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
 		// BinlogStreamerLag
 
 		TableStatuses: make([]*TableStatus, 0),
+
+		VerifierAvailable: this.F.Verifier != nil,
+	}
+
+	if page.VerifierAvailable {
+		page.VerificationStarted = this.F.Verifier.VerificationStarted()
+		page.VerificationDone = this.F.Verifier.VerificationDone()
+		page.VerifiedCorrect, page.VerificationErr = this.F.Verifier.VerifiedCorrect()
 	}
 
 	if this.F.DoneTime.IsZero() {
@@ -230,4 +245,16 @@ func (this *ControlServer) HandleCutover(w http.ResponseWriter, r *http.Request)
 
 func (this *ControlServer) HandleStop(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
+}
+
+func (this *ControlServer) HandleVerify(w http.ResponseWriter, r *http.Request) {
+	if this.F.Verifier == nil {
+		w.WriteHeader(http.StatusNotImplemented)
+		return
+	}
+
+	if !this.F.Verifier.VerificationStarted() {
+		this.F.Verifier.StartVerification(this.F)
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
