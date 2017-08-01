@@ -1,0 +1,10 @@
+---
+test:
+  override:
+    - go test ./test
+
+dependencies:
+  pre:
+    - ci/00-circle-hacks.sh
+    - ci/01-install-packages.sh
+    - ci/02-setup-mysql.sh
