@@ -32,9 +32,12 @@ func (this *CopydbFerry) Start() error {
 		return err
 	}
 
+	tables := make([]string, 0)
+
 	// We need to create the same table/schemas on the target database
 	// as the ones we are copying.
 	for tableName := range this.ferry.Tables {
+		tables = append(tables, tableName)
 		t := strings.Split(tableName, ".")
 		if _, exists := this.ferry.ApplicableDatabases[t[0]]; !exists {
 			continue
@@ -51,6 +54,10 @@ func (this *CopydbFerry) Start() error {
 			logrus.WithError(err).WithField("table", tableName).Error("cannot create table, this may leave the target database in an insane state")
 			return err
 		}
+	}
+
+	this.ferry.Verifier = &ghostferry.ChecksumTableVerifier{
+		TablesToCheck: tables,
 	}
 	return nil
 }

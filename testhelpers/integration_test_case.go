@@ -2,10 +2,8 @@ package testhelpers
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -104,8 +102,6 @@ func (this *IntegrationTestCase) VerifyData() {
 	}
 
 	if len(tablesMismatched) > 0 {
-		logrus.Error("error")
-		time.Sleep(10 * time.Hour)
 		this.T.Fatalf("%d tables mismatched: %v", len(tablesMismatched), tablesMismatched)
 	}
 
@@ -131,63 +127,9 @@ func (this *IntegrationTestCase) Teardown() {
 }
 
 func (this *IntegrationTestCase) verifyTableChecksum() ([]string, error) {
-	tables := make([]string, 0)
-	tablesMismatched := make([]string, 0)
-	for table, _ := range this.Ferry.Tables {
-		tables = append(tables, table)
-	}
-
-	// Cache the source table checksums in a map
-	sourceTableChecksums := make(map[string]int64)
-	query := fmt.Sprintf("CHECKSUM TABLE %s EXTENDED", strings.Join(tables, ", "))
-	rows, err := this.Ferry.SourceDB.Query(query)
-	if err != nil {
-		return tablesMismatched, err
-	}
-
-	for rows.Next() {
-		var tablename string
-		var checksum int64
-
-		err = rows.Scan(&tablename, &checksum)
-		if err != nil {
-			rows.Close()
-			return tablesMismatched, err
-		}
-		sourceTableChecksums[tablename] = checksum
-	}
-
-	err = rows.Err()
-	if err != nil {
-		rows.Close()
-		return tablesMismatched, err
-	}
-
-	rows.Close()
-
-	// Compared the target table checksums to the source table checksum map
-	rows, err = this.Ferry.TargetDB.Query(query)
-	if err != nil {
-		return tablesMismatched, err
-	}
-
-	defer rows.Close()
-
-	for rows.Next() {
-		var tablename string
-		var checksum int64
-
-		err = rows.Scan(&tablename, &checksum)
-		if err != nil {
-			return tablesMismatched, err
-		}
-
-		if checksum != sourceTableChecksums[tablename] {
-			tablesMismatched = append(tablesMismatched, tablename)
-		}
-	}
-
-	return tablesMismatched, rows.Err()
+	this.Ferry.Verifier.StartVerification(this.Ferry.Ferry)
+	this.Ferry.Verifier.Wait()
+	return this.Ferry.Verifier.MismatchedTables()
 }
 
 func (this *IntegrationTestCase) callCustomAction(f func(*TestFerry) error) {

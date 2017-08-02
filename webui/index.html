@@ -90,34 +90,67 @@
               <th>Automatic Cutover Allowed</th>
               <td>{{.AutomaticCutover}}</td>
             </tr>
+            {{if .VerifierAvailable}}
+              <tr>
+                <th>Verification Started</th>
+                <td>{{.VerificationStarted}}</td>
+              </tr>
+              {{if .VerificationDone}}
+                {{if not .VerificationErr}}
+                  <tr>
+                    <th>Verified Correct</th>
+                    <td>{{.VerifiedCorrect}}</td>
+                  </tr>
+                {{else}}
+                  <tr>
+                    <th>Error During Verification</th>
+                    <td>{{.VerificationErr}}</td>
+                  </tr>
+                {{end}}
+              {{end}}
+            {{else}}
+              <tr>
+                <th>Verifier Support</th>
+                <td>false</td>
+              </tr>
+            {{end}}
           </tbody>
         </table>
       </div>
     </div>
 
-    <div class="row">
-      <div class="twelve columns">
-        <!-- NOTE: there are not CSRF protection against these routes -->
-        <form action="/api/actions/pause" method="POST">
-          <input type="submit" value="Pause" />
-        </form>
-        <form action="/api/actions/throttle" method="POST">
-          <input type="submit" value="Throttle for 5 min" />
-        </form>
-        {{if .AutomaticCutover}}
-        <form action="/api/actions/cutover?type=manual" method="POST">
-          <input type="submit" value="Disallow Automatic Cutover" />
-        </form>
-        {{else}}
-        <form action="/api/actions/cutover?type=automatic" method="POST">
-          <input type="submit" value="Allow Automatic Cutover" />
-        </form>
-        {{end}}
-        <form action="/api/actions/stop" method="POST">
-          <input type="submit" class="button-destroy" value="Emergency Stop" />
-        </form>
+      <div class="row">
+        <div class="twelve columns">
+          <!-- NOTE: there are not CSRF protection against these routes -->
+          {{if and .VerifierAvailable (not .VerificationStarted)}}
+            <form action="/api/actions/verify" method="POST">
+              <input type="submit" value="Run Verification" />
+            </form>
+          {{end}}
+
+          {{if not (eq .OverallState "done")}}
+            {{if .AutomaticCutover}}
+            <form action="/api/actions/cutover?type=manual" method="POST">
+              <input type="submit" value="Disallow Automatic Cutover" />
+            </form>
+            {{else}}
+            <form action="/api/actions/cutover?type=automatic" method="POST">
+              <input type="submit" value="Allow Automatic Cutover" />
+            </form>
+            {{end}}
+
+            <form action="/api/actions/pause" method="POST">
+              <input type="submit" value="Pause" />
+            </form>
+            <form action="/api/actions/throttle" method="POST">
+              <input type="submit" value="Throttle for 5 min" />
+            </form>
+            <form action="/api/actions/stop" method="POST">
+              <input type="submit" class="button-destroy" value="Emergency Stop" />
+            </form>
+          {{end}}
+        </div>
       </div>
-    </div>
 
     <div class="row">
       <div class="twelve columns">
