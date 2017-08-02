@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
-	"strings"
 	"sync"
 
 	sq "github.com/Masterminds/squirrel"
@@ -376,17 +375,10 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 
 		// Since it is possible to have many different types of integers in
 		// MySQL, we try to parse it all into int64.
-		// However, the library we use to understand the schema does not
-		// distinguish between signed and unsigned, so we have to resort to
-		// this hack for now.
 		//
-		// TODO: Possibly PR an upstream change to schema.TableColumn to
-		//       include an IsUnsigned flag. Possibly also a DecodeValue method
-		//       as well to automatically convert interface{} values into the
-		//       correct type?
 		// TODO: there is a theoretical overflow here, but I'm not sure if
 		//       we will hit it during any real use case.
-		if strings.Contains(pkColumn.RawType, "unsigned") {
+		if pkColumn.IsUnsigned {
 			pkpos = int64(reflect.ValueOf(values[pkIndex]).Uint())
 		} else {
 			pkpos = reflect.ValueOf(values[pkIndex]).Int()
