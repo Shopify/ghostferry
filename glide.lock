@@ -1,5 +1,5 @@
 hash: acc0b9983eaeb02fa39cd6c4cfb9861bf5081339552c50c3ca60e0b7bc2cfbdd
-updated: 2017-07-27T13:28:24.93636417-04:00
+updated: 2017-08-02T09:55:24.201294336-04:00
 imports:
 - name: github.com/gorilla/context
   version: 08b5f424b9271eedf6f9f0ce86cb9396ed337a42
@@ -24,7 +24,7 @@ imports:
   - ioutil2
   - sync2
 - name: github.com/siddontang/go-mysql
-  version: d18ddd81ac688d80b65291c07ab4afced59d9f80
+  version: aaac9c1bf3eadf416a374ab34538b3035f90b505
   subpackages:
   - client
   - driver
@@ -45,15 +45,7 @@ imports:
   subpackages:
   - context
 - name: golang.org/x/sys
-  version: 35ef4487ce0a1ea5d4b616ffe71e34febe723695
+  version: 396c9fc8fb0ce27fc7a1ff136dc5af797bba258a
   subpackages:
   - unix
-testImports:
-- name: github.com/davecgh/go-spew
-  version: 6d212800a42e8ab5c146b8ace3490ee17e5225f9
-  subpackages:
-  - spew
-- name: github.com/pmezard/go-difflib
-  version: d8ed2627bdf02c080bf22230dbb337003b7aba2d
-  subpackages:
-  - difflib
+testImports: []
