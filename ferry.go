@@ -35,11 +35,12 @@ type Ferry struct {
 	DoneTime     time.Time
 	OverallState string
 
-	logger            *logrus.Entry
-	wg                *sync.WaitGroup
-	errWg             *sync.WaitGroup
-	controlServerWg   *sync.WaitGroup
-	rowCopyCompleteCh chan struct{}
+	logger *logrus.Entry
+
+	coreServicesWg       *sync.WaitGroup
+	supportingServicesWg *sync.WaitGroup
+	controlServerWg      *sync.WaitGroup
+	rowCopyCompleteCh    chan struct{}
 }
 
 // Initialize all the components of Ghostferry and connect to the Database
@@ -47,8 +48,8 @@ func (f *Ferry) Initialize() (err error) {
 	f.StartTime = time.Now().Truncate(time.Second)
 	f.OverallState = StateStarting
 
-	f.wg = &sync.WaitGroup{}
-	f.errWg = &sync.WaitGroup{}
+	f.coreServicesWg = &sync.WaitGroup{}
+	f.supportingServicesWg = &sync.WaitGroup{}
 	f.controlServerWg = &sync.WaitGroup{}
 	f.logger = logrus.WithField("tag", "ferry")
 	f.rowCopyCompleteCh = make(chan struct{})
@@ -164,14 +165,14 @@ func (f *Ferry) Run() {
 	f.controlServerWg.Add(1)
 	go f.ControlServer.Run(f.controlServerWg)
 
-	f.wg.Add(2)
-	go f.BinlogStreamer.Run(f.wg)
-	go f.DataIterator.Run(f.wg)
+	f.coreServicesWg.Add(2)
+	go f.BinlogStreamer.Run(f.coreServicesWg)
+	go f.DataIterator.Run(f.coreServicesWg)
 
-	f.errWg.Add(1)
-	go f.ErrorHandler.Run(f.errWg)
+	f.supportingServicesWg.Add(1)
+	go f.ErrorHandler.Run(f.supportingServicesWg)
 
-	f.wg.Wait()
+	f.coreServicesWg.Wait()
 
 	f.OverallState = StateDone
 	f.DoneTime = time.Now()
@@ -186,7 +187,7 @@ func (f *Ferry) Run() {
 	// Furthermore, in a normal run without errors we need to ensure this
 	// shuts down and does not block forever.
 	f.ErrorHandler.Stop()
-	f.errWg.Wait()
+	f.supportingServicesWg.Wait()
 }
 
 // Call this method and perform the cutover after this method returns.
