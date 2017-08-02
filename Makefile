@@ -1,14 +1,27 @@
-.PHONY: test
+.PHONY: test install clean
 
-BUILD_DIR     := build
-COPYDB_BIN    := ghostferry-copydb
-COPYDB_TARGET := $(BUILD_DIR)/$(COPYDB_BIN)
+GOBIN           := $(GOPATH)/bin
 
-$(COPYDB_TARGET): $(BUILD_DIR)
+COPYDB_TARGET   := $(GOBIN)/ghostferry-copydb
+COPYDB_PKG      := ./copydb/cmd
+
+SOURCES       := $(shell find . -name "*.go")
+
+define go_build_i
+	go build -i -o $(1) $(2)
+endef
+
+install: $(COPYDB_TARGET)
+
+$(COPYDB_TARGET): $(GOBIN) $(SOURCES)
+	$(call go_build_i,$(COPYDB_TARGET),$(COPYDB_PKG))
+
+$(GOBIN):
+	mkdir -p $(GOBIN)
+
+test:
 	@go version
-	go build -o $(BUILD_DIR)/$(COPYDB_BIN) ./copydb/cmd
+	go test ./test $(TESTFLAGS)
 
-
-$(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)
-
+clean:
+	rm -f $(COPYDB_TARGET)
