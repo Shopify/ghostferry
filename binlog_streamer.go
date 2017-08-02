@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"fmt"
 	"sync"
@@ -33,13 +34,22 @@ type BinlogStreamer struct {
 
 func (s *BinlogStreamer) Initialize() (err error) {
 	s.logger = logrus.WithField("tag", "binlog_streamer")
+	var tlsConfig *tls.Config
+	if s.Config.SourceTLS != nil {
+		tlsConfig, err = s.Config.SourceTLS.RealTLSConfig()
+		if err != nil {
+			return err
+		}
+	}
+
 	syncerConfig := &replication.BinlogSyncerConfig{
-		ServerID: s.Config.MyServerId,
-		Host:     s.Config.SourceHost,
-		Port:     s.Config.SourcePort,
-		User:     s.Config.SourceUser,
-		Password: s.Config.SourcePass,
-		LogLevel: "warn",
+		ServerID:  s.Config.MyServerId,
+		Host:      s.Config.SourceHost,
+		Port:      s.Config.SourcePort,
+		User:      s.Config.SourceUser,
+		Password:  s.Config.SourcePass,
+		TLSConfig: tlsConfig,
+		LogLevel:  "warn",
 	}
 
 	s.binlogSyncer = replication.NewBinlogSyncer(syncerConfig)
