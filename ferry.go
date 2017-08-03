@@ -27,6 +27,7 @@ type Ferry struct {
 	BinlogStreamer *BinlogStreamer
 	DataIterator   *DataIterator
 	ErrorHandler   *ErrorHandler
+	Throttler      *Throttler
 	ControlServer  *ControlServer
 	Verifier       Verifier
 
@@ -78,11 +79,19 @@ func (f *Ferry) Initialize() (err error) {
 	}
 	f.ErrorHandler.Initialize()
 
+	f.Throttler = &Throttler{
+		Db:           f.SourceDB,
+		Config:       f.Config,
+		ErrorHandler: f.ErrorHandler,
+	}
+	f.Throttler.Initialize()
+
 	// Initialize binlog streamer
 	f.BinlogStreamer = &BinlogStreamer{
 		Db:           f.SourceDB,
 		Config:       f.Config,
 		ErrorHandler: f.ErrorHandler,
+		Throttler:    f.Throttler,
 	}
 	err = f.BinlogStreamer.Initialize()
 	if err != nil {
@@ -94,6 +103,7 @@ func (f *Ferry) Initialize() (err error) {
 		Db:           f.SourceDB,
 		Config:       f.Config,
 		ErrorHandler: f.ErrorHandler,
+		Throttler:    f.Throttler,
 	}
 
 	err = f.DataIterator.Initialize()
@@ -170,8 +180,9 @@ func (f *Ferry) Run() {
 	go f.BinlogStreamer.Run(f.coreServicesWg)
 	go f.DataIterator.Run(f.coreServicesWg)
 
-	f.supportingServicesWg.Add(1)
+	f.supportingServicesWg.Add(2)
 	go f.ErrorHandler.Run(f.supportingServicesWg)
+	go f.Throttler.Run(f.supportingServicesWg)
 
 	f.coreServicesWg.Wait()
 
@@ -188,6 +199,7 @@ func (f *Ferry) Run() {
 	// Furthermore, in a normal run without errors we need to ensure this
 	// shuts down and does not block forever.
 	f.ErrorHandler.Stop()
+	f.Throttler.Stop()
 	f.supportingServicesWg.Wait()
 }
 

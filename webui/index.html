@@ -76,7 +76,7 @@
             </tr>
             <tr>
               <th>Throttling</th>
-              <td>??</td>
+              <td>{{.Throttled}}{{if .Throttled}} - until {{.ThrottledUntil}}{{end}}</td>
             </tr>
             <tr>
               <th>Tables Copied</th>
@@ -142,6 +142,9 @@
             <form action="/api/actions/pause" method="POST">
               <input type="submit" value="Pause" />
             </form>
+          <form action="/api/actions/unpause" method="POST">
+            <input type="submit" value="Unpause" />
+          </form>
             <form action="/api/actions/throttle" method="POST">
               <input type="submit" value="Throttle for 5 min" />
             </form>
@@ -222,7 +225,7 @@
       var d = Math.round(new Date().getTime() / 1000 - CheckTime);
       var txt = d + "s ago";
       if (autorefresh) {
-       txt += "- Refresh in: " + (60 - d) + "s";
+       txt += " - Refresh in: " + (60 - d) + "s";
       }
       lastUpdatedSpan.innerHTML = txt;
     }, 1000);
