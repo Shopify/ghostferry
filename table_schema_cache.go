@@ -64,7 +64,7 @@ func loadTables(db *sql.DB, applicableDatabases, applicableTables map[string]boo
 
 			// Sanity check
 			if len(tableSchema.PKColumns) != 1 {
-				err = fmt.Errorf("table %s has multiple primary key columns and this is not supported", table)
+				err = fmt.Errorf("table %s has %d primary key columns and this is not supported", table, len(tableSchema.PKColumns))
 				logger.WithError(err).Error("invalid table")
 				return tableSchemaCache, err
 			}

@@ -190,6 +190,10 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 		}
 
 		events = append(events, dmlEv)
+		s.logger.WithFields(logrus.Fields{
+			"database": dmlEv.Database(),
+			"table":    dmlEv.Table(),
+		}).Debugf("received event %T", dmlEv)
 	}
 
 	for _, listener := range s.eventListeners {

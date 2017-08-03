@@ -291,7 +291,7 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 		// save the "correct" value.
 		// TODO: investigate this if we want to ensure that on error, we have
 		//       the "correct" last successful PK and other values.
-		logger.Infof("updated last successful PK to %d", pkpos)
+		logger.Debugf("updated last successful PK to %d", pkpos)
 		this.CurrentState.UpdateLastSuccessfulPK(table.String(), pkpos)
 	}
 
@@ -328,8 +328,6 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 		"sql":  query,
 		"args": args,
 	})
-
-	logger.Debug("querying for chunks")
 
 	rows, err := tx.Query(query, args...)
 	if err != nil {
