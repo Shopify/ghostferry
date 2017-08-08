@@ -64,7 +64,6 @@ func (this *CopydbFerry) Start() error {
 
 func (this *CopydbFerry) createDatabaseIfExistsOnTarget(database string) error {
 	createDatabaseQuery := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", database)
-	logrus.Infof("TARGET: %s", createDatabaseQuery)
 	_, err := this.ferry.TargetDB.Exec(createDatabaseQuery)
 	return err
 }
