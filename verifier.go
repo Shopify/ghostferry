@@ -96,9 +96,16 @@ func (this *ChecksumTableVerifier) Run(f *Ferry) {
 			return
 		}
 
-		this.logger.Debugf("source table checksum: %d | target table checksum: %d", sourceTableChecksums[tablename], checksum)
-		if checksum != sourceTableChecksums[tablename] {
-			this.logger.WithField("table", tablename).Warn("table verification failed")
+		checksumFields := logrus.Fields{
+			"source": sourceTableChecksums[tablename],
+			"target": checksum,
+			"table":  tablename,
+		}
+
+		if checksum == sourceTableChecksums[tablename] {
+			this.logger.WithFields(checksumFields).Info("tables verified to match")
+		} else {
+			this.logger.WithFields(checksumFields).Error("table verification failed")
 			this.mismatchedTables = append(this.mismatchedTables, tablename)
 		}
 	}
