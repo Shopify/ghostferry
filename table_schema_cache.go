@@ -108,19 +108,48 @@ func (c TableSchemaCache) AllTableNames() (tableNames []string) {
 	return
 }
 
-func (c TableSchemaCache) TableColumnNames(database, table string) ([]string, error) {
+func (c TableSchemaCache) TableColumns(database, table string) ([]schema.TableColumn, error) {
 	fullTableName := fmt.Sprintf("%s.%s", database, table)
 	tableSchema, exists := c[fullTableName]
 	if !exists {
-		return []string{}, fmt.Errorf("table %s does not exists", fullTableName)
+		return []schema.TableColumn{}, fmt.Errorf("table %s does not exists", fullTableName)
 	}
 
-	tableColumns := make([]string, len(tableSchema.Columns))
-	for i, col := range tableSchema.Columns {
-		tableColumns[i] = quoteField(col.Name)
+	return tableSchema.Columns, nil
+}
+
+func (c TableSchemaCache) ValuesMap(database, table string, values []interface{}) (map[string]interface{}, error) {
+	tableColumns, err := c.TableColumns(database, table)
+	if err != nil {
+		return nil, err
 	}
 
-	return tableColumns, nil
+	err = verifyValuesHasTheSameLengthAsColumns(tableColumns, values, database, table)
+	if err != nil {
+		return nil, err
+	}
+
+	v := make(map[string]interface{})
+
+	for i, column := range tableColumns {
+		value := values[i]
+		v[quoteField(column.Name)] = value
+	}
+
+	return v, nil
+}
+
+func verifyValuesHasTheSameLengthAsColumns(tableColumns []schema.TableColumn, values []interface{}, databaseHint, tableHint string) error {
+	if len(tableColumns) != len(values) {
+		return fmt.Errorf(
+			"table %s.%s has %d columns but binlog has %d columns instead",
+			databaseHint,
+			tableHint,
+			len(tableColumns),
+			len(values),
+		)
+	}
+	return nil
 }
 
 func showDatabases(c *sql.DB) ([]string, error) {

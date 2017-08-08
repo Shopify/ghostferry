@@ -30,7 +30,7 @@ func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows int) err
 		return err
 	}
 
-	query = "CREATE TABLE %s.%s (id bigint(20) not null auto_increment, data varchar(255), primary key(id))"
+	query = "CREATE TABLE %s.%s (id bigint(20) not null auto_increment, data TEXT, primary key(id))"
 	query = fmt.Sprintf(query, dbname, tablename)
 
 	_, err = db.Exec(query)

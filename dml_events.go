@@ -7,19 +7,6 @@ import (
 	"github.com/siddontang/go-mysql/replication"
 )
 
-func verifyValuesHasTheSameLengthAsColumns(tableColumns []string, values []interface{}, databaseHint, tableHint string) error {
-	if len(tableColumns) != len(values) {
-		return fmt.Errorf(
-			"table %s.%s has %d columns but binlog has %d columns instead",
-			databaseHint,
-			tableHint,
-			len(tableColumns),
-			len(values),
-		)
-	}
-	return nil
-}
-
 type DMLEvent interface {
 	Database() string
 	Table() string
@@ -67,12 +54,7 @@ func (e *BinlogInsertEvent) NewValues() []interface{} {
 }
 
 func (e *BinlogInsertEvent) AsSQLQuery(tables TableSchemaCache) (string, []interface{}, error) {
-	tableColumns, err := tables.TableColumnNames(e.database, e.table)
-	if err != nil {
-		return "", []interface{}{}, err
-	}
-
-	err = verifyValuesHasTheSameLengthAsColumns(tableColumns, e.newValues, e.database, e.table)
+	setArgs, err := tables.ValuesMap(e.database, e.table, e.newValues)
 	if err != nil {
 		return "", []interface{}{}, err
 	}
@@ -80,8 +62,8 @@ func (e *BinlogInsertEvent) AsSQLQuery(tables TableSchemaCache) (string, []inter
 	// temporarily use a sql builder because otherwise it will take a long time
 	return sq.Insert(quotedTableNameFromString(e.database, e.table)).
 		Options("IGNORE").
-		Columns(tableColumns...).
-		Values(e.newValues...).ToSql()
+		SetMap(setArgs).
+		ToSql()
 }
 
 type BinlogUpdateEvent struct {
@@ -135,26 +117,14 @@ func (e *BinlogUpdateEvent) NewValues() []interface{} {
 }
 
 func (e *BinlogUpdateEvent) AsSQLQuery(tables TableSchemaCache) (string, []interface{}, error) {
-	tableColumns, err := tables.TableColumnNames(e.database, e.table)
+	setArgs, err := tables.ValuesMap(e.database, e.table, e.newValues)
 	if err != nil {
 		return "", []interface{}{}, err
 	}
 
-	err = verifyValuesHasTheSameLengthAsColumns(tableColumns, e.newValues, e.database, e.table)
+	whereArgs, err := tables.ValuesMap(e.database, e.table, e.whereValues)
 	if err != nil {
 		return "", []interface{}{}, err
-	}
-
-	err = verifyValuesHasTheSameLengthAsColumns(tableColumns, e.whereValues, e.database, e.table)
-	if err != nil {
-		return "", []interface{}{}, err
-	}
-
-	setArgs := make(map[string]interface{})
-	whereArgs := make(map[string]interface{})
-	for i, column := range tableColumns {
-		setArgs[column] = e.newValues[i]
-		whereArgs[column] = e.whereValues[i]
 	}
 
 	// temporarily use a sql builder because otherwise it will take a long time
@@ -202,19 +172,9 @@ func (e *BinlogDeleteEvent) Table() string {
 }
 
 func (e *BinlogDeleteEvent) AsSQLQuery(tables TableSchemaCache) (string, []interface{}, error) {
-	tableColumns, err := tables.TableColumnNames(e.database, e.table)
+	whereArgs, err := tables.ValuesMap(e.database, e.table, e.whereValues)
 	if err != nil {
 		return "", []interface{}{}, err
-	}
-
-	err = verifyValuesHasTheSameLengthAsColumns(tableColumns, e.whereValues, e.database, e.table)
-	if err != nil {
-		return "", []interface{}{}, err
-	}
-
-	whereArgs := make(map[string]interface{})
-	for i, column := range tableColumns {
-		whereArgs[column] = e.whereValues[i]
 	}
 
 	// temporarily use a sql builder because otherwise it will take a long time
@@ -259,20 +219,15 @@ func (e *ExistingRowEvent) NewValues() []interface{} {
 }
 
 func (e *ExistingRowEvent) AsSQLQuery(tables TableSchemaCache) (string, []interface{}, error) {
-	tableColumns, err := tables.TableColumnNames(e.database, e.table)
-	if err != nil {
-		return "", []interface{}{}, err
-	}
-
-	err = verifyValuesHasTheSameLengthAsColumns(tableColumns, e.values, e.database, e.table)
+	setArgs, err := tables.ValuesMap(e.database, e.table, e.values)
 	if err != nil {
 		return "", []interface{}{}, err
 	}
 
 	return sq.Insert(quotedTableNameFromString(e.database, e.table)).
 		Options("IGNORE").
-		Columns(tableColumns...).
-		Values(e.values...).ToSql()
+		SetMap(setArgs).
+		ToSql()
 }
 
 type DMLEventFilter interface {
