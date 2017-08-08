@@ -1,6 +1,8 @@
 hash: acc0b9983eaeb02fa39cd6c4cfb9861bf5081339552c50c3ca60e0b7bc2cfbdd
-updated: 2017-08-02T09:55:24.201294336-04:00
+updated: 2017-08-03T10:43:55.14441241-04:00
 imports:
+- name: github.com/go-sql-driver/mysql
+  version: a0583e0143b1624142adab07e0e97fe106d99561
 - name: github.com/gorilla/context
   version: 08b5f424b9271eedf6f9f0ce86cb9396ed337a42
 - name: github.com/gorilla/mux
@@ -24,7 +26,7 @@ imports:
   - ioutil2
   - sync2
 - name: github.com/siddontang/go-mysql
-  version: aaac9c1bf3eadf416a374ab34538b3035f90b505
+  version: db4a35b4c57123da6b1c2cb239b33f06dac3bbee
   subpackages:
   - client
   - driver
@@ -45,7 +47,7 @@ imports:
   subpackages:
   - context
 - name: golang.org/x/sys
-  version: 396c9fc8fb0ce27fc7a1ff136dc5af797bba258a
+  version: d8f5ea21b9295e315e612b4bcf4bedea93454d4d
   subpackages:
   - unix
 testImports: []
