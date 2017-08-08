@@ -13,7 +13,7 @@ Vagrant.configure("2") do |config|
       chmod +x /usr/bin/gimme
       sudo -H -u vagrant gimme 1.8.3
       echo "source /home/vagrant/.gimme/envs/go1.8.3.env" >> /home/vagrant/.bashrc
-      echo 'GOPATH=$HOME/go' >> /home/vagrant/.bashrc
+      echo 'export GOPATH=$HOME/go' >> /home/vagrant/.bashrc
     fi
   SHELL
 

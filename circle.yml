@@ -1,7 +1,7 @@
 ---
 test:
   override:
-    - go test ./test
+    - go test ./test -v
 
 dependencies:
   pre:

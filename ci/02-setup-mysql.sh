@@ -1,6 +1,7 @@
 #!/bin/bash
 
-source test/envsetup.sh
+N1=gf.n1
+N2=gf.n2
 
 # TODO: at somepoint we can open source mysql-vending-machine so we don't
 #       have to do this hack and just clone from https
