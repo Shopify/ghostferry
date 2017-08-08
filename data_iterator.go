@@ -272,6 +272,12 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 			return err
 		}
 
+		if len(rowEvents) == 0 {
+			tx.Rollback()
+			logger.Info("did not reach max primary key, but the table is completed as there are no more rows")
+			break
+		}
+
 		for _, listener := range this.eventListeners {
 			err = listener(rowEvents)
 			if err != nil {
@@ -282,6 +288,12 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 		}
 
 		tx.Rollback()
+
+		if pkpos <= lastSuccessfulPrimaryKey {
+			err = fmt.Errorf("new pkpos %d <= lastSuccessfulPk %d", pkpos, lastSuccessfulPrimaryKey)
+			logger.WithError(err).Error("last successful pk position did not advance?")
+			return err
+		}
 
 		lastSuccessfulPrimaryKey = pkpos
 		// The way we save the LastSuccessfulPK is probably incorrect if we

@@ -1,6 +1,7 @@
 package test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -89,6 +90,50 @@ func TestSelectCopyUpdateBinlog(t *testing.T) {
 
 	testcase.CustomVerifyAction = func(f *testhelpers.TestFerry) error {
 		testcase.AssertOnlyDataOnSourceAndTargetIs("changed")
+		return nil
+	}
+
+	testcase.Run()
+}
+
+func TestOnlyDeleteRowWithMaxPrimaryKey(t *testing.T) {
+	testcase := &testhelpers.IntegrationTestCase{
+		T: t,
+		SetupAction: func(f *testhelpers.TestFerry) error {
+			err := testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 2)
+			if err != nil {
+				return err
+			}
+
+			return testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
+		},
+		Ferry: testhelpers.NewTestFerry(),
+	}
+
+	testcase.Ferry.IterateChunksize = 1
+
+	lastRowDeleted := false
+	testcase.Ferry.BeforeRowCopyListener = func(ev []ghostferry.DMLEvent) error {
+		if lastRowDeleted {
+			return nil
+		}
+
+		r, err := testcase.Ferry.SourceDB.Exec("DELETE FROM gftest.table1 ORDER BY id DESC LIMIT 1")
+		if err != nil {
+			return err
+		}
+
+		rowsAffected, err := r.RowsAffected()
+		if err != nil {
+			return err
+		}
+
+		if rowsAffected != 1 {
+			return fmt.Errorf("there should be 1 row deleted, but %d rows were deleted", rowsAffected)
+		}
+
+		lastRowDeleted = true
+
 		return nil
 	}
 
