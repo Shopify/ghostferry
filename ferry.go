@@ -24,6 +24,16 @@ func quoteField(field string) string {
 	return fmt.Sprintf("`%s`", field)
 }
 
+func maskedDSN(c *mysql.Config) string {
+	oldPass := c.Passwd
+	c.Passwd = "<masked>"
+	defer func() {
+		c.Passwd = oldPass
+	}()
+
+	return c.FormatDSN()
+}
+
 type Ferry struct {
 	*Config
 
@@ -112,14 +122,15 @@ func (f *Ferry) Initialize() (err error) {
 
 	// Connect to the database
 	sourceDSN := sourceConfig.FormatDSN()
-	f.logger.WithField("dsn", sourceDSN).Info("connecting to the source database")
+	maskedSourceDSN := maskedDSN(sourceConfig)
+	f.logger.WithField("dsn", maskedSourceDSN).Info("connecting to the source database")
 	f.SourceDB, err = sql.Open("mysql", sourceDSN)
 	if err != nil {
 		f.logger.WithError(err).Error("failed to connect to source database")
 		return err
 	}
 
-	err = checkConnection(f.logger, sourceDSN, f.SourceDB)
+	err = checkConnection(f.logger, maskedSourceDSN, f.SourceDB)
 	if err != nil {
 		f.logger.WithError(err).Error("source connection checking failed")
 		return err
@@ -132,14 +143,15 @@ func (f *Ferry) Initialize() (err error) {
 	}
 
 	targetDSN := targetConfig.FormatDSN()
-	f.logger.WithField("dsn", targetDSN).Info("connecting to the target database")
+	maskedTargetDSN := maskedDSN(targetConfig)
+	f.logger.WithField("dsn", maskedTargetDSN).Info("connecting to the target database")
 	f.TargetDB, err = sql.Open("mysql", targetDSN)
 	if err != nil {
 		f.logger.WithError(err).Error("failed to connect to target database")
 		return err
 	}
 
-	err = checkConnection(f.logger, targetDSN, f.TargetDB)
+	err = checkConnection(f.logger, maskedTargetDSN, f.TargetDB)
 	if err != nil {
 		f.logger.WithError(err).Error("target connection checking failed")
 		return err
