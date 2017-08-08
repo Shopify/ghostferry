@@ -1,9 +1,9 @@
 package ghostferry
 
 import (
+	"database/sql"
 	"fmt"
 
-	"github.com/siddontang/go-mysql/client"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
@@ -17,30 +17,12 @@ var ignoredDatabases = map[string]bool{
 
 type TableSchemaCache map[string]*schema.Table
 
-func loadTables(host string, port uint16, user, pass string, applicableDatabases, applicableTables map[string]bool) (TableSchemaCache, error) {
-	// Have to connect directly to the database via the client from siddongtang
-	// as the schema package requires a client rather than a sql.Db instance.
-	// TODO: this is possibly something we can improve in the upstream library
-	// so we don't have to use this hack.
-	logger := logrus.WithFields(logrus.Fields{
-		"tag":  "table_schema_cache",
-		"host": host,
-		"port": port,
-		"user": user,
-		"pass": pass,
-	})
+func loadTables(db *sql.DB, applicableDatabases, applicableTables map[string]bool) (TableSchemaCache, error) {
+	logger := logrus.WithField("tag", "table_schema_cache")
 
 	tableSchemaCache := make(TableSchemaCache)
 
-	logger.Info("loading table schemas from database")
-	dbClient, err := client.Connect(fmt.Sprintf("%s:%d", host, port), user, pass, "")
-	if err != nil {
-		logger.WithError(err).Error("failed to connect to database to list tables")
-		return tableSchemaCache, err
-	}
-	defer dbClient.Close()
-
-	dbnames, err := showDatabases(dbClient)
+	dbnames, err := showDatabases(db)
 	if err != nil {
 		logger.WithError(err).Error("failed to show databases")
 		return tableSchemaCache, err
@@ -58,7 +40,7 @@ func loadTables(host string, port uint16, user, pass string, applicableDatabases
 		}
 
 		dbLog.Debug("loading tables from database")
-		tableNames, err := showTablesFrom(dbClient, dbname)
+		tableNames, err := showTablesFrom(db, dbname)
 		if err != nil {
 			dbLog.WithError(err).Error("failed to show tables")
 			return tableSchemaCache, err
@@ -74,7 +56,7 @@ func loadTables(host string, port uint16, user, pass string, applicableDatabases
 			}
 
 			tableLog.Debug("caching table schema")
-			tableSchema, err := schema.NewTable(dbClient, dbname, table)
+			tableSchema, err := schema.NewTableFromSqlDB(db, dbname, table)
 			if err != nil {
 				tableLog.WithError(err).Error("cannot fetch table schema from source db")
 				return tableSchemaCache, err
@@ -141,17 +123,20 @@ func (c TableSchemaCache) TableColumnNames(database, table string) ([]string, er
 	return tableColumns, nil
 }
 
-func showDatabases(c *client.Conn) ([]string, error) {
-	r, err := c.Execute("show databases")
+func showDatabases(c *sql.DB) ([]string, error) {
+	rows, err := c.Query("show databases")
 	if err != nil {
 		return []string{}, err
 	}
 
+	defer rows.Close()
+
 	databases := make([]string, 0)
-	for i := 0; i < r.RowNumber(); i++ {
-		database, err := r.GetString(i, 0)
+	for rows.Next() {
+		var database string
+		err = rows.Scan(&database)
 		if err != nil {
-			return []string{}, err
+			return databases, err
 		}
 
 		if _, ignored := ignoredDatabases[database]; ignored {
@@ -164,18 +149,22 @@ func showDatabases(c *client.Conn) ([]string, error) {
 	return databases, nil
 }
 
-func showTablesFrom(c *client.Conn, dbname string) ([]string, error) {
-	r, err := c.Execute(fmt.Sprintf("show tables from %s", dbname))
+func showTablesFrom(c *sql.DB, dbname string) ([]string, error) {
+	rows, err := c.Query(fmt.Sprintf("show tables from %s", dbname))
 	if err != nil {
 		return []string{}, err
 	}
+	defer rows.Close()
 
-	tables := make([]string, r.RowNumber())
-	for i := 0; i < r.RowNumber(); i++ {
-		tables[i], err = r.GetString(i, 0)
+	tables := make([]string, 0)
+	for rows.Next() {
+		var table string
+		err = rows.Scan(&table)
 		if err != nil {
-			return []string{}, err
+			return tables, err
 		}
+
+		tables = append(tables, table)
 	}
 
 	return tables, nil
