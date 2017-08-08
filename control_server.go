@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -13,13 +14,15 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func setKeys(m map[string]bool) []string {
+func sortedSetKeys(m map[string]bool) []string {
 	ks := make([]string, len(m))
 	i := 0
 	for k, _ := range m {
 		ks[i] = k
 		i++
 	}
+
+	sort.Strings(ks)
 
 	return ks
 }
@@ -135,8 +138,8 @@ func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	page := &StatusPage{
 		SourceHostPort:      fmt.Sprintf("%s:%d", this.F.SourceHost, this.F.SourcePort),
 		TargetHostPort:      fmt.Sprintf("%s:%d", this.F.TargetHost, this.F.TargetPort),
-		ApplicableDatabases: setKeys(this.F.ApplicableDatabases),
-		ApplicableTables:    setKeys(this.F.ApplicableTables),
+		ApplicableDatabases: sortedSetKeys(this.F.ApplicableDatabases),
+		ApplicableTables:    sortedSetKeys(this.F.ApplicableTables),
 
 		// OverallStatus
 		OverallState:     this.F.OverallState,
@@ -180,7 +183,16 @@ func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	page.CompletedTableCount = len(completedTables)
 	page.TotalTableCount = len(this.F.Tables)
 
+	completedTableNames := make([]string, 0, len(completedTables))
+	copyingTableNames := make([]string, 0)
+	waitingTableNames := make([]string, 0)
+
 	for tableName, _ := range completedTables {
+		completedTableNames = append(completedTableNames, tableName)
+	}
+
+	sort.Strings(completedTableNames)
+	for _, tableName := range completedTableNames {
 		page.TableStatuses = append(page.TableStatuses, &TableStatus{
 			TableName:        tableName,
 			PrimaryKeyName:   this.F.Tables[tableName].GetPKColumn(0).Name,
@@ -195,6 +207,12 @@ func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
+		copyingTableNames = append(copyingTableNames, tableName)
+	}
+
+	sort.Strings(copyingTableNames)
+
+	for _, tableName := range copyingTableNames {
 		page.TableStatuses = append(page.TableStatuses, &TableStatus{
 			TableName:        tableName,
 			PrimaryKeyName:   this.F.Tables[tableName].GetPKColumn(0).Name,
@@ -208,7 +226,12 @@ func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
 		if _, ok := lastSuccessfulPks[tableName]; ok {
 			continue
 		}
+		waitingTableNames = append(waitingTableNames, tableName)
+	}
 
+	sort.Strings(waitingTableNames)
+
+	for _, tableName := range waitingTableNames {
 		page.TableStatuses = append(page.TableStatuses, &TableStatus{
 			TableName:        tableName,
 			PrimaryKeyName:   this.F.Tables[tableName].GetPKColumn(0).Name,
