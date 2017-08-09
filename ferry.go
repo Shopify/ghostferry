@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -117,6 +118,12 @@ func (f *Ferry) Initialize() (err error) {
 	err = checkConnection(f.logger, sourceDSN, f.SourceDB)
 	if err != nil {
 		f.logger.WithError(err).Error("source connection checking failed")
+		return err
+	}
+
+	err = checkConnectionForBinlogFormat(f.SourceDB)
+	if err != nil {
+		f.logger.WithError(err).Error("binlog format for source db is not compatible")
 		return err
 	}
 
@@ -384,6 +391,28 @@ func checkConnection(logger *logrus.Entry, dsn string, db *sql.DB) error {
 		"ssl_cipher": cipher,
 		"dsn":        dsn,
 	}).Infof("connected to %s", dsn)
+
+	return nil
+}
+
+func checkConnectionForBinlogFormat(db *sql.DB) error {
+	var name, value string
+
+	row := db.QueryRow("SHOW VARIABLES LIKE 'binlog_format'")
+	err := row.Scan(&name, &value)
+	if err != nil {
+		return err
+	}
+
+	if strings.ToUpper(value) != "ROW" {
+		return fmt.Errorf("binlog_format must be ROW, not %s", value)
+	}
+
+	row = db.QueryRow("SHOW VARIABLES LIKE 'binlog_row_image'")
+	err = row.Scan(&name, &value)
+	if strings.ToUpper(value) != "FULL" {
+		return fmt.Errorf("binlog_row_image must be FULL, not %s", value)
+	}
 
 	return nil
 }
