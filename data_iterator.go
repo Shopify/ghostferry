@@ -240,10 +240,8 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 		var rowEvents []DMLEvent
 		var pkpos int64
 
-		this.Throttler.ThrottleIfNecessary()
-
 		for i := 0; i < this.Config.MaxIterationReadRetries; i++ {
-			// TODO: add throttler code here
+			this.Throttler.ThrottleIfNecessary()
 
 			// We need to lock SELECT until we apply the updates (done in the
 			// listeners). We need a transaction that is open all the way until

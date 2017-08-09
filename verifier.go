@@ -33,6 +33,11 @@ type ChecksumTableVerifier struct {
 }
 
 func (this *ChecksumTableVerifier) StartVerification(f *Ferry) {
+	if this.VerificationStarted() && !this.VerificationDone() {
+		this.logger.Warn("cannot start another verification attempt if one is running, ignoring...")
+		return
+	}
+
 	this.WaitGroup = &sync.WaitGroup{}
 	this.logger = logrus.WithField("tag", "checksum_verifier")
 	this.Add(1)
