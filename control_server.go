@@ -35,6 +35,10 @@ func (this *ControlServer) Initialize() (err error) {
 	this.router.HandleFunc("/api/actions/stop", this.HandleStop).Methods("POST")
 	this.router.HandleFunc("/api/actions/verify", this.HandleVerify).Methods("POST")
 
+	if WebUiBasedir != "" {
+		this.Basedir = WebUiBasedir
+	}
+
 	staticFiles := http.StripPrefix("/static/", http.FileServer(http.Dir(filepath.Join(this.Basedir, "webui", "static"))))
 	this.router.PathPrefix("/static/").Handler(staticFiles)
 
