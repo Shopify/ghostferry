@@ -1,5 +1,5 @@
-hash: acc0b9983eaeb02fa39cd6c4cfb9861bf5081339552c50c3ca60e0b7bc2cfbdd
-updated: 2017-08-03T10:43:55.14441241-04:00
+hash: b6020b477da7d2c23cef2cb98fdc82b1145833b2343210c8729e40eabe035b36
+updated: 2017-08-09T09:33:05.681649937-04:00
 imports:
 - name: github.com/go-sql-driver/mysql
   version: a0583e0143b1624142adab07e0e97fe106d99561
@@ -14,7 +14,7 @@ imports:
 - name: github.com/lann/ps
   version: 62de8c46ede02a7675c4c79c84883eb164cb71e3
 - name: github.com/Masterminds/squirrel
-  version: 20f192218cf52a73397fa2df45bdda720f3e47c8
+  version: 3c07e090bf7ba1ae79ff08462c323e25196e164b
 - name: github.com/ngaut/log
   version: cec23d3e10b016363780d894a0eb732a12c06e02
 - name: github.com/satori/go.uuid
@@ -47,7 +47,7 @@ imports:
   subpackages:
   - context
 - name: golang.org/x/sys
-  version: d8f5ea21b9295e315e612b4bcf4bedea93454d4d
+  version: f1e7f7a8ac17a049db88e72899c00f1f841a676f
   subpackages:
   - unix
 testImports: []
