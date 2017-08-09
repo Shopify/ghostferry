@@ -1,70 +1,15 @@
 package ghostferry
 
 import (
-	"fmt"
 	"html/template"
 	"net/http"
 	"path/filepath"
-	"sort"
 	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/siddontang/go-mysql/mysql"
 	"github.com/sirupsen/logrus"
 )
-
-func sortedSetKeys(m map[string]bool) []string {
-	ks := make([]string, len(m))
-	i := 0
-	for k, _ := range m {
-		ks[i] = k
-		i++
-	}
-
-	sort.Strings(ks)
-
-	return ks
-}
-
-type TableStatus struct {
-	TableName        string
-	PrimaryKeyName   string
-	Status           string
-	LastSuccessfulPK int64
-	TargetPK         int64
-}
-
-type StatusPage struct {
-	SourceHostPort      string
-	TargetHostPort      string
-	ApplicableDatabases []string
-	ApplicableTables    []string
-
-	OverallState     string
-	StartTime        time.Time
-	CurrentTime      time.Time
-	TimeTaken        time.Duration
-	ETA              time.Duration
-	AutomaticCutover bool
-
-	BinlogStreamerStopRequested bool
-	LastSuccessfulBinlogPos     mysql.Position
-	TargetBinlogPos             mysql.Position
-
-	Throttled      bool
-	ThrottledUntil time.Time
-
-	CompletedTableCount int
-	TotalTableCount     int
-	TableStatuses       []*TableStatus
-
-	VerifierAvailable   bool
-	VerificationStarted bool
-	VerificationDone    bool
-	VerifiedCorrect     bool
-	VerificationErr     error
-}
 
 type ControlServer struct {
 	F       *Ferry
@@ -83,16 +28,15 @@ func (this *ControlServer) Initialize() (err error) {
 
 	this.router = mux.NewRouter()
 	this.router.HandleFunc("/", this.HandleIndex).Methods("GET")
-
-	staticFiles := http.StripPrefix("/static/", http.FileServer(http.Dir(filepath.Join(this.Basedir, "webui", "static"))))
-	this.router.PathPrefix("/static/").Handler(staticFiles)
-
 	this.router.HandleFunc("/api/actions/pause", this.HandlePause).Methods("POST")
 	this.router.HandleFunc("/api/actions/unpause", this.HandleUnpause).Methods("POST")
 	this.router.HandleFunc("/api/actions/throttle", this.HandleThrottle).Methods("POST")
 	this.router.HandleFunc("/api/actions/cutover", this.HandleCutover).Queries("type", "{type:automatic|manual}").Methods("POST")
 	this.router.HandleFunc("/api/actions/stop", this.HandleStop).Methods("POST")
 	this.router.HandleFunc("/api/actions/verify", this.HandleVerify).Methods("POST")
+
+	staticFiles := http.StripPrefix("/static/", http.FileServer(http.Dir(filepath.Join(this.Basedir, "webui", "static"))))
+	this.router.PathPrefix("/static/").Handler(staticFiles)
 
 	this.templates, err = template.ParseFiles(filepath.Join(this.Basedir, "webui", "index.html"))
 	if err != nil {
@@ -134,114 +78,9 @@ func (this *ControlServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
+	status := FetchStatus(this.F)
 
-	page := &StatusPage{
-		SourceHostPort:      fmt.Sprintf("%s:%d", this.F.SourceHost, this.F.SourcePort),
-		TargetHostPort:      fmt.Sprintf("%s:%d", this.F.TargetHost, this.F.TargetPort),
-		ApplicableDatabases: sortedSetKeys(this.F.ApplicableDatabases),
-		ApplicableTables:    sortedSetKeys(this.F.ApplicableTables),
-
-		// OverallStatus
-		OverallState:     this.F.OverallState,
-		StartTime:        this.F.StartTime,
-		CurrentTime:      time.Now(),
-		AutomaticCutover: this.F.Config.AutomaticCutover,
-		// ETA
-
-		BinlogStreamerStopRequested: this.F.BinlogStreamer.stopRequested,
-		LastSuccessfulBinlogPos:     this.F.BinlogStreamer.lastStreamedBinlogPosition,
-		TargetBinlogPos:             this.F.BinlogStreamer.targetBinlogPosition,
-		// BinlogStreamerLag
-
-		ThrottledUntil: this.F.Throttler.ThrottleUntil(),
-
-		TableStatuses: make([]*TableStatus, 0),
-
-		VerifierAvailable: this.F.Verifier != nil,
-	}
-
-	if page.VerifierAvailable {
-		page.VerificationStarted = this.F.Verifier.VerificationStarted()
-		page.VerificationDone = this.F.Verifier.VerificationDone()
-		page.VerifiedCorrect, page.VerificationErr = this.F.Verifier.VerifiedCorrect()
-	}
-
-	if this.F.DoneTime.IsZero() {
-		page.TimeTaken = page.CurrentTime.Sub(page.StartTime)
-	} else {
-		page.TimeTaken = this.F.DoneTime.Sub(page.StartTime)
-	}
-
-	page.Throttled = page.ThrottledUntil.After(page.CurrentTime)
-
-	// Getting all the table statuses
-	// In the order of completed, running, waiting
-	completedTables := this.F.DataIterator.CurrentState.CompletedTables()
-	targetPks := this.F.DataIterator.CurrentState.TargetPrimaryKeys()
-	lastSuccessfulPks := this.F.DataIterator.CurrentState.LastSuccessfulPrimaryKeys()
-
-	page.CompletedTableCount = len(completedTables)
-	page.TotalTableCount = len(this.F.Tables)
-
-	completedTableNames := make([]string, 0, len(completedTables))
-	copyingTableNames := make([]string, 0)
-	waitingTableNames := make([]string, 0)
-
-	for tableName, _ := range completedTables {
-		completedTableNames = append(completedTableNames, tableName)
-	}
-
-	sort.Strings(completedTableNames)
-	for _, tableName := range completedTableNames {
-		page.TableStatuses = append(page.TableStatuses, &TableStatus{
-			TableName:        tableName,
-			PrimaryKeyName:   this.F.Tables[tableName].GetPKColumn(0).Name,
-			Status:           "Complete",
-			TargetPK:         targetPks[tableName],
-			LastSuccessfulPK: lastSuccessfulPks[tableName],
-		})
-	}
-
-	for tableName, _ := range lastSuccessfulPks {
-		if _, ok := completedTables[tableName]; ok {
-			continue
-		}
-
-		copyingTableNames = append(copyingTableNames, tableName)
-	}
-
-	sort.Strings(copyingTableNames)
-
-	for _, tableName := range copyingTableNames {
-		page.TableStatuses = append(page.TableStatuses, &TableStatus{
-			TableName:        tableName,
-			PrimaryKeyName:   this.F.Tables[tableName].GetPKColumn(0).Name,
-			Status:           "Copying",
-			TargetPK:         targetPks[tableName],
-			LastSuccessfulPK: lastSuccessfulPks[tableName],
-		})
-	}
-
-	for tableName, _ := range this.F.Tables {
-		if _, ok := lastSuccessfulPks[tableName]; ok {
-			continue
-		}
-		waitingTableNames = append(waitingTableNames, tableName)
-	}
-
-	sort.Strings(waitingTableNames)
-
-	for _, tableName := range waitingTableNames {
-		page.TableStatuses = append(page.TableStatuses, &TableStatus{
-			TableName:        tableName,
-			PrimaryKeyName:   this.F.Tables[tableName].GetPKColumn(0).Name,
-			Status:           "Waiting",
-			TargetPK:         -1,
-			LastSuccessfulPK: -1,
-		})
-	}
-
-	err := this.templates.ExecuteTemplate(w, "index.html", page)
+	err := this.templates.ExecuteTemplate(w, "index.html", status)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
