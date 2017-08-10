@@ -129,8 +129,6 @@ func (this *ControlServer) HandleVerify(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if !this.F.Verifier.VerificationStarted() {
-		this.F.Verifier.StartVerification(this.F)
-	}
+	this.F.Verifier.StartVerification(this.F)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

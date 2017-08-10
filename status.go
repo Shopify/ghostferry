@@ -153,11 +153,13 @@ func FetchStatus(f *Ferry) *Status {
 		})
 	}
 
-	status.VerifierAvailable = f.Verifier != nil
-	if status.VerifierAvailable {
+	if f.Verifier != nil {
 		status.VerificationStarted = f.Verifier.VerificationStarted()
 		status.VerificationDone = f.Verifier.VerificationDone()
+		status.VerifierAvailable = !status.VerificationStarted || status.VerificationDone
 		status.MismatchedTables, status.VerificationErr = f.Verifier.MismatchedTables()
+	} else {
+		status.VerifierAvailable = false
 	}
 
 	return status

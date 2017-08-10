@@ -99,8 +99,14 @@
                 {{if not .VerificationErr}}
                   <tr>
                     <th>Verified Correct</th>
-                    <td>{{.VerifiedCorrect}}</td>
+                    <td>{{if not .MismatchedTables}}true{{else}}false{{end}}</td>
                   </tr>
+                  {{if .MismatchedTables}}
+                    <tr>
+                      <th>Mismatched Tables</th>
+                      <td>{{.MismatchedTables}}</td>
+                    </tr>
+                  {{end}}
                 {{else}}
                   <tr>
                     <th>Error During Verification</th>
@@ -122,7 +128,7 @@
       <div class="row">
         <div class="twelve columns">
           <!-- NOTE: there are not CSRF protection against these routes -->
-          {{if and .VerifierAvailable (not .VerificationStarted)}}
+          {{if .VerifierAvailable}}
             <form action="/api/actions/verify" method="POST">
               <input type="submit" value="Run Verification" />
             </form>
@@ -135,7 +141,7 @@
             </form>
             {{else}}
             <form action="/api/actions/cutover?type=automatic" method="POST">
-              <input type="submit" value="Allow Automatic Cutover" />
+              <input type="submit" class="dangerous" value="Allow Automatic Cutover" />
             </form>
             {{end}}
 
@@ -149,7 +155,7 @@
               <input type="submit" value="Throttle for 5 min" />
             </form>
             <form action="/api/actions/stop" method="POST">
-              <input type="submit" class="button-destroy" value="Emergency Stop" />
+              <input type="submit" class="dangerous button-destroy" value="Emergency Stop" />
             </form>
           {{end}}
         </div>
