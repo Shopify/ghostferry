@@ -300,6 +300,12 @@ func (f *Ferry) WaitUntilRowCopyIsComplete() {
 	<-f.rowCopyCompleteCh
 }
 
+func (f *Ferry) WaitUntilBinlogStreamerCatchesUp() {
+	for !f.BinlogStreamer.IsAlmostCaughtUp() {
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 // After you stop writing to the source and made sure that all inflight
 // transactions to the source are completed, call this method to ensure
 // that the binlog streaming has caught up and stop the binlog streaming.

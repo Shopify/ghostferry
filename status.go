@@ -24,17 +24,17 @@ type Status struct {
 	ApplicableDatabases map[string]bool
 	ApplicableTables    map[string]bool
 
-	OverallState string
-	StartTime    time.Time
-	CurrentTime  time.Time
-	TimeTaken    time.Duration
-	ETA          time.Duration
+	OverallState      string
+	StartTime         time.Time
+	CurrentTime       time.Time
+	TimeTaken         time.Duration
+	ETA               time.Duration
+	BinlogStreamerLag time.Duration
 
 	AutomaticCutover            bool
 	BinlogStreamerStopRequested bool
 	LastSuccessfulBinlogPos     mysql.Position
 	TargetBinlogPos             mysql.Position
-	BinlogStreamerLag           time.Duration
 
 	Throttled      bool
 	ThrottledUntil time.Time
@@ -70,12 +70,12 @@ func FetchStatus(f *Ferry) *Status {
 		status.TimeTaken = f.DoneTime.Sub(status.StartTime)
 	}
 	// TODO: ETA estimation
+	status.BinlogStreamerLag = time.Now().Sub(f.BinlogStreamer.lastProcessedEventTime)
 
 	status.AutomaticCutover = f.Config.AutomaticCutover
 	status.BinlogStreamerStopRequested = f.BinlogStreamer.stopRequested
 	status.LastSuccessfulBinlogPos = f.BinlogStreamer.lastStreamedBinlogPosition
 	status.TargetBinlogPos = f.BinlogStreamer.targetBinlogPosition
-	// TODO: Binlog Streamer Lag
 
 	status.ThrottledUntil = f.Throttler.ThrottleUntil()
 	status.Throttled = status.ThrottledUntil.After(status.CurrentTime)
