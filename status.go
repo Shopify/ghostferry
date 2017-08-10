@@ -156,7 +156,9 @@ func FetchStatus(f *Ferry) *Status {
 	if f.Verifier != nil {
 		status.VerificationStarted = f.Verifier.VerificationStarted()
 		status.VerificationDone = f.Verifier.VerificationDone()
-		status.VerifierAvailable = !status.VerificationStarted || status.VerificationDone
+
+		// We can only run the verifier if we're not copying and not verifying
+		status.VerifierAvailable = status.OverallState != StateStarting && status.OverallState != StateCopying && (!status.VerificationStarted || status.VerificationDone)
 		status.MismatchedTables, status.VerificationErr = f.Verifier.MismatchedTables()
 	} else {
 		status.VerifierAvailable = false
