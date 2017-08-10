@@ -20,6 +20,10 @@ const (
 	StateDone              = "done"
 )
 
+func quoteField(field string) string {
+	return fmt.Sprintf("`%s`", field)
+}
+
 type Ferry struct {
 	*Config
 

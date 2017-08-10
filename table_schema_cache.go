@@ -17,6 +17,14 @@ var ignoredDatabases = map[string]bool{
 
 type TableSchemaCache map[string]*schema.Table
 
+func quotedTableName(table *schema.Table) string {
+	return quotedTableNameFromString(table.Schema, table.Name)
+}
+
+func quotedTableNameFromString(database, table string) string {
+	return fmt.Sprintf("`%s`.`%s`", database, table)
+}
+
 func loadTables(db *sql.DB, applicableDatabases, applicableTables map[string]bool) (TableSchemaCache, error) {
 	logger := logrus.WithField("tag", "table_schema_cache")
 
@@ -92,14 +100,6 @@ func (c TableSchemaCache) AsSlice() (tables []*schema.Table) {
 	return
 }
 
-func (c TableSchemaCache) AsStringSlice() (tables []string) {
-	for tableName, _ := range c {
-		tables = append(tables, tableName)
-	}
-
-	return
-}
-
 func (c TableSchemaCache) AllTableNames() (tableNames []string) {
 	for tableName, _ := range c {
 		tableNames = append(tableNames, tableName)
@@ -117,7 +117,7 @@ func (c TableSchemaCache) TableColumnNames(database, table string) ([]string, er
 
 	tableColumns := make([]string, len(tableSchema.Columns))
 	for i, col := range tableSchema.Columns {
-		tableColumns[i] = col.Name
+		tableColumns[i] = quoteField(col.Name)
 	}
 
 	return tableColumns, nil
@@ -150,7 +150,7 @@ func showDatabases(c *sql.DB) ([]string, error) {
 }
 
 func showTablesFrom(c *sql.DB, dbname string) ([]string, error) {
-	rows, err := c.Query(fmt.Sprintf("show tables from %s", dbname))
+	rows, err := c.Query(fmt.Sprintf("show tables from %s", quoteField(dbname)))
 	if err != nil {
 		return []string{}, err
 	}

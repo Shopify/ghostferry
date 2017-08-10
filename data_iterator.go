@@ -195,7 +195,7 @@ func (this *DataIterator) runTableIterator(i uint32) {
 func (this *DataIterator) iterateTable(table *schema.Table) error {
 	logger := this.logger.WithField("table", table.String())
 	logger.Info("starting to iterate over table")
-	rows, err := this.Db.Query(fmt.Sprintf("SELECT 1 FROM %s", table.String()))
+	rows, err := this.Db.Query(fmt.Sprintf("SELECT 1 FROM %s", quotedTableName(table)))
 	if err != nil {
 		logger.WithError(err).Error("failed to see if rows exist in table")
 		return err
@@ -209,10 +209,11 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 	rows.Close()
 
 	primaryKeyColumn := table.GetPKColumn(0)
-	logger.Infof("getting min/max for primary key %s", primaryKeyColumn.Name)
-	query, args, err := sq.Select(fmt.Sprintf("MIN(%s), MAX(%s)", primaryKeyColumn.Name, primaryKeyColumn.Name)).From(table.String()).ToSql()
+	pkName := quoteField(primaryKeyColumn.Name)
+	logger.Infof("getting min/max for primary key %s", pkName)
+	query, args, err := sq.Select(fmt.Sprintf("MIN(%s), MAX(%s)", pkName, pkName)).From(quotedTableName(table)).ToSql()
 	if err != nil {
-		logger.WithError(err).Errorf("failed to build query to get min/max primary key %s", primaryKeyColumn.Name)
+		logger.WithError(err).Errorf("failed to build query to get min/max primary key %s", pkName)
 		return err
 	}
 
@@ -225,7 +226,7 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 		return err
 	}
 
-	logger.Infof("min/max for %s: %d %d (%s)", primaryKeyColumn.Name, minPrimaryKey, maxPrimaryKey, primaryKeyColumn.RawType)
+	logger.Infof("min/max for %s: %d %d (%s)", pkName, minPrimaryKey, maxPrimaryKey, primaryKeyColumn.RawType)
 	this.CurrentState.UpdateTargetPK(table.String(), maxPrimaryKey)
 
 	// The last successful primary key is not the minPrimaryKey, as that
@@ -307,11 +308,12 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 	// MySQL's plain text interface, which will scan all values into []uint8
 	// if we give it []interface{}.
 	// Right now the sq.GtOrEq forces this query to be a prepared one.
+	pkName := quoteField(pkColumn.Name)
 	selectBuilder := sq.Select("*").
-		From(table.String()).
-		Where(sq.Gt{pkColumn.Name: lastSuccessfulPk}).
+		From(quotedTableName(table)).
+		Where(sq.Gt{pkName: lastSuccessfulPk}).
 		Limit(this.Config.IterateChunksize).
-		OrderBy(pkColumn.Name).
+		OrderBy(pkName).
 		Suffix("FOR UPDATE")
 
 	selectBuilder = this.SelectFilter(selectBuilder)

@@ -78,7 +78,7 @@ func (e *BinlogInsertEvent) AsSQLQuery(tables TableSchemaCache) (string, []inter
 	}
 
 	// temporarily use a sql builder because otherwise it will take a long time
-	return sq.Insert(fmt.Sprintf("%s.%s", e.database, e.table)).
+	return sq.Insert(quotedTableNameFromString(e.database, e.table)).
 		Options("IGNORE").
 		Columns(tableColumns...).
 		Values(e.newValues...).ToSql()
@@ -158,7 +158,7 @@ func (e *BinlogUpdateEvent) AsSQLQuery(tables TableSchemaCache) (string, []inter
 	}
 
 	// temporarily use a sql builder because otherwise it will take a long time
-	return sq.Update(fmt.Sprintf("%s.%s", e.database, e.table)).
+	return sq.Update(quotedTableNameFromString(e.database, e.table)).
 		SetMap(setArgs).
 		Where(whereArgs).ToSql()
 }
@@ -218,7 +218,7 @@ func (e *BinlogDeleteEvent) AsSQLQuery(tables TableSchemaCache) (string, []inter
 	}
 
 	// temporarily use a sql builder because otherwise it will take a long time
-	return sq.Delete(fmt.Sprintf("%s.%s", e.database, e.table)).
+	return sq.Delete(quotedTableNameFromString(e.database, e.table)).
 		Where(whereArgs).ToSql()
 }
 
@@ -269,7 +269,7 @@ func (e *ExistingRowEvent) AsSQLQuery(tables TableSchemaCache) (string, []interf
 		return "", []interface{}{}, err
 	}
 
-	return sq.Insert(fmt.Sprintf("%s.%s", e.database, e.table)).
+	return sq.Insert(quotedTableNameFromString(e.database, e.table)).
 		Options("IGNORE").
 		Columns(tableColumns...).
 		Values(e.values...).ToSql()

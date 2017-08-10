@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -24,7 +25,7 @@ type ChecksumTableVerifier struct {
 	StartTime time.Time
 	DoneTime  time.Time
 
-	TablesToCheck []string
+	TablesToCheck []*schema.Table
 
 	mismatchedTables []string
 	err              error
@@ -57,7 +58,14 @@ func (this *ChecksumTableVerifier) Run(f *Ferry) {
 	this.err = nil
 
 	sourceTableChecksums := make(map[string]int64)
-	query := fmt.Sprintf("CHECKSUM TABLE %s EXTENDED", strings.Join(this.TablesToCheck, ", "))
+
+	// Quote the tables
+	tablesToCheck := make([]string, len(this.TablesToCheck))
+	for i, table := range this.TablesToCheck {
+		tablesToCheck[i] = quotedTableName(table)
+	}
+
+	query := fmt.Sprintf("CHECKSUM TABLE %s EXTENDED", strings.Join(tablesToCheck, ", "))
 
 	sourceRows, err := f.SourceDB.Query(query)
 	if err != nil {

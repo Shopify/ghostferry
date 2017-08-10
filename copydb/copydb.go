@@ -31,12 +31,9 @@ func (this *CopydbFerry) Start() error {
 		return err
 	}
 
-	tables := make([]string, 0)
-
 	// We need to create the same table/schemas on the target database
 	// as the ones we are copying.
 	for tableName := range this.ferry.Tables {
-		tables = append(tables, tableName)
 		t := strings.Split(tableName, ".")
 		if _, exists := this.ferry.ApplicableDatabases[t[0]]; !exists {
 			continue
@@ -56,13 +53,13 @@ func (this *CopydbFerry) Start() error {
 	}
 
 	this.ferry.Verifier = &ghostferry.ChecksumTableVerifier{
-		TablesToCheck: tables,
+		TablesToCheck: this.ferry.Tables.AsSlice(),
 	}
 	return nil
 }
 
 func (this *CopydbFerry) createDatabaseIfExistsOnTarget(database string) error {
-	createDatabaseQuery := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", database)
+	createDatabaseQuery := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`", database)
 	_, err := this.ferry.TargetDB.Exec(createDatabaseQuery)
 	return err
 }
@@ -70,7 +67,7 @@ func (this *CopydbFerry) createDatabaseIfExistsOnTarget(database string) error {
 func (this *CopydbFerry) createTableOnTarget(database, table string) error {
 	var tableNameAgain, createTableQuery string
 
-	r := this.ferry.SourceDB.QueryRow(fmt.Sprintf("SHOW CREATE TABLE %s.%s", database, table))
+	r := this.ferry.SourceDB.QueryRow(fmt.Sprintf("SHOW CREATE TABLE `%s`.`%s`", database, table))
 	err := r.Scan(&tableNameAgain, &createTableQuery)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
