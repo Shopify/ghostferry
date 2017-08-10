@@ -1,12 +1,13 @@
 package ghostferry
 
 import (
+	"crypto/tls"
 	"database/sql"
 	"fmt"
 	"sync"
 	"time"
 
-	_ "github.com/siddontang/go-mysql/driver"
+	"github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
 )
 
@@ -56,8 +57,56 @@ func (f *Ferry) Initialize() (err error) {
 	f.logger = logrus.WithField("tag", "ferry")
 	f.rowCopyCompleteCh = make(chan struct{})
 
+	sourceConfig := &mysql.Config{
+		User:   f.SourceUser,
+		Passwd: f.SourcePass,
+		Net:    "tcp",
+		Addr:   fmt.Sprintf("%s:%d", f.SourceHost, f.SourcePort),
+	}
+
+	targetConfig := &mysql.Config{
+		User:   f.TargetUser,
+		Passwd: f.TargetPass,
+		Net:    "tcp",
+		Addr:   fmt.Sprintf("%s:%d", f.TargetHost, f.TargetPort),
+	}
+
+	// TLS Config
+	var sourceTLSConfig, targetTLSConfig *tls.Config
+	if f.SourceTLS != nil {
+		sourceTLSConfig, err = f.SourceTLS.RealTLSConfig()
+		if err != nil {
+			f.logger.WithError(err).Error("failed to get source TLS config")
+			return err
+		}
+
+		err = mysql.RegisterTLSConfig("source", sourceTLSConfig)
+		if err != nil {
+			f.logger.WithError(err).Error("failed to register source TLS config")
+			return err
+		}
+
+		sourceConfig.TLSConfig = "source"
+	}
+
+	if f.TargetTLS != nil {
+		targetTLSConfig, err = f.SourceTLS.RealTLSConfig()
+		if err != nil {
+			f.logger.WithError(err).Error("failed to get target TLS config")
+			return err
+		}
+
+		err = mysql.RegisterTLSConfig("target", targetTLSConfig)
+		if err != nil {
+			f.logger.WithError(err).Error("failed to register target TLS config")
+			return err
+		}
+
+		targetConfig.TLSConfig = "target"
+	}
+
 	// Connect to the database
-	sourceDSN := fmt.Sprintf("%s:%s@%s:%d", f.SourceUser, f.SourcePass, f.SourceHost, f.SourcePort)
+	sourceDSN := sourceConfig.FormatDSN()
 	f.logger.WithField("dsn", sourceDSN).Info("connecting to the source database")
 	f.SourceDB, err = sql.Open("mysql", sourceDSN)
 	if err != nil {
@@ -65,11 +114,23 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
-	targetDSN := fmt.Sprintf("%s:%s@%s:%d", f.TargetUser, f.TargetPass, f.TargetHost, f.TargetPort)
+	err = checkConnection(f.logger, sourceDSN, f.SourceDB)
+	if err != nil {
+		f.logger.WithError(err).Error("source connection checking failed")
+		return err
+	}
+
+	targetDSN := targetConfig.FormatDSN()
 	f.logger.WithField("dsn", targetDSN).Info("connecting to the target database")
 	f.TargetDB, err = sql.Open("mysql", targetDSN)
 	if err != nil {
 		f.logger.WithError(err).Error("failed to connect to target database")
+		return err
+	}
+
+	err = checkConnection(f.logger, targetDSN, f.TargetDB)
+	if err != nil {
+		f.logger.WithError(err).Error("target connection checking failed")
 		return err
 	}
 
@@ -306,4 +367,23 @@ func (f *Ferry) writeEventsToTarget(events []DMLEvent) error {
 	}
 
 	return tx.Commit()
+}
+
+func checkConnection(logger *logrus.Entry, dsn string, db *sql.DB) error {
+	row := db.QueryRow("SHOW STATUS LIKE 'Ssl_cipher'")
+	var name, cipher string
+	err := row.Scan(&name, &cipher)
+	if err != nil {
+		return err
+	}
+
+	hasSSL := cipher != ""
+
+	logger.WithFields(logrus.Fields{
+		"hasSSL":     hasSSL,
+		"ssl_cipher": cipher,
+		"dsn":        dsn,
+	}).Infof("connected to %s", dsn)
+
+	return nil
 }

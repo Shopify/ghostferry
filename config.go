@@ -1,6 +1,40 @@
 package ghostferry
 
-import "fmt"
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"fmt"
+	"io/ioutil"
+)
+
+type TLSConfig struct {
+	CertPath   string
+	ServerName string
+
+	tlsConfig *tls.Config
+}
+
+func (this *TLSConfig) RealTLSConfig() (*tls.Config, error) {
+	if this.tlsConfig == nil {
+		certPool := x509.NewCertPool()
+		pem, err := ioutil.ReadFile(this.CertPath)
+		if err != nil {
+			return nil, err
+		}
+
+		if ok := certPool.AppendCertsFromPEM(pem); !ok {
+			return nil, errors.New("unable to append pem")
+		}
+
+		this.tlsConfig = &tls.Config{
+			RootCAs:    certPool,
+			ServerName: this.ServerName,
+		}
+	}
+
+	return this.tlsConfig, nil
+}
 
 type Config struct {
 	SourceHost string
@@ -15,6 +49,9 @@ type Config struct {
 
 	ApplicableDatabases map[string]bool
 	ApplicableTables    map[string]bool
+
+	SourceTLS *TLSConfig
+	TargetTLS *TLSConfig
 
 	// Config for Ferry
 	MaxWriteRetriesOnTargetDBError int

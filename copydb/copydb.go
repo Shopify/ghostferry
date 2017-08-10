@@ -1,7 +1,6 @@
 package copydb
 
 import (
-	"database/sql"
 	"fmt"
 	"strings"
 	"sync"
@@ -82,35 +81,18 @@ func (this *CopydbFerry) createTableOnTarget(database, table string) error {
 		return err
 	}
 
-	// Somehow, when you issue a CREATE TABLE db.tbl ... query on a connection
-	// that does not have a database selected (such as the connections held
-	// by ghostferry.Ferry), either the Go MySQL driver or MySQL itself will
-	// throw an error saying that a database is not selected.
-	//
-	// This means we have to, unfortunately, reconnect again with a database
-	// selected to create a table on the target.
-	//
-	// This maybe related to the fact that I'm using the siddontang driver as
-	// opposed to the "official" MySQL driver to save on the number of
-	// dependencies I have.
-	//
-	// TODO: investigate this issue and see if we can switch back to using
-	//       the ferry DB connection.
-	dsn := fmt.Sprintf(
-		"%s:%s@%s:%d?%s",
-		this.ferry.TargetUser,
-		this.ferry.TargetPass,
-		this.ferry.TargetHost,
-		this.ferry.TargetPort,
-		database,
+	createTableQueryReplaced := strings.Replace(
+		createTableQuery,
+		fmt.Sprintf("CREATE TABLE `%s`", tableNameAgain),
+		fmt.Sprintf("CREATE TABLE `%s`.`%s`", database, tableNameAgain),
+		1,
 	)
-	target, err := sql.Open("mysql", dsn)
-	if err != nil {
-		return err
-	}
-	defer target.Close()
 
-	_, err = target.Exec(createTableQuery)
+	if createTableQueryReplaced == createTableQuery {
+		return fmt.Errorf("no effect on replacing the create table <table> with create table <db>.<table> query on query: %s", createTableQuery)
+	}
+
+	_, err = this.ferry.TargetDB.Exec(createTableQueryReplaced)
 	return err
 }
 
