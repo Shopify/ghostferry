@@ -56,6 +56,7 @@ func (this *ChecksumTableVerifier) Run(f *Ferry) {
 
 	this.logger.Info("performing checksum tables...")
 
+	this.DoneTime = time.Time{}
 	this.mismatchedTables = make([]string, 0)
 	this.err = nil
 
