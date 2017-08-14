@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"time"
 
@@ -30,6 +31,7 @@ type Status struct {
 	TimeTaken         time.Duration
 	ETA               time.Duration
 	BinlogStreamerLag time.Duration
+	PKsPerSecond      int64
 
 	AutomaticCutover            bool
 	BinlogStreamerStopRequested bool
@@ -69,7 +71,6 @@ func FetchStatus(f *Ferry) *Status {
 	} else {
 		status.TimeTaken = f.DoneTime.Sub(status.StartTime)
 	}
-	// TODO: ETA estimation
 	status.BinlogStreamerLag = time.Now().Sub(f.BinlogStreamer.lastProcessedEventTime)
 
 	status.AutomaticCutover = f.Config.AutomaticCutover
@@ -85,6 +86,9 @@ func FetchStatus(f *Ferry) *Status {
 	completedTables := f.DataIterator.CurrentState.CompletedTables()
 	targetPKs := f.DataIterator.CurrentState.TargetPrimaryKeys()
 	lastSuccessfulPKs := f.DataIterator.CurrentState.LastSuccessfulPrimaryKeys()
+
+	status.CompletedTableCount = len(completedTables)
+	status.TotalTableCount = len(f.Tables)
 
 	// We get the name first because we need to sort them
 	completedTableNames := make([]string, 0, len(completedTables))
@@ -151,6 +155,24 @@ func FetchStatus(f *Ferry) *Status {
 		})
 	}
 
+	// ETA estimation
+	// We do it here rather than in DataIteratorState to give the lock back
+	// ASAP. It's not supposed to be that accurate anyway.
+	var totalPKsToCopy int64 = 0
+	var completedPKs int64 = 0
+	estimatedPKsPerSecond := f.DataIterator.CurrentState.EstimatedPKProcessedPerSecond()
+	for _, targetPK := range targetPKs {
+		totalPKsToCopy += targetPK
+	}
+
+	for _, completedPK := range lastSuccessfulPKs {
+		completedPKs += completedPK
+	}
+
+	status.ETA = time.Duration(math.Ceil(float64(totalPKsToCopy-completedPKs)/estimatedPKsPerSecond)) * time.Second
+	status.PKsPerSecond = int64(estimatedPKsPerSecond)
+
+	// Verifier display
 	if f.Verifier != nil {
 		status.VerifierSupport = true
 		status.VerificationStarted = f.Verifier.VerificationStarted()
