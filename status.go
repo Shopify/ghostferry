@@ -107,13 +107,9 @@ func FetchStatus(f *Ferry) *Status {
 		completedTableNames = append(completedTableNames, tableName)
 	}
 
-	for tableName, lastSuccessfulPK := range lastSuccessfulPKs {
+	for tableName, _ := range lastSuccessfulPKs {
 		if _, ok := completedTables[tableName]; ok {
 			continue // already completed, therefore not copying
-		}
-
-		if lastSuccessfulPK == 0 {
-			continue // Haven't started yet
 		}
 
 		copyingTableNames = append(copyingTableNames, tableName)
@@ -157,7 +153,7 @@ func FetchStatus(f *Ferry) *Status {
 			PrimaryKeyName:   f.Tables[tableName].GetPKColumn(0).Name,
 			Status:           "waiting",
 			TargetPK:         targetPKs[tableName],
-			LastSuccessfulPK: lastSuccessfulPKs[tableName],
+			LastSuccessfulPK: 0,
 		})
 	}
 

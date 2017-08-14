@@ -193,30 +193,24 @@ func (this *DataIterator) determineMinMaxPKsForAllTables() ([]*schema.Table, err
 
 		primaryKeyColumn := table.GetPKColumn(0)
 		pkName := quoteField(primaryKeyColumn.Name)
-		logger.Infof("getting min/max for primary key %s", pkName)
-		query, args, err := sq.Select(fmt.Sprintf("MIN(%s), MAX(%s)", pkName, pkName)).From(quotedTableName(table)).ToSql()
+		logger.Infof("getting max for primary key %s", pkName)
+		query, args, err := sq.Select(fmt.Sprintf("MAX(%s)", pkName)).From(quotedTableName(table)).ToSql()
 		if err != nil {
-			logger.WithError(err).Errorf("failed to build query to get min/max primary key %s", pkName)
+			logger.WithError(err).Errorf("failed to build query to get max primary key %s", pkName)
 			return tablesWithData, err
 		}
 
 		row := this.Db.QueryRow(query, args...)
 
-		var minPrimaryKey, maxPrimaryKey int64
-		err = row.Scan(&minPrimaryKey, &maxPrimaryKey)
+		var maxPrimaryKey int64
+		err = row.Scan(&maxPrimaryKey)
 		if err != nil {
-			logger.WithError(err).Errorf("failed to get min/max primary key %s", primaryKeyColumn.Name)
+			logger.WithError(err).Errorf("failed to get max primary key %s", primaryKeyColumn.Name)
 			return tablesWithData, err
 		}
 
-		logger.Infof("min/max for %s: %d %d (%s)", pkName, minPrimaryKey, maxPrimaryKey, primaryKeyColumn.RawType)
+		logger.Infof("max for %s: %d (%s)", pkName, maxPrimaryKey, primaryKeyColumn.RawType)
 		this.CurrentState.UpdateTargetPK(table.String(), maxPrimaryKey)
-
-		// The last successful primary key is not the minPrimaryKey, as that
-		// would indicate the row associated with minPrimaryKey has been
-		// copied. Thus, we subtract one from the minPrimaryKey.
-		lastSuccessfulPrimaryKey := minPrimaryKey - 1
-		this.CurrentState.UpdateLastSuccessfulPK(table.String(), lastSuccessfulPrimaryKey)
 
 		tablesWithData = append(tablesWithData, table)
 	}
@@ -255,7 +249,7 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 	logger := this.logger.WithField("table", table.String())
 	logger.Info("starting to iterate over table")
 
-	lastSuccessfulPrimaryKey := this.CurrentState.LastSuccessfulPrimaryKeys()[table.String()]
+	var lastSuccessfulPrimaryKey int64 = 0
 	maxPrimaryKey := this.CurrentState.TargetPrimaryKeys()[table.String()]
 
 	for lastSuccessfulPrimaryKey < maxPrimaryKey {
