@@ -12,6 +12,12 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+var (
+	VersionNumber string = "?.?.?"
+	VersionCommit string = "??????"
+	WebUiBasedir  string = ""
+)
+
 const (
 	StateStarting          = "starting"
 	StateCopying           = "copying"
@@ -71,6 +77,8 @@ func (f *Ferry) Initialize() (err error) {
 	f.controlServerWg = &sync.WaitGroup{}
 	f.logger = logrus.WithField("tag", "ferry")
 	f.rowCopyCompleteCh = make(chan struct{})
+
+	f.logger.Infof("hello world from %s+%s", VersionNumber, VersionCommit)
 
 	sourceConfig := &mysql.Config{
 		User:   f.SourceUser,

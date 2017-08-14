@@ -30,6 +30,8 @@ type TableStatus struct {
 }
 
 type Status struct {
+	GhostferryVersion string
+
 	SourceHostPort      string
 	TargetHostPort      string
 	ApplicableDatabases []string
@@ -63,6 +65,8 @@ type Status struct {
 
 func FetchStatus(f *Ferry) *Status {
 	status := &Status{}
+
+	status.GhostferryVersion = fmt.Sprintf("%s+%s", VersionNumber, VersionCommit)
 
 	status.SourceHostPort = fmt.Sprintf("%s:%d", f.SourceHost, f.SourcePort)
 	status.TargetHostPort = fmt.Sprintf("%s:%d", f.TargetHost, f.TargetPort)

@@ -12,6 +12,7 @@ import (
 )
 
 func usage() {
+	fmt.Printf("ghostferry-copydb built with ghostferry %s+%s\n", ghostferry.VersionNumber, ghostferry.VersionCommit)
 	fmt.Printf("Usage: %s [OPTIONS] path/to/config/file.json\n", os.Args[0])
 	flag.PrintDefaults()
 }
