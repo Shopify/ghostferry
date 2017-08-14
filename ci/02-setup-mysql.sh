@@ -19,12 +19,14 @@ mvm create $N1 $N2
 mvm adduser -u ghostferry -p ghostferry -h '%' $N1 $N2
 
 mvm sql $N1 "CREATE DATABASE abc"
+mvm sql $N1 "CREATE TABLE abc.schema_migrations (id bigint(20) AUTO_INCREMENT, data varchar(16), primary key(id))"
 mvm sql $N1 "CREATE TABLE abc.table1 (id bigint(20) AUTO_INCREMENT, data varchar(16), primary key(id))"
 mvm sql $N1 "CREATE TABLE abc.table2 (id bigint(20) AUTO_INCREMENT, data TEXT, primary key(id))"
 
 rm -f /tmp/n1create.sql
 
 for i in `seq 1 350`; do
+  echo "INSERT INTO abc.schema_migrations (id, data) VALUES (${i}, '$(cat /dev/urandom | tr -cd 'a-z0-9' | head -c 16)');" >> /tmp/n1create.sql
   echo "INSERT INTO abc.table1 (id, data) VALUES (${i}, '$(cat /dev/urandom | tr -cd 'a-z0-9' | head -c 16)');" >> /tmp/n1create.sql
   echo "INSERT INTO abc.table2 (id, data) VALUES (${i}, '$(cat /dev/urandom | tr -cd 'a-z0-9' | head -c 16)');" >> /tmp/n1create.sql
 done

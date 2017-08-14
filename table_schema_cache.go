@@ -25,6 +25,31 @@ func quotedTableNameFromString(database, table string) string {
 	return fmt.Sprintf("`%s`.`%s`", database, table)
 }
 
+func filterForApplicable(list []string, applicabilityMap map[string]bool) []string {
+	if applicabilityMap == nil {
+		return list
+	}
+
+	allApplicable := applicabilityMap["!default"]
+
+	applicableList := make([]string, 0, len(list))
+	for _, v := range list {
+		applicable := applicabilityMap[v]
+		applicable, specified := applicabilityMap[v]
+		if specified && !applicable {
+			continue
+		}
+
+		if !specified && !allApplicable {
+			continue
+		}
+
+		applicableList = append(applicableList, v)
+	}
+
+	return applicableList
+}
+
 func loadTables(db *sql.DB, applicableDatabases, applicableTables map[string]bool) (TableSchemaCache, error) {
 	logger := logrus.WithField("tag", "table_schema_cache")
 
@@ -36,17 +61,11 @@ func loadTables(db *sql.DB, applicableDatabases, applicableTables map[string]boo
 		return tableSchemaCache, err
 	}
 
+	dbnames = filterForApplicable(dbnames, applicableDatabases)
+
 	// For each database, get a list of tables from it and cache the table's schema
 	for _, dbname := range dbnames {
 		dbLog := logger.WithField("database", dbname)
-
-		if applicableDatabases != nil {
-			if _, exists := applicableDatabases[dbname]; !exists {
-				dbLog.Debug("skipping database as it is not applicable")
-				continue
-			}
-		}
-
 		dbLog.Debug("loading tables from database")
 		tableNames, err := showTablesFrom(db, dbname)
 		if err != nil {
@@ -54,15 +73,9 @@ func loadTables(db *sql.DB, applicableDatabases, applicableTables map[string]boo
 			return tableSchemaCache, err
 		}
 
+		tableNames = filterForApplicable(tableNames, applicableTables)
 		for _, table := range tableNames {
 			tableLog := dbLog.WithField("table", table)
-			if applicableTables != nil {
-				if _, exists := applicableTables[table]; !exists {
-					tableLog.Debug("skipping table as it is not applicable")
-					continue
-				}
-			}
-
 			tableLog.Debug("caching table schema")
 			tableSchema, err := schema.NewTableFromSqlDB(db, dbname, table)
 			if err != nil {
