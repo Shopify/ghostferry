@@ -18,9 +18,11 @@ func usage() {
 }
 
 var verbose bool
+var dryrun bool
 
 func init() {
 	flag.BoolVar(&verbose, "verbose", false, "Show verbose logging output")
+	flag.BoolVar(&dryrun, "dryrun", false, "Do not actually perform the move, just connect and check settings")
 }
 
 func errorAndExit(msg string) {
@@ -91,6 +93,16 @@ func main() {
 	err = ferry.Start()
 	if err != nil {
 		errorAndExit(fmt.Sprintf("failed to start ferry: %v", err))
+	}
+
+	if dryrun {
+		fmt.Println("exitting as dryrun is specified")
+		return
+	}
+
+	err = ferry.CreateDatabasesAndTables()
+	if err != nil {
+		errorAndExit(fmt.Sprintf("failed to create databases and tables: %v", err))
 	}
 
 	ferry.Run()

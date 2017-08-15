@@ -31,6 +31,13 @@ func (this *CopydbFerry) Start() error {
 		return err
 	}
 
+	this.ferry.Verifier = &ghostferry.ChecksumTableVerifier{
+		TablesToCheck: this.ferry.Tables.AsSlice(),
+	}
+	return nil
+}
+
+func (this *CopydbFerry) CreateDatabasesAndTables() error {
 	// We need to create the same table/schemas on the target database
 	// as the ones we are copying.
 	for tableName := range this.ferry.Tables {
@@ -52,10 +59,30 @@ func (this *CopydbFerry) Start() error {
 		}
 	}
 
-	this.ferry.Verifier = &ghostferry.ChecksumTableVerifier{
-		TablesToCheck: this.ferry.Tables.AsSlice(),
-	}
 	return nil
+}
+
+func (this *CopydbFerry) Run() {
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		this.ferry.Run()
+	}()
+
+	// If AutomaticCutover == false, it will pause below the following line
+	this.ferry.WaitUntilRowCopyIsComplete()
+
+	// This waits until we're pretty close in the binlog before making the
+	// source readonly. This is to avoid excessive downtime caused by the
+	// binlog streamer catching up.
+	this.ferry.WaitUntilBinlogStreamerCatchesUp()
+	this.ferry.FlushBinlogAndStopStreaming()
+	// After this method, the source and the target should be identical.
+	wg.Wait()
+
+	// It is safe to send a signla to this program and let it exit.
+	this.ferry.WaitForControlServer()
 }
 
 func (this *CopydbFerry) createDatabaseIfExistsOnTarget(database string) error {
@@ -91,26 +118,4 @@ func (this *CopydbFerry) createTableOnTarget(database, table string) error {
 
 	_, err = this.ferry.TargetDB.Exec(createTableQueryReplaced)
 	return err
-}
-
-func (this *CopydbFerry) Run() {
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		this.ferry.Run()
-	}()
-	this.ferry.WaitUntilRowCopyIsComplete()
-
-	// TODO: set source to be readonly if specified via flag or script
-	// TODO: ensure that all transactions are flushed (how?)
-
-	this.ferry.FlushBinlogAndStopStreaming()
-
-	// TODO: call external cutover scripts if applicable.
-	// TODO: set target to be writable (if applicable).
-	wg.Wait()
-
-	// TODO: handle signals to shutdown the control server.
-	this.ferry.WaitForControlServer()
 }
