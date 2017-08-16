@@ -55,6 +55,10 @@ func NewTestFerry() *TestFerry {
 			"gftest2": true,
 		},
 
+		ApplicableTables: map[string]bool{
+			"!default": true,
+		},
+
 		MyServerId:       91919,
 		AutomaticCutover: true,
 		WebBasedir:       "..",

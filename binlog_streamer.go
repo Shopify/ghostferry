@@ -182,17 +182,12 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 	events := make([]DMLEvent, 0)
 
 	for _, dmlEv := range dmlEvs {
-		// If ApplicableDatabases is nil, then all databases applies.
-		if s.Config.ApplicableDatabases != nil {
-			if _, exists := s.Config.ApplicableDatabases[dmlEv.Database()]; !exists {
-				continue
-			}
+		if len(filterForApplicable([]string{dmlEv.Database()}, s.Config.ApplicableDatabases)) == 0 {
+			continue
 		}
 
-		if s.Config.ApplicableTables != nil {
-			if _, exists := s.Config.ApplicableTables[dmlEv.Table()]; !exists {
-				continue
-			}
+		if len(filterForApplicable([]string{dmlEv.Table()}, s.Config.ApplicableTables)) == 0 {
+			continue
 		}
 
 		if s.EventFilter != nil && !s.EventFilter.Applicable(dmlEv) {
