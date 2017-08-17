@@ -176,7 +176,7 @@ func (this *DataIterator) determineMinMaxPKsForAllTables() ([]*schema.Table, err
 	for _, table := range this.Tables {
 		logger := this.logger.WithField("table", table.String())
 
-		rows, err := this.Db.Query(fmt.Sprintf("SELECT 1 FROM %s", quotedTableName(table)))
+		rows, err := this.Db.Query(fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", quotedTableName(table)))
 		if err != nil {
 			logger.WithError(err).Error("failed to see if rows exist in table")
 			return tablesWithData, err
