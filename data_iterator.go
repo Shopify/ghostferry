@@ -137,12 +137,18 @@ func (this *DataIterator) Run(wg *sync.WaitGroup) {
 
 	this.logger.WithField("tablesCount", len(this.Tables)).Info("starting data iterator run")
 
+	tablesWithData, err := this.determineMinMaxPKsForAllTables()
+	if err != nil {
+		this.ErrorHandler.Fatal("data_iterator", err)
+		return
+	}
+
 	this.wg.Add(this.Config.NumberOfTableIterators)
 	for i := 0; i < this.Config.NumberOfTableIterators; i++ {
 		go this.runTableIterator(uint32(i))
 	}
 
-	for _, table := range this.Tables {
+	for _, table := range tablesWithData {
 		this.tableCh <- table
 	}
 
@@ -163,6 +169,53 @@ func (this *DataIterator) AddEventListener(listener func([]DMLEvent) error) {
 
 func (this *DataIterator) AddDoneListener(listener func() error) {
 	this.doneListeners = append(this.doneListeners, listener)
+}
+
+func (this *DataIterator) determineMinMaxPKsForAllTables() ([]*schema.Table, error) {
+	tablesWithData := make([]*schema.Table, 0, len(this.Tables))
+	for _, table := range this.Tables {
+		logger := this.logger.WithField("table", table.String())
+
+		rows, err := this.Db.Query(fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", quotedTableName(table)))
+		if err != nil {
+			logger.WithError(err).Error("failed to see if rows exist in table")
+			return tablesWithData, err
+		}
+
+		if !rows.Next() {
+			rows.Close()
+			logger.Warn("no data in this table, skipping")
+			this.CurrentState.MarkTableAsCompleted(table.String())
+			continue
+		}
+
+		rows.Close()
+
+		primaryKeyColumn := table.GetPKColumn(0)
+		pkName := quoteField(primaryKeyColumn.Name)
+		logger.Infof("getting max for primary key %s", pkName)
+		query, args, err := sq.Select(fmt.Sprintf("MAX(%s)", pkName)).From(quotedTableName(table)).ToSql()
+		if err != nil {
+			logger.WithError(err).Errorf("failed to build query to get max primary key %s", pkName)
+			return tablesWithData, err
+		}
+
+		row := this.Db.QueryRow(query, args...)
+
+		var maxPrimaryKey int64
+		err = row.Scan(&maxPrimaryKey)
+		if err != nil {
+			logger.WithError(err).Errorf("failed to get max primary key %s", primaryKeyColumn.Name)
+			return tablesWithData, err
+		}
+
+		logger.Infof("max for %s: %d (%s)", pkName, maxPrimaryKey, primaryKeyColumn.RawType)
+		this.CurrentState.UpdateTargetPK(table.String(), maxPrimaryKey)
+
+		tablesWithData = append(tablesWithData, table)
+	}
+
+	return tablesWithData, nil
 }
 
 func (this *DataIterator) runTableIterator(i uint32) {
@@ -195,45 +248,9 @@ func (this *DataIterator) runTableIterator(i uint32) {
 func (this *DataIterator) iterateTable(table *schema.Table) error {
 	logger := this.logger.WithField("table", table.String())
 	logger.Info("starting to iterate over table")
-	rows, err := this.Db.Query(fmt.Sprintf("SELECT 1 FROM %s", quotedTableName(table)))
-	if err != nil {
-		logger.WithError(err).Error("failed to see if rows exist in table")
-		return err
-	}
 
-	if !rows.Next() {
-		rows.Close()
-		logger.Warn("no data in this table, skipping")
-		return nil
-	}
-	rows.Close()
-
-	primaryKeyColumn := table.GetPKColumn(0)
-	pkName := quoteField(primaryKeyColumn.Name)
-	logger.Infof("getting min/max for primary key %s", pkName)
-	query, args, err := sq.Select(fmt.Sprintf("MIN(%s), MAX(%s)", pkName, pkName)).From(quotedTableName(table)).ToSql()
-	if err != nil {
-		logger.WithError(err).Errorf("failed to build query to get min/max primary key %s", pkName)
-		return err
-	}
-
-	row := this.Db.QueryRow(query, args...)
-
-	var minPrimaryKey, maxPrimaryKey int64
-	err = row.Scan(&minPrimaryKey, &maxPrimaryKey)
-	if err != nil {
-		logger.WithError(err).Errorf("failed to get min/max primary key %s", primaryKeyColumn.Name)
-		return err
-	}
-
-	logger.Infof("min/max for %s: %d %d (%s)", pkName, minPrimaryKey, maxPrimaryKey, primaryKeyColumn.RawType)
-	this.CurrentState.UpdateTargetPK(table.String(), maxPrimaryKey)
-
-	// The last successful primary key is not the minPrimaryKey, as that
-	// would indicate the row associated with minPrimaryKey has been
-	// copied. Thus, we subtract one from the minPrimaryKey.
-	lastSuccessfulPrimaryKey := minPrimaryKey - 1
-	this.CurrentState.UpdateLastSuccessfulPK(table.String(), lastSuccessfulPrimaryKey)
+	var lastSuccessfulPrimaryKey int64 = 0
+	maxPrimaryKey := this.CurrentState.TargetPrimaryKeys()[table.String()]
 
 	for lastSuccessfulPrimaryKey < maxPrimaryKey {
 		var tx *sql.Tx
@@ -257,7 +274,7 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 				continue
 			}
 
-			rowEvents, pkpos, err = this.fetchRowsInBatch(tx, table, primaryKeyColumn, lastSuccessfulPrimaryKey)
+			rowEvents, pkpos, err = this.fetchRowsInBatch(tx, table, table.GetPKColumn(0), lastSuccessfulPrimaryKey)
 			if err == nil {
 				break
 			}

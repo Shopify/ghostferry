@@ -116,7 +116,7 @@ func FetchStatus(f *Ferry) *Status {
 	}
 
 	for tableName, _ := range f.Tables {
-		if _, ok := lastSuccessfulPKs[tableName]; ok {
+		if lastSuccessfulPK, ok := lastSuccessfulPKs[tableName]; ok && lastSuccessfulPK != 0 {
 			continue // already started, therefore not waiting
 		}
 
@@ -152,8 +152,8 @@ func FetchStatus(f *Ferry) *Status {
 			TableName:        tableName,
 			PrimaryKeyName:   f.Tables[tableName].GetPKColumn(0).Name,
 			Status:           "waiting",
-			TargetPK:         -1,
-			LastSuccessfulPK: -1,
+			TargetPK:         targetPKs[tableName],
+			LastSuccessfulPK: 0,
 		})
 	}
 
