@@ -43,6 +43,7 @@ type Status struct {
 	TotalTableCount     int
 	TableStatuses       []*TableStatus
 
+	VerifierSupport     bool
 	VerifierAvailable   bool
 	VerificationStarted bool
 	VerificationDone    bool
@@ -151,6 +152,7 @@ func FetchStatus(f *Ferry) *Status {
 	}
 
 	if f.Verifier != nil {
+		status.VerifierSupport = true
 		status.VerificationStarted = f.Verifier.VerificationStarted()
 		status.VerificationDone = f.Verifier.VerificationDone()
 
@@ -158,6 +160,7 @@ func FetchStatus(f *Ferry) *Status {
 		status.VerifierAvailable = status.OverallState != StateStarting && status.OverallState != StateCopying && (!status.VerificationStarted || status.VerificationDone)
 		status.MismatchedTables, status.VerificationErr = f.Verifier.MismatchedTables()
 	} else {
+		status.VerifierSupport = false
 		status.VerifierAvailable = false
 	}
 
