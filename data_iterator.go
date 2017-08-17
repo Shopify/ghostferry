@@ -388,5 +388,6 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 
 	logger.Debugf("found %d rows", len(events))
 
+	err = rows.Err()
 	return
 }
