@@ -8,19 +8,6 @@ import (
 	"github.com/siddontang/go-mysql/mysql"
 )
 
-func sortedSetKeys(m map[string]bool) []string {
-	ks := make([]string, len(m))
-	i := 0
-	for k, _ := range m {
-		ks[i] = k
-		i++
-	}
-
-	sort.Strings(ks)
-
-	return ks
-}
-
 type TableStatus struct {
 	TableName        string
 	PrimaryKeyName   string
@@ -34,8 +21,8 @@ type Status struct {
 
 	SourceHostPort      string
 	TargetHostPort      string
-	ApplicableDatabases []string
-	ApplicableTables    []string
+	ApplicableDatabases map[string]bool
+	ApplicableTables    map[string]bool
 
 	OverallState string
 	StartTime    time.Time
@@ -70,8 +57,8 @@ func FetchStatus(f *Ferry) *Status {
 
 	status.SourceHostPort = fmt.Sprintf("%s:%d", f.SourceHost, f.SourcePort)
 	status.TargetHostPort = fmt.Sprintf("%s:%d", f.TargetHost, f.TargetPort)
-	status.ApplicableDatabases = sortedSetKeys(f.ApplicableDatabases)
-	status.ApplicableTables = sortedSetKeys(f.ApplicableTables)
+	status.ApplicableDatabases = f.ApplicableDatabases
+	status.ApplicableTables = f.ApplicableTables
 
 	status.OverallState = f.OverallState
 	status.StartTime = f.StartTime
@@ -118,6 +105,12 @@ func FetchStatus(f *Ferry) *Status {
 	for tableName, _ := range f.Tables {
 		if lastSuccessfulPK, ok := lastSuccessfulPKs[tableName]; ok && lastSuccessfulPK != 0 {
 			continue // already started, therefore not waiting
+		}
+
+		if _, ok := completedTables[tableName]; ok {
+			// There are no data in that table, thus it does not have an entry in
+			// lastSuccessfulPKs but has an entry in completedTables
+			continue
 		}
 
 		waitingTableNames = append(waitingTableNames, tableName)

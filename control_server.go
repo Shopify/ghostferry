@@ -1,15 +1,36 @@
 package ghostferry
 
 import (
+	"bytes"
+	"fmt"
 	"html/template"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 )
+
+func predictableMapDisplay(m map[string]bool) string {
+	sortedKeys := make([]string, 0, len(m))
+	for k, _ := range m {
+		sortedKeys = append(sortedKeys, k)
+	}
+
+	sort.Strings(sortedKeys)
+
+	buf := &bytes.Buffer{}
+	buf.Write([]byte("map[ "))
+	for _, k := range sortedKeys {
+		fmt.Fprintf(buf, "%s: %v ", k, m[k])
+	}
+	buf.Write([]byte("]"))
+
+	return buf.String()
+}
 
 type ControlServer struct {
 	F       *Ferry
@@ -42,7 +63,10 @@ func (this *ControlServer) Initialize() (err error) {
 	staticFiles := http.StripPrefix("/static/", http.FileServer(http.Dir(filepath.Join(this.Basedir, "webui", "static"))))
 	this.router.PathPrefix("/static/").Handler(staticFiles)
 
-	this.templates, err = template.ParseFiles(filepath.Join(this.Basedir, "webui", "index.html"))
+	this.templates, err = template.New("").Funcs(template.FuncMap{
+		"predictableMapDisplay": predictableMapDisplay,
+	}).ParseFiles(filepath.Join(this.Basedir, "webui", "index.html"))
+
 	if err != nil {
 		return err
 	}

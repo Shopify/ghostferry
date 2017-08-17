@@ -36,9 +36,9 @@
               <th>Applicable Databases</th>
               <td>
                 {{if not .ApplicableDatabases}}
-                  *
+                  all databases
                 {{else}}
-                  {{.ApplicableDatabases}}
+                  {{predictableMapDisplay .ApplicableDatabases}}
                 {{end}}
               </td>
             </tr>
@@ -46,9 +46,9 @@
               <th>Applicable Tables</th>
               <td>
                 {{if not .ApplicableTables}}
-                  *
+                  all tables
                 {{else}}
-                  {{.ApplicableTables}}
+                  {{predictableMapDisplay .ApplicableTables}}
                 {{end}}
               </td>
             </tr>
