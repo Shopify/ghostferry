@@ -73,17 +73,19 @@ func (this *CopydbFerry) Run() {
 	// If AutomaticCutover == false, it will pause below the following line
 	this.ferry.WaitUntilRowCopyIsComplete()
 
-	// This is when the source database should be set as read only, whether
-	// it is done in application level or the database level.
-	// Must ensure that all transactions are flushed to the binlog before
-	// proceeding
-
 	// This waits until we're pretty close in the binlog before making the
 	// source readonly. This is to avoid excessive downtime caused by the
 	// binlog streamer catching up.
 	this.ferry.WaitUntilBinlogStreamerCatchesUp()
+
+	// This is when the source database should be set as read only, whether it
+	// is done in application level or the database level.
+	// Must ensure that all transactions are flushed to the binlog before
+	// proceeding.
 	this.ferry.FlushBinlogAndStopStreaming()
-	// After this method, the source and the target should be identical.
+
+	// After waiting for the binlog streamer to stop, the source and the target
+	// should be identical.
 	wg.Wait()
 
 	// This is where you cutover from using the source database to
