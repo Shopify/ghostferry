@@ -1,0 +1,19 @@
+mysql-1:
+  image: percona:5.7
+  command: --server-id=1 --log-bin=mysql-bin --binlog-format=ROW --sync-binlog=1 --log-slave-updates=ON --gtid-mode=ON --enforce-gtid-consistency=ON
+  environment:
+    MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+  volumes:
+    - /var/lib/mysql
+  ports:
+    - "29291:3306"
+
+mysql-2:
+  image: percona:5.7
+  command: --server-id=2 --log-bin=mysql-bin --binlog-format=ROW --sync-binlog=1 --log-slave-updates=ON --gtid-mode=ON --enforce-gtid-consistency=ON
+  environment:
+    MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+  volumes:
+    - /var/lib/mysql
+  ports:
+    - "29292:3306"
