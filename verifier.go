@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 	"sync"
@@ -54,8 +55,6 @@ func (this *ChecksumTableVerifier) Run(f *Ferry) {
 		this.DoneTime = time.Now()
 	}()
 
-	this.logger.Info("performing checksum tables...")
-
 	this.DoneTime = time.Time{}
 	this.mismatchedTables = make([]string, 0)
 	this.err = nil
@@ -69,6 +68,7 @@ func (this *ChecksumTableVerifier) Run(f *Ferry) {
 	}
 
 	query := fmt.Sprintf("CHECKSUM TABLE %s EXTENDED", strings.Join(tablesToCheck, ", "))
+	this.logger.WithField("sql", query).Info("performing checksum tables...")
 
 	sourceRows, err := f.SourceDB.Query(query)
 	if err != nil {
@@ -81,7 +81,7 @@ func (this *ChecksumTableVerifier) Run(f *Ferry) {
 
 	for sourceRows.Next() {
 		var tablename string
-		var checksum int64
+		var checksum sql.NullInt64
 
 		err = sourceRows.Scan(&tablename, &checksum)
 		if err != nil {
@@ -90,7 +90,14 @@ func (this *ChecksumTableVerifier) Run(f *Ferry) {
 			return
 		}
 
-		sourceTableChecksums[tablename] = checksum
+		if !checksum.Valid {
+			err = fmt.Errorf("cannot find table %s on the source database", tablename)
+			this.logger.WithError(err).Error("cannot find table on source database")
+			this.err = err
+			return
+		}
+
+		sourceTableChecksums[tablename] = checksum.Int64
 	}
 
 	targetRows, err := f.TargetDB.Query(query)
@@ -103,7 +110,7 @@ func (this *ChecksumTableVerifier) Run(f *Ferry) {
 
 	for targetRows.Next() {
 		var tablename string
-		var checksum int64
+		var checksum sql.NullInt64
 
 		err = targetRows.Scan(&tablename, &checksum)
 		if err != nil {
@@ -113,12 +120,13 @@ func (this *ChecksumTableVerifier) Run(f *Ferry) {
 		}
 
 		checksumFields := logrus.Fields{
-			"source": sourceTableChecksums[tablename],
-			"target": checksum,
-			"table":  tablename,
+			"source_checksum": sourceTableChecksums[tablename],
+			"target_checksum": checksum.Int64,
+			"target_exists":   checksum.Valid,
+			"table":           tablename,
 		}
 
-		if checksum == sourceTableChecksums[tablename] {
+		if checksum.Valid && checksum.Int64 == sourceTableChecksums[tablename] {
 			this.logger.WithFields(checksumFields).Info("tables verified to match")
 		} else {
 			this.logger.WithFields(checksumFields).Error("table verification failed")
