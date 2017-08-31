@@ -15,7 +15,13 @@ Vagrant.configure("2") do |config|
       echo "source /home/vagrant/.gimme/envs/go1.8.3.env" >> /home/vagrant/.bashrc
       echo 'export GOPATH=$HOME/go' >> /home/vagrant/.bashrc
     fi
+
+    mkdir -p /home/vagrant/.ssh
+    ssh-keyscan github.com > /home/vagrant/.ssh/known_hosts
   SHELL
+
+  config.vm.provision "shell", path: "ci/01-install-packages.sh"
+  config.vm.provision "shell", path: "ci/02-setup-mysql.sh", privileged: false
 
   config.vm.synced_folder ".", "/vagrant", disabled: true
   config.vm.synced_folder ".", "/home/vagrant/go/src/github.com/Shopify/ghostferry"

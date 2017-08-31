@@ -56,14 +56,13 @@ Install:
 - Have Vagrant installed
 - Clone the repo
 - `vagrant up`
-- `vagrant ssh`
-- `cd go/src/github.com/Shopify/ghostferry`
-- `ci/02-setup-mysql.sh`
 
 Run tests:
 
-- `go test ./test`
+- `vagrant ssh`
+- `cd go/src/github.com/Shopify/ghostferry`
+- `make test`
 
 Test copydb:
 
-- `make && build/ghostferry-copydb -verbose examples/copydb/conf.json`
+- `make && ghostferry-copydb -verbose examples/copydb/conf.json`
