@@ -50,7 +50,7 @@ func filterForApplicable(list []string, applicabilityMap map[string]bool) []stri
 	return applicableList
 }
 
-func loadTables(db *sql.DB, applicableDatabases, applicableTables map[string]bool) (TableSchemaCache, error) {
+func LoadTables(db *sql.DB, applicableDatabases, applicableTables map[string]bool) (TableSchemaCache, error) {
 	logger := logrus.WithField("tag", "table_schema_cache")
 
 	tableSchemaCache := make(TableSchemaCache)
