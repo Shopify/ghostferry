@@ -13,6 +13,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const caughtUpThreshold = 10 * time.Second
+
 type BinlogStreamer struct {
 	Db           *sql.DB
 	Config       *Config
@@ -25,6 +27,7 @@ type BinlogStreamer struct {
 	binlogStreamer             *replication.BinlogStreamer
 	lastStreamedBinlogPosition mysql.Position
 	targetBinlogPosition       mysql.Position
+	lastProcessedEventTime     time.Time
 
 	stopRequested bool
 
@@ -96,6 +99,7 @@ func (s *BinlogStreamer) Run(wg *sync.WaitGroup) {
 		ev, err := s.binlogStreamer.GetEvent(ctx)
 		if err != nil {
 			if err == context.DeadlineExceeded {
+				s.lastProcessedEventTime = time.Now()
 				continue
 			}
 
@@ -121,7 +125,7 @@ func (s *BinlogStreamer) Run(wg *sync.WaitGroup) {
 				return
 			}
 
-			s.lastStreamedBinlogPosition.Pos = ev.Header.LogPos
+			s.updateLastStreamedPosAndTime(ev)
 		case *replication.FormatDescriptionEvent:
 			// This event has a LogPos = 0, presumably because this is the first
 			// event received by the BinlogStreamer to get some metadata about
@@ -134,12 +138,7 @@ func (s *BinlogStreamer) Run(wg *sync.WaitGroup) {
 			// the cached schemas of the tables would be invalidated.
 			// TODO: investigate using this to allow for migrations to occur.
 		default:
-			if ev.Header.LogPos == 0 {
-				// This should not happen, but I haven't seen all the possible
-				// binlog events, tho.
-				s.logger.Panicf("logpos: %d %T", ev.Header.LogPos, ev.Event)
-			}
-			s.lastStreamedBinlogPosition.Pos = ev.Header.LogPos
+			s.updateLastStreamedPosAndTime(ev)
 		}
 	}
 }
@@ -150,6 +149,10 @@ func (s *BinlogStreamer) AddEventListener(listener func([]DMLEvent) error) {
 
 func (s *BinlogStreamer) GetLastStreamedBinlogPosition() mysql.Position {
 	return s.lastStreamedBinlogPosition
+}
+
+func (s *BinlogStreamer) IsAlmostCaughtUp() bool {
+	return time.Now().Sub(s.lastProcessedEventTime) < caughtUpThreshold
 }
 
 func (s *BinlogStreamer) FlushAndStop() {
@@ -173,7 +176,26 @@ func (s *BinlogStreamer) FlushAndStop() {
 	s.stopRequested = true
 }
 
+func (s *BinlogStreamer) updateLastStreamedPosAndTime(ev *replication.BinlogEvent) {
+	if ev.Header.LogPos == 0 || ev.Header.Timestamp == 0 {
+		// This shouldn't happen, as the cases where it does happen are excluded.
+		// However, I've not seen all the cases yet.
+		s.logger.Panicf("logpos: %d %d %T", ev.Header.LogPos, ev.Header.Timestamp, ev.Event)
+	}
+
+	s.lastStreamedBinlogPosition.Pos = ev.Header.LogPos
+
+	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
+	if eventTime.Before(s.lastProcessedEventTime) {
+		s.logger.Warnf("new event time is before the last event time: %v < %v", eventTime, s.lastProcessedEventTime)
+	}
+
+	s.lastProcessedEventTime = eventTime
+}
+
 func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
+	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
+
 	dmlEvs, err := NewBinlogDMLEvents(ev)
 	if err != nil {
 		return err
@@ -198,7 +220,7 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 		s.logger.WithFields(logrus.Fields{
 			"database": dmlEv.Database(),
 			"table":    dmlEv.Table(),
-		}).Debugf("received event %T", dmlEv)
+		}).Debugf("received event %T at %v", dmlEv, eventTime)
 	}
 
 	for _, listener := range s.eventListeners {
