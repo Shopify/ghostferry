@@ -23,6 +23,3 @@ commands:
   test:
     desc: Run the test suite.
     run: make test
-
-env:
-    DOCKER_HOST:
