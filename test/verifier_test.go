@@ -29,7 +29,7 @@ func (this *ChecksumTableVerifierTestSuite) SetupTest() {
 	}
 
 	this.Ferry.Verifier = this.verifier
-	this.SeedInitialData(5)
+	this.SeedSourceDB(5)
 }
 
 func (this *ChecksumTableVerifierTestSuite) TestVerifyNoMatchWithEmptyTarget() {
@@ -55,6 +55,20 @@ func (this *ChecksumTableVerifierTestSuite) TestVerifyMatchAndRestartable() {
 	this.AssertVerifierMatched()
 
 	_, err := this.Ferry.TargetDB.Exec(fmt.Sprintf("DROP DATABASE %s", testhelpers.TestSchemaName))
+	this.Require().Nil(err)
+
+	this.verifier.StartVerification(this.Ferry)
+	this.verifier.Wait()
+	this.AssertVerifierNotMatched()
+
+	this.copyDataFromSourceToTarget()
+	query := fmt.Sprintf(
+		"INSERT INTO %s.%s (id, data) VALUES (?, ?)",
+		testhelpers.TestSchemaName,
+		testhelpers.TestTable1Name,
+	)
+
+	_, err = this.Ferry.TargetDB.Exec(query, nil, "New Data")
 	this.Require().Nil(err)
 
 	this.verifier.StartVerification(this.Ferry)

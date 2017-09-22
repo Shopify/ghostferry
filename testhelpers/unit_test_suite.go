@@ -48,7 +48,7 @@ func (this *GhostferryUnitTestSuite) SetupTest() {
 	this.Ferry = this.TestFerry.Ferry
 }
 
-func (this *GhostferryUnitTestSuite) SeedInitialData(numberOfRows int) {
+func (this *GhostferryUnitTestSuite) SeedSourceDB(numberOfRows int) {
 	err := SeedInitialData(this.Ferry.SourceDB, TestSchemaName, TestTable1Name, numberOfRows)
 	this.Require().Nil(err)
 }
