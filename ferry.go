@@ -97,7 +97,7 @@ func (f *Ferry) Initialize() (err error) {
 	// TLS Config
 	var sourceTLSConfig, targetTLSConfig *tls.Config
 	if f.SourceTLS != nil {
-		sourceTLSConfig, err = f.SourceTLS.RealTLSConfig()
+		sourceTLSConfig, err = f.SourceTLS.BuildConfig()
 		if err != nil {
 			f.logger.WithError(err).Error("failed to get source TLS config")
 			return err
@@ -113,7 +113,7 @@ func (f *Ferry) Initialize() (err error) {
 	}
 
 	if f.TargetTLS != nil {
-		targetTLSConfig, err = f.SourceTLS.RealTLSConfig()
+		targetTLSConfig, err = f.SourceTLS.BuildConfig()
 		if err != nil {
 			f.logger.WithError(err).Error("failed to get target TLS config")
 			return err
