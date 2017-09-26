@@ -225,7 +225,7 @@ func (this *DataIterator) determineMinMaxPKsForAllTables() ([]*schema.Table, err
 	for _, table := range this.Tables {
 		logger := this.logger.WithField("table", table.String())
 
-		rows, err := this.Db.Query(fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", quotedTableName(table)))
+		rows, err := this.Db.Query(fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", QuotedTableName(table)))
 		if err != nil {
 			logger.WithError(err).Error("failed to see if rows exist in table")
 			return tablesWithData, err
@@ -243,7 +243,7 @@ func (this *DataIterator) determineMinMaxPKsForAllTables() ([]*schema.Table, err
 		primaryKeyColumn := table.GetPKColumn(0)
 		pkName := quoteField(primaryKeyColumn.Name)
 		logger.Infof("getting max for primary key %s", pkName)
-		query, args, err := sq.Select(fmt.Sprintf("MAX(%s)", pkName)).From(quotedTableName(table)).ToSql()
+		query, args, err := sq.Select(fmt.Sprintf("MAX(%s)", pkName)).From(QuotedTableName(table)).ToSql()
 		if err != nil {
 			logger.WithError(err).Errorf("failed to build query to get max primary key %s", pkName)
 			return tablesWithData, err
@@ -388,7 +388,7 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 	// Right now the sq.GtOrEq forces this query to be a prepared one.
 	pkName := quoteField(pkColumn.Name)
 	selectBuilder := sq.Select("*").
-		From(quotedTableName(table)).
+		From(QuotedTableName(table)).
 		Where(sq.Gt{pkName: lastSuccessfulPk}).
 		Limit(this.Config.IterateChunksize).
 		OrderBy(pkName).
