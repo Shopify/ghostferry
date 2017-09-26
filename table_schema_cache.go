@@ -30,7 +30,7 @@ func FilterForApplicable(list []string, applicabilityMap map[string]bool) []stri
 		return list
 	}
 
-	allApplicable := applicabilityMap["applicableByDefault"]
+	applicableByDefault := applicabilityMap["ApplicableByDefault!"]
 
 	applicableList := make([]string, 0, len(list))
 	for _, v := range list {
@@ -40,7 +40,7 @@ func FilterForApplicable(list []string, applicabilityMap map[string]bool) []stri
 			continue
 		}
 
-		if !specified && !allApplicable {
+		if !specified && !applicableByDefault {
 			continue
 		}
 

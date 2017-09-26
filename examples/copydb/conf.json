@@ -17,7 +17,7 @@
 
   "ApplicableTables": {
     "schema_migrations": false,
-    "applicableByDefault": true
+    "ApplicableByDefault!": true
   },
 
   "SourceTLS": {
