@@ -1,10 +1,12 @@
 package ghostferry
 
 import (
+	"container/ring"
 	"database/sql"
 	"fmt"
 	"reflect"
 	"sync"
+	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/siddontang/go-mysql/schema"
@@ -15,6 +17,11 @@ func NoSelectFilter(s sq.SelectBuilder) sq.SelectBuilder {
 	return s
 }
 
+type PKPositionLog struct {
+	Position int64
+	At       time.Time
+}
+
 type DataIteratorState struct {
 	// We need to lock these maps as Go does not support concurrent access to
 	// maps.
@@ -22,17 +29,30 @@ type DataIteratorState struct {
 	targetPrimaryKeys         map[string]int64
 	lastSuccessfulPrimaryKeys map[string]int64
 	completedTables           map[string]bool
+	copySpeedLog              *ring.Ring
 
 	targetPkMutex     *sync.RWMutex
 	successfulPkMutex *sync.RWMutex
 	tablesMutex       *sync.RWMutex
 }
 
-func newDataIteratorState() *DataIteratorState {
+func newDataIteratorState(tableIteratorCount int) *DataIteratorState {
+	// We want to make sure that the ring buffer is not filled with
+	// only the timestamp from the last iteration.
+	//
+	// Having it some multiple times of the number of table iterators
+	// _should_ allow for this.
+	speedLog := ring.New(tableIteratorCount * 5)
+	speedLog.Value = PKPositionLog{
+		Position: 0,
+		At:       time.Now(),
+	}
+
 	return &DataIteratorState{
 		targetPrimaryKeys:         make(map[string]int64),
 		lastSuccessfulPrimaryKeys: make(map[string]int64),
 		completedTables:           make(map[string]bool),
+		copySpeedLog:              speedLog,
 		targetPkMutex:             &sync.RWMutex{},
 		successfulPkMutex:         &sync.RWMutex{},
 		tablesMutex:               &sync.RWMutex{},
@@ -50,7 +70,15 @@ func (this *DataIteratorState) UpdateLastSuccessfulPK(table string, pk int64) {
 	this.successfulPkMutex.Lock()
 	defer this.successfulPkMutex.Unlock()
 
+	deltaPK := pk - this.lastSuccessfulPrimaryKeys[table]
 	this.lastSuccessfulPrimaryKeys[table] = pk
+
+	currentTotalPK := this.copySpeedLog.Value.(PKPositionLog).Position
+	this.copySpeedLog = this.copySpeedLog.Next()
+	this.copySpeedLog.Value = PKPositionLog{
+		Position: currentTotalPK + deltaPK,
+		At:       time.Now(),
+	}
 }
 
 func (this *DataIteratorState) MarkTableAsCompleted(table string) {
@@ -96,6 +124,27 @@ func (this *DataIteratorState) CompletedTables() map[string]bool {
 	return m
 }
 
+func (this *DataIteratorState) EstimatedPKProcessedPerSecond() float64 {
+	this.successfulPkMutex.RLock()
+	defer this.successfulPkMutex.RUnlock()
+
+	if this.copySpeedLog.Value.(PKPositionLog).Position == 0 {
+		return 0.0
+	}
+
+	earliest := this.copySpeedLog
+	for earliest.Prev() != nil && earliest.Prev() != this.copySpeedLog && earliest.Prev().Value.(PKPositionLog).Position != 0 {
+		earliest = earliest.Prev()
+	}
+
+	currentValue := this.copySpeedLog.Value.(PKPositionLog)
+	earliestValue := earliest.Value.(PKPositionLog)
+	deltaPK := currentValue.Position - earliestValue.Position
+	deltaT := currentValue.At.Sub(earliestValue.At).Seconds()
+
+	return float64(deltaPK) / deltaT
+}
+
 type DataIterator struct {
 	Db           *sql.DB
 	Config       *Config
@@ -124,7 +173,7 @@ func (this *DataIterator) Initialize() error {
 	this.logger = logrus.WithField("tag", "data_iterator")
 	this.wg = &sync.WaitGroup{}
 
-	this.CurrentState = newDataIteratorState()
+	this.CurrentState = newDataIteratorState(this.Config.NumberOfTableIterators)
 
 	return nil
 }
