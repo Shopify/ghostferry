@@ -54,12 +54,7 @@ func (e *BinlogInsertEvent) NewValues() []interface{} {
 }
 
 func (e *BinlogInsertEvent) AsSQLQuery(tables TableSchemaCache) (string, []interface{}, error) {
-	columns, err := tables.TableColumnNamesQuoted(e.database, e.table)
-	if err != nil {
-		return "", []interface{}{}, err
-	}
-
-	err = verifyValuesHasTheSameLengthAsColumns(columns, e.newValues, e.database, e.table)
+	columns, err := loadColumnsForEvent(tables, e.database, e.table, e.newValues)
 	if err != nil {
 		return "", []interface{}{}, err
 	}
@@ -121,20 +116,12 @@ func (e *BinlogUpdateEvent) NewValues() []interface{} {
 }
 
 func (e *BinlogUpdateEvent) AsSQLQuery(tables TableSchemaCache) (string, []interface{}, error) {
-	conditions, err := conditionsForTable(tables, e.database, e.table)
+	columns, err := loadColumnsForEvent(tables, e.database, e.table, e.whereValues, e.newValues)
 	if err != nil {
 		return "", []interface{}{}, err
 	}
 
-	err = verifyValuesHasTheSameLengthAsColumns(conditions, e.whereValues, e.database, e.table)
-	if err != nil {
-		return "", []interface{}{}, err
-	}
-
-	err = verifyValuesHasTheSameLengthAsColumns(conditions, e.newValues, e.database, e.table)
-	if err != nil {
-		return "", []interface{}{}, err
-	}
+	conditions := conditionsForTable(columns)
 
 	query := "UPDATE " + quotedTableNameFromString(e.database, e.table) +
 		" SET " + strings.Join(conditions, ", ") +
@@ -185,18 +172,13 @@ func (e *BinlogDeleteEvent) Table() string {
 }
 
 func (e *BinlogDeleteEvent) AsSQLQuery(tables TableSchemaCache) (string, []interface{}, error) {
-	conditions, err := conditionsForTable(tables, e.database, e.table)
-	if err != nil {
-		return "", []interface{}{}, err
-	}
-
-	err = verifyValuesHasTheSameLengthAsColumns(conditions, e.whereValues, e.database, e.table)
+	columns, err := loadColumnsForEvent(tables, e.database, e.table, e.whereValues)
 	if err != nil {
 		return "", []interface{}{}, err
 	}
 
 	query := "DELETE FROM " + quotedTableNameFromString(e.database, e.table) +
-		" WHERE " + strings.Join(conditions, " AND ")
+		" WHERE " + strings.Join(conditionsForTable(columns), " AND ")
 
 	return query, e.whereValues, nil
 }
@@ -246,12 +228,7 @@ func (e *ExistingRowEvent) NewValues() []interface{} {
 }
 
 func (e *ExistingRowEvent) AsSQLQuery(tables TableSchemaCache) (string, []interface{}, error) {
-	columns, err := tables.TableColumnNamesQuoted(e.database, e.table)
-	if err != nil {
-		return "", []interface{}{}, err
-	}
-
-	err = verifyValuesHasTheSameLengthAsColumns(columns, e.values, e.database, e.table)
+	columns, err := loadColumnsForEvent(tables, e.database, e.table, e.values)
 	if err != nil {
 		return "", []interface{}{}, err
 	}
@@ -276,17 +253,27 @@ func (f *NoFilter) Applicable(ev DMLEvent) bool {
 	return true
 }
 
-func conditionsForTable(tables TableSchemaCache, database, table string) ([]string, error) {
+func conditionsForTable(columns []string) []string {
+	conditions := make([]string, len(columns))
+	for i, name := range columns {
+		conditions[i] = name + " = ?"
+	}
+	return conditions
+}
+
+func loadColumnsForEvent(tables TableSchemaCache, database, table string, valuesToVerify ...[]interface{}) ([]string, error) {
 	columns, err := tables.TableColumnNamesQuoted(database, table)
 	if err != nil {
 		return nil, err
 	}
 
-	conditions := make([]string, len(columns))
-	for i, name := range columns {
-		conditions[i] = name + " = ?"
+	for _, values := range valuesToVerify {
+		if err := verifyValuesHasTheSameLengthAsColumns(columns, values, database, table); err != nil {
+			return nil, err
+		}
 	}
-	return conditions, nil
+
+	return columns, nil
 }
 
 func verifyValuesHasTheSameLengthAsColumns(tableColumns []string, values []interface{}, databaseHint, tableHint string) error {
