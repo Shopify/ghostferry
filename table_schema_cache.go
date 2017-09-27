@@ -131,38 +131,17 @@ func (c TableSchemaCache) TableColumns(database, table string) ([]schema.TableCo
 	return tableSchema.Columns, nil
 }
 
-func (c TableSchemaCache) ValuesMap(database, table string, values []interface{}) (map[string]interface{}, error) {
+func (c TableSchemaCache) TableColumnNamesQuoted(database, table string) ([]string, error) {
 	tableColumns, err := c.TableColumns(database, table)
 	if err != nil {
 		return nil, err
 	}
 
-	err = verifyValuesHasTheSameLengthAsColumns(tableColumns, values, database, table)
-	if err != nil {
-		return nil, err
-	}
-
-	v := make(map[string]interface{})
-
+	cols := make([]string, len(tableColumns))
 	for i, column := range tableColumns {
-		value := values[i]
-		v[quoteField(column.Name)] = value
+		cols[i] = quoteField(column.Name)
 	}
-
-	return v, nil
-}
-
-func verifyValuesHasTheSameLengthAsColumns(tableColumns []schema.TableColumn, values []interface{}, databaseHint, tableHint string) error {
-	if len(tableColumns) != len(values) {
-		return fmt.Errorf(
-			"table %s.%s has %d columns but binlog has %d columns instead",
-			databaseHint,
-			tableHint,
-			len(tableColumns),
-			len(values),
-		)
-	}
-	return nil
+	return cols, nil
 }
 
 func showDatabases(c *sql.DB) ([]string, error) {

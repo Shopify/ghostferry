@@ -57,6 +57,19 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventGeneratesInsertQuery() {
 	this.Require().Equal(rowsEvent.Rows[1], v2)
 }
 
+func (this *DMLEventsTestSuite) TestBinlogInsertEventWithWrongColumnsReturnsError() {
+	rowsEvent := &replication.RowsEvent{
+		Table: this.tableMapEvent,
+		Rows:  [][]interface{}{{int32(1000)}},
+	}
+
+	dmlEvents := ghostferry.NewBinlogInsertEvents(rowsEvent)
+	this.Require().Equal(1, len(dmlEvents))
+	_, _, err := dmlEvents[0].AsSQLQuery(this.tableSchemaCache)
+	this.Require().NotNil(err)
+	this.Require().Contains(err.Error(), "test_table has 2 columns but event has 1 column")
+}
+
 func (this *DMLEventsTestSuite) TestBinlogUpdateEventGeneratesUpdateQuery() {
 	rowsEvent := &replication.RowsEvent{
 		Table: this.tableMapEvent,
@@ -82,7 +95,20 @@ func (this *DMLEventsTestSuite) TestBinlogUpdateEventGeneratesUpdateQuery() {
 	this.Require().Equal(append(rowsEvent.Rows[3], rowsEvent.Rows[2]...), v2)
 }
 
-func (this *DMLEventsTestSuite) TestBinlogDeleteEventGeneratesInsertQuery() {
+func (this *DMLEventsTestSuite) TestBinlogUpdateEventWithWrongColumnsReturnsError() {
+	rowsEvent := &replication.RowsEvent{
+		Table: this.tableMapEvent,
+		Rows:  [][]interface{}{{int32(1000)}, {int32(1000)}},
+	}
+
+	dmlEvents := ghostferry.NewBinlogUpdateEvents(rowsEvent)
+	this.Require().Equal(1, len(dmlEvents))
+	_, _, err := dmlEvents[0].AsSQLQuery(this.tableSchemaCache)
+	this.Require().NotNil(err)
+	this.Require().Contains(err.Error(), "test_table has 2 columns but event has 1 column")
+}
+
+func (this *DMLEventsTestSuite) TestBinlogDeleteEventGeneratesDeleteQuery() {
 	rowsEvent := &replication.RowsEvent{
 		Table: this.tableMapEvent,
 		Rows: [][]interface{}{
@@ -103,6 +129,38 @@ func (this *DMLEventsTestSuite) TestBinlogDeleteEventGeneratesInsertQuery() {
 	this.Require().Nil(err)
 	this.Require().Equal("DELETE FROM `test_schema`.`test_table` WHERE `col1` = ? AND `col2` = ?", q2)
 	this.Require().Equal(rowsEvent.Rows[1], v2)
+}
+
+func (this *DMLEventsTestSuite) TestBinlogDeleteEventWithWrongColumnsReturnsError() {
+	rowsEvent := &replication.RowsEvent{
+		Table: this.tableMapEvent,
+		Rows:  [][]interface{}{{int32(1000)}},
+	}
+
+	dmlEvents := ghostferry.NewBinlogDeleteEvents(rowsEvent)
+	this.Require().Equal(1, len(dmlEvents))
+	_, _, err := dmlEvents[0].AsSQLQuery(this.tableSchemaCache)
+	this.Require().NotNil(err)
+	this.Require().Contains(err.Error(), "test_table has 2 columns but event has 1 column")
+}
+
+func (this *DMLEventsTestSuite) TestExistingRowEventGeneratesInsertQuery() {
+	vals := []interface{}{int32(1000), []byte("val1")}
+	dmlEvent := ghostferry.NewExistingRowEvent("test_schema", "test_table", vals)
+
+	q1, v1, err := dmlEvent.AsSQLQuery(this.tableSchemaCache)
+	this.Require().Nil(err)
+	this.Require().Equal("INSERT IGNORE INTO `test_schema`.`test_table` (`col1`,`col2`) VALUES (?,?)", q1)
+	this.Require().Equal(vals, v1)
+}
+
+func (this *DMLEventsTestSuite) TestExistingRowEventWithWrongColumnsReturnsError() {
+	vals := []interface{}{int32(1000)}
+	dmlEvent := ghostferry.NewExistingRowEvent("test_schema", "test_table", vals)
+
+	_, _, err := dmlEvent.AsSQLQuery(this.tableSchemaCache)
+	this.Require().NotNil(err)
+	this.Require().Contains(err.Error(), "test_table has 2 columns but event has 1 column")
 }
 
 func TestDMLEventsTestSuite(t *testing.T) {
