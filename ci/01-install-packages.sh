@@ -25,3 +25,5 @@ sudo -E apt-get -y install \
 
 sudo -E service mysql stop
 sudo -E update-rc.d mysql disable
+
+gem install package_cloud

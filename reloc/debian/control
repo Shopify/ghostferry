@@ -1,0 +1,9 @@
+Package: reloc
+Version: {version}
+Section: misc
+Priority: optional
+Architecture: amd64
+Maintainer: Shopify Pods <pods@shopify.com>
+Uploaders: Justin Li <justin.li@shopify.com>,Hormoz Kheradmand <hormoz.kheradmand@shopify.com>
+Description: Migrate MySQL sharded data from one server to
+  another without downtime using the ghostferry library

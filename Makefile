@@ -1,4 +1,4 @@
-.PHONY: test install clean copydb-deb reloc
+.PHONY: test install clean copydb-deb reloc-deb
 .DEFAULT_GOAL := test
 
 # Variables to be built into the binary
@@ -18,7 +18,8 @@ COPYDB_PKG      := ./copydb/cmd
 COPYDB_DEB      := build/ghostferry-copydb.deb
 
 RELOC_TARGET   := $(GOBIN)/reloc
-RELOC_PKG      := ./reloc
+RELOC_PKG      := ./reloc/cmd
+RELOC_DEB      := build/reloc_$(VERSION)-$(COMMIT).deb
 
 SOURCES         := $(shell find . -name "*.go")
 
@@ -37,12 +38,14 @@ $(COPYDB_TARGET): $(GOBIN) $(SOURCES)
 $(GOBIN):
 	mkdir -p $(GOBIN)
 
+reloc-deb: reset-deb-dir
+	sed -e "s/{version}/$(VERSION)+$(COMMIT)/" reloc/debian/control > $(DEB_PREFIX)/DEBIAN/control
+	go build -ldflags "$(LDFLAGS)" -o $(DEB_PREFIX)/$(BIN_DIR)/reloc $(RELOC_PKG)
+	dpkg-deb -b $(DEB_PREFIX) $(RELOC_DEB)
+
 copydb-deb: LDFLAGS += -X github.com/Shopify/ghostferry.WebUiBasedir=/$(SHARE_DIR)
-copydb-deb: $(BUILD_DIR)
-	rm -rf $(DEB_PREFIX)
+copydb-deb: reset-deb-dir
 	mkdir -p $(DEB_PREFIX)/$(SHARE_DIR)
-	mkdir -p $(DEB_PREFIX)/$(BIN_DIR)
-	mkdir -p $(DEB_PREFIX)/DEBIAN
 	sed -e "s/{version}/$(VERSION)+$(COMMIT)/" debian/control > $(DEB_PREFIX)/DEBIAN/control
 	go build -ldflags "$(LDFLAGS)" -o $(DEB_PREFIX)/$(BIN_DIR)/ghostferry-copydb $(COPYDB_PKG)
 	cp -ar webui $(DEB_PREFIX)/$(SHARE_DIR)
@@ -56,3 +59,9 @@ clean:
 	rm -rf build
 	rm -f $(COPYDB_TARGET)
 	rm -f $(RELOC_TARGET)
+
+reset-deb-dir:
+	rm -rf $(DEB_PREFIX)
+	mkdir -p $(DEB_PREFIX)
+	mkdir -p $(DEB_PREFIX)/$(BIN_DIR)
+	mkdir -p $(DEB_PREFIX)/DEBIAN
