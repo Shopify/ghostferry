@@ -13,10 +13,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func NoSelectFilter(s sq.SelectBuilder) sq.SelectBuilder {
-	return s
-}
-
 type PKPositionLog struct {
 	Position int64
 	At       time.Time
@@ -151,8 +147,8 @@ type DataIterator struct {
 	ErrorHandler *ErrorHandler
 	Throttler    *Throttler
 
-	Tables       []*schema.Table
-	SelectFilter func(sq.SelectBuilder) sq.SelectBuilder
+	Tables []*schema.Table
+	Filter CopyFilter
 
 	CurrentState *DataIteratorState
 
@@ -165,10 +161,6 @@ type DataIterator struct {
 }
 
 func (this *DataIterator) Initialize() error {
-	if this.SelectFilter == nil {
-		this.SelectFilter = NoSelectFilter
-	}
-
 	this.tableCh = make(chan *schema.Table)
 	this.logger = logrus.WithField("tag", "data_iterator")
 	this.wg = &sync.WaitGroup{}
@@ -394,7 +386,9 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 		OrderBy(pkName).
 		Suffix("FOR UPDATE")
 
-	selectBuilder = this.SelectFilter(selectBuilder)
+	if this.Filter != nil {
+		selectBuilder = this.Filter.ConstrainSelect(selectBuilder)
+	}
 
 	query, args, err := selectBuilder.ToSql()
 	if err != nil {

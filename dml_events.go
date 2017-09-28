@@ -239,20 +239,6 @@ func (e *ExistingRowEvent) AsSQLQuery(tables TableSchemaCache) (string, []interf
 	return query, e.values, nil
 }
 
-type DMLEventFilter interface {
-	Applicable(DMLEvent) bool
-}
-
-type NoFilter struct{}
-
-func NewNoFilter() *NoFilter {
-	return &NoFilter{}
-}
-
-func (f *NoFilter) Applicable(ev DMLEvent) bool {
-	return true
-}
-
 func conditionsForTable(columns []string) []string {
 	conditions := make([]string, len(columns))
 	for i, name := range columns {

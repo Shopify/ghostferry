@@ -10,12 +10,12 @@ import (
 )
 
 func setupSingleEntryTable(f *testhelpers.TestFerry) error {
-	err := testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 1)
+	err := testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 1, 1)
 	if err != nil {
 		return err
 	}
 
-	return testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
+	return testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0, 1)
 }
 
 func TestSelectUpdateBinlogCopy(t *testing.T) {
@@ -100,12 +100,12 @@ func TestOnlyDeleteRowWithMaxPrimaryKey(t *testing.T) {
 	testcase := &testhelpers.IntegrationTestCase{
 		T: t,
 		SetupAction: func(f *testhelpers.TestFerry) error {
-			err := testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 2)
+			err := testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 2, 1)
 			if err != nil {
 				return err
 			}
 
-			return testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
+			return testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0, 1)
 		},
 		Ferry: testhelpers.NewTestFerry(),
 	}

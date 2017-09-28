@@ -19,7 +19,7 @@ func randData() string {
 	return string(b)
 }
 
-func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows int) error {
+func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows, tenants int) error {
 	var query string
 	var err error
 
@@ -30,7 +30,7 @@ func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows int) err
 		return err
 	}
 
-	query = "CREATE TABLE %s.%s (id bigint(20) not null auto_increment, data TEXT, primary key(id))"
+	query = "CREATE TABLE %s.%s (id bigint(20) not null auto_increment, tenant_id bigint(20), data TEXT, primary key(id))"
 	query = fmt.Sprintf(query, dbname, tablename)
 
 	_, err = db.Exec(query)
@@ -44,10 +44,10 @@ func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows int) err
 	}
 
 	for i := 0; i < numberOfRows; i++ {
-		query = "INSERT INTO %s.%s (id, data) VALUES (?, ?)"
+		query = "INSERT INTO %s.%s (id, tenant_id, data) VALUES (?, ?, ?)"
 		query = fmt.Sprintf(query, dbname, tablename)
 
-		_, err = tx.Exec(query, nil, randData())
+		_, err = tx.Exec(query, nil, i%tenants+1, randData())
 		if err != nil {
 			return err
 		}

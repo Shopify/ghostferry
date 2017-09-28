@@ -40,7 +40,7 @@ func (this *ChecksumTableVerifierTestSuite) TestVerifyNoMatchWithEmptyTarget() {
 }
 
 func (this *ChecksumTableVerifierTestSuite) TestVerifyNoMatchWithDifferentTargetData() {
-	testhelpers.SeedInitialData(this.Ferry.TargetDB, testhelpers.TestSchemaName, testhelpers.TestTable1Name, 1)
+	testhelpers.SeedInitialData(this.Ferry.TargetDB, testhelpers.TestSchemaName, testhelpers.TestTable1Name, 1, 1)
 
 	this.verifier.StartVerification(this.Ferry)
 	this.verifier.Wait()
@@ -101,20 +101,20 @@ func (this *ChecksumTableVerifierTestSuite) AssertVerifierNotMatched() {
 }
 
 func (this *ChecksumTableVerifierTestSuite) copyDataFromSourceToTarget() {
-	testhelpers.SeedInitialData(this.Ferry.TargetDB, testhelpers.TestSchemaName, testhelpers.TestTable1Name, 0)
+	testhelpers.SeedInitialData(this.Ferry.TargetDB, testhelpers.TestSchemaName, testhelpers.TestTable1Name, 0, 1)
 
 	rows, err := this.Ferry.SourceDB.Query(fmt.Sprintf("SELECT * FROM `%s`.`%s`", testhelpers.TestSchemaName, testhelpers.TestTable1Name))
 	this.Require().Nil(err)
 	defer rows.Close()
 
 	for rows.Next() {
-		var id int64
+		var id, tenant_id int64
 		var data string
-		err = rows.Scan(&id, &data)
+		err = rows.Scan(&id, &tenant_id, &data)
 		this.Require().Nil(err)
 
-		sql := fmt.Sprintf("INSERT INTO `%s`.`%s` VALUES (?, ?)", testhelpers.TestSchemaName, testhelpers.TestTable1Name)
-		_, err = this.Ferry.TargetDB.Exec(sql, id, data)
+		sql := fmt.Sprintf("INSERT INTO `%s`.`%s` VALUES (?, ?, ?)", testhelpers.TestSchemaName, testhelpers.TestTable1Name)
+		_, err = this.Ferry.TargetDB.Exec(sql, id, tenant_id, data)
 		this.Require().Nil(err)
 	}
 }

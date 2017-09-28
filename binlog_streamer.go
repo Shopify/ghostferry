@@ -20,8 +20,7 @@ type BinlogStreamer struct {
 	Config       *Config
 	ErrorHandler *ErrorHandler
 	Throttler    *Throttler
-
-	EventFilter DMLEventFilter
+	Filter       CopyFilter
 
 	binlogSyncer               *replication.BinlogSyncer
 	binlogStreamer             *replication.BinlogStreamer
@@ -212,7 +211,7 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 			continue
 		}
 
-		if s.EventFilter != nil && !s.EventFilter.Applicable(dmlEv) {
+		if s.Filter != nil && !s.Filter.ApplicableEvent(dmlEv) {
 			continue
 		}
 

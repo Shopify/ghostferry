@@ -25,6 +25,11 @@ type IntegrationTestCase struct {
 
 func (this *IntegrationTestCase) Run() {
 	defer this.Teardown()
+	this.CopyData()
+	this.VerifyData()
+}
+
+func (this *IntegrationTestCase) CopyData() {
 	this.Setup()
 	this.StartFerryAndDataWriter()
 	this.WaitUntilRowCopyIsComplete()
@@ -32,7 +37,6 @@ func (this *IntegrationTestCase) Run() {
 	this.ShutdownControlServer()
 	this.SetReadonlyOnSourceDbAndStopDataWriter()
 	this.StopStreamingAndWaitForGhostferryFinish()
-	this.VerifyData()
 }
 
 func (this *IntegrationTestCase) Setup() {
@@ -139,7 +143,7 @@ func (this *IntegrationTestCase) callCustomAction(f func(*TestFerry) error) {
 }
 
 func (this *IntegrationTestCase) AssertOnlyDataOnSourceAndTargetIs(data string) {
-	row := this.Ferry.SourceDB.QueryRow("SELECT * FROM gftest.table1")
+	row := this.Ferry.SourceDB.QueryRow("SELECT id, data FROM gftest.table1")
 	var id int64
 	var d string
 	PanicIfError(row.Scan(&id, &d))
@@ -149,7 +153,7 @@ func (this *IntegrationTestCase) AssertOnlyDataOnSourceAndTargetIs(data string) 
 	}
 
 	d = ""
-	row = this.Ferry.TargetDB.QueryRow("SELECT * FROM gftest.table1")
+	row = this.Ferry.TargetDB.QueryRow("SELECT id, data FROM gftest.table1")
 	PanicIfError(row.Scan(&id, &d))
 
 	if d != data {
