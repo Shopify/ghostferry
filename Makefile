@@ -1,4 +1,5 @@
-.PHONY: test install clean copydb-deb
+.PHONY: test install clean copydb-deb reloc
+.DEFAULT_GOAL := test
 
 # Variables to be built into the binary
 VERSION         := 1.0.0
@@ -11,15 +12,24 @@ LDFLAGS         += -X github.com/Shopify/ghostferry.VersionCommit=$(COMMIT)
 
 # Paths
 GOBIN           := $(GOPATH)/bin
+
 COPYDB_TARGET   := $(GOBIN)/ghostferry-copydb
 COPYDB_PKG      := ./copydb/cmd
 COPYDB_DEB      := build/ghostferry-copydb.deb
+
+RELOC_TARGET   := $(GOBIN)/reloc
+RELOC_PKG      := ./reloc
+
 SOURCES         := $(shell find . -name "*.go")
 
 # Debian package paths
 DEB_PREFIX  := build/debian
 SHARE_DIR   := usr/share/ghostferry
 BIN_DIR     := usr/bin
+
+reloc: $(RELOC_TARGET)
+$(RELOC_TARGET): $(GOBIN) $(SOURCES)
+	go build -i -ldflags "$(LDFLAGS)" -o $(RELOC_TARGET) $(RELOC_PKG)
 
 $(COPYDB_TARGET): $(GOBIN) $(SOURCES)
 	go build -i -ldflags "$(LDFLAGS)" -o $(COPYDB_TARGET) $(COPYDB_PKG)
@@ -45,3 +55,4 @@ test:
 clean:
 	rm -rf build
 	rm -f $(COPYDB_TARGET)
+	rm -f $(RELOC_TARGET)
