@@ -39,7 +39,7 @@ func (s *BinlogStreamer) Initialize() (err error) {
 	s.logger = logrus.WithField("tag", "binlog_streamer")
 	var tlsConfig *tls.Config
 	if s.Config.SourceTLS != nil {
-		tlsConfig, err = s.Config.SourceTLS.RealTLSConfig()
+		tlsConfig, err = s.Config.SourceTLS.BuildConfig()
 		if err != nil {
 			return err
 		}
