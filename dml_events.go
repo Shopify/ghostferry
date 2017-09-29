@@ -2,8 +2,8 @@ package ghostferry
 
 import (
 	"fmt"
+	"strings"
 
-	sq "github.com/Masterminds/squirrel"
 	"github.com/siddontang/go-mysql/replication"
 )
 
@@ -54,16 +54,15 @@ func (e *BinlogInsertEvent) NewValues() []interface{} {
 }
 
 func (e *BinlogInsertEvent) AsSQLQuery(tables TableSchemaCache) (string, []interface{}, error) {
-	setArgs, err := tables.ValuesMap(e.database, e.table, e.newValues)
+	columns, err := loadColumnsForEvent(tables, e.database, e.table, e.newValues)
 	if err != nil {
 		return "", []interface{}{}, err
 	}
 
-	// temporarily use a sql builder because otherwise it will take a long time
-	return sq.Insert(quotedTableNameFromString(e.database, e.table)).
-		Options("IGNORE").
-		SetMap(setArgs).
-		ToSql()
+	query := "INSERT IGNORE INTO " + quotedTableNameFromString(e.database, e.table) +
+		" (" + strings.Join(columns, ",") + ") VALUES (" + strings.Repeat("?,", len(columns)-1) + "?)"
+
+	return query, e.newValues, nil
 }
 
 type BinlogUpdateEvent struct {
@@ -117,20 +116,21 @@ func (e *BinlogUpdateEvent) NewValues() []interface{} {
 }
 
 func (e *BinlogUpdateEvent) AsSQLQuery(tables TableSchemaCache) (string, []interface{}, error) {
-	setArgs, err := tables.ValuesMap(e.database, e.table, e.newValues)
+	columns, err := loadColumnsForEvent(tables, e.database, e.table, e.whereValues, e.newValues)
 	if err != nil {
 		return "", []interface{}{}, err
 	}
 
-	whereArgs, err := tables.ValuesMap(e.database, e.table, e.whereValues)
-	if err != nil {
-		return "", []interface{}{}, err
-	}
+	conditions := conditionsForTable(columns)
 
-	// temporarily use a sql builder because otherwise it will take a long time
-	return sq.Update(quotedTableNameFromString(e.database, e.table)).
-		SetMap(setArgs).
-		Where(whereArgs).ToSql()
+	query := "UPDATE " + quotedTableNameFromString(e.database, e.table) +
+		" SET " + strings.Join(conditions, ", ") +
+		" WHERE " + strings.Join(conditions, " AND ")
+
+	var args []interface{}
+	args = append(args, e.newValues...)
+	args = append(args, e.whereValues...)
+	return query, args, nil
 }
 
 type BinlogDeleteEvent struct {
@@ -172,14 +172,15 @@ func (e *BinlogDeleteEvent) Table() string {
 }
 
 func (e *BinlogDeleteEvent) AsSQLQuery(tables TableSchemaCache) (string, []interface{}, error) {
-	whereArgs, err := tables.ValuesMap(e.database, e.table, e.whereValues)
+	columns, err := loadColumnsForEvent(tables, e.database, e.table, e.whereValues)
 	if err != nil {
 		return "", []interface{}{}, err
 	}
 
-	// temporarily use a sql builder because otherwise it will take a long time
-	return sq.Delete(quotedTableNameFromString(e.database, e.table)).
-		Where(whereArgs).ToSql()
+	query := "DELETE FROM " + quotedTableNameFromString(e.database, e.table) +
+		" WHERE " + strings.Join(conditionsForTable(columns), " AND ")
+
+	return query, e.whereValues, nil
 }
 
 func NewBinlogDMLEvents(ev *replication.BinlogEvent) ([]DMLEvent, error) {
@@ -202,6 +203,14 @@ type ExistingRowEvent struct {
 	values   []interface{}
 }
 
+func NewExistingRowEvent(database, table string, values []interface{}) DMLEvent {
+	return &ExistingRowEvent{
+		database: database,
+		table:    table,
+		values:   values,
+	}
+}
+
 func (e *ExistingRowEvent) Database() string {
 	return e.database
 }
@@ -219,15 +228,15 @@ func (e *ExistingRowEvent) NewValues() []interface{} {
 }
 
 func (e *ExistingRowEvent) AsSQLQuery(tables TableSchemaCache) (string, []interface{}, error) {
-	setArgs, err := tables.ValuesMap(e.database, e.table, e.values)
+	columns, err := loadColumnsForEvent(tables, e.database, e.table, e.values)
 	if err != nil {
 		return "", []interface{}{}, err
 	}
 
-	return sq.Insert(quotedTableNameFromString(e.database, e.table)).
-		Options("IGNORE").
-		SetMap(setArgs).
-		ToSql()
+	query := "INSERT IGNORE INTO " + quotedTableNameFromString(e.database, e.table) +
+		" (" + strings.Join(columns, ",") + ") VALUES (" + strings.Repeat("?,", len(columns)-1) + "?)"
+
+	return query, e.values, nil
 }
 
 type DMLEventFilter interface {
@@ -242,4 +251,40 @@ func NewNoFilter() *NoFilter {
 
 func (f *NoFilter) Applicable(ev DMLEvent) bool {
 	return true
+}
+
+func conditionsForTable(columns []string) []string {
+	conditions := make([]string, len(columns))
+	for i, name := range columns {
+		conditions[i] = name + " = ?"
+	}
+	return conditions
+}
+
+func loadColumnsForEvent(tables TableSchemaCache, database, table string, valuesToVerify ...[]interface{}) ([]string, error) {
+	columns, err := tables.TableColumnNamesQuoted(database, table)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, values := range valuesToVerify {
+		if err := verifyValuesHasTheSameLengthAsColumns(columns, values, database, table); err != nil {
+			return nil, err
+		}
+	}
+
+	return columns, nil
+}
+
+func verifyValuesHasTheSameLengthAsColumns(tableColumns []string, values []interface{}, databaseHint, tableHint string) error {
+	if len(tableColumns) != len(values) {
+		return fmt.Errorf(
+			"table %s.%s has %d columns but event has %d columns instead",
+			databaseHint,
+			tableHint,
+			len(tableColumns),
+			len(values),
+		)
+	}
+	return nil
 }
