@@ -15,7 +15,7 @@ type TLSConfig struct {
 	tlsConfig *tls.Config
 }
 
-func (this *TLSConfig) RealTLSConfig() (*tls.Config, error) {
+func (this *TLSConfig) BuildConfig() (*tls.Config, error) {
 	if this.tlsConfig == nil {
 		certPool := x509.NewCertPool()
 		pem, err := ioutil.ReadFile(this.CertPath)
