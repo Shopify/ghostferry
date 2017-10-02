@@ -84,7 +84,7 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventMetadata() {
 	this.Require().Equal(1, len(dmlEvents))
 	this.Require().Equal("test_schema", dmlEvents[0].Database())
 	this.Require().Equal("test_table", dmlEvents[0].Table())
-	this.Require().Equal([]interface{}{nil}, dmlEvents[0].OldValues())
+	this.Require().Nil(dmlEvents[0].OldValues())
 	this.Require().Equal([]interface{}{1000}, dmlEvents[0].NewValues())
 }
 
@@ -193,7 +193,7 @@ func (this *DMLEventsTestSuite) TestBinlogDeleteEventMetadata() {
 	this.Require().Equal("test_schema", dmlEvents[0].Database())
 	this.Require().Equal("test_table", dmlEvents[0].Table())
 	this.Require().Equal([]interface{}{1000}, dmlEvents[0].OldValues())
-	this.Require().Equal([]interface{}{nil}, dmlEvents[0].NewValues())
+	this.Require().Nil(dmlEvents[0].NewValues())
 }
 
 func (this *DMLEventsTestSuite) TestExistingRowEventGeneratesInsertQuery() {

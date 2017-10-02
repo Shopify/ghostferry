@@ -1,6 +1,8 @@
 package reloc
 
 import (
+	"reflect"
+
 	sq "github.com/Masterminds/squirrel"
 	"github.com/Shopify/ghostferry"
 )
@@ -15,6 +17,21 @@ func (f *ShardingFilter) ConstrainSelect(builder sq.SelectBuilder) sq.SelectBuil
 }
 
 func (f *ShardingFilter) ApplicableEvent(event ghostferry.DMLEvent) bool {
-	// TODO: implement
-	return true
+	columns := event.Schema().Columns
+	for idx, column := range columns {
+		if column.Name == f.ShardingKey {
+			oldValues, newValues := event.OldValues(), event.NewValues()
+
+			oldEqual := oldValues != nil && reflect.DeepEqual(oldValues[idx], f.ShardingValue)
+			newEqual := newValues != nil && reflect.DeepEqual(newValues[idx], f.ShardingValue)
+
+			if oldEqual != newEqual && oldValues != nil && newValues != nil {
+				// The value of the sharding key for a row was changed - this is unsafe.
+				// TODO(pushrax): raise error?
+			}
+
+			return oldEqual || newEqual
+		}
+	}
+	return false
 }

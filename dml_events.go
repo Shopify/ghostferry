@@ -57,7 +57,7 @@ func NewBinlogInsertEvents(rowsEvent *replication.RowsEvent, tables TableSchemaC
 }
 
 func (e *BinlogInsertEvent) OldValues() []interface{} {
-	return make([]interface{}, len(e.newValues))
+	return nil
 }
 
 func (e *BinlogInsertEvent) NewValues() []interface{} {
@@ -146,7 +146,7 @@ func (e *BinlogDeleteEvent) OldValues() []interface{} {
 }
 
 func (e *BinlogDeleteEvent) NewValues() []interface{} {
-	return make([]interface{}, len(e.oldValues))
+	return nil
 }
 
 func NewBinlogDeleteEvents(rowsEvent *replication.RowsEvent, tables TableSchemaCache) ([]DMLEvent, error) {

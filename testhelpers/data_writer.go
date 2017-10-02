@@ -74,6 +74,7 @@ type MixedActionDataWriter struct {
 	NumberOfWriters int
 	Db              *sql.DB
 	Tables          []string
+	TenantValues    []int
 
 	wg     *sync.WaitGroup
 	doneCh chan struct{}
@@ -141,6 +142,10 @@ func (this *MixedActionDataWriter) InsertData() error {
 	colvals := make(map[string]interface{})
 	colvals["id"] = nil
 	colvals["data"] = randData()
+
+	if this.TenantValues != nil {
+		colvals["tenant_id"] = this.TenantValues[rand.Intn(len(this.TenantValues))]
+	}
 
 	sql, args, err := sq.Insert(table).SetMap(colvals).ToSql()
 	if err != nil {

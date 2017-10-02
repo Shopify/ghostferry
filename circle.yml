@@ -7,7 +7,7 @@ machine:
 
 test:
   override:
-    - go test `glide nv` -p 1 -v
+    - go test ./test ./reloc/test -p 1 -v
 
 dependencies:
   post:
