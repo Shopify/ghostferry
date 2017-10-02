@@ -56,7 +56,7 @@ func NewTestFerry() *TestFerry {
 		},
 
 		ApplicableTables: map[string]bool{
-			"!default": true,
+			"ApplicableByDefault!": true,
 		},
 
 		MyServerId:       91919,

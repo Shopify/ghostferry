@@ -59,7 +59,7 @@ func (e *BinlogInsertEvent) AsSQLQuery(tables TableSchemaCache) (string, []inter
 		return "", []interface{}{}, err
 	}
 
-	query := "INSERT IGNORE INTO " + quotedTableNameFromString(e.database, e.table) +
+	query := "INSERT IGNORE INTO " + QuotedTableNameFromString(e.database, e.table) +
 		" (" + strings.Join(columns, ",") + ") VALUES (" + strings.Repeat("?,", len(columns)-1) + "?)"
 
 	return query, e.newValues, nil
@@ -123,7 +123,7 @@ func (e *BinlogUpdateEvent) AsSQLQuery(tables TableSchemaCache) (string, []inter
 
 	conditions := conditionsForTable(columns)
 
-	query := "UPDATE " + quotedTableNameFromString(e.database, e.table) +
+	query := "UPDATE " + QuotedTableNameFromString(e.database, e.table) +
 		" SET " + strings.Join(conditions, ", ") +
 		" WHERE " + strings.Join(conditions, " AND ")
 
@@ -177,7 +177,7 @@ func (e *BinlogDeleteEvent) AsSQLQuery(tables TableSchemaCache) (string, []inter
 		return "", []interface{}{}, err
 	}
 
-	query := "DELETE FROM " + quotedTableNameFromString(e.database, e.table) +
+	query := "DELETE FROM " + QuotedTableNameFromString(e.database, e.table) +
 		" WHERE " + strings.Join(conditionsForTable(columns), " AND ")
 
 	return query, e.whereValues, nil
@@ -233,7 +233,7 @@ func (e *ExistingRowEvent) AsSQLQuery(tables TableSchemaCache) (string, []interf
 		return "", []interface{}{}, err
 	}
 
-	query := "INSERT IGNORE INTO " + quotedTableNameFromString(e.database, e.table) +
+	query := "INSERT IGNORE INTO " + QuotedTableNameFromString(e.database, e.table) +
 		" (" + strings.Join(columns, ",") + ") VALUES (" + strings.Repeat("?,", len(columns)-1) + "?)"
 
 	return query, e.values, nil

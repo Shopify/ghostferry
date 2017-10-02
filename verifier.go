@@ -64,7 +64,7 @@ func (this *ChecksumTableVerifier) Run(f *Ferry) {
 	// Quote the tables
 	tablesToCheck := make([]string, len(this.TablesToCheck))
 	for i, table := range this.TablesToCheck {
-		tablesToCheck[i] = quotedTableName(table)
+		tablesToCheck[i] = QuotedTableName(table)
 	}
 
 	query := fmt.Sprintf("CHECKSUM TABLE %s EXTENDED", strings.Join(tablesToCheck, ", "))

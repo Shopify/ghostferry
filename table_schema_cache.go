@@ -17,20 +17,20 @@ var ignoredDatabases = map[string]bool{
 
 type TableSchemaCache map[string]*schema.Table
 
-func quotedTableName(table *schema.Table) string {
-	return quotedTableNameFromString(table.Schema, table.Name)
+func QuotedTableName(table *schema.Table) string {
+	return QuotedTableNameFromString(table.Schema, table.Name)
 }
 
-func quotedTableNameFromString(database, table string) string {
+func QuotedTableNameFromString(database, table string) string {
 	return fmt.Sprintf("`%s`.`%s`", database, table)
 }
 
-func filterForApplicable(list []string, applicabilityMap map[string]bool) []string {
+func FilterForApplicable(list []string, applicabilityMap map[string]bool) []string {
 	if applicabilityMap == nil {
 		return list
 	}
 
-	allApplicable := applicabilityMap["!default"]
+	applicableByDefault := applicabilityMap["ApplicableByDefault!"]
 
 	applicableList := make([]string, 0, len(list))
 	for _, v := range list {
@@ -40,7 +40,7 @@ func filterForApplicable(list []string, applicabilityMap map[string]bool) []stri
 			continue
 		}
 
-		if !specified && !allApplicable {
+		if !specified && !applicableByDefault {
 			continue
 		}
 
@@ -50,7 +50,7 @@ func filterForApplicable(list []string, applicabilityMap map[string]bool) []stri
 	return applicableList
 }
 
-func loadTables(db *sql.DB, applicableDatabases, applicableTables map[string]bool) (TableSchemaCache, error) {
+func LoadTables(db *sql.DB, applicableDatabases, applicableTables map[string]bool) (TableSchemaCache, error) {
 	logger := logrus.WithField("tag", "table_schema_cache")
 
 	tableSchemaCache := make(TableSchemaCache)
@@ -61,7 +61,7 @@ func loadTables(db *sql.DB, applicableDatabases, applicableTables map[string]boo
 		return tableSchemaCache, err
 	}
 
-	dbnames = filterForApplicable(dbnames, applicableDatabases)
+	dbnames = FilterForApplicable(dbnames, applicableDatabases)
 
 	// For each database, get a list of tables from it and cache the table's schema
 	for _, dbname := range dbnames {
@@ -73,7 +73,7 @@ func loadTables(db *sql.DB, applicableDatabases, applicableTables map[string]boo
 			return tableSchemaCache, err
 		}
 
-		tableNames = filterForApplicable(tableNames, applicableTables)
+		tableNames = FilterForApplicable(tableNames, applicableTables)
 		for _, table := range tableNames {
 			tableLog := dbLog.WithField("table", table)
 			tableLog.Debug("caching table schema")
@@ -125,7 +125,7 @@ func (c TableSchemaCache) TableColumns(database, table string) ([]schema.TableCo
 	fullTableName := fmt.Sprintf("%s.%s", database, table)
 	tableSchema, exists := c[fullTableName]
 	if !exists {
-		return []schema.TableColumn{}, fmt.Errorf("table %s does not exists", fullTableName)
+		return []schema.TableColumn{}, fmt.Errorf("table %s does not exist", fullTableName)
 	}
 
 	return tableSchema.Columns, nil

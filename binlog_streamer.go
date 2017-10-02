@@ -204,11 +204,11 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 	events := make([]DMLEvent, 0)
 
 	for _, dmlEv := range dmlEvs {
-		if len(filterForApplicable([]string{dmlEv.Database()}, s.Config.ApplicableDatabases)) == 0 {
+		if len(FilterForApplicable([]string{dmlEv.Database()}, s.Config.ApplicableDatabases)) == 0 {
 			continue
 		}
 
-		if len(filterForApplicable([]string{dmlEv.Table()}, s.Config.ApplicableTables)) == 0 {
+		if len(FilterForApplicable([]string{dmlEv.Table()}, s.Config.ApplicableTables)) == 0 {
 			continue
 		}
 
