@@ -147,6 +147,8 @@ type DataIterator struct {
 	ErrorHandler *ErrorHandler
 	Throttler    *Throttler
 
+	TableSchema TableSchemaCache
+
 	Tables []*schema.Table
 	Filter CopyFilter
 
@@ -423,6 +425,7 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 		}
 	}
 
+	var ev DMLEvent
 	events = make([]DMLEvent, 0)
 
 	for rows.Next() {
@@ -438,10 +441,10 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 			return
 		}
 
-		ev := &ExistingRowEvent{
-			database: table.Schema,
-			table:    table.Name,
-			values:   values,
+		ev, err = NewExistingRowEvent(table.Schema, table.Name, values, this.TableSchema)
+		if err != nil {
+			logger.WithError(err).Error("failed to create row event")
+			return
 		}
 
 		events = append(events, ev)

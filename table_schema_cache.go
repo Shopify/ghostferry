@@ -121,27 +121,13 @@ func (c TableSchemaCache) AllTableNames() (tableNames []string) {
 	return
 }
 
-func (c TableSchemaCache) TableColumns(database, table string) ([]schema.TableColumn, error) {
+func (c TableSchemaCache) Get(database, table string) (*schema.Table, error) {
 	fullTableName := fmt.Sprintf("%s.%s", database, table)
 	tableSchema, exists := c[fullTableName]
 	if !exists {
-		return []schema.TableColumn{}, fmt.Errorf("table %s does not exist", fullTableName)
+		return nil, fmt.Errorf("table %s does not exist", fullTableName)
 	}
-
-	return tableSchema.Columns, nil
-}
-
-func (c TableSchemaCache) TableColumnNamesQuoted(database, table string) ([]string, error) {
-	tableColumns, err := c.TableColumns(database, table)
-	if err != nil {
-		return nil, err
-	}
-
-	cols := make([]string, len(tableColumns))
-	for i, column := range tableColumns {
-		cols[i] = quoteField(column.Name)
-	}
-	return cols, nil
+	return tableSchema, nil
 }
 
 func showDatabases(c *sql.DB) ([]string, error) {

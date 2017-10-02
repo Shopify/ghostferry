@@ -22,6 +22,8 @@ type BinlogStreamer struct {
 	Throttler    *Throttler
 	Filter       CopyFilter
 
+	TableSchema TableSchemaCache
+
 	binlogSyncer               *replication.BinlogSyncer
 	binlogStreamer             *replication.BinlogStreamer
 	lastStreamedBinlogPosition mysql.Position
@@ -195,7 +197,7 @@ func (s *BinlogStreamer) updateLastStreamedPosAndTime(ev *replication.BinlogEven
 func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
 
-	dmlEvs, err := NewBinlogDMLEvents(ev)
+	dmlEvs, err := NewBinlogDMLEvents(ev, s.TableSchema)
 	if err != nil {
 		return err
 	}
