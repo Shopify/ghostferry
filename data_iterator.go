@@ -159,39 +159,47 @@ type DataIterator struct {
 	doneListeners  []func() error
 
 	logger *logrus.Entry
-	wg     *sync.WaitGroup
 }
 
 func (this *DataIterator) Initialize() error {
 	this.tableCh = make(chan *schema.Table)
 	this.logger = logrus.WithField("tag", "data_iterator")
-	this.wg = &sync.WaitGroup{}
 
 	this.CurrentState = newDataIteratorState(this.Config.NumberOfTableIterators)
 
 	return nil
 }
 
-func (this *DataIterator) Run(wg *sync.WaitGroup) {
+func (this *DataIterator) Run(doneWg *sync.WaitGroup) {
 	defer func() {
 		this.logger.Info("data iterator done")
-		wg.Done()
+		doneWg.Done()
 	}()
 
 	this.logger.WithField("tablesCount", len(this.Tables)).Info("starting data iterator run")
 
-	tablesWithData, err := this.determineMinMaxPKsForAllTables()
+	tablesWithData, emptyTables, err := MaxPrimaryKeys(this.Db, this.Tables, this.logger)
 	if err != nil {
 		this.ErrorHandler.Fatal("data_iterator", err)
 		return
 	}
 
-	this.wg.Add(this.Config.NumberOfTableIterators)
-	for i := 0; i < this.Config.NumberOfTableIterators; i++ {
-		go this.runTableIterator(uint32(i))
+	for _, table := range emptyTables {
+		this.CurrentState.MarkTableAsCompleted(table.String())
 	}
 
-	for _, table := range tablesWithData {
+	for table, maxPk := range tablesWithData {
+		this.CurrentState.UpdateTargetPK(table.String(), maxPk)
+	}
+
+	wg := &sync.WaitGroup{}
+	wg.Add(this.Config.NumberOfTableIterators)
+
+	for id := 0; id < this.Config.NumberOfTableIterators; id++ {
+		go this.runTableIterator(uint32(id), wg)
+	}
+
+	for table, _ := range tablesWithData {
 		this.tableCh <- table
 	}
 
@@ -199,7 +207,7 @@ func (this *DataIterator) Run(wg *sync.WaitGroup) {
 
 	close(this.tableCh)
 
-	this.wg.Wait()
+	wg.Wait()
 
 	for _, listener := range this.doneListeners {
 		listener()
@@ -214,60 +222,13 @@ func (this *DataIterator) AddDoneListener(listener func() error) {
 	this.doneListeners = append(this.doneListeners, listener)
 }
 
-func (this *DataIterator) determineMinMaxPKsForAllTables() ([]*schema.Table, error) {
-	tablesWithData := make([]*schema.Table, 0, len(this.Tables))
-	for _, table := range this.Tables {
-		logger := this.logger.WithField("table", table.String())
-
-		rows, err := this.Db.Query(fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", QuotedTableName(table)))
-		if err != nil {
-			logger.WithError(err).Error("failed to see if rows exist in table")
-			return tablesWithData, err
-		}
-
-		if !rows.Next() {
-			rows.Close()
-			logger.Warn("no data in this table, skipping")
-			this.CurrentState.MarkTableAsCompleted(table.String())
-			continue
-		}
-
-		rows.Close()
-
-		primaryKeyColumn := table.GetPKColumn(0)
-		pkName := quoteField(primaryKeyColumn.Name)
-		logger.Infof("getting max for primary key %s", pkName)
-		query, args, err := sq.Select(fmt.Sprintf("MAX(%s)", pkName)).From(QuotedTableName(table)).ToSql()
-		if err != nil {
-			logger.WithError(err).Errorf("failed to build query to get max primary key %s", pkName)
-			return tablesWithData, err
-		}
-
-		row := this.Db.QueryRow(query, args...)
-
-		var maxPrimaryKey int64
-		err = row.Scan(&maxPrimaryKey)
-		if err != nil {
-			logger.WithError(err).Errorf("failed to get max primary key %s", primaryKeyColumn.Name)
-			return tablesWithData, err
-		}
-
-		logger.Infof("max for %s: %d (%s)", pkName, maxPrimaryKey, primaryKeyColumn.RawType)
-		this.CurrentState.UpdateTargetPK(table.String(), maxPrimaryKey)
-
-		tablesWithData = append(tablesWithData, table)
-	}
-
-	return tablesWithData, nil
-}
-
-func (this *DataIterator) runTableIterator(i uint32) {
+func (this *DataIterator) runTableIterator(id uint32, doneWg *sync.WaitGroup) {
 	defer func() {
-		this.logger.Infof("table iterator %d done", i)
-		this.wg.Done()
+		this.logger.Infof("table iterator %d done", id)
+		doneWg.Done()
 	}()
 
-	this.logger.Infof("starting table iterator instance %d", i)
+	this.logger.Infof("starting table iterator instance %d", id)
 
 	for {
 		table, ok := <-this.tableCh
@@ -279,7 +240,7 @@ func (this *DataIterator) runTableIterator(i uint32) {
 		if err != nil {
 			this.logger.WithFields(logrus.Fields{
 				"error": err,
-				"i":     i,
+				"id":    id,
 				"table": table.String(),
 			}).Error("failed to iterate table")
 			this.ErrorHandler.Fatal("table_iterator", err)
@@ -290,7 +251,7 @@ func (this *DataIterator) runTableIterator(i uint32) {
 
 func (this *DataIterator) iterateTable(table *schema.Table) error {
 	logger := this.logger.WithField("table", table.String())
-	logger.Info("starting to iterate over table")
+	logger.Info("starting to copy table")
 
 	var lastSuccessfulPrimaryKey int64 = 0
 	maxPrimaryKey := this.CurrentState.TargetPrimaryKeys()[table.String()]
@@ -301,7 +262,7 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 		var rowEvents []DMLEvent
 		var pkpos int64
 
-		for i := 0; i < this.Config.MaxIterationReadRetries; i++ {
+		for try := 0; try < this.Config.MaxIterationReadRetries; try++ {
 			this.Throttler.ThrottleIfNecessary()
 
 			// We need to lock SELECT until we apply the updates (done in the
@@ -313,22 +274,25 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 			// back at the end of this iteration of primary key.
 			tx, err = this.Db.Begin()
 			if err != nil {
-				logger.WithError(err).Error("failed to start database transaction, retrying if limit is not exceeded")
+				logger.WithError(err).Errorf("failed to start database transaction, try %d of max retries %d",
+					try, this.Config.MaxIterationReadRetries)
 				continue
 			}
 
 			rowEvents, pkpos, err = this.fetchRowsInBatch(tx, table, table.GetPKColumn(0), lastSuccessfulPrimaryKey)
+
 			if err == nil {
 				break
 			}
 
 			tx.Rollback()
-			logger.WithError(err).Error("failed to fetch rows, retrying if limit not exceeded")
-		}
+			logger.WithError(err).Errorf("failed to fetch rows, %d of %d max retries",
+				try, this.Config.MaxIterationReadRetries)
 
-		if err != nil {
-			logger.WithError(err).Error("failed to fetch rows, retry limit exceeded")
-			return err
+			if try >= this.Config.MaxIterationReadRetries {
+				logger.WithError(err).Error("failed to fetch rows, retry limit exceeded")
+				return err
+			}
 		}
 
 		if len(rowEvents) == 0 {
@@ -350,7 +314,7 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 
 		if pkpos <= lastSuccessfulPrimaryKey {
 			err = fmt.Errorf("new pkpos %d <= lastSuccessfulPk %d", pkpos, lastSuccessfulPrimaryKey)
-			logger.WithError(err).Error("last successful pk position did not advance?")
+			logger.WithError(err).Error("last successful pk position did not advance")
 			return err
 		}
 

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
@@ -23,6 +24,37 @@ func QuotedTableName(table *schema.Table) string {
 
 func QuotedTableNameFromString(database, table string) string {
 	return fmt.Sprintf("`%s`.`%s`", database, table)
+}
+
+func MaxPrimaryKeys(db *sql.DB, tables []*schema.Table, logger *logrus.Entry) (map[*schema.Table]int64, []*schema.Table, error) {
+	tablesWithData := make(map[*schema.Table]int64)
+	emptyTables := make([]*schema.Table, 0, len(tables))
+
+	for _, table := range tables {
+		logger := logger.WithField("table", table.String())
+
+		isEmpty, err := tableIsEmpty(db, table)
+		if err != nil {
+			logger.WithError(err).Error("failed to see if rows exist in table")
+			return tablesWithData, emptyTables, err
+		}
+
+		if isEmpty {
+			emptyTables = append(emptyTables, table)
+			logger.Warn("no data in this table, skipping")
+			continue
+		}
+
+		maxPk, err := maxPk(db, table)
+		if err != nil {
+			logger.WithError(err).Errorf("failed to get max primary key %s", table.GetPKColumn(0).Name)
+			return tablesWithData, emptyTables, err
+		}
+
+		tablesWithData[table] = maxPk
+	}
+
+	return tablesWithData, emptyTables, nil
 }
 
 func FilterForApplicable(list []string, applicabilityMap map[string]bool) []string {
@@ -175,4 +207,34 @@ func showTablesFrom(c *sql.DB, dbname string) ([]string, error) {
 	}
 
 	return tables, nil
+}
+
+func maxPk(db *sql.DB, table *schema.Table) (int64, error) {
+	var maxPrimaryKey int64
+
+	primaryKeyColumn := table.GetPKColumn(0)
+	pkName := quoteField(primaryKeyColumn.Name)
+
+	query, args, err := sq.Select(fmt.Sprintf("MAX(%s)", pkName)).From(QuotedTableName(table)).ToSql()
+	if err != nil {
+		return maxPrimaryKey, err
+	}
+
+	err = db.QueryRow(query, args...).Scan(&maxPrimaryKey)
+	return maxPrimaryKey, err
+}
+
+func tableIsEmpty(db *sql.DB, table *schema.Table) (bool, error) {
+	rows, err := db.Query(fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", QuotedTableName(table)))
+	defer rows.Close()
+
+	if err != nil {
+		return false, err
+	}
+
+	if !rows.Next() {
+		return true, nil
+	}
+
+	return false, nil
 }
