@@ -43,9 +43,8 @@ func TestSelectiveCopyDataWithoutAnyWritesToSource(t *testing.T) {
 	testhelpers.PanicIfError(row.Scan(&count))
 	assert.Equal(t, 0, count)
 
-	row = testcase.Ferry.TargetDB.QueryRow("SELECT count(*) FROM gftest.table1 WHERE tenant_id = 2")
-	testhelpers.PanicIfError(row.Scan(&count))
-	assert.Equal(t, 333, count)
+	rows := testcase.AssertQueriesHaveEqualResult("SELECT * FROM gftest.table1 WHERE tenant_id = 2")
+	assert.Equal(t, 333, len(rows))
 }
 
 func TestSelectiveCopyDataWithInsertLoadOnOtherTenants(t *testing.T) {
@@ -69,9 +68,8 @@ func TestSelectiveCopyDataWithInsertLoadOnOtherTenants(t *testing.T) {
 	testhelpers.PanicIfError(row.Scan(&count))
 	assert.Equal(t, 0, count)
 
-	row = testcase.Ferry.TargetDB.QueryRow("SELECT count(*) FROM gftest.table1 WHERE tenant_id = 2")
-	testhelpers.PanicIfError(row.Scan(&count))
-	assert.Equal(t, 333, count)
+	rows := testcase.AssertQueriesHaveEqualResult("SELECT * FROM gftest.table1 WHERE tenant_id = 2")
+	assert.Equal(t, 333, len(rows))
 }
 
 func TestSelectiveCopyDataWithInsertLoadOnAllTenants(t *testing.T) {
@@ -90,16 +88,11 @@ func TestSelectiveCopyDataWithInsertLoadOnAllTenants(t *testing.T) {
 	defer testcase.Teardown()
 	testcase.CopyData()
 
-	var count, expectedCount int
+	var count int
 	row := testcase.Ferry.TargetDB.QueryRow("SELECT count(*) FROM gftest.table1 WHERE tenant_id <> 2")
 	testhelpers.PanicIfError(row.Scan(&count))
 	assert.Equal(t, 0, count)
 
-	row = testcase.Ferry.SourceDB.QueryRow("SELECT count(*) FROM gftest.table1 WHERE tenant_id = 2")
-	testhelpers.PanicIfError(row.Scan(&expectedCount))
-
-	row = testcase.Ferry.TargetDB.QueryRow("SELECT count(*) FROM gftest.table1 WHERE tenant_id = 2")
-	testhelpers.PanicIfError(row.Scan(&count))
-	assert.Equal(t, expectedCount, count)
-	assert.True(t, count > 333)
+	rows := testcase.AssertQueriesHaveEqualResult("SELECT * FROM gftest.table1 WHERE tenant_id = 2")
+	assert.True(t, len(rows) > 333)
 }

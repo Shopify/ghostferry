@@ -160,3 +160,7 @@ func (this *IntegrationTestCase) AssertOnlyDataOnSourceAndTargetIs(data string) 
 		this.T.Fatalf("target row data is not '%s', but '%s'", data, d)
 	}
 }
+
+func (this *IntegrationTestCase) AssertQueriesHaveEqualResult(query string, args ...interface{}) []map[string]interface{} {
+	return AssertQueriesHaveEqualResult(this.T, this.Ferry.Ferry, query)
+}
