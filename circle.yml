@@ -1,4 +1,8 @@
 ---
+machine:
+  environment:
+    USERGOPATH: "/home/ubuntu/.go_workspace"
+
 test:
   override:
     - go test ./test -v
@@ -8,3 +12,12 @@ dependencies:
     - ci/00-circle-hacks.sh
     - ci/01-install-packages.sh
     - ci/02-setup-mysql.sh
+
+deployment:
+  production:
+    branch: master
+    commands:
+      - mkdir -p "$USERGOPATH/src/github.com/$CIRCLE_PROJECT_USERNAME"
+      - ln -sr "$(pwd)" "$USERGOPATH/src/github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME"
+      - make reloc-deb GOPATH="$USERGOPATH"
+      - package_cloud push --url https://packages.shopify.io shopify/reloc/ubuntu/trusty build/reloc_*.deb
