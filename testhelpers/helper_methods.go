@@ -78,8 +78,8 @@ func AssertQueriesHaveEqualResult(t *testing.T, ferry *ghostferry.Ferry, query s
 	results2, err := LoadResults(rows2)
 	assert.Nil(t, err)
 
-	assert.True(t, len(results1) > 0)
 	assert.Equal(t, results1, results2)
+	assert.True(t, len(results1) > 0)
 
 	return results1
 }
