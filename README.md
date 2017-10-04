@@ -53,14 +53,12 @@ Development Setup
 
 Install:
 
-- Have Vagrant installed
+- Have Docker installed
 - Clone the repo
-- `vagrant up`
+- `dev up`
 
 Run tests:
 
-- `vagrant ssh`
-- `cd go/src/github.com/Shopify/ghostferry`
 - `make test`
 
 Test copydb:
