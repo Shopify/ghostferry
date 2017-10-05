@@ -32,6 +32,7 @@ reloc: $(RELOC_TARGET)
 $(RELOC_TARGET): $(GOBIN) $(SOURCES)
 	go build -i -ldflags "$(LDFLAGS)" -o $(RELOC_TARGET) $(RELOC_PKG)
 
+copydb: $(COPYDB_TARGET)
 $(COPYDB_TARGET): $(GOBIN) $(SOURCES)
 	go build -i -ldflags "$(LDFLAGS)" -o $(COPYDB_TARGET) $(COPYDB_PKG)
 

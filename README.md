@@ -63,4 +63,4 @@ Run tests:
 
 Test copydb:
 
-- `make && ghostferry-copydb -verbose examples/copydb/conf.json`
+- `make copydb && ghostferry-copydb -verbose examples/copydb/conf.json`
