@@ -50,7 +50,6 @@ type Ferry struct {
 	DataIterator   *DataIterator
 	ErrorHandler   *ErrorHandler
 	Throttler      *Throttler
-	ControlServer  *ControlServer
 	Verifier       Verifier
 
 	Tables TableSchemaCache
@@ -63,7 +62,6 @@ type Ferry struct {
 
 	coreServicesWg       *sync.WaitGroup
 	supportingServicesWg *sync.WaitGroup
-	controlServerWg      *sync.WaitGroup
 	rowCopyCompleteCh    chan struct{}
 }
 
@@ -74,7 +72,6 @@ func (f *Ferry) Initialize() (err error) {
 
 	f.coreServicesWg = &sync.WaitGroup{}
 	f.supportingServicesWg = &sync.WaitGroup{}
-	f.controlServerWg = &sync.WaitGroup{}
 	f.logger = logrus.WithField("tag", "ferry")
 	f.rowCopyCompleteCh = make(chan struct{})
 
@@ -203,20 +200,7 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
-	// Initialize the ControlServer
-	f.ControlServer = &ControlServer{
-		F:       f,
-		Addr:    f.Config.ServerBindAddr,
-		Basedir: f.Config.WebBasedir,
-	}
-
-	err = f.ControlServer.Initialize()
-	if err != nil {
-		return err
-	}
-
 	f.logger.Info("ferry initialized")
-
 	return nil
 }
 
@@ -265,9 +249,6 @@ func (f *Ferry) Run() {
 	f.logger.Info("starting ferry run")
 	f.OverallState = StateCopying
 
-	f.controlServerWg.Add(1)
-	go f.ControlServer.Run(f.controlServerWg)
-
 	f.coreServicesWg.Add(2)
 	go f.BinlogStreamer.Run(f.coreServicesWg)
 	go f.DataIterator.Run(f.coreServicesWg)
@@ -314,26 +295,6 @@ func (f *Ferry) WaitUntilBinlogStreamerCatchesUp() {
 // You will know that the BinlogStreamer finished when .Run() returns.
 func (f *Ferry) FlushBinlogAndStopStreaming() {
 	f.BinlogStreamer.FlushAndStop()
-}
-
-// This method waits for the ControlServer to exit. By default,
-// Ghostferry will not shutdown the control server nor will it wait for
-// its finish.
-func (f *Ferry) WaitForControlServer() {
-	f.logger.Warn("waiting for control server...")
-	f.controlServerWg.Wait()
-}
-
-// This method is used to shutdown the ControlServer. By default,
-// Ghostferry will not call this for you.
-func (f *Ferry) ShutdownControlServer() error {
-	f.logger.Info("shutting down control server")
-	err := f.ControlServer.Shutdown()
-	if err != nil {
-		f.logger.WithError(err).Warn("control server shutdown failure")
-	}
-
-	return err
 }
 
 func (f *Ferry) onFinishedIterations() error {
