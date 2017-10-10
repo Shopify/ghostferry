@@ -48,7 +48,6 @@ func NewTestConfig() *ghostferry.Config {
 
 		MyServerId:       91919,
 		AutomaticCutover: true,
-		WebBasedir:       "..",
 	}
 
 	err := config.ValidateConfig()

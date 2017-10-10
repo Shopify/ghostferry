@@ -18,7 +18,7 @@ const caughtUpThreshold = 10 * time.Second
 type BinlogStreamer struct {
 	Db           *sql.DB
 	Config       *Config
-	ErrorHandler *ErrorHandler
+	ErrorHandler ErrorHandler
 	Throttler    *Throttler
 	Filter       CopyFilter
 
@@ -227,8 +227,15 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 	events := make([]DMLEvent, 0)
 
 	for _, dmlEv := range dmlEvs {
-		if s.Filter != nil && !s.Filter.ApplicableEvent(dmlEv) {
-			continue
+		if s.Filter != nil {
+			applicable, err := s.Filter.ApplicableEvent(dmlEv)
+			if err != nil {
+				s.logger.WithError(err).Error("failed to apply filter for event")
+				return err
+			}
+			if !applicable {
+				continue
+			}
 		}
 
 		events = append(events, dmlEv)

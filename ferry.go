@@ -49,7 +49,7 @@ type Ferry struct {
 
 	BinlogStreamer *BinlogStreamer
 	DataIterator   *DataIterator
-	ErrorHandler   *ErrorHandler
+	ErrorHandler   ErrorHandler
 	Throttler      *Throttler
 	Verifier       Verifier
 	Filter         CopyFilter
@@ -165,8 +165,10 @@ func (f *Ferry) Initialize() (err error) {
 	}
 
 	// Initialize the ErrorHandler
-	f.ErrorHandler = &ErrorHandler{
-		Ferry: f,
+	if f.ErrorHandler == nil {
+		f.ErrorHandler = &PanicErrorHandler{
+			Ferry: f,
+		}
 	}
 	f.ErrorHandler.Initialize()
 

@@ -11,7 +11,7 @@ import (
 type DMLEvent interface {
 	Database() string
 	Table() string
-	Schema() schema.Table
+	TableSchema() schema.Table
 	AsSQLQuery(target *schema.Table) (string, []interface{}, error)
 	OldValues() []interface{}
 	NewValues() []interface{}
@@ -29,7 +29,7 @@ func (e *DMLEventBase) Table() string {
 	return e.table.Name
 }
 
-func (e *DMLEventBase) Schema() schema.Table {
+func (e *DMLEventBase) TableSchema() schema.Table {
 	return e.table
 }
 
@@ -198,12 +198,7 @@ type ExistingRowEvent struct {
 	DMLEventBase
 }
 
-func NewExistingRowEvent(databaseName, tableName string, values []interface{}, tables TableSchemaCache) (DMLEvent, error) {
-	table, err := tables.Get(databaseName, tableName)
-	if err != nil {
-		return nil, err
-	}
-
+func NewExistingRowEvent(table *schema.Table, values []interface{}) (DMLEvent, error) {
 	return &ExistingRowEvent{
 		values:       values,
 		DMLEventBase: DMLEventBase{table: *table},
@@ -245,10 +240,10 @@ func loadColumnsForEvent(table schema.Table, valuesToVerify ...[]interface{}) ([
 		}
 	}
 
-	return quoteColumnNames(table), nil
+	return quotedColumnNames(table), nil
 }
 
-func quoteColumnNames(table schema.Table) []string {
+func quotedColumnNames(table schema.Table) []string {
 	cols := make([]string, len(table.Columns))
 	for i, column := range table.Columns {
 		cols[i] = quoteField(column.Name)

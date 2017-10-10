@@ -144,7 +144,7 @@ func (this *DataIteratorState) EstimatedPKProcessedPerSecond() float64 {
 type DataIterator struct {
 	Db           *sql.DB
 	Config       *Config
-	ErrorHandler *ErrorHandler
+	ErrorHandler ErrorHandler
 	Throttler    *Throttler
 
 	TableSchema TableSchemaCache
@@ -344,7 +344,10 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 		Suffix("FOR UPDATE")
 
 	if this.Filter != nil {
-		selectBuilder = this.Filter.ConstrainSelect(selectBuilder)
+		if selectBuilder, err = this.Filter.ConstrainSelect(selectBuilder); err != nil {
+			logger.WithError(err).Error("failed to apply filter for select")
+			return
+		}
 	}
 
 	query, args, err := selectBuilder.ToSql()
@@ -391,7 +394,7 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 			return
 		}
 
-		ev, err = NewExistingRowEvent(table.Schema, table.Name, values, this.TableSchema)
+		ev, err = NewExistingRowEvent(table, values)
 		if err != nil {
 			logger.WithError(err).Error("failed to create row event")
 			return

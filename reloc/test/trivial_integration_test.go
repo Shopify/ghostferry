@@ -33,12 +33,12 @@ func setupSingleTableDatabase(f *testhelpers.TestFerry) {
 
 func selectiveFerry(shardingValue interface{}) *testhelpers.TestFerry {
 	ferry := testhelpers.NewTestFerry()
-	ferry.Config.WebBasedir = "../.."
 
 	ferry.Filter = &reloc.ShardingFilter{
 		ShardingKey:   "tenant_id",
 		ShardingValue: shardingValue,
 	}
+
 	return ferry
 }
 
@@ -115,4 +115,38 @@ func TestSelectiveCopyDataWithInsertLoadOnAllTenants(t *testing.T) {
 
 	rows := testcase.AssertQueriesHaveEqualResult("SELECT * FROM gftest.table1 WHERE tenant_id = 2")
 	assert.True(t, len(rows) > 333)
+}
+
+type ChangeShardingKeyDataWriter struct {
+	db *sql.DB
+}
+
+func (this *ChangeShardingKeyDataWriter) Run() {
+	this.db.Exec("UPDATE gftest.table1 SET tenant_id = 1 WHERE tenant_id = 2 LIMIT 1")
+}
+
+func (this *ChangeShardingKeyDataWriter) Stop() {}
+func (this *ChangeShardingKeyDataWriter) Wait() {}
+
+func (this *ChangeShardingKeyDataWriter) SetDB(db *sql.DB) {
+	this.db = db
+}
+
+func TestErrorsIfShardingKeyChanged(t *testing.T) {
+	errorHandler := &testhelpers.ErrorHandler{}
+	ferry := selectiveFerry(int64(2))
+	ferry.ErrorHandler = errorHandler
+
+	testcase := &testhelpers.IntegrationTestCase{
+		T:           t,
+		Ferry:       ferry,
+		SetupAction: setupSingleTableDatabase,
+		DataWriter:  &ChangeShardingKeyDataWriter{},
+	}
+
+	defer testcase.Teardown()
+	testcase.CopyData()
+
+	assert.NotNil(t, errorHandler.LastError)
+	assert.Equal(t, "sharding key changed from 2 to 1", errorHandler.LastError.Error())
 }

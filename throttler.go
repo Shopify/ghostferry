@@ -13,7 +13,7 @@ const defaultThrottleDuration = 3 * time.Second
 type Throttler struct {
 	Db           *sql.DB
 	Config       *Config
-	ErrorHandler *ErrorHandler
+	ErrorHandler ErrorHandler
 
 	CurrentVariableLoad   map[string]int64
 	CurrentReplicationLag int64

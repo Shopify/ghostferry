@@ -1,6 +1,7 @@
 package reloc
 
 import (
+	"fmt"
 	"reflect"
 
 	sq "github.com/Masterminds/squirrel"
@@ -12,12 +13,12 @@ type ShardingFilter struct {
 	ShardingValue interface{}
 }
 
-func (f *ShardingFilter) ConstrainSelect(builder sq.SelectBuilder) sq.SelectBuilder {
-	return builder.Where(sq.Eq{f.ShardingKey: f.ShardingValue})
+func (f *ShardingFilter) ConstrainSelect(builder sq.SelectBuilder) (sq.SelectBuilder, error) {
+	return builder.Where(sq.Eq{f.ShardingKey: f.ShardingValue}), nil
 }
 
-func (f *ShardingFilter) ApplicableEvent(event ghostferry.DMLEvent) bool {
-	columns := event.Schema().Columns
+func (f *ShardingFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, error) {
+	columns := event.TableSchema().Columns
 	for idx, column := range columns {
 		if column.Name == f.ShardingKey {
 			oldValues, newValues := event.OldValues(), event.NewValues()
@@ -27,11 +28,12 @@ func (f *ShardingFilter) ApplicableEvent(event ghostferry.DMLEvent) bool {
 
 			if oldEqual != newEqual && oldValues != nil && newValues != nil {
 				// The value of the sharding key for a row was changed - this is unsafe.
-				// TODO(pushrax): raise error?
+				err := fmt.Errorf("sharding key changed from %v to %v", oldValues[idx], newValues[idx])
+				return false, err
 			}
 
-			return oldEqual || newEqual
+			return oldEqual || newEqual, nil
 		}
 	}
-	return false
+	return false, nil
 }
