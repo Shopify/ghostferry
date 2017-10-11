@@ -54,6 +54,4 @@ func (this *RelocFerry) Run() {
 
 	// Source and target are identical.
 	// Call cutover unlock callback here.
-
-	this.ferry.WaitForControlServer()
 }
