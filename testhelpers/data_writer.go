@@ -19,42 +19,33 @@ func randData() string {
 	return string(b)
 }
 
-func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows int) error {
+func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows int) {
 	var query string
 	var err error
 
 	query = "CREATE DATABASE IF NOT EXISTS %s"
 	query = fmt.Sprintf(query, dbname)
 	_, err = db.Exec(query)
-	if err != nil {
-		return err
-	}
+	PanicIfError(err)
 
 	query = "CREATE TABLE %s.%s (id bigint(20) not null auto_increment, data TEXT, primary key(id))"
 	query = fmt.Sprintf(query, dbname, tablename)
 
 	_, err = db.Exec(query)
-	if err != nil {
-		return err
-	}
+	PanicIfError(err)
 
 	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
+	PanicIfError(err)
 
 	for i := 0; i < numberOfRows; i++ {
 		query = "INSERT INTO %s.%s (id, data) VALUES (?, ?)"
 		query = fmt.Sprintf(query, dbname, tablename)
 
 		_, err = tx.Exec(query, nil, randData())
-		if err != nil {
-			return err
-		}
-
+		PanicIfError(err)
 	}
 
-	return tx.Commit()
+	PanicIfError(tx.Commit())
 }
 
 type DataWriter interface {

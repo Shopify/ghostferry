@@ -21,8 +21,7 @@ func (this *TableSchemaCacheTestSuite) SetupTest() {
 
 	this.tablenames = []string{"test_table_1", "test_table_2", "test_table_3"}
 	for _, tablename := range this.tablenames {
-		err := testhelpers.SeedInitialData(this.Ferry.SourceDB, testhelpers.TestSchemaName, tablename, 0)
-		this.Require().Nil(err)
+		testhelpers.SeedInitialData(this.Ferry.SourceDB, testhelpers.TestSchemaName, tablename, 0)
 	}
 }
 

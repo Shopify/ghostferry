@@ -9,17 +9,15 @@ import (
 
 func setupSingleTableDatabase(f *testhelpers.TestFerry) {
 	maxId := 1111
-	err := testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", maxId)
-	testhelpers.PanicIfError(err)
+	testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", maxId)
 
 	for i := 0; i < 140; i++ {
 		query := "DELETE FROM gftest.table1 WHERE id = ?"
-		_, err = f.SourceDB.Exec(query, rand.Intn(maxId-1)+1)
+		_, err := f.SourceDB.Exec(query, rand.Intn(maxId-1)+1)
 		testhelpers.PanicIfError(err)
 	}
 
-	err = testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
-	testhelpers.PanicIfError(err)
+	testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
 }
 
 func TestCopyDataWithoutAnyWritesToSource(t *testing.T) {

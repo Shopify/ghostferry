@@ -24,11 +24,8 @@ func addTenantID(db *sql.DB, dbname, tablename string, numberOfTenants int) {
 }
 
 func setupSingleTableDatabase(f *testhelpers.TestFerry) {
-	err := testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 1000)
-	testhelpers.PanicIfError(err)
-
-	err = testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
-	testhelpers.PanicIfError(err)
+	testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 1000)
+	testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
 
 	addTenantID(f.SourceDB, "gftest", "table1", 3)
 	addTenantID(f.TargetDB, "gftest", "table1", 3)
