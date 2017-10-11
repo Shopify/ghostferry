@@ -10,7 +10,8 @@ import (
 )
 
 type CopydbFerry struct {
-	ferry *ghostferry.Ferry
+	ferry         *ghostferry.Ferry
+	controlServer *ghostferry.ControlServer
 }
 
 func NewFerry(config *ghostferry.Config) *CopydbFerry {
@@ -18,11 +19,25 @@ func NewFerry(config *ghostferry.Config) *CopydbFerry {
 		Config: config,
 	}
 
-	return &CopydbFerry{ferry: ferry}
+	controlServer := &ghostferry.ControlServer{
+		F:       ferry,
+		Addr:    config.ServerBindAddr,
+		Basedir: config.WebBasedir,
+	}
+
+	return &CopydbFerry{
+		ferry:         ferry,
+		controlServer: controlServer,
+	}
 }
 
 func (this *CopydbFerry) Initialize() error {
-	return this.ferry.Initialize()
+	err := this.ferry.Initialize()
+	if err != nil {
+		return err
+	}
+
+	return this.controlServer.Initialize()
 }
 
 func (this *CopydbFerry) Start() error {
@@ -63,10 +78,14 @@ func (this *CopydbFerry) CreateDatabasesAndTables() error {
 }
 
 func (this *CopydbFerry) Run() {
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
+	serverWG := &sync.WaitGroup{}
+	serverWG.Add(1)
+	go this.controlServer.Run(serverWG)
+
+	copyWG := &sync.WaitGroup{}
+	copyWG.Add(1)
 	go func() {
-		defer wg.Done()
+		defer copyWG.Done()
 		this.ferry.Run()
 	}()
 
@@ -86,13 +105,13 @@ func (this *CopydbFerry) Run() {
 
 	// After waiting for the binlog streamer to stop, the source and the target
 	// should be identical.
-	wg.Wait()
+	copyWG.Wait()
 
 	// This is where you cutover from using the source database to
 	// using the target database.
 
-	// It is safe to send a signla to this program and let it exit.
-	this.ferry.WaitForControlServer()
+	// Work is done, the process will run the web server until killed.
+	serverWG.Wait()
 }
 
 func (this *CopydbFerry) createDatabaseIfExistsOnTarget(database string) error {

@@ -28,8 +28,6 @@ func (this *IntegrationTestCase) Run() {
 	this.Setup()
 	this.StartFerryAndDataWriter()
 	this.WaitUntilRowCopyIsComplete()
-	// we must shutdown the control server otherwise it'll leak a socket
-	this.ShutdownControlServer()
 	this.SetReadonlyOnSourceDbAndStopDataWriter()
 	this.StopStreamingAndWaitForGhostferryFinish()
 	this.VerifyData()
@@ -68,13 +66,6 @@ func (this *IntegrationTestCase) WaitUntilRowCopyIsComplete() {
 	this.Ferry.WaitUntilRowCopyIsComplete()
 }
 
-func (this *IntegrationTestCase) ShutdownControlServer() {
-	err := this.Ferry.ShutdownControlServer()
-	if err != nil {
-		logrus.WithError(err).Error("failed to shutdown control server")
-	}
-}
-
 func (this *IntegrationTestCase) SetReadonlyOnSourceDbAndStopDataWriter() {
 	_, err := this.Ferry.SourceDB.Exec("SET GLOBAL read_only = ON")
 	PanicIfError(err)
@@ -90,7 +81,6 @@ func (this *IntegrationTestCase) StopStreamingAndWaitForGhostferryFinish() {
 
 	this.Ferry.FlushBinlogAndStopStreaming()
 	this.wg.Wait()
-	this.Ferry.WaitForControlServer()
 
 	this.callCustomAction(this.AfterStoppedBinlogStreaming)
 }
