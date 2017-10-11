@@ -20,8 +20,9 @@ type BinlogStreamer struct {
 	Config       *Config
 	ErrorHandler *ErrorHandler
 	Throttler    *Throttler
+	Filter       CopyFilter
 
-	EventFilter DMLEventFilter
+	TableSchema TableSchemaCache
 
 	binlogSyncer               *replication.BinlogSyncer
 	binlogStreamer             *replication.BinlogStreamer
@@ -196,7 +197,7 @@ func (s *BinlogStreamer) updateLastStreamedPosAndTime(ev *replication.BinlogEven
 func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
 
-	dmlEvs, err := NewBinlogDMLEvents(ev)
+	dmlEvs, err := NewBinlogDMLEvents(ev, s.TableSchema)
 	if err != nil {
 		return err
 	}
@@ -212,7 +213,7 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 			continue
 		}
 
-		if s.EventFilter != nil && !s.EventFilter.Applicable(dmlEv) {
+		if s.Filter != nil && !s.Filter.ApplicableEvent(dmlEv) {
 			continue
 		}
 

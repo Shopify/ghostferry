@@ -9,7 +9,7 @@ import (
 
 func setupSingleTableDatabase(f *testhelpers.TestFerry) error {
 	maxId := 1111
-	err := testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", maxId)
+	err := testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", maxId, 1)
 	if err != nil {
 		return err
 	}
@@ -22,7 +22,7 @@ func setupSingleTableDatabase(f *testhelpers.TestFerry) error {
 		}
 	}
 
-	return testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
+	return testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0, 1)
 }
 
 func TestCopyDataWithoutAnyWritesToSource(t *testing.T) {

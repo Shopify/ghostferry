@@ -1,17 +1,17 @@
----
 machine:
   environment:
     USERGOPATH: "/home/ubuntu/.go_workspace"
 
+  services:
+    - docker
+
 test:
   override:
-    - go test ./test -v
+    - go test ./test ./reloc/test -p 1 -v
 
 dependencies:
-  pre:
-    - ci/00-circle-hacks.sh
-    - ci/01-install-packages.sh
-    - ci/02-setup-mysql.sh
+  post:
+    - docker-compose up -d mysql-1 mysql-2
 
 deployment:
   production:

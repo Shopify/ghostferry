@@ -51,6 +51,7 @@ type Ferry struct {
 	ErrorHandler   *ErrorHandler
 	Throttler      *Throttler
 	Verifier       Verifier
+	Filter         CopyFilter
 
 	Tables TableSchemaCache
 
@@ -181,6 +182,7 @@ func (f *Ferry) Initialize() (err error) {
 		Config:       f.Config,
 		ErrorHandler: f.ErrorHandler,
 		Throttler:    f.Throttler,
+		Filter:       f.Filter,
 	}
 	err = f.BinlogStreamer.Initialize()
 	if err != nil {
@@ -193,6 +195,7 @@ func (f *Ferry) Initialize() (err error) {
 		Config:       f.Config,
 		ErrorHandler: f.ErrorHandler,
 		Throttler:    f.Throttler,
+		Filter:       f.Filter,
 	}
 
 	err = f.DataIterator.Initialize()
@@ -238,6 +241,9 @@ func (f *Ferry) Start() error {
 		return err
 	}
 
+	// TODO(pushrax): handle changes to schema during copying and clean this up.
+	f.DataIterator.TableSchema = f.Tables
+	f.BinlogStreamer.TableSchema = f.Tables
 	f.DataIterator.Tables = f.Tables.AsSlice()
 
 	return nil
@@ -351,7 +357,7 @@ func (f *Ferry) writeEventsToTarget(events []DMLEvent) error {
 	}
 
 	for _, ev := range events {
-		sql, args, err := ev.AsSQLQuery(f.Tables)
+		sql, args, err := ev.AsSQLQuery()
 		if err != nil {
 			err = fmt.Errorf("during generating sql query: %v", err)
 			return rollback(err)

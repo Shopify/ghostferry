@@ -21,7 +21,7 @@ func (this *TableSchemaCacheTestSuite) SetupTest() {
 
 	this.tablenames = []string{"test_table_1", "test_table_2", "test_table_3"}
 	for _, tablename := range this.tablenames {
-		err := testhelpers.SeedInitialData(this.Ferry.SourceDB, testhelpers.TestSchemaName, tablename, 0)
+		err := testhelpers.SeedInitialData(this.Ferry.SourceDB, testhelpers.TestSchemaName, tablename, 0, 1)
 		this.Require().Nil(err)
 	}
 }
@@ -42,8 +42,8 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesWithoutFiltering() {
 		this.Require().Equal(1, len(schema.PKColumns))
 		this.Require().Equal(0, schema.PKColumns[0])
 
-		expectedColumnNames := []string{"id", "data"}
-		expectedColumnTypes := []int{sqlSchema.TYPE_NUMBER, sqlSchema.TYPE_STRING}
+		expectedColumnNames := []string{"id", "tenant_id", "data"}
+		expectedColumnTypes := []int{sqlSchema.TYPE_NUMBER, sqlSchema.TYPE_NUMBER, sqlSchema.TYPE_STRING}
 		for idx, column := range schema.Columns {
 			this.Require().Equal(expectedColumnNames[idx], column.Name)
 			this.Require().Equal(expectedColumnTypes[idx], column.Type)
@@ -120,48 +120,6 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutAnyPK() 
 
 	this.Require().NotNil(err)
 	this.Require().Contains(err.Error(), "table test_table_4 has 0 primary key columns")
-}
-
-func (this *TableSchemaCacheTestSuite) TestTableColumns() {
-	tables, err := ghostferry.LoadTables(
-		this.Ferry.SourceDB,
-		map[string]bool{testhelpers.TestSchemaName: true},
-		map[string]bool{this.tablenames[1]: false, "ApplicableByDefault!": true},
-	)
-	this.Require().Nil(err)
-
-	columns, err := tables.TableColumns(testhelpers.TestSchemaName, this.tablenames[0])
-	this.Require().Nil(err)
-
-	expectedColumnNames := []string{"id", "data"}
-	for idx, column := range columns {
-		this.Require().Equal(expectedColumnNames[idx], column.Name)
-	}
-
-	columns, err = tables.TableColumns(testhelpers.TestSchemaName, this.tablenames[1])
-	this.Require().NotNil(err)
-	this.Require().Contains(err.Error(), this.tablenames[1]+" does not exist")
-}
-
-func (this *TableSchemaCacheTestSuite) TestTableColumnNamesQuoted() {
-	tables, err := ghostferry.LoadTables(
-		this.Ferry.SourceDB,
-		map[string]bool{testhelpers.TestSchemaName: true},
-		map[string]bool{this.tablenames[1]: false, "ApplicableByDefault!": true},
-	)
-	this.Require().Nil(err)
-
-	columns, err := tables.TableColumnNamesQuoted(testhelpers.TestSchemaName, this.tablenames[0])
-	this.Require().Nil(err)
-
-	expected := []string{"`id`", "`data`"}
-	for idx, column := range columns {
-		this.Require().Equal(expected[idx], column)
-	}
-
-	columns, err = tables.TableColumnNamesQuoted(testhelpers.TestSchemaName, this.tablenames[1])
-	this.Require().NotNil(err)
-	this.Require().Contains(err.Error(), this.tablenames[1]+" does not exist")
 }
 
 func (this *TableSchemaCacheTestSuite) TestAllTableNames() {

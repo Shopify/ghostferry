@@ -54,7 +54,7 @@ copydb-deb: reset-deb-dir
 
 test:
 	@go version
-	go test ./test $(TESTFLAGS)
+	go test `glide nv` -p 1 $(TESTFLAGS)
 
 clean:
 	rm -rf build
