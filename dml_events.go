@@ -12,7 +12,7 @@ type DMLEvent interface {
 	Database() string
 	Table() string
 	Schema() schema.Table
-	AsSQLQuery() (string, []interface{}, error)
+	AsSQLQuery(target *schema.Table) (string, []interface{}, error)
 	OldValues() []interface{}
 	NewValues() []interface{}
 }
@@ -64,13 +64,13 @@ func (e *BinlogInsertEvent) NewValues() []interface{} {
 	return e.newValues
 }
 
-func (e *BinlogInsertEvent) AsSQLQuery() (string, []interface{}, error) {
+func (e *BinlogInsertEvent) AsSQLQuery(target *schema.Table) (string, []interface{}, error) {
 	columns, err := loadColumnsForEvent(e.table, e.newValues)
 	if err != nil {
 		return "", nil, err
 	}
 
-	query := "INSERT IGNORE INTO " + QuotedTableNameFromString(e.table.Schema, e.table.Name) +
+	query := "INSERT IGNORE INTO " + QuotedTableNameFromString(target.Schema, target.Name) +
 		" (" + strings.Join(columns, ",") + ") VALUES (" + strings.Repeat("?,", len(columns)-1) + "?)"
 
 	return query, e.newValues, nil
@@ -118,7 +118,7 @@ func (e *BinlogUpdateEvent) NewValues() []interface{} {
 	return e.newValues
 }
 
-func (e *BinlogUpdateEvent) AsSQLQuery() (string, []interface{}, error) {
+func (e *BinlogUpdateEvent) AsSQLQuery(target *schema.Table) (string, []interface{}, error) {
 	columns, err := loadColumnsForEvent(e.table, e.oldValues, e.newValues)
 	if err != nil {
 		return "", nil, err
@@ -126,7 +126,7 @@ func (e *BinlogUpdateEvent) AsSQLQuery() (string, []interface{}, error) {
 
 	conditions := conditionsForTable(columns)
 
-	query := "UPDATE " + QuotedTableNameFromString(e.table.Schema, e.table.Name) +
+	query := "UPDATE " + QuotedTableNameFromString(target.Schema, target.Name) +
 		" SET " + strings.Join(conditions, ", ") +
 		" WHERE " + strings.Join(conditions, " AND ")
 
@@ -167,13 +167,13 @@ func NewBinlogDeleteEvents(rowsEvent *replication.RowsEvent, tables TableSchemaC
 	return deleteEvents, nil
 }
 
-func (e *BinlogDeleteEvent) AsSQLQuery() (string, []interface{}, error) {
+func (e *BinlogDeleteEvent) AsSQLQuery(target *schema.Table) (string, []interface{}, error) {
 	columns, err := loadColumnsForEvent(e.table, e.oldValues)
 	if err != nil {
 		return "", nil, err
 	}
 
-	query := "DELETE FROM " + QuotedTableNameFromString(e.table.Schema, e.table.Name) +
+	query := "DELETE FROM " + QuotedTableNameFromString(target.Schema, target.Name) +
 		" WHERE " + strings.Join(conditionsForTable(columns), " AND ")
 
 	return query, e.oldValues, nil
@@ -218,13 +218,13 @@ func (e *ExistingRowEvent) NewValues() []interface{} {
 	return e.values
 }
 
-func (e *ExistingRowEvent) AsSQLQuery() (string, []interface{}, error) {
+func (e *ExistingRowEvent) AsSQLQuery(target *schema.Table) (string, []interface{}, error) {
 	columns, err := loadColumnsForEvent(e.table, e.values)
 	if err != nil {
 		return "", nil, err
 	}
 
-	query := "INSERT IGNORE INTO " + QuotedTableNameFromString(e.table.Schema, e.table.Name) +
+	query := "INSERT IGNORE INTO " + QuotedTableNameFromString(target.Schema, target.Name) +
 		" (" + strings.Join(columns, ",") + ") VALUES (" + strings.Repeat("?,", len(columns)-1) + "?)"
 
 	return query, e.values, nil
