@@ -426,16 +426,11 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 	}
 
 	var ev DMLEvent
+	var values []interface{}
 	events = make([]DMLEvent, 0)
 
 	for rows.Next() {
-		values := make([]interface{}, len(columns))
-		valuePtrs := make([]interface{}, len(columns))
-		for i, _ := range values {
-			valuePtrs[i] = &values[i]
-		}
-
-		err = rows.Scan(valuePtrs...)
+		values, err = ScanGenericRow(rows, len(columns))
 		if err != nil {
 			logger.WithError(err).Error("failed to scan row")
 			return
@@ -465,4 +460,16 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 
 	err = rows.Err()
 	return
+}
+
+func ScanGenericRow(rows *sql.Rows, columnCount int) ([]interface{}, error) {
+	values := make([]interface{}, columnCount)
+	valuePtrs := make([]interface{}, columnCount)
+
+	for i, _ := range values {
+		valuePtrs[i] = &values[i]
+	}
+
+	err := rows.Scan(valuePtrs...)
+	return values, err
 }

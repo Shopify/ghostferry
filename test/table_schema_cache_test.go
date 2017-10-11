@@ -21,7 +21,7 @@ func (this *TableSchemaCacheTestSuite) SetupTest() {
 
 	this.tablenames = []string{"test_table_1", "test_table_2", "test_table_3"}
 	for _, tablename := range this.tablenames {
-		err := testhelpers.SeedInitialData(this.Ferry.SourceDB, testhelpers.TestSchemaName, tablename, 0, 1)
+		err := testhelpers.SeedInitialData(this.Ferry.SourceDB, testhelpers.TestSchemaName, tablename, 0)
 		this.Require().Nil(err)
 	}
 }
@@ -42,8 +42,8 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesWithoutFiltering() {
 		this.Require().Equal(1, len(schema.PKColumns))
 		this.Require().Equal(0, schema.PKColumns[0])
 
-		expectedColumnNames := []string{"id", "tenant_id", "data"}
-		expectedColumnTypes := []int{sqlSchema.TYPE_NUMBER, sqlSchema.TYPE_NUMBER, sqlSchema.TYPE_STRING}
+		expectedColumnNames := []string{"id", "data"}
+		expectedColumnTypes := []int{sqlSchema.TYPE_NUMBER, sqlSchema.TYPE_STRING}
 		for idx, column := range schema.Columns {
 			this.Require().Equal(expectedColumnNames[idx], column.Name)
 			this.Require().Equal(expectedColumnTypes[idx], column.Type)

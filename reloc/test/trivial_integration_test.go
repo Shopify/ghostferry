@@ -1,6 +1,9 @@
 package test
 
 import (
+	"database/sql"
+	"fmt"
+	"math/rand"
 	"testing"
 
 	"github.com/Shopify/ghostferry/reloc"
@@ -8,13 +11,27 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func setupSingleTableDatabase(f *testhelpers.TestFerry) error {
-	err := testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 1000, 3)
-	if err != nil {
-		return err
-	}
+func addTenantID(db *sql.DB, dbname, tablename string, numberOfTenants int) {
+	query := "ALTER TABLE %s.%s ADD tenant_id bigint(20)"
+	query = fmt.Sprintf(query, dbname, tablename)
+	_, err := db.Exec(query)
+	testhelpers.PanicIfError(err)
 
-	return testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0, 3)
+	query = "UPDATE %s.%s SET tenant_id = id %% ?"
+	query = fmt.Sprintf(query, dbname, tablename)
+	_, err = db.Exec(query, numberOfTenants)
+	testhelpers.PanicIfError(err)
+}
+
+func setupSingleTableDatabase(f *testhelpers.TestFerry) {
+	err := testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 1000)
+	testhelpers.PanicIfError(err)
+
+	err = testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
+	testhelpers.PanicIfError(err)
+
+	addTenantID(f.SourceDB, "gftest", "table1", 3)
+	addTenantID(f.TargetDB, "gftest", "table1", 3)
 }
 
 func selectiveFerry(shardingValue interface{}) *testhelpers.TestFerry {
@@ -56,7 +73,10 @@ func TestSelectiveCopyDataWithInsertLoadOnOtherTenants(t *testing.T) {
 			ProbabilityOfInsert: 1.0,
 			NumberOfWriters:     2,
 			Tables:              []string{"gftest.table1"},
-			TenantValues:        []int{0, 1},
+
+			ExtraInsertData: func(vals map[string]interface{}) {
+				vals["tenant_id"] = rand.Intn(2)
+			},
 		},
 	}
 
@@ -81,7 +101,10 @@ func TestSelectiveCopyDataWithInsertLoadOnAllTenants(t *testing.T) {
 			ProbabilityOfInsert: 1.0,
 			NumberOfWriters:     2,
 			Tables:              []string{"gftest.table1"},
-			TenantValues:        []int{0, 1, 2},
+
+			ExtraInsertData: func(vals map[string]interface{}) {
+				vals["tenant_id"] = rand.Intn(3)
+			},
 		},
 	}
 

@@ -49,7 +49,7 @@ func (this *GhostferryUnitTestSuite) SetupTest() {
 }
 
 func (this *GhostferryUnitTestSuite) SeedSourceDB(numberOfRows int) {
-	err := SeedInitialData(this.Ferry.SourceDB, TestSchemaName, TestTable1Name, numberOfRows, 1)
+	err := SeedInitialData(this.Ferry.SourceDB, TestSchemaName, TestTable1Name, numberOfRows)
 	this.Require().Nil(err)
 }
 

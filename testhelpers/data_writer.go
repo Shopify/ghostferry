@@ -19,7 +19,7 @@ func randData() string {
 	return string(b)
 }
 
-func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows, tenants int) error {
+func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows int) error {
 	var query string
 	var err error
 
@@ -30,7 +30,7 @@ func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows, tenants
 		return err
 	}
 
-	query = "CREATE TABLE %s.%s (id bigint(20) not null auto_increment, tenant_id bigint(20), data TEXT, primary key(id))"
+	query = "CREATE TABLE %s.%s (id bigint(20) not null auto_increment, data TEXT, primary key(id))"
 	query = fmt.Sprintf(query, dbname, tablename)
 
 	_, err = db.Exec(query)
@@ -44,10 +44,10 @@ func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows, tenants
 	}
 
 	for i := 0; i < numberOfRows; i++ {
-		query = "INSERT INTO %s.%s (id, tenant_id, data) VALUES (?, ?, ?)"
+		query = "INSERT INTO %s.%s (id, data) VALUES (?, ?)"
 		query = fmt.Sprintf(query, dbname, tablename)
 
-		_, err = tx.Exec(query, nil, i%tenants+1, randData())
+		_, err = tx.Exec(query, nil, randData())
 		if err != nil {
 			return err
 		}
@@ -74,7 +74,9 @@ type MixedActionDataWriter struct {
 	NumberOfWriters int
 	Db              *sql.DB
 	Tables          []string
-	TenantValues    []int
+
+	ExtraInsertData func(map[string]interface{})
+	ExtraUpdateData func(map[string]interface{})
 
 	wg     *sync.WaitGroup
 	doneCh chan struct{}
@@ -143,8 +145,8 @@ func (this *MixedActionDataWriter) InsertData() error {
 	colvals["id"] = nil
 	colvals["data"] = randData()
 
-	if this.TenantValues != nil {
-		colvals["tenant_id"] = this.TenantValues[rand.Intn(len(this.TenantValues))]
+	if this.ExtraInsertData != nil {
+		this.ExtraInsertData(colvals)
 	}
 
 	sql, args, err := sq.Insert(table).SetMap(colvals).ToSql()
@@ -166,6 +168,10 @@ func (this *MixedActionDataWriter) UpdateData() error {
 
 	colvals := make(map[string]interface{})
 	colvals["data"] = randData()
+
+	if this.ExtraUpdateData != nil {
+		this.ExtraUpdateData(colvals)
+	}
 
 	sql, args, err := sq.Update(table).
 		SetMap(colvals).
