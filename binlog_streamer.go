@@ -196,6 +196,15 @@ func (s *BinlogStreamer) updateLastStreamedPosAndTime(ev *replication.BinlogEven
 
 func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
+	rowsEvent := ev.Event.(*replication.RowsEvent)
+
+	if len(FilterForApplicable([]string{string(rowsEvent.Table.Schema)}, s.Config.ApplicableDatabases)) == 0 {
+		return nil
+	}
+
+	if len(FilterForApplicable([]string{string(rowsEvent.Table.Table)}, s.Config.ApplicableTables)) == 0 {
+		return nil
+	}
 
 	dmlEvs, err := NewBinlogDMLEvents(ev, s.TableSchema)
 	if err != nil {
@@ -205,14 +214,6 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 	events := make([]DMLEvent, 0)
 
 	for _, dmlEv := range dmlEvs {
-		if len(FilterForApplicable([]string{dmlEv.Database()}, s.Config.ApplicableDatabases)) == 0 {
-			continue
-		}
-
-		if len(FilterForApplicable([]string{dmlEv.Table()}, s.Config.ApplicableTables)) == 0 {
-			continue
-		}
-
 		if s.Filter != nil && !s.Filter.ApplicableEvent(dmlEv) {
 			continue
 		}
