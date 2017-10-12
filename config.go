@@ -47,6 +47,8 @@ type Config struct {
 	TargetUser string
 	TargetPass string
 
+	DatabaseTargets map[string]string
+
 	ApplicableDatabases map[string]bool
 	ApplicableTables    map[string]bool
 

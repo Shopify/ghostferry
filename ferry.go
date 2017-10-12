@@ -358,7 +358,12 @@ func (f *Ferry) writeEventsToTarget(events []DMLEvent) error {
 	}
 
 	for _, ev := range events {
-		sql, args, err := ev.AsSQLQuery(&schema.Table{Schema: ev.Database(), Name: ev.Table()})
+		eventDatabaseName := ev.Database()
+		if targetDatabaseName, exists := f.Config.DatabaseTargets[eventDatabaseName]; exists {
+			eventDatabaseName = targetDatabaseName
+		}
+
+		sql, args, err := ev.AsSQLQuery(&schema.Table{Schema: eventDatabaseName, Name: ev.Table()})
 		if err != nil {
 			err = fmt.Errorf("during generating sql query: %v", err)
 			return rollback(err)

@@ -7,7 +7,8 @@ import (
 )
 
 type RelocFerry struct {
-	ferry *ghostferry.Ferry
+	ferry         *ghostferry.Ferry
+	controlServer *ghostferry.ControlServer
 }
 
 func NewFerry(shardingKey string, shardingValue interface{}, config *ghostferry.Config) *RelocFerry {
@@ -21,11 +22,22 @@ func NewFerry(shardingKey string, shardingValue interface{}, config *ghostferry.
 		Filter: filter,
 	}
 
-	return &RelocFerry{ferry: ferry}
+	controlServer := &ghostferry.ControlServer{
+		F:       ferry,
+		Addr:    config.ServerBindAddr,
+		Basedir: config.WebBasedir,
+	}
+
+	return &RelocFerry{ferry: ferry, controlServer: controlServer}
 }
 
 func (this *RelocFerry) Initialize() error {
-	return this.ferry.Initialize()
+	err := this.ferry.Initialize()
+	if err != nil {
+		return err
+	}
+
+	return this.controlServer.Initialize()
 }
 
 func (this *RelocFerry) Start() error {
@@ -37,10 +49,14 @@ func (this *RelocFerry) Start() error {
 }
 
 func (this *RelocFerry) Run() {
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
+	serverWG := &sync.WaitGroup{}
+	serverWG.Add(1)
+	go this.controlServer.Run(serverWG)
+
+	copyWG := &sync.WaitGroup{}
+	copyWG.Add(1)
 	go func() {
-		defer wg.Done()
+		defer copyWG.Done()
 		this.ferry.Run()
 	}()
 
@@ -50,8 +66,11 @@ func (this *RelocFerry) Run() {
 	// Call cutover lock callback here.
 
 	this.ferry.FlushBinlogAndStopStreaming()
-	wg.Wait()
+	copyWG.Wait()
 
 	// Source and target are identical.
 	// Call cutover unlock callback here.
+
+	// Work is done, the process will run the web server until killed.
+	serverWG.Wait()
 }
