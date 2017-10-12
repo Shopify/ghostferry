@@ -46,6 +46,7 @@ func (this *GhostferryUnitTestSuite) SetupTest() {
 	this.Require().Nil(err)
 
 	this.Ferry = this.TestFerry.Ferry
+	this.resetDbs()
 }
 
 func (this *GhostferryUnitTestSuite) SeedSourceDB(numberOfRows int) {
@@ -54,6 +55,10 @@ func (this *GhostferryUnitTestSuite) SeedSourceDB(numberOfRows int) {
 }
 
 func (this *GhostferryUnitTestSuite) TearDownTest() {
+	this.resetDbs()
+}
+
+func (this *GhostferryUnitTestSuite) resetDbs() {
 	_, err := this.Ferry.SourceDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", TestSchemaName))
 	this.Require().Nil(err)
 	_, err = this.Ferry.TargetDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", TestSchemaName))

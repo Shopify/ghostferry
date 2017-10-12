@@ -19,33 +19,20 @@ type TestFerry struct {
 	AfterRowCopyDoneListener func() error
 }
 
-func NewTestFerry() *TestFerry {
-	sourcePortStr := os.Getenv("N1_PORT")
-	targetPortStr := os.Getenv("N2_PORT")
-	var sourcePort, targetPort uint64
-	var err error
-	if sourcePortStr == "" {
-		sourcePort = 29291
-	} else {
-		sourcePort, err = strconv.ParseUint(sourcePortStr, 10, 16)
-		PanicIfError(err)
-	}
+var (
+	TestSourcePort = getPortFromEnv("N1_PORT", 29291)
+	TestTargetPort = getPortFromEnv("N2_PORT", 29292)
+)
 
-	if targetPortStr == "" {
-		targetPort = 29292
-	} else {
-		targetPort, err = strconv.ParseUint(targetPortStr, 10, 16)
-		PanicIfError(err)
-	}
-
+func NewTestConfig() *ghostferry.Config {
 	config := &ghostferry.Config{
 		SourceHost: "127.0.0.1",
-		SourcePort: uint16(sourcePort),
+		SourcePort: uint16(TestSourcePort),
 		SourceUser: "root",
 		SourcePass: "",
 
 		TargetHost: "127.0.0.1",
-		TargetPort: uint16(targetPort),
+		TargetPort: uint16(TestTargetPort),
 		TargetUser: "root",
 		TargetPass: "",
 
@@ -64,12 +51,16 @@ func NewTestFerry() *TestFerry {
 		WebBasedir:       "..",
 	}
 
-	err = config.ValidateConfig()
+	err := config.ValidateConfig()
 	PanicIfError(err)
 
+	return config
+}
+
+func NewTestFerry() *TestFerry {
 	return &TestFerry{
 		Ferry: &ghostferry.Ferry{
-			Config: config,
+			Config: NewTestConfig(),
 		},
 	}
 }
@@ -117,4 +108,15 @@ func (this *TestFerry) Start() error {
 
 func (this *TestFerry) Run() {
 	this.Ferry.Run()
+}
+
+func getPortFromEnv(env string, defaultVal uint64) uint64 {
+	portStr := os.Getenv(env)
+	if portStr == "" {
+		return defaultVal
+	} else {
+		port, err := strconv.ParseUint(portStr, 10, 16)
+		PanicIfError(err)
+		return port
+	}
 }
