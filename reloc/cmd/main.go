@@ -13,14 +13,16 @@ import (
 
 var shardingKey string
 var shardingValue int64
+var sourceDb string
+var targetDb string
 var configPath string
 var printVersion bool
 
 func usage() {
 	fmt.Printf("reloc built with ghostferry %s+%s\n", ghostferry.VersionNumber, ghostferry.VersionCommit)
 	fmt.Println()
-	fmt.Printf("Usage: %s -sharding-key <key> -sharding-value <value> < conf.json \n", os.Args[0])
-	fmt.Printf("    or %s -sharding-key <key> -sharding-value <value> -config-path conf.json \n", os.Args[0])
+	fmt.Printf("Usage: %s -sharding-key <key> -sharding-value <value> -source-db <dbname> -target-db <dbname> < conf.json \n", os.Args[0])
+	fmt.Printf("    or %s -sharding-key <key> -sharding-value <value> -source-db <dbname> -target-db <dbname> -config-path conf.json \n", os.Args[0])
 	fmt.Println()
 	flag.PrintDefaults()
 }
@@ -28,6 +30,8 @@ func usage() {
 func init() {
 	flag.StringVar(&shardingKey, "sharding-key", "", "[Required] Defines the sharding key to be used for copying")
 	flag.Int64Var(&shardingValue, "sharding-value", -1, "[Required] Defines the value of the sharding key to filter on")
+	flag.StringVar(&sourceDb, "source-db", "", "[Required] Defines the source shard database name")
+	flag.StringVar(&targetDb, "target-db", "", "[Required] Defines the target shard database name")
 	flag.StringVar(&configPath, "config-path", "", "[Required] Specify path to config (or provide it on stdin)")
 	flag.BoolVar(&printVersion, "version", false, "Print version and exit")
 }
@@ -46,7 +50,7 @@ func main() {
 	fmt.Printf("reloc built with ghostferry %s+%s\n", ghostferry.VersionNumber, ghostferry.VersionCommit)
 	fmt.Printf("will move tenant %s=%d", shardingKey, shardingValue)
 
-	ferry := reloc.NewFerry(shardingKey, shardingValue, config)
+	ferry := reloc.NewFerry(shardingKey, shardingValue, sourceDb, config)
 
 	err := ferry.Initialize()
 	if err != nil {
@@ -97,6 +101,8 @@ func parseAndValidateConfig() *ghostferry.Config {
 		errorAndExit(fmt.Sprintf("failed to parse config: %v", err))
 	}
 
+	config.DatabaseTargets = map[string]string{sourceDb: targetDb}
+
 	err = config.ValidateConfig()
 	if err != nil {
 		errorAndExit(fmt.Sprintf("failed to validate config: %v", err))
@@ -114,6 +120,18 @@ func assertRequiredFlagsPresent() {
 
 	if shardingValue == -1 {
 		fmt.Println("Missing sharding-value argument\n")
+		usage()
+		os.Exit(1)
+	}
+
+	if sourceDb == "" {
+		fmt.Println("Missing source-db argument\n")
+		usage()
+		os.Exit(1)
+	}
+
+	if targetDb == "" {
+		fmt.Println("Missing target-db argument\n")
 		usage()
 		os.Exit(1)
 	}

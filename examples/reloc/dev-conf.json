@@ -1,0 +1,14 @@
+{
+  "SourceHost": "shopify.railgun",
+  "SourcePort": 20015,
+  "SourceUser": "root",
+  "SourcePass": "",
+
+  "TargetHost": "shopify.railgun",
+  "TargetPort": 20017,
+  "TargetUser": "root",
+  "TargetPass": "",
+
+  "MyServerId": 99399,
+  "AutomaticCutover": true
+}

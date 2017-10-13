@@ -7,15 +7,19 @@ import (
 )
 
 type RelocFerry struct {
-	ferry         *ghostferry.Ferry
-	filter        *ShardingFilter
-	controlServer *ghostferry.ControlServer
+	ferry  *ghostferry.Ferry
+	filter *ShardingFilter
 }
 
-func NewFerry(shardingKey string, shardingValue interface{}, config *ghostferry.Config) *RelocFerry {
+func NewFerry(shardingKey string, shardingValue interface{}, sourceShardDb string, config *ghostferry.Config) *RelocFerry {
 	filter := &ShardingFilter{
 		ShardingKey:   shardingKey,
 		ShardingValue: shardingValue,
+	}
+
+	config.Applicability = &ShardedApplicableFilter{
+		ShardingKey: shardingKey,
+		SourceShard: sourceShardDb,
 	}
 
 	ferry := &ghostferry.Ferry{
@@ -23,16 +27,9 @@ func NewFerry(shardingKey string, shardingValue interface{}, config *ghostferry.
 		Filter: filter,
 	}
 
-	controlServer := &ghostferry.ControlServer{
-		F:       ferry,
-		Addr:    config.ServerBindAddr,
-		Basedir: config.WebBasedir,
-	}
-
 	return &RelocFerry{
-		ferry:         ferry,
-		filter:        filter,
-		controlServer: controlServer,
+		ferry:  ferry,
+		filter: filter,
 	}
 }
 
@@ -41,8 +38,7 @@ func (this *RelocFerry) Initialize() error {
 	if err != nil {
 		return err
 	}
-
-	return this.controlServer.Initialize()
+	return nil
 }
 
 func (this *RelocFerry) Start() error {
@@ -54,10 +50,6 @@ func (this *RelocFerry) Start() error {
 }
 
 func (this *RelocFerry) Run() {
-	serverWG := &sync.WaitGroup{}
-	serverWG.Add(1)
-	go this.controlServer.Run(serverWG)
-
 	copyWG := &sync.WaitGroup{}
 	copyWG.Add(1)
 	go func() {
@@ -76,7 +68,4 @@ func (this *RelocFerry) Run() {
 
 	// Source and target are identical.
 	// Call cutover unlock callback here.
-
-	// Work is done, the process will run the web server until killed.
-	serverWG.Wait()
 }
