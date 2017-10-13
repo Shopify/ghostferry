@@ -245,14 +245,12 @@ func (s *BinlogStreamer) readCurrentBinlogPositionFromMasterStatus() (mysql.Posi
 
 	switch {
 	case err == sql.ErrNoRows:
-		return mysql.Position{},
-			fmt.Errorf("no results from show master status")
+		return mysql.Position{}, fmt.Errorf("no results from show master status")
 	case err != nil:
 		return mysql.Position{}, err
 	default:
 		if file == "" {
-			return mysql.Position{},
-				fmt.Errorf("show master status does not show a file")
+			return mysql.Position{}, fmt.Errorf("show master status does not show a file")
 		}
 
 		return mysql.Position{
