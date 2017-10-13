@@ -53,6 +53,7 @@ type Ferry struct {
 	Throttler      *Throttler
 	Verifier       Verifier
 	Filter         CopyFilter
+	Applicability  ApplicabilityFilter
 
 	Tables TableSchemaCache
 
@@ -172,6 +173,10 @@ func (f *Ferry) Initialize() (err error) {
 	}
 	f.ErrorHandler.Initialize()
 
+	if f.Applicability == nil {
+		f.Applicability = &SimpleApplicableFilter{f.ApplicableDatabases, f.ApplicableTables}
+	}
+
 	f.Throttler = &Throttler{
 		Db:           f.SourceDB,
 		Config:       f.Config,
@@ -181,11 +186,12 @@ func (f *Ferry) Initialize() (err error) {
 
 	// Initialize binlog streamer
 	f.BinlogStreamer = &BinlogStreamer{
-		Db:           f.SourceDB,
-		Config:       f.Config,
-		ErrorHandler: f.ErrorHandler,
-		Throttler:    f.Throttler,
-		Filter:       f.Filter,
+		Db:            f.SourceDB,
+		Config:        f.Config,
+		ErrorHandler:  f.ErrorHandler,
+		Throttler:     f.Throttler,
+		Filter:        f.Filter,
+		Applicability: f.Applicability,
 	}
 	err = f.BinlogStreamer.Initialize()
 	if err != nil {
@@ -239,7 +245,7 @@ func (f *Ferry) Start() error {
 	// in order to determine the PrimaryKey of each table as well as finding
 	// which value in the binlog event correspond to which field in the
 	// table.
-	f.Tables, err = LoadTables(f.SourceDB, f.ApplicableDatabases, f.ApplicableTables)
+	f.Tables, err = LoadTables(f.SourceDB, f.Applicability)
 	if err != nil {
 		return err
 	}

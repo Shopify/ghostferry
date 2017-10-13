@@ -29,8 +29,15 @@ func (this *TableSchemaCacheTestSuite) TearDownTest() {
 	this.GhostferryUnitTestSuite.TearDownTest()
 }
 
+func SimpleApplicability(applicableDbs, applicableTables map[string]bool) *ghostferry.SimpleApplicableFilter {
+	return &ghostferry.SimpleApplicableFilter{
+		ApplicableDatabases: applicableDbs,
+		ApplicableTables:    applicableTables,
+	}
+}
+
 func (this *TableSchemaCacheTestSuite) TestLoadTablesWithoutFiltering() {
-	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, map[string]bool{testhelpers.TestSchemaName: true}, nil)
+	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, SimpleApplicability(map[string]bool{testhelpers.TestSchemaName: true}, nil))
 	this.Require().Nil(err)
 	this.Require().Equal(len(this.tablenames), len(tables))
 	for _, tablename := range this.tablenames {
@@ -53,8 +60,10 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesWithoutFiltering() {
 func (this *TableSchemaCacheTestSuite) TestLoadTablesWithWhitelist() {
 	tables, err := ghostferry.LoadTables(
 		this.Ferry.SourceDB,
-		map[string]bool{testhelpers.TestSchemaName: true},
-		map[string]bool{"test_table_2": true},
+		SimpleApplicability(
+			map[string]bool{testhelpers.TestSchemaName: true},
+			map[string]bool{"test_table_2": true},
+		),
 	)
 
 	this.Require().Nil(err)
@@ -70,8 +79,10 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesWithWhitelist() {
 func (this *TableSchemaCacheTestSuite) TestLoadTablesWithBlacklist() {
 	tables, err := ghostferry.LoadTables(
 		this.Ferry.SourceDB,
-		map[string]bool{testhelpers.TestSchemaName: true},
-		map[string]bool{"test_table_2": false, "ApplicableByDefault!": true},
+		SimpleApplicability(
+			map[string]bool{testhelpers.TestSchemaName: true},
+			map[string]bool{"test_table_2": false, "ApplicableByDefault!": true},
+		),
 	)
 
 	this.Require().Nil(err)
@@ -97,8 +108,10 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutNumericP
 
 	_, err = ghostferry.LoadTables(
 		this.Ferry.SourceDB,
-		map[string]bool{testhelpers.TestSchemaName: true},
-		nil,
+		SimpleApplicability(
+			map[string]bool{testhelpers.TestSchemaName: true},
+			nil,
+		),
 	)
 
 	this.Require().NotNil(err)
@@ -113,8 +126,10 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutAnyPK() 
 
 	_, err = ghostferry.LoadTables(
 		this.Ferry.SourceDB,
-		map[string]bool{testhelpers.TestSchemaName: true},
-		nil,
+		SimpleApplicability(
+			map[string]bool{testhelpers.TestSchemaName: true},
+			nil,
+		),
 	)
 
 	this.Require().NotNil(err)
@@ -124,8 +139,10 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutAnyPK() 
 func (this *TableSchemaCacheTestSuite) TestAllTableNames() {
 	tables, err := ghostferry.LoadTables(
 		this.Ferry.SourceDB,
-		map[string]bool{testhelpers.TestSchemaName: true},
-		nil,
+		SimpleApplicability(
+			map[string]bool{testhelpers.TestSchemaName: true},
+			nil,
+		),
 	)
 	this.Require().Nil(err)
 
@@ -138,8 +155,10 @@ func (this *TableSchemaCacheTestSuite) TestAllTableNames() {
 func (this *TableSchemaCacheTestSuite) TestAllTableNamesEmpty() {
 	tables, err := ghostferry.LoadTables(
 		this.Ferry.SourceDB,
-		map[string]bool{testhelpers.TestSchemaName: true},
-		map[string]bool{"ApplicableByDefault!": false},
+		SimpleApplicability(
+			map[string]bool{testhelpers.TestSchemaName: true},
+			map[string]bool{"ApplicableByDefault!": false},
+		),
 	)
 	this.Require().Nil(err)
 	this.Require().Equal(ghostferry.TableSchemaCache{}, tables)
@@ -151,8 +170,10 @@ func (this *TableSchemaCacheTestSuite) TestAllTableNamesEmpty() {
 func (this *TableSchemaCacheTestSuite) TestAsSlice() {
 	tables, err := ghostferry.LoadTables(
 		this.Ferry.SourceDB,
-		map[string]bool{testhelpers.TestSchemaName: true},
-		nil,
+		SimpleApplicability(
+			map[string]bool{testhelpers.TestSchemaName: true},
+			nil,
+		),
 	)
 	this.Require().Nil(err)
 
@@ -167,8 +188,10 @@ func (this *TableSchemaCacheTestSuite) TestAsSlice() {
 func (this *TableSchemaCacheTestSuite) TestAsSliceEmpty() {
 	tables, err := ghostferry.LoadTables(
 		this.Ferry.SourceDB,
-		map[string]bool{testhelpers.TestSchemaName: true},
-		map[string]bool{"ApplicableByDefault!": false},
+		SimpleApplicability(
+			map[string]bool{testhelpers.TestSchemaName: true},
+			map[string]bool{"ApplicableByDefault!": false},
+		),
 	)
 	this.Require().Nil(err)
 	this.Require().Equal(ghostferry.TableSchemaCache{}, tables)
@@ -196,7 +219,7 @@ func (this *TableSchemaCacheTestSuite) TestQuotedTableNameFromString() {
 
 func (this *TableSchemaCacheTestSuite) TestFilterForApplicableNil() {
 	list := []string{"str1", "str2", "str3"}
-	this.Require().Equal(list, ghostferry.FilterForApplicable(list, nil))
+	this.assertBothFilters(list, nil, list)
 }
 
 func (this *TableSchemaCacheTestSuite) TestFilterForApplicableSimple() {
@@ -206,7 +229,7 @@ func (this *TableSchemaCacheTestSuite) TestFilterForApplicableSimple() {
 		"str2": false,
 	}
 
-	this.Require().Equal([]string{"str1"}, ghostferry.FilterForApplicable(list, filter))
+	this.assertBothFilters([]string{"str1"}, filter, list)
 }
 
 func (this *TableSchemaCacheTestSuite) TestFilterForApplicableNonExistentKey() {
@@ -216,7 +239,7 @@ func (this *TableSchemaCacheTestSuite) TestFilterForApplicableNonExistentKey() {
 		"nonexistent": true,
 	}
 
-	this.Require().Equal([]string{"str1"}, ghostferry.FilterForApplicable(list, filter))
+	this.assertBothFilters([]string{"str1"}, filter, list)
 }
 
 func (this *TableSchemaCacheTestSuite) TestFilterForApplicableDefaultFalse() {
@@ -225,7 +248,7 @@ func (this *TableSchemaCacheTestSuite) TestFilterForApplicableDefaultFalse() {
 		"ApplicableByDefault!": false,
 	}
 
-	this.Require().Equal([]string{}, ghostferry.FilterForApplicable(list, filter))
+	this.assertBothFilters([]string{}, filter, list)
 }
 
 func (this *TableSchemaCacheTestSuite) TestFilterForApplicableDefaultTrue() {
@@ -233,7 +256,7 @@ func (this *TableSchemaCacheTestSuite) TestFilterForApplicableDefaultTrue() {
 	filter := map[string]bool{
 		"ApplicableByDefault!": true,
 	}
-	this.Require().Equal(list, ghostferry.FilterForApplicable(list, filter))
+	this.assertBothFilters(list, filter, list)
 }
 
 func (this *TableSchemaCacheTestSuite) TestFilterForApplicableEmptyList() {
@@ -241,7 +264,25 @@ func (this *TableSchemaCacheTestSuite) TestFilterForApplicableEmptyList() {
 	filter := map[string]bool{
 		"ApplicableByDefault!": true,
 	}
-	this.Require().Equal(list, ghostferry.FilterForApplicable(list, filter))
+	this.assertBothFilters(list, filter, list)
+}
+
+func (this *TableSchemaCacheTestSuite) assertBothFilters(expected []string, filter map[string]bool, list []string) {
+	applicability := SimpleApplicability(filter, filter)
+
+	this.Require().Equal(expected, applicability.FilterApplicableDbs(list))
+
+	var schemas []*sqlSchema.Table
+	for _, table := range list {
+		schemas = append(schemas, &sqlSchema.Table{Name: table})
+	}
+
+	applicableTables := []string{}
+	for _, table := range applicability.FilterApplicableTables(schemas) {
+		applicableTables = append(applicableTables, table.Name)
+	}
+
+	this.Require().Equal(expected, applicableTables)
 }
 
 func TestTableSchemaCache(t *testing.T) {

@@ -27,14 +27,12 @@ func (this *DataIteratorTestSuite) SetupTest() {
 	config := this.Ferry.Config
 	errorHandler := this.Ferry.ErrorHandler
 	throttler := this.Ferry.Throttler
-	applicableDbs := map[string]bool{
-		testhelpers.TestSchemaName: true,
-	}
-	applicableTables := map[string]bool{
-		"ApplicableByDefault!": true,
+	applicability := &ghostferry.SimpleApplicableFilter{
+		ApplicableDatabases: map[string]bool{testhelpers.TestSchemaName: true},
+		ApplicableTables:    map[string]bool{"ApplicableByDefault!": true},
 	}
 
-	tables, err := ghostferry.LoadTables(sourceDb, applicableDbs, applicableTables)
+	tables, err := ghostferry.LoadTables(sourceDb, applicability)
 	this.Require().Nil(err)
 
 	config.IterateChunksize = 2
