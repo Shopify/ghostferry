@@ -12,10 +12,11 @@ test:
 dependencies:
   post:
     - docker-compose up -d mysql-1 mysql-2
+    - gem install package_cloud
 
 deployment:
   production:
-    branch: master
+    branch: /master|staging-.*/
     commands:
       - mkdir -p "$USERGOPATH/src/github.com/$CIRCLE_PROJECT_USERNAME"
       - ln -sr "$(pwd)" "$USERGOPATH/src/github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME"
