@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/Shopify/ghostferry"
+	"github.com/Shopify/ghostferry/reloc"
 )
 
 var shardingKey string
@@ -39,11 +40,25 @@ func main() {
 		os.Exit(0)
 	}
 
-	parseAndValidateConfig()
 	assertRequiredFlagsPresent()
+	config := parseAndValidateConfig()
 
 	fmt.Printf("reloc built with ghostferry %s+%s\n", ghostferry.VersionNumber, ghostferry.VersionCommit)
 	fmt.Printf("will move tenant %s=%d", shardingKey, shardingValue)
+
+	ferry := reloc.NewFerry(shardingKey, shardingValue, config)
+
+	err := ferry.Initialize()
+	if err != nil {
+		errorAndExit(fmt.Sprintf("failed to initialize ferry: %v", err))
+	}
+
+	err = ferry.Start()
+	if err != nil {
+		errorAndExit(fmt.Sprintf("failed to start ferry: %v", err))
+	}
+
+	ferry.Run()
 }
 
 func errorAndExit(msg string) {
@@ -51,9 +66,10 @@ func errorAndExit(msg string) {
 	os.Exit(1)
 }
 
-func parseAndValidateConfig() ghostferry.Config {
-	config := ghostferry.Config{
+func parseAndValidateConfig() *ghostferry.Config {
+	config := &ghostferry.Config{
 		AutomaticCutover: false,
+		MyServerId:       99399,
 	}
 
 	var data []byte
@@ -76,14 +92,14 @@ func parseAndValidateConfig() ghostferry.Config {
 		}
 	}
 
-	err = json.Unmarshal(data, &config)
+	err = json.Unmarshal(data, config)
 	if err != nil {
-		errorAndExit("failed to parse config")
+		errorAndExit(fmt.Sprintf("failed to parse config: %v", err))
 	}
 
 	err = config.ValidateConfig()
 	if err != nil {
-		errorAndExit("failed to validate config")
+		errorAndExit(fmt.Sprintf("failed to validate config: %v", err))
 	}
 
 	return config

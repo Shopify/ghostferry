@@ -96,7 +96,7 @@ func main() {
 	}
 
 	if dryrun {
-		fmt.Println("exitting as dryrun is specified")
+		fmt.Println("exiting due to dryrun")
 		return
 	}
 
