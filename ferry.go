@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -357,7 +358,7 @@ func (f *Ferry) writeEventsToTarget(events []DMLEvent) error {
 	}
 
 	for _, ev := range events {
-		sql, args, err := ev.AsSQLQuery()
+		sql, args, err := ev.AsSQLQuery(&schema.Table{Schema: ev.Database(), Name: ev.Table()})
 		if err != nil {
 			err = fmt.Errorf("during generating sql query: %v", err)
 			return rollback(err)
