@@ -2,6 +2,7 @@ package test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/Shopify/ghostferry"
@@ -40,7 +41,7 @@ func (this *ChecksumTableVerifierTestSuite) TestVerifyNoMatchWithEmptyTarget() {
 }
 
 func (this *ChecksumTableVerifierTestSuite) TestVerifyNoMatchWithDifferentTargetData() {
-	testhelpers.SeedInitialData(this.Ferry.TargetDB, testhelpers.TestSchemaName, testhelpers.TestTable1Name, 1, 1)
+	testhelpers.SeedInitialData(this.Ferry.TargetDB, testhelpers.TestSchemaName, testhelpers.TestTable1Name, 1)
 
 	this.verifier.StartVerification(this.Ferry)
 	this.verifier.Wait()
@@ -101,20 +102,23 @@ func (this *ChecksumTableVerifierTestSuite) AssertVerifierNotMatched() {
 }
 
 func (this *ChecksumTableVerifierTestSuite) copyDataFromSourceToTarget() {
-	testhelpers.SeedInitialData(this.Ferry.TargetDB, testhelpers.TestSchemaName, testhelpers.TestTable1Name, 0, 1)
+	testhelpers.SeedInitialData(this.Ferry.TargetDB, testhelpers.TestSchemaName, testhelpers.TestTable1Name, 0)
 
 	rows, err := this.Ferry.SourceDB.Query(fmt.Sprintf("SELECT * FROM `%s`.`%s`", testhelpers.TestSchemaName, testhelpers.TestTable1Name))
 	this.Require().Nil(err)
 	defer rows.Close()
 
+	columns, err := rows.Columns()
+	this.Require().Nil(err)
+
+	columnPlaceholders := "(" + strings.Repeat("?,", len(columns)-1) + "?)"
+
 	for rows.Next() {
-		var id, tenant_id int64
-		var data string
-		err = rows.Scan(&id, &tenant_id, &data)
+		row, err := ghostferry.ScanGenericRow(rows, len(columns))
 		this.Require().Nil(err)
 
-		sql := fmt.Sprintf("INSERT INTO `%s`.`%s` VALUES (?, ?, ?)", testhelpers.TestSchemaName, testhelpers.TestTable1Name)
-		_, err = this.Ferry.TargetDB.Exec(sql, id, tenant_id, data)
+		sql := fmt.Sprintf("INSERT INTO `%s`.`%s` VALUES "+columnPlaceholders, testhelpers.TestSchemaName, testhelpers.TestTable1Name)
+		_, err = this.Ferry.TargetDB.Exec(sql, row...)
 		this.Require().Nil(err)
 	}
 }

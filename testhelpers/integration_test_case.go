@@ -11,11 +11,11 @@ import (
 type IntegrationTestCase struct {
 	T *testing.T
 
-	SetupAction                   func(*TestFerry) error
-	AfterStartBinlogStreaming     func(*TestFerry) error
-	BeforeStoppingBinlogStreaming func(*TestFerry) error
-	AfterStoppedBinlogStreaming   func(*TestFerry) error
-	CustomVerifyAction            func(*TestFerry) error
+	SetupAction                   func(*TestFerry)
+	AfterStartBinlogStreaming     func(*TestFerry)
+	BeforeStoppingBinlogStreaming func(*TestFerry)
+	AfterStoppedBinlogStreaming   func(*TestFerry)
+	CustomVerifyAction            func(*TestFerry)
 
 	DataWriter DataWriter
 	Ferry      *TestFerry
@@ -126,9 +126,9 @@ func (this *IntegrationTestCase) verifyTableChecksum() ([]string, error) {
 	return this.Ferry.Verifier.MismatchedTables()
 }
 
-func (this *IntegrationTestCase) callCustomAction(f func(*TestFerry) error) {
+func (this *IntegrationTestCase) callCustomAction(f func(*TestFerry)) {
 	if f != nil {
-		PanicIfError(f(this.Ferry))
+		f(this.Ferry)
 	}
 }
 

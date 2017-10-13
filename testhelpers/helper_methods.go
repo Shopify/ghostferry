@@ -29,13 +29,7 @@ func ProcessListContainsQueries(db *sql.DB, queries []string) bool {
 	}
 
 	for rows.Next() {
-		data := make([]interface{}, 10)
-		dataPtrs := make([]interface{}, 10)
-		for i, _ := range data {
-			dataPtrs[i] = &data[i]
-		}
-
-		err = rows.Scan(dataPtrs...)
+		data, err := ghostferry.ScanGenericRow(rows, 10)
 		if err != nil {
 			panic(err)
 		}
@@ -86,19 +80,15 @@ func AssertQueriesHaveEqualResult(t *testing.T, ferry *ghostferry.Ferry, query s
 
 func LoadResults(rows *sql.Rows) (out []map[string]interface{}, err error) {
 	var columns []string
+	var row []interface{}
+
 	columns, err = rows.Columns()
 	if err != nil {
 		return
 	}
 
 	for rows.Next() {
-		row := make([]interface{}, len(columns))
-		rowPtrs := make([]interface{}, len(columns))
-		for i, _ := range row {
-			rowPtrs[i] = &row[i]
-		}
-
-		err = rows.Scan(rowPtrs...)
+		row, err = ghostferry.ScanGenericRow(rows, len(columns))
 		if err != nil {
 			return
 		}
