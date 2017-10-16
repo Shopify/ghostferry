@@ -31,8 +31,8 @@ func (this *TableSchemaCacheTestSuite) TearDownTest() {
 
 func SimpleApplicability(applicableDbs, applicableTables map[string]bool) *ghostferry.SimpleApplicableFilter {
 	return &ghostferry.SimpleApplicableFilter{
-		ApplicableDatabases: applicableDbs,
-		ApplicableTables:    applicableTables,
+		Dbs:    applicableDbs,
+		Tables: applicableTables,
 	}
 }
 
@@ -270,7 +270,7 @@ func (this *TableSchemaCacheTestSuite) TestFilterForApplicableEmptyList() {
 func (this *TableSchemaCacheTestSuite) assertBothFilters(expected []string, filter map[string]bool, list []string) {
 	applicability := SimpleApplicability(filter, filter)
 
-	this.Require().Equal(expected, applicability.FilterApplicableDbs(list))
+	this.Require().Equal(expected, applicability.ApplicableDbs(list))
 
 	var schemas []*sqlSchema.Table
 	for _, table := range list {
@@ -278,7 +278,7 @@ func (this *TableSchemaCacheTestSuite) assertBothFilters(expected []string, filt
 	}
 
 	applicableTables := []string{}
-	for _, table := range applicability.FilterApplicableTables(schemas) {
+	for _, table := range applicability.ApplicableTables(schemas) {
 		applicableTables = append(applicableTables, table.Name)
 	}
 

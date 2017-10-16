@@ -28,8 +28,8 @@ func (this *DataIteratorTestSuite) SetupTest() {
 	errorHandler := this.Ferry.ErrorHandler
 	throttler := this.Ferry.Throttler
 	applicability := &ghostferry.SimpleApplicableFilter{
-		ApplicableDatabases: map[string]bool{testhelpers.TestSchemaName: true},
-		ApplicableTables:    map[string]bool{"ApplicableByDefault!": true},
+		Dbs:    map[string]bool{testhelpers.TestSchemaName: true},
+		Tables: map[string]bool{"ApplicableByDefault!": true},
 	}
 
 	tables, err := ghostferry.LoadTables(sourceDb, applicability)

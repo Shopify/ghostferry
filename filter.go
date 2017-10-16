@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	sq "github.com/Masterminds/squirrel"
+	"github.com/siddontang/go-mysql/schema"
 )
 
 // CopyFilter provides an interface for restricting the copying to a subset of
@@ -20,4 +21,9 @@ type CopyFilter interface {
 	// otherwise.
 	// Returning an error here will cause the ferry to be aborted.
 	ApplicableEvent(DMLEvent) (bool, error)
+}
+
+type ApplicableFilter interface {
+	ApplicableTables([]*schema.Table) []*schema.Table
+	ApplicableDbs([]string) []string
 }

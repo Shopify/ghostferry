@@ -53,7 +53,6 @@ type Ferry struct {
 	Throttler      *Throttler
 	Verifier       Verifier
 	Filter         CopyFilter
-	Applicability  ApplicabilityFilter
 
 	Tables TableSchemaCache
 
@@ -172,10 +171,6 @@ func (f *Ferry) Initialize() (err error) {
 		}
 	}
 	f.ErrorHandler.Initialize()
-
-	if f.Applicability == nil {
-		f.Applicability = &SimpleApplicableFilter{f.ApplicableDatabases, f.ApplicableTables}
-	}
 
 	f.Throttler = &Throttler{
 		Db:           f.SourceDB,

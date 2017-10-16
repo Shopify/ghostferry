@@ -22,7 +22,7 @@ type BinlogStreamer struct {
 	ErrorHandler  ErrorHandler
 	Throttler     *Throttler
 	Filter        CopyFilter
-	Applicability ApplicabilityFilter
+	Applicability ApplicableFilter
 
 	TableSchema TableSchemaCache
 

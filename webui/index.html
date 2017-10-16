@@ -32,26 +32,6 @@
               <th>Target DB</th>
               <td>{{.TargetHostPort}}</td>
             </tr>
-            <tr>
-              <th>Applicable Databases</th>
-              <td>
-                {{if not .ApplicableDatabases}}
-                  all databases
-                {{else}}
-                  {{predictableMapDisplay .ApplicableDatabases}}
-                {{end}}
-              </td>
-            </tr>
-            <tr>
-              <th>Applicable Tables</th>
-              <td>
-                {{if not .ApplicableTables}}
-                  all tables
-                {{else}}
-                  {{predictableMapDisplay .ApplicableTables}}
-                {{end}}
-              </td>
-            </tr>
           </tbody>
         </table>
       </div>

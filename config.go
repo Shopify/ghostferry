@@ -49,14 +49,12 @@ type Config struct {
 
 	DatabaseTargets map[string]string
 
-	ApplicableDatabases map[string]bool
-	ApplicableTables    map[string]bool
-
 	SourceTLS *TLSConfig
 	TargetTLS *TLSConfig
 
 	// Config for Ferry
 	MaxWriteRetriesOnTargetDBError int
+	Applicability                  ApplicableFilter
 
 	// Config for BinlogStreamer
 	MyServerId uint32
@@ -102,6 +100,10 @@ func (c *Config) ValidateConfig() error {
 
 	if c.MyServerId == 0 {
 		return fmt.Errorf("MyServerId must be non 0")
+	}
+
+	if c.Applicability == nil {
+		return fmt.Errorf("Applicability filter function must be provided")
 	}
 
 	if c.MaxWriteRetriesOnTargetDBError == 0 {

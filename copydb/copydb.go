@@ -12,22 +12,24 @@ import (
 type CopydbFerry struct {
 	ferry         *ghostferry.Ferry
 	controlServer *ghostferry.ControlServer
+	config        *Config
 }
 
-func NewFerry(config *ghostferry.Config) *CopydbFerry {
+func NewFerry(config *Config) *CopydbFerry {
 	ferry := &ghostferry.Ferry{
-		Config: config,
+		Config: config.GhostferryConfig,
 	}
 
 	controlServer := &ghostferry.ControlServer{
 		F:       ferry,
-		Addr:    config.ServerBindAddr,
-		Basedir: config.WebBasedir,
+		Addr:    config.GhostferryConfig.ServerBindAddr,
+		Basedir: config.GhostferryConfig.WebBasedir,
 	}
 
 	return &CopydbFerry{
 		ferry:         ferry,
 		controlServer: controlServer,
+		config:        config,
 	}
 }
 
@@ -57,7 +59,7 @@ func (this *CopydbFerry) CreateDatabasesAndTables() error {
 	// as the ones we are copying.
 	for tableName := range this.ferry.Tables {
 		t := strings.Split(tableName, ".")
-		if _, exists := this.ferry.ApplicableDatabases[t[0]]; !exists {
+		if _, exists := this.config.ApplicableDatabases[t[0]]; !exists {
 			continue
 		}
 

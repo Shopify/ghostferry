@@ -1,15 +1,23 @@
 {
-  "SourceHost": "127.0.0.1",
-  "SourcePort": 29291,
-  "SourceUser": "ghostferry",
-  "SourcePass": "ghostferry",
+  "GhostferryConfig": {
+    "SourceHost": "127.0.0.1",
+    "SourcePort": 29291,
+    "SourceUser": "ghostferry",
+    "SourcePass": "ghostferry",
 
-  "TargetHost": "127.0.0.1",
-  "TargetPort": 29292,
-  "TargetUser": "ghostferry",
-  "TargetPass": "ghostferry",
+    "TargetHost": "127.0.0.1",
+    "TargetPort": 29292,
+    "TargetUser": "ghostferry",
+    "TargetPass": "ghostferry",
 
-  "MyServerId": 99399,
+    "MyServerId": 99399,
+
+    "SourceTLS": {
+      "CertPath": "/home/vagrant/.mysql-vending-machine/mysqls/gf.n1/data/server-cert.pem",
+      "ServerName": "MySQL_Server_5.7.18-15_Auto_Generated_Server_Certificate"
+    },
+    "TargetTLS": null
+  },
 
   "ApplicableDatabases": {
     "abc": true
@@ -18,11 +26,5 @@
   "ApplicableTables": {
     "schema_migrations": false,
     "ApplicableByDefault!": true
-  },
-
-  "SourceTLS": {
-    "CertPath": "/home/vagrant/.mysql-vending-machine/mysqls/gf.n1/data/server-cert.pem",
-    "ServerName": "MySQL_Server_5.7.18-15_Auto_Generated_Server_Certificate"
-  },
-  "TargetTLS": null
+  }
 }

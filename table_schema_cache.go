@@ -57,7 +57,7 @@ func MaxPrimaryKeys(db *sql.DB, tables []*schema.Table, logger *logrus.Entry) (m
 	return tablesWithData, emptyTables, nil
 }
 
-func LoadTables(db *sql.DB, applicabilityFilter ApplicabilityFilter) (TableSchemaCache, error) {
+func LoadTables(db *sql.DB, applicabilityFilter ApplicableFilter) (TableSchemaCache, error) {
 	logger := logrus.WithField("tag", "table_schema_cache")
 
 	tableSchemaCache := make(TableSchemaCache)
@@ -68,7 +68,7 @@ func LoadTables(db *sql.DB, applicabilityFilter ApplicabilityFilter) (TableSchem
 		return tableSchemaCache, err
 	}
 
-	dbnames = applicabilityFilter.FilterApplicableDbs(dbnames)
+	dbnames = applicabilityFilter.ApplicableDbs(dbnames)
 
 	// For each database, get a list of tables from it and cache the table's schema
 	for _, dbname := range dbnames {
@@ -93,7 +93,7 @@ func LoadTables(db *sql.DB, applicabilityFilter ApplicabilityFilter) (TableSchem
 			tableSchemas = append(tableSchemas, tableSchema)
 		}
 
-		tableSchemas = applicabilityFilter.FilterApplicableTables(tableSchemas)
+		tableSchemas = applicabilityFilter.ApplicableTables(tableSchemas)
 
 		for _, tableSchema := range tableSchemas {
 			tableName := tableSchema.Name

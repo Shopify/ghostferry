@@ -1,30 +1,32 @@
-package ghostferry
+package copydb
 
 import (
 	"github.com/siddontang/go-mysql/schema"
 )
 
-type ApplicabilityFilter interface {
-	FilterApplicableTables([]*schema.Table) []*schema.Table
-	FilterApplicableDbs([]string) []string
+type StaticApplicableFilter struct {
+	Dbs    map[string]bool
+	Tables map[string]bool
 }
 
-type SimpleApplicableFilter struct {
-	ApplicableDatabases map[string]bool
-	ApplicableTables    map[string]bool
+func NewStaticApplicableFilter(dbs, tables map[string]bool) *StaticApplicableFilter {
+	return &StaticApplicableFilter{
+		Dbs:    dbs,
+		Tables: tables,
+	}
 }
 
-func (s *SimpleApplicableFilter) FilterApplicableDbs(dbs []string) []string {
-	return filterForApplicable(dbs, s.ApplicableDatabases)
+func (s *StaticApplicableFilter) ApplicableDbs(dbs []string) []string {
+	return filterForApplicable(dbs, s.Dbs)
 }
 
-func (s *SimpleApplicableFilter) FilterApplicableTables(tables []*schema.Table) []*schema.Table {
+func (s *StaticApplicableFilter) ApplicableTables(tables []*schema.Table) []*schema.Table {
 	var tableNames []string
 	for _, tableSchema := range tables {
 		tableNames = append(tableNames, tableSchema.Name)
 	}
 
-	applicableNames := filterForApplicable(tableNames, s.ApplicableTables)
+	applicableNames := filterForApplicable(tableNames, s.Tables)
 
 	applicableNamesMap := make(map[string]bool)
 	for _, name := range applicableNames {
