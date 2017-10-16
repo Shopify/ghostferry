@@ -25,48 +25,18 @@ func (t *TestApplicability) ApplicableTables(tables []*schema.Table) []*schema.T
 
 func DbApplicability(applicableDbs []string) func([]string) []string {
 	return func(dbs []string) []string {
-		return filterForApplicable(dbs, applicableDbs)
-	}
-}
-
-func TableMapApplicability(applicableTables []string) func([]*schema.Table) []*schema.Table {
-	return func(tables []*schema.Table) []*schema.Table {
-		var tableNames []string
-		for _, tableSchema := range tables {
-			tableNames = append(tableNames, tableSchema.Name)
+		applicabilityMap := make(map[string]bool)
+		for _, db := range applicableDbs {
+			applicabilityMap[db] = true
 		}
 
-		applicableNames := filterForApplicable(tableNames, applicableTables)
-
-		applicableNamesMap := make(map[string]bool)
-		for _, name := range applicableNames {
-			applicableNamesMap[name] = true
-		}
-
-		var applicableSchemas []*schema.Table
-		for _, tableSchema := range tables {
-			if applicableNamesMap[tableSchema.Name] {
-				applicableSchemas = append(applicableSchemas, tableSchema)
+		applicable := make([]string, 0, len(dbs))
+		for _, db := range dbs {
+			if applicabilityMap[db] {
+				applicable = append(applicable, db)
 			}
 		}
 
-		return applicableSchemas
+		return applicable
 	}
-}
-
-func filterForApplicable(list []string, applicableList []string) []string {
-	applicabilityMap := make(map[string]bool)
-	for _, element := range applicableList {
-		applicabilityMap[element] = true
-	}
-
-	applicable := make([]string, 0, len(list))
-
-	for _, element := range list {
-		if applicabilityMap[element] {
-			applicable = append(applicable, element)
-		}
-	}
-
-	return applicable
 }

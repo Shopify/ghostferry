@@ -1,8 +1,10 @@
 package test
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/copydb"
 	"github.com/Shopify/ghostferry/testhelpers"
 	"github.com/stretchr/testify/suite"
@@ -21,6 +23,50 @@ func (this *FilterTestSuite) SetupTest() {
 	this.tablenames = []string{"test_table_1", "test_table_2", "test_table_3"}
 	for _, tablename := range this.tablenames {
 		testhelpers.SeedInitialData(this.Ferry.SourceDB, testhelpers.TestSchemaName, tablename, 0)
+	}
+}
+
+func (this *FilterTestSuite) TestLoadTablesWithWhitelist() {
+	tables, err := ghostferry.LoadTables(
+		this.Ferry.SourceDB,
+		copydb.NewStaticApplicableFilter(
+			map[string]bool{testhelpers.TestSchemaName: true},
+			map[string]bool{"test_table_2": true},
+		),
+	)
+
+	this.Require().Nil(err)
+	this.Require().Equal(1, len(tables))
+
+	_, exists := tables[fmt.Sprintf("%s.test_table_2", testhelpers.TestSchemaName)]
+	this.Require().True(exists)
+
+	_, exists = tables[fmt.Sprintf("%s.test_table_3", testhelpers.TestSchemaName)]
+	this.Require().False(exists)
+}
+
+func (this *FilterTestSuite) TestLoadTablesWithBlacklist() {
+	tables, err := ghostferry.LoadTables(
+		this.Ferry.SourceDB,
+		copydb.NewStaticApplicableFilter(
+			map[string]bool{testhelpers.TestSchemaName: true},
+			map[string]bool{"test_table_2": false, "ApplicableByDefault!": true},
+		),
+	)
+
+	this.Require().Nil(err)
+	this.Require().Equal(len(this.tablenames)-1, len(tables))
+
+	_, exists := tables[fmt.Sprintf("%s.test_table_2", testhelpers.TestSchemaName)]
+	this.Require().False(exists)
+
+	for _, tablename := range this.tablenames {
+		if tablename == "test_table_2" {
+			continue
+		}
+
+		_, exists := tables[fmt.Sprintf("%s.%s", testhelpers.TestSchemaName, tablename)]
+		this.Require().True(exists)
 	}
 }
 
