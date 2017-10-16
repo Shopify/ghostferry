@@ -68,7 +68,7 @@ func LoadTables(db *sql.DB, applicabilityFilter ApplicableFilter) (TableSchemaCa
 		return tableSchemaCache, err
 	}
 
-	dbnames = applicabilityFilter.ApplicableDbs(dbnames)
+	dbnames = applicabilityFilter.ApplicableDatabases(dbnames)
 
 	// For each database, get a list of tables from it and cache the table's schema
 	for _, dbname := range dbnames {

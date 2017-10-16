@@ -25,5 +25,5 @@ type CopyFilter interface {
 
 type ApplicableFilter interface {
 	ApplicableTables([]*schema.Table) []*schema.Table
-	ApplicableDbs([]string) []string
+	ApplicableDatabases([]string) []string
 }

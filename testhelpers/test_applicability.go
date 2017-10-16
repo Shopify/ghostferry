@@ -7,7 +7,7 @@ type TestApplicability struct {
 	TablesFunc func([]*schema.Table) []*schema.Table
 }
 
-func (t *TestApplicability) ApplicableDbs(dbs []string) []string {
+func (t *TestApplicability) ApplicableDatabases(dbs []string) []string {
 	if t.DbsFunc != nil {
 		return t.DbsFunc(dbs)
 	}

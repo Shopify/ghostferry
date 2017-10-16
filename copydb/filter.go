@@ -16,7 +16,7 @@ func NewStaticApplicableFilter(dbs, tables map[string]bool) *StaticApplicableFil
 	}
 }
 
-func (s *StaticApplicableFilter) ApplicableDbs(dbs []string) []string {
+func (s *StaticApplicableFilter) ApplicableDatabases(dbs []string) []string {
 	return filterForApplicable(dbs, s.Dbs)
 }
 

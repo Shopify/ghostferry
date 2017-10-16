@@ -123,7 +123,7 @@ func (this *FilterTestSuite) TestFilterForApplicableEmptyList() {
 func (this *FilterTestSuite) assertBothFilters(expected []string, filter map[string]bool, list []string) {
 	applicability := copydb.NewStaticApplicableFilter(filter, filter)
 
-	this.Require().Equal(expected, applicability.ApplicableDbs(list))
+	this.Require().Equal(expected, applicability.ApplicableDatabases(list))
 
 	var schemas []*sqlSchema.Table
 	for _, table := range list {
