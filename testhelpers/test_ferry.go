@@ -17,11 +17,19 @@ type TestFerry struct {
 	AfterRowCopyListener     func(events []ghostferry.DMLEvent) error
 	AfterBinlogApplyListener func(events []ghostferry.DMLEvent) error
 	AfterRowCopyDoneListener func() error
+
+	ApplicableDatabases map[string]bool
 }
 
 var (
 	TestSourcePort = getPortFromEnv("N1_PORT", 29291)
 	TestTargetPort = getPortFromEnv("N2_PORT", 29292)
+
+	TestApplicableDatabases = map[string]bool{
+		"gftest":  true,
+		"gftest1": true,
+		"gftest2": true,
+	}
 )
 
 func NewTestConfig() *ghostferry.Config {
@@ -36,18 +44,10 @@ func NewTestConfig() *ghostferry.Config {
 		TargetUser: "root",
 		TargetPass: "",
 
-		ApplicableDatabases: map[string]bool{
-			"gftest":  true,
-			"gftest1": true,
-			"gftest2": true,
-		},
-
-		ApplicableTables: map[string]bool{
-			"ApplicableByDefault!": true,
-		},
-
 		MyServerId:       91919,
 		AutomaticCutover: true,
+
+		Applicability: NewTestApplicability(TestApplicableDatabases),
 	}
 
 	err := config.ValidateConfig()
@@ -61,6 +61,8 @@ func NewTestFerry() *TestFerry {
 		Ferry: &ghostferry.Ferry{
 			Config: NewTestConfig(),
 		},
+
+		ApplicableDatabases: TestApplicableDatabases,
 	}
 }
 

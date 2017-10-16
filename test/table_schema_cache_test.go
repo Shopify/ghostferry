@@ -29,15 +29,16 @@ func (this *TableSchemaCacheTestSuite) TearDownTest() {
 	this.GhostferryUnitTestSuite.TearDownTest()
 }
 
-func SimpleApplicability(applicableDbs, applicableTables map[string]bool) *ghostferry.SimpleApplicableFilter {
-	return &ghostferry.SimpleApplicableFilter{
-		Dbs:    applicableDbs,
-		Tables: applicableTables,
-	}
+func SimpleApplicability(applicableDbs, applicableTables map[string]bool) *testhelpers.TestApplicability {
+	return testhelpers.NewTestApplicability(applicableDbs)
 }
 
 func (this *TableSchemaCacheTestSuite) TestLoadTablesWithoutFiltering() {
-	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, SimpleApplicability(map[string]bool{testhelpers.TestSchemaName: true}, nil))
+	tables, err := ghostferry.LoadTables(
+		this.Ferry.SourceDB,
+		testhelpers.NewTestApplicability(map[string]bool{testhelpers.TestSchemaName: true}),
+	)
+
 	this.Require().Nil(err)
 	this.Require().Equal(len(this.tablenames), len(tables))
 	for _, tablename := range this.tablenames {

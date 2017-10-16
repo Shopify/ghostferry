@@ -213,7 +213,7 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
-	if len(s.Applicability.FilterApplicableDbs([]string{string(rowsEvent.Table.Schema)})) == 0 {
+	if len(s.Applicability.ApplicableDbs([]string{string(rowsEvent.Table.Schema)})) == 0 {
 		return nil
 	}
 
@@ -222,7 +222,7 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 		return err
 	}
 
-	if len(s.Applicability.FilterApplicableTables([]*schema.Table{table})) == 0 {
+	if len(s.Applicability.ApplicableTables([]*schema.Table{table})) == 0 {
 		return nil
 	}
 
