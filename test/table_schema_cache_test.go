@@ -29,14 +29,13 @@ func (this *TableSchemaCacheTestSuite) TearDownTest() {
 	this.GhostferryUnitTestSuite.TearDownTest()
 }
 
-func SimpleApplicability(applicableDbs, applicableTables map[string]bool) *testhelpers.TestApplicability {
-	return testhelpers.NewTestApplicability(applicableDbs)
-}
-
 func (this *TableSchemaCacheTestSuite) TestLoadTablesWithoutFiltering() {
 	tables, err := ghostferry.LoadTables(
 		this.Ferry.SourceDB,
-		testhelpers.NewTestApplicability(map[string]bool{testhelpers.TestSchemaName: true}),
+		&testhelpers.TestApplicability{
+			DbsFunc:    testhelpers.DbApplicability([]string{testhelpers.TestSchemaName}),
+			TablesFunc: nil,
+		},
 	)
 
 	this.Require().Nil(err)
@@ -216,74 +215,6 @@ func (this *TableSchemaCacheTestSuite) TestQuotedTableNameFromString() {
 	this.Require().Equal("`schema`.`table`", ghostferry.QuotedTableNameFromString("schema", "table"))
 	this.Require().Equal("`schema`.``", ghostferry.QuotedTableNameFromString("schema", ""))
 	this.Require().Equal("``.``", ghostferry.QuotedTableNameFromString("", ""))
-}
-
-func (this *TableSchemaCacheTestSuite) TestFilterForApplicableNil() {
-	list := []string{"str1", "str2", "str3"}
-	this.assertBothFilters(list, nil, list)
-}
-
-func (this *TableSchemaCacheTestSuite) TestFilterForApplicableSimple() {
-	list := []string{"str1", "str2", "str3"}
-	filter := map[string]bool{
-		"str1": true,
-		"str2": false,
-	}
-
-	this.assertBothFilters([]string{"str1"}, filter, list)
-}
-
-func (this *TableSchemaCacheTestSuite) TestFilterForApplicableNonExistentKey() {
-	list := []string{"str1", "str2", "str3"}
-	filter := map[string]bool{
-		"str1":        true,
-		"nonexistent": true,
-	}
-
-	this.assertBothFilters([]string{"str1"}, filter, list)
-}
-
-func (this *TableSchemaCacheTestSuite) TestFilterForApplicableDefaultFalse() {
-	list := []string{"str1", "str2", "str3"}
-	filter := map[string]bool{
-		"ApplicableByDefault!": false,
-	}
-
-	this.assertBothFilters([]string{}, filter, list)
-}
-
-func (this *TableSchemaCacheTestSuite) TestFilterForApplicableDefaultTrue() {
-	list := []string{"str1", "str2", "str3"}
-	filter := map[string]bool{
-		"ApplicableByDefault!": true,
-	}
-	this.assertBothFilters(list, filter, list)
-}
-
-func (this *TableSchemaCacheTestSuite) TestFilterForApplicableEmptyList() {
-	list := []string{}
-	filter := map[string]bool{
-		"ApplicableByDefault!": true,
-	}
-	this.assertBothFilters(list, filter, list)
-}
-
-func (this *TableSchemaCacheTestSuite) assertBothFilters(expected []string, filter map[string]bool, list []string) {
-	applicability := SimpleApplicability(filter, filter)
-
-	this.Require().Equal(expected, applicability.ApplicableDbs(list))
-
-	var schemas []*sqlSchema.Table
-	for _, table := range list {
-		schemas = append(schemas, &sqlSchema.Table{Name: table})
-	}
-
-	applicableTables := []string{}
-	for _, table := range applicability.ApplicableTables(schemas) {
-		applicableTables = append(applicableTables, table.Name)
-	}
-
-	this.Require().Equal(expected, applicableTables)
 }
 
 func TestTableSchemaCache(t *testing.T) {
