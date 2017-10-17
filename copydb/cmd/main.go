@@ -47,7 +47,7 @@ func main() {
 	}
 
 	// Default values for configurations
-	ghostferryConfig := &ghostferry.Config{
+	ghostferryConfig := ghostferry.Config{
 		SourceHost: "",
 		SourcePort: 3306,
 		SourceUser: "ghostferry",
@@ -63,7 +63,7 @@ func main() {
 	}
 
 	config := &copydb.Config{
-		GhostferryConfig: ghostferryConfig,
+		Config: ghostferryConfig,
 	}
 
 	// Open and parse configurations

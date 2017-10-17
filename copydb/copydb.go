@@ -17,13 +17,13 @@ type CopydbFerry struct {
 
 func NewFerry(config *Config) *CopydbFerry {
 	ferry := &ghostferry.Ferry{
-		Config: config.GhostferryConfig,
+		Config: &config.Config,
 	}
 
 	controlServer := &ghostferry.ControlServer{
 		F:       ferry,
-		Addr:    config.GhostferryConfig.ServerBindAddr,
-		Basedir: config.GhostferryConfig.WebBasedir,
+		Addr:    config.ServerBindAddr,
+		Basedir: config.WebBasedir,
 	}
 
 	return &CopydbFerry{

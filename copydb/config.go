@@ -7,7 +7,7 @@ import (
 )
 
 type Config struct {
-	GhostferryConfig *ghostferry.Config
+	ghostferry.Config
 
 	ApplicableDatabases map[string]bool
 	ApplicableTables    map[string]bool
@@ -18,12 +18,12 @@ func (c *Config) ValidateConfig() error {
 		return fmt.Errorf("failed to validate config: no applicable databases specified")
 	}
 
-	c.GhostferryConfig.Applicability = NewStaticApplicableFilter(
+	c.Applicability = NewStaticApplicableFilter(
 		c.ApplicableDatabases,
 		c.ApplicableTables,
 	)
 
-	if err := c.GhostferryConfig.ValidateConfig(); err != nil {
+	if err := c.Config.ValidateConfig(); err != nil {
 		return err
 	}
 
