@@ -258,11 +258,10 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 
 	for lastSuccessfulPrimaryKey < maxPrimaryKey {
 		var tx *sql.Tx
-		var err error
 		var rowEvents []DMLEvent
 		var pkpos int64
 
-		WithRetries(this.Config.MaxIterationReadRetries, 0, logger, "fetch rows", func() error {
+		err := WithRetries(this.Config.MaxIterationReadRetries, 0, logger, "fetch rows", func() (err error) {
 			this.Throttler.ThrottleIfNecessary()
 
 			// We need to lock SELECT until we apply the updates (done in the
@@ -285,6 +284,10 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 			tx.Rollback()
 			return err
 		})
+
+		if err != nil {
+			return err
+		}
 
 		if len(rowEvents) == 0 {
 			tx.Rollback()
