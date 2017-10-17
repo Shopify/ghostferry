@@ -8,6 +8,7 @@ import (
 
 type RelocFerry struct {
 	ferry         *ghostferry.Ferry
+	filter        *ShardingFilter
 	controlServer *ghostferry.ControlServer
 }
 
@@ -28,7 +29,11 @@ func NewFerry(shardingKey string, shardingValue interface{}, config *ghostferry.
 		Basedir: config.WebBasedir,
 	}
 
-	return &RelocFerry{ferry: ferry, controlServer: controlServer}
+	return &RelocFerry{
+		ferry:         ferry,
+		filter:        filter,
+		controlServer: controlServer,
+	}
 }
 
 func (this *RelocFerry) Initialize() error {
@@ -64,6 +69,7 @@ func (this *RelocFerry) Run() {
 	this.ferry.WaitUntilBinlogStreamerCatchesUp()
 
 	// Call cutover lock callback here.
+	// The callback must ensure all writes are committed to the binlog by the time it returns.
 
 	this.ferry.FlushBinlogAndStopStreaming()
 	copyWG.Wait()

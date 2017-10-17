@@ -9,21 +9,28 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type ErrorHandler interface {
+	Initialize()
+	Run(*sync.WaitGroup)
+	Stop()
+	Fatal(from string, err error)
+}
+
 type FerryError struct {
 	err  error
 	from string
 }
 
-type ErrorHandler struct {
+type PanicErrorHandler struct {
 	Ferry *Ferry
 	errCh chan *FerryError
 }
 
-func (this *ErrorHandler) Initialize() {
+func (this *PanicErrorHandler) Initialize() {
 	this.errCh = make(chan *FerryError)
 }
 
-func (this *ErrorHandler) Run(wg *sync.WaitGroup) {
+func (this *PanicErrorHandler) Run(wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	logger := logrus.WithField("tag", "error_handler")
@@ -53,13 +60,13 @@ goodbye:
 	panic("fatal error detected, see logs for details")
 }
 
-func (this *ErrorHandler) Fatal(from string, err error) {
+func (this *PanicErrorHandler) Fatal(from string, err error) {
 	this.errCh <- &FerryError{
 		err:  err,
 		from: from,
 	}
 }
 
-func (this *ErrorHandler) Stop() {
+func (this *PanicErrorHandler) Stop() {
 	close(this.errCh)
 }
