@@ -262,7 +262,7 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 		var rowEvents []DMLEvent
 		var pkpos int64
 
-		for try := 0; try < this.Config.MaxIterationReadRetries; try++ {
+		WithRetries(this.Config.MaxIterationReadRetries, 0, logger, "fetch rows", func() error {
 			this.Throttler.ThrottleIfNecessary()
 
 			// We need to lock SELECT until we apply the updates (done in the
@@ -274,26 +274,17 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 			// back at the end of this iteration of primary key.
 			tx, err = this.Db.Begin()
 			if err != nil {
-				logger.WithError(err).Errorf("failed to start database transaction, try %d of max retries %d",
-					try, this.Config.MaxIterationReadRetries)
-				continue
+				return err
 			}
 
 			rowEvents, pkpos, err = this.fetchRowsInBatch(tx, table, table.GetPKColumn(0), lastSuccessfulPrimaryKey)
-
 			if err == nil {
-				break
+				return nil
 			}
 
 			tx.Rollback()
-			logger.WithError(err).Errorf("failed to fetch rows, %d of %d max retries",
-				try, this.Config.MaxIterationReadRetries)
-
-			if try >= this.Config.MaxIterationReadRetries {
-				logger.WithError(err).Error("failed to fetch rows, retry limit exceeded")
-				return err
-			}
-		}
+			return err
+		})
 
 		if len(rowEvents) == 0 {
 			tx.Rollback()

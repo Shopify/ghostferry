@@ -322,18 +322,9 @@ func (f *Ferry) onFinishedIterations() error {
 }
 
 func (f *Ferry) writeEventsToTargetWithRetries(events []DMLEvent) error {
-	var err error
-	for i := 0; i < f.MaxWriteRetriesOnTargetDBError; i++ {
-		err = f.writeEventsToTarget(events)
-		if err == nil {
-			return nil
-		} else {
-			f.logger.WithError(err).Error("failed to write event to target")
-		}
-	}
-
-	f.logger.Error("failed to write events to target even after retries")
-	return err
+	return WithRetries(f.MaxWriteRetriesOnTargetDBError, 0, f.logger, "write event to target", func() error {
+		return f.writeEventsToTarget(events)
+	})
 }
 
 func (f *Ferry) writeEventsToTarget(events []DMLEvent) error {

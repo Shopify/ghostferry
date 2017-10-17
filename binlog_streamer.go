@@ -96,16 +96,29 @@ func (s *BinlogStreamer) Run(wg *sync.WaitGroup) {
 	for !s.stopRequested || (s.stopRequested && s.lastStreamedBinlogPosition.Compare(s.targetBinlogPosition) < 0) {
 		s.Throttler.ThrottleIfNecessary()
 
-		ctx, _ := context.WithTimeout(context.Background(), 500*time.Millisecond)
-		ev, err := s.binlogStreamer.GetEvent(ctx)
-		if err != nil {
-			if err == context.DeadlineExceeded {
-				s.lastProcessedEventTime = time.Now()
-				continue
+		var ev *replication.BinlogEvent
+		var timedOut bool
+
+		err := WithRetries(5, 0, s.logger, "get binlog event", func() (er error) {
+			ctx, _ := context.WithTimeout(context.Background(), 500*time.Millisecond)
+			ev, er = s.binlogStreamer.GetEvent(ctx)
+
+			if er == context.DeadlineExceeded {
+				timedOut = true
+				return nil
 			}
 
+			return er
+		})
+
+		if err != nil {
 			s.ErrorHandler.Fatal("binlog_streamer", err)
 			return
+		}
+
+		if timedOut {
+			s.lastProcessedEventTime = time.Now()
+			continue
 		}
 
 		switch e := ev.Event.(type) {
@@ -158,20 +171,20 @@ func (s *BinlogStreamer) IsAlmostCaughtUp() bool {
 
 func (s *BinlogStreamer) FlushAndStop() {
 	s.logger.Info("requesting binlog streamer to stop")
-	var err error
 	// Must first read the binlog position before requesting stop
 	// Otherwise there is a race condition where the stopRequested is
 	// set to True but the TargetPosition is nil, which would cause
 	// the BinlogStreamer to immediately exit, as it thinks that it has
 	// passed the initial target position.
-	for {
+	err := WithRetries(100, 600*time.Millisecond, s.logger, "read current binlog position", func() error {
+		var err error
 		s.targetBinlogPosition, err = s.readCurrentBinlogPositionFromMasterStatus()
-		if err == nil {
-			break
-		}
+		return err
+	})
 
-		s.logger.WithError(err).Error("failed to read current binlog position, retrying...")
-		time.Sleep(500 * time.Millisecond)
+	if err != nil {
+		s.ErrorHandler.Fatal("binlog_streamer", err)
+		return
 	}
 
 	s.stopRequested = true
