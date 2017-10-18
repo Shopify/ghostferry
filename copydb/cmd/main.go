@@ -47,23 +47,21 @@ func main() {
 	}
 
 	// Default values for configurations
-	ghostferryConfig := ghostferry.Config{
-		SourceHost: "",
-		SourcePort: 3306,
-		SourceUser: "ghostferry",
-		SourcePass: "",
-
-		TargetHost: "",
-		TargetPort: 3306,
-		TargetUser: "ghostferry",
-		TargetPass: "",
-
-		MyServerId:       99399,
-		AutomaticCutover: false,
-	}
-
 	config := &copydb.Config{
-		Config: ghostferryConfig,
+		Config: ghostferry.Config{
+			SourceHost: "",
+			SourcePort: 3306,
+			SourceUser: "ghostferry",
+			SourcePass: "",
+
+			TargetHost: "",
+			TargetPort: 3306,
+			TargetUser: "ghostferry",
+			TargetPass: "",
+
+			MyServerId:       99399,
+			AutomaticCutover: false,
+		},
 	}
 
 	// Open and parse configurations
