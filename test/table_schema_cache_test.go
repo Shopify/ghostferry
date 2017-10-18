@@ -13,8 +13,8 @@ import (
 
 type TableSchemaCacheTestSuite struct {
 	*testhelpers.GhostferryUnitTestSuite
-	tablenames    []string
-	applicability *testhelpers.TestApplicability
+	tablenames  []string
+	tableFilter *testhelpers.TestTableFilter
 }
 
 var ()
@@ -27,8 +27,8 @@ func (this *TableSchemaCacheTestSuite) SetupTest() {
 		testhelpers.SeedInitialData(this.Ferry.SourceDB, testhelpers.TestSchemaName, tablename, 0)
 	}
 
-	this.applicability = &testhelpers.TestApplicability{
-		DbsFunc:    testhelpers.DbApplicability([]string{testhelpers.TestSchemaName}),
+	this.tableFilter = &testhelpers.TestTableFilter{
+		DbsFunc:    testhelpers.DbApplicabilityFilter([]string{testhelpers.TestSchemaName}),
 		TablesFunc: nil,
 	}
 }
@@ -40,7 +40,7 @@ func (this *TableSchemaCacheTestSuite) TearDownTest() {
 func (this *TableSchemaCacheTestSuite) TestLoadTablesWithoutFiltering() {
 	tables, err := ghostferry.LoadTables(
 		this.Ferry.SourceDB,
-		this.applicability,
+		this.tableFilter,
 	)
 
 	this.Require().Nil(err)
@@ -67,7 +67,7 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutNumericP
 	_, err := this.Ferry.SourceDB.Exec(query)
 	this.Require().Nil(err)
 
-	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.applicability)
+	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter)
 
 	this.Require().NotNil(err)
 	this.Require().Contains(err.Error(), "non-numeric primary key")
@@ -79,14 +79,14 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutAnyPK() 
 	_, err := this.Ferry.SourceDB.Exec(query)
 	this.Require().Nil(err)
 
-	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.applicability)
+	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter)
 
 	this.Require().NotNil(err)
 	this.Require().Contains(err.Error(), "table test_table_4 has 0 primary key columns")
 }
 
 func (this *TableSchemaCacheTestSuite) TestAllTableNames() {
-	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.applicability)
+	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter)
 	this.Require().Nil(err)
 
 	tablesList := tables.AllTableNames()
@@ -96,12 +96,12 @@ func (this *TableSchemaCacheTestSuite) TestAllTableNames() {
 }
 
 func (this *TableSchemaCacheTestSuite) TestAllTableNamesEmpty() {
-	applicability := &testhelpers.TestApplicability{
-		DbsFunc:    testhelpers.DbApplicability([]string{testhelpers.TestSchemaName}),
+	tableFilter := &testhelpers.TestTableFilter{
+		DbsFunc:    testhelpers.DbApplicabilityFilter([]string{testhelpers.TestSchemaName}),
 		TablesFunc: func(tables []*sqlSchema.Table) []*sqlSchema.Table { return []*sqlSchema.Table{} },
 	}
 
-	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, applicability)
+	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, tableFilter)
 
 	this.Require().Nil(err)
 	this.Require().Equal(ghostferry.TableSchemaCache{}, tables)
@@ -111,7 +111,7 @@ func (this *TableSchemaCacheTestSuite) TestAllTableNamesEmpty() {
 }
 
 func (this *TableSchemaCacheTestSuite) TestAsSlice() {
-	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.applicability)
+	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter)
 	this.Require().Nil(err)
 
 	tablesSlice := tables.AsSlice()
@@ -123,12 +123,12 @@ func (this *TableSchemaCacheTestSuite) TestAsSlice() {
 }
 
 func (this *TableSchemaCacheTestSuite) TestAsSliceEmpty() {
-	applicability := &testhelpers.TestApplicability{
-		DbsFunc:    testhelpers.DbApplicability([]string{testhelpers.TestSchemaName}),
+	tableFilter := &testhelpers.TestTableFilter{
+		DbsFunc:    testhelpers.DbApplicabilityFilter([]string{testhelpers.TestSchemaName}),
 		TablesFunc: func(tables []*sqlSchema.Table) []*sqlSchema.Table { return []*sqlSchema.Table{} },
 	}
 
-	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, applicability)
+	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, tableFilter)
 
 	this.Require().Nil(err)
 	this.Require().Equal(ghostferry.TableSchemaCache{}, tables)

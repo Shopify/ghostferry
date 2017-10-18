@@ -29,7 +29,7 @@ func (this *FilterTestSuite) SetupTest() {
 func (this *FilterTestSuite) TestLoadTablesWithWhitelist() {
 	tables, err := ghostferry.LoadTables(
 		this.Ferry.SourceDB,
-		copydb.NewStaticApplicableFilter(
+		copydb.NewStaticTableFilter(
 			map[string]bool{testhelpers.TestSchemaName: true},
 			map[string]bool{"test_table_2": true},
 		),
@@ -48,7 +48,7 @@ func (this *FilterTestSuite) TestLoadTablesWithWhitelist() {
 func (this *FilterTestSuite) TestLoadTablesWithBlacklist() {
 	tables, err := ghostferry.LoadTables(
 		this.Ferry.SourceDB,
-		copydb.NewStaticApplicableFilter(
+		copydb.NewStaticTableFilter(
 			map[string]bool{testhelpers.TestSchemaName: true},
 			map[string]bool{"test_table_2": false, "ApplicableByDefault!": true},
 		),
@@ -121,9 +121,9 @@ func (this *FilterTestSuite) TestFilterForApplicableEmptyList() {
 }
 
 func (this *FilterTestSuite) assertBothFilters(expected []string, filter map[string]bool, list []string) {
-	applicability := copydb.NewStaticApplicableFilter(filter, filter)
+	tableFilter := copydb.NewStaticTableFilter(filter, filter)
 
-	this.Require().Equal(expected, applicability.ApplicableDatabases(list))
+	this.Require().Equal(expected, tableFilter.ApplicableDatabases(list))
 
 	var schemas []*sqlSchema.Table
 	for _, table := range list {
@@ -131,7 +131,7 @@ func (this *FilterTestSuite) assertBothFilters(expected []string, filter map[str
 	}
 
 	applicableTables := []string{}
-	for _, table := range applicability.ApplicableTables(schemas) {
+	for _, table := range tableFilter.ApplicableTables(schemas) {
 		applicableTables = append(applicableTables, table.Name)
 	}
 

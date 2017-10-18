@@ -18,7 +18,7 @@ func (c *Config) ValidateConfig() error {
 		return fmt.Errorf("failed to validate config: no applicable databases specified")
 	}
 
-	c.Applicability = NewStaticApplicableFilter(
+	c.TableFilter = NewStaticTableFilter(
 		c.ApplicableDatabases,
 		c.ApplicableTables,
 	)

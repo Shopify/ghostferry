@@ -23,7 +23,7 @@ type CopyFilter interface {
 	ApplicableEvent(DMLEvent) (bool, error)
 }
 
-type ApplicableFilter interface {
+type TableFilter interface {
 	ApplicableTables([]*schema.Table) []*schema.Table
 	ApplicableDatabases([]string) []string
 }

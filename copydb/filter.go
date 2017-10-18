@@ -4,23 +4,23 @@ import (
 	"github.com/siddontang/go-mysql/schema"
 )
 
-type StaticApplicableFilter struct {
+type StaticTableFilter struct {
 	Dbs    map[string]bool
 	Tables map[string]bool
 }
 
-func NewStaticApplicableFilter(dbs, tables map[string]bool) *StaticApplicableFilter {
-	return &StaticApplicableFilter{
+func NewStaticTableFilter(dbs, tables map[string]bool) *StaticTableFilter {
+	return &StaticTableFilter{
 		Dbs:    dbs,
 		Tables: tables,
 	}
 }
 
-func (s *StaticApplicableFilter) ApplicableDatabases(dbs []string) []string {
+func (s *StaticTableFilter) ApplicableDatabases(dbs []string) []string {
 	return filterForApplicable(dbs, s.Dbs)
 }
 
-func (s *StaticApplicableFilter) ApplicableTables(tables []*schema.Table) []*schema.Table {
+func (s *StaticTableFilter) ApplicableTables(tables []*schema.Table) []*schema.Table {
 	var tableNames []string
 	for _, tableSchema := range tables {
 		tableNames = append(tableNames, tableSchema.Name)

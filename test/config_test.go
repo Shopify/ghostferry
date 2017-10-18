@@ -28,7 +28,7 @@ func (this *ConfigTestSuite) SetupTest() {
 
 		MyServerId: 99399,
 
-		Applicability: &testhelpers.TestApplicability{nil, nil},
+		TableFilter: &testhelpers.TestTableFilter{nil, nil},
 	}
 
 	this.tls = ghostferry.TLSConfig{
@@ -37,10 +37,10 @@ func (this *ConfigTestSuite) SetupTest() {
 	}
 }
 
-func (this *ConfigTestSuite) TestRequireApplicability() {
-	this.config.Applicability = nil
+func (this *ConfigTestSuite) TestRequireTableFilter() {
+	this.config.TableFilter = nil
 	err := this.config.ValidateConfig()
-	this.Require().EqualError(err, "Applicability filter function must be provided")
+	this.Require().EqualError(err, "Table filter function must be provided")
 }
 
 func (this *ConfigTestSuite) TestRequireSourceHost() {

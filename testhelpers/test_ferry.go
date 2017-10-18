@@ -41,8 +41,8 @@ func NewTestConfig() *ghostferry.Config {
 		MyServerId:       91919,
 		AutomaticCutover: true,
 
-		Applicability: &TestApplicability{
-			DbsFunc:    DbApplicability(ApplicableTestDbs),
+		TableFilter: &TestTableFilter{
+			DbsFunc:    DbApplicabilityFilter(ApplicableTestDbs),
 			TablesFunc: nil,
 		},
 	}

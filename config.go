@@ -54,7 +54,7 @@ type Config struct {
 
 	// Config for Ferry
 	MaxWriteRetriesOnTargetDBError int
-	Applicability                  ApplicableFilter
+	TableFilter                    TableFilter
 
 	// Config for BinlogStreamer
 	MyServerId uint32
@@ -102,8 +102,8 @@ func (c *Config) ValidateConfig() error {
 		return fmt.Errorf("MyServerId must be non 0")
 	}
 
-	if c.Applicability == nil {
-		return fmt.Errorf("Applicability filter function must be provided")
+	if c.TableFilter == nil {
+		return fmt.Errorf("Table filter function must be provided")
 	}
 
 	if c.MaxWriteRetriesOnTargetDBError == 0 {
