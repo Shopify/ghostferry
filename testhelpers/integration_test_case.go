@@ -103,7 +103,7 @@ func (this *IntegrationTestCase) VerifyData() {
 }
 
 func (this *IntegrationTestCase) Teardown() {
-	for dbname, _ := range this.Ferry.ApplicableDatabases {
+	for _, dbname := range ApplicableTestDbs {
 		if this.Ferry.SourceDB != nil {
 			_, err := this.Ferry.SourceDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbname))
 			if err != nil {

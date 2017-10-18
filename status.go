@@ -20,10 +20,8 @@ type TableStatus struct {
 type Status struct {
 	GhostferryVersion string
 
-	SourceHostPort      string
-	TargetHostPort      string
-	ApplicableDatabases map[string]bool
-	ApplicableTables    map[string]bool
+	SourceHostPort string
+	TargetHostPort string
 
 	OverallState      string
 	StartTime         time.Time
@@ -60,8 +58,6 @@ func FetchStatus(f *Ferry) *Status {
 
 	status.SourceHostPort = fmt.Sprintf("%s:%d", f.SourceHost, f.SourcePort)
 	status.TargetHostPort = fmt.Sprintf("%s:%d", f.TargetHost, f.TargetPort)
-	status.ApplicableDatabases = f.ApplicableDatabases
-	status.ApplicableTables = f.ApplicableTables
 
 	status.OverallState = f.OverallState
 	status.StartTime = f.StartTime

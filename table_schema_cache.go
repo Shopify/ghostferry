@@ -57,32 +57,7 @@ func MaxPrimaryKeys(db *sql.DB, tables []*schema.Table, logger *logrus.Entry) (m
 	return tablesWithData, emptyTables, nil
 }
 
-func FilterForApplicable(list []string, applicabilityMap map[string]bool) []string {
-	if applicabilityMap == nil {
-		return list
-	}
-
-	applicableByDefault := applicabilityMap["ApplicableByDefault!"]
-
-	applicableList := make([]string, 0, len(list))
-	for _, v := range list {
-		applicable := applicabilityMap[v]
-		applicable, specified := applicabilityMap[v]
-		if specified && !applicable {
-			continue
-		}
-
-		if !specified && !applicableByDefault {
-			continue
-		}
-
-		applicableList = append(applicableList, v)
-	}
-
-	return applicableList
-}
-
-func LoadTables(db *sql.DB, applicableDatabases, applicableTables map[string]bool) (TableSchemaCache, error) {
+func LoadTables(db *sql.DB, tableFilter TableFilter) (TableSchemaCache, error) {
 	logger := logrus.WithField("tag", "table_schema_cache")
 
 	tableSchemaCache := make(TableSchemaCache)
@@ -93,7 +68,7 @@ func LoadTables(db *sql.DB, applicableDatabases, applicableTables map[string]boo
 		return tableSchemaCache, err
 	}
 
-	dbnames = FilterForApplicable(dbnames, applicableDatabases)
+	dbnames = tableFilter.ApplicableDatabases(dbnames)
 
 	// For each database, get a list of tables from it and cache the table's schema
 	for _, dbname := range dbnames {
@@ -105,25 +80,35 @@ func LoadTables(db *sql.DB, applicableDatabases, applicableTables map[string]boo
 			return tableSchemaCache, err
 		}
 
-		tableNames = FilterForApplicable(tableNames, applicableTables)
+		var tableSchemas []*schema.Table
+
 		for _, table := range tableNames {
 			tableLog := dbLog.WithField("table", table)
-			tableLog.Debug("caching table schema")
+			tableLog.Debug("fetching table schema")
 			tableSchema, err := schema.NewTableFromSqlDB(db, dbname, table)
 			if err != nil {
 				tableLog.WithError(err).Error("cannot fetch table schema from source db")
 				return tableSchemaCache, err
 			}
+			tableSchemas = append(tableSchemas, tableSchema)
+		}
+
+		tableSchemas = tableFilter.ApplicableTables(tableSchemas)
+
+		for _, tableSchema := range tableSchemas {
+			tableName := tableSchema.Name
+			tableLog := dbLog.WithField("table", tableName)
+			tableLog.Debug("caching table schema")
 
 			// Sanity check
 			if len(tableSchema.PKColumns) != 1 {
-				err = fmt.Errorf("table %s has %d primary key columns and this is not supported", table, len(tableSchema.PKColumns))
+				err = fmt.Errorf("table %s has %d primary key columns and this is not supported", tableName, len(tableSchema.PKColumns))
 				logger.WithError(err).Error("invalid table")
 				return tableSchemaCache, err
 			}
 
 			if tableSchema.GetPKColumn(0).Type != schema.TYPE_NUMBER {
-				err = fmt.Errorf("table %s is using a non-numeric primary key column and this is not supported", table)
+				err = fmt.Errorf("table %s is using a non-numeric primary key column and this is not supported", tableName)
 				logger.WithError(err).Error("invalid table")
 				return tableSchemaCache, err
 			}

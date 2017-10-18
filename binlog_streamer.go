@@ -10,6 +10,7 @@ import (
 
 	"github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/replication"
+	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -21,6 +22,7 @@ type BinlogStreamer struct {
 	ErrorHandler ErrorHandler
 	Throttler    *Throttler
 	Filter       CopyFilter
+	TableFilter  TableFilter
 
 	TableSchema TableSchemaCache
 
@@ -211,11 +213,16 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
-	if len(FilterForApplicable([]string{string(rowsEvent.Table.Schema)}, s.Config.ApplicableDatabases)) == 0 {
+	if len(s.TableFilter.ApplicableDatabases([]string{string(rowsEvent.Table.Schema)})) == 0 {
 		return nil
 	}
 
-	if len(FilterForApplicable([]string{string(rowsEvent.Table.Table)}, s.Config.ApplicableTables)) == 0 {
+	table, err := s.TableSchema.Get(string(rowsEvent.Table.Schema), string(rowsEvent.Table.Table))
+	if err != nil {
+		return err
+	}
+
+	if len(s.TableFilter.ApplicableTables([]*schema.Table{table})) == 0 {
 		return nil
 	}
 

@@ -47,7 +47,7 @@ func main() {
 	}
 
 	// Default values for configurations
-	config := &ghostferry.Config{
+	ghostferryConfig := ghostferry.Config{
 		SourceHost: "",
 		SourcePort: 3306,
 		SourceUser: "ghostferry",
@@ -60,6 +60,10 @@ func main() {
 
 		MyServerId:       99399,
 		AutomaticCutover: false,
+	}
+
+	config := &copydb.Config{
+		Config: ghostferryConfig,
 	}
 
 	// Open and parse configurations
@@ -77,10 +81,6 @@ func main() {
 	err = config.ValidateConfig()
 	if err != nil {
 		errorAndExit(fmt.Sprintf("failed to validate config: %v", err))
-	}
-
-	if len(config.ApplicableDatabases) == 0 {
-		errorAndExit("failed to validate config: no applicable databases specified")
 	}
 
 	ferry := copydb.NewFerry(config)

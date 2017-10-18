@@ -27,12 +27,20 @@ func (this *ConfigTestSuite) SetupTest() {
 		TargetUser: "ghostferry",
 
 		MyServerId: 99399,
+
+		TableFilter: &testhelpers.TestTableFilter{nil, nil},
 	}
 
 	this.tls = ghostferry.TLSConfig{
 		CertPath:   testhelpers.FixturePath("dummy-cert.pem"),
 		ServerName: "dummy-server",
 	}
+}
+
+func (this *ConfigTestSuite) TestRequireTableFilter() {
+	this.config.TableFilter = nil
+	err := this.config.ValidateConfig()
+	this.Require().EqualError(err, "Table filter function must be provided")
 }
 
 func (this *ConfigTestSuite) TestRequireSourceHost() {

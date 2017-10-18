@@ -22,6 +22,8 @@ type TestFerry struct {
 var (
 	TestSourcePort = getPortFromEnv("N1_PORT", 29291)
 	TestTargetPort = getPortFromEnv("N2_PORT", 29292)
+
+	ApplicableTestDbs = []string{"gftest", "gftest1", "gftest2"}
 )
 
 func NewTestConfig() *ghostferry.Config {
@@ -36,18 +38,13 @@ func NewTestConfig() *ghostferry.Config {
 		TargetUser: "root",
 		TargetPass: "",
 
-		ApplicableDatabases: map[string]bool{
-			"gftest":  true,
-			"gftest1": true,
-			"gftest2": true,
-		},
-
-		ApplicableTables: map[string]bool{
-			"ApplicableByDefault!": true,
-		},
-
 		MyServerId:       91919,
 		AutomaticCutover: true,
+
+		TableFilter: &TestTableFilter{
+			DbsFunc:    DbApplicabilityFilter(ApplicableTestDbs),
+			TablesFunc: nil,
+		},
 	}
 
 	err := config.ValidateConfig()
