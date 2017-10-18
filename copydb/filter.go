@@ -17,43 +17,46 @@ func NewStaticTableFilter(dbs, tables map[string]bool) *StaticTableFilter {
 }
 
 func (s *StaticTableFilter) ApplicableDatabases(dbs []string) []string {
-	return filterForApplicable(dbs, s.Dbs)
+	if s.Dbs == nil {
+		return dbs
+	}
+
+	applicables := applicableIdxs(dbs, s.Dbs)
+
+	applicableDbs := make([]string, 0, len(applicables))
+	for i, j := range applicables {
+		applicableDbs[i] = dbs[j]
+	}
+
+	return applicableDbs
 }
 
 func (s *StaticTableFilter) ApplicableTables(tables []*schema.Table) []*schema.Table {
-	var tableNames []string
+	if s.Tables == nil {
+		return tables
+	}
+
+	tableNames := make([]string, 0, len(tables))
 	for _, tableSchema := range tables {
 		tableNames = append(tableNames, tableSchema.Name)
 	}
 
-	applicableNames := filterForApplicable(tableNames, s.Tables)
+	applicables := applicableIdxs(tableNames, s.Tables)
 
-	applicableNamesMap := make(map[string]bool)
-	for _, name := range applicableNames {
-		applicableNamesMap[name] = true
-	}
-
-	var applicableSchemas []*schema.Table
-	for _, tableSchema := range tables {
-		if applicableNamesMap[tableSchema.Name] {
-			applicableSchemas = append(applicableSchemas, tableSchema)
-		}
+	applicableSchemas := make([]*schema.Table, 0, len(applicables))
+	for i, j := range applicables {
+		applicableSchemas[i] = tables[j]
 	}
 
 	return applicableSchemas
 }
 
-func filterForApplicable(list []string, applicabilityMap map[string]bool) []string {
-	if applicabilityMap == nil {
-		return list
-	}
-
+func applicableIdxs(list []string, applicabilityMap map[string]bool) []int {
 	applicableByDefault := applicabilityMap["ApplicableByDefault!"]
 
-	applicableList := make([]string, 0, len(list))
-	for _, v := range list {
-		applicable := applicabilityMap[v]
-		applicable, specified := applicabilityMap[v]
+	idxs := make([]int, 0, len(list))
+	for idx, element := range list {
+		applicable, specified := applicabilityMap[element]
 		if specified && !applicable {
 			continue
 		}
@@ -62,8 +65,8 @@ func filterForApplicable(list []string, applicabilityMap map[string]bool) []stri
 			continue
 		}
 
-		applicableList = append(applicableList, v)
+		idxs = append(idxs, idx)
 	}
 
-	return applicableList
+	return idxs
 }
