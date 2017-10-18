@@ -8,11 +8,11 @@ import (
 
 type RelocFerry struct {
 	ferry  *ghostferry.Ferry
-	filter *ShardingFilter
+	filter *ShardedRowFilter
 }
 
 func NewFerry(shardingKey string, shardingValue interface{}, sourceShardDb string, config *ghostferry.Config) *RelocFerry {
-	filter := &ShardingFilter{
+	filter := &ShardedRowFilter{
 		ShardingKey:   shardingKey,
 		ShardingValue: shardingValue,
 	}

@@ -186,7 +186,6 @@ func (f *Ferry) Initialize() (err error) {
 		ErrorHandler: f.ErrorHandler,
 		Throttler:    f.Throttler,
 		Filter:       f.Filter,
-		TableFilter:  f.TableFilter,
 	}
 	err = f.BinlogStreamer.Initialize()
 	if err != nil {

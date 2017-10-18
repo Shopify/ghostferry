@@ -38,12 +38,7 @@ type BinlogInsertEvent struct {
 	DMLEventBase
 }
 
-func NewBinlogInsertEvents(rowsEvent *replication.RowsEvent, tables TableSchemaCache) ([]DMLEvent, error) {
-	table, err := tables.Get(string(rowsEvent.Table.Schema), string(rowsEvent.Table.Table))
-	if err != nil {
-		return nil, err
-	}
-
+func NewBinlogInsertEvents(table *schema.Table, rowsEvent *replication.RowsEvent) ([]DMLEvent, error) {
 	insertEvents := make([]DMLEvent, len(rowsEvent.Rows))
 
 	for i, row := range rowsEvent.Rows {
@@ -82,12 +77,7 @@ type BinlogUpdateEvent struct {
 	DMLEventBase
 }
 
-func NewBinlogUpdateEvents(rowsEvent *replication.RowsEvent, tables TableSchemaCache) ([]DMLEvent, error) {
-	table, err := tables.Get(string(rowsEvent.Table.Schema), string(rowsEvent.Table.Table))
-	if err != nil {
-		return nil, err
-	}
-
+func NewBinlogUpdateEvents(table *schema.Table, rowsEvent *replication.RowsEvent) ([]DMLEvent, error) {
 	// UPDATE events have two rows in the RowsEvent. The first row is the
 	// entries of the old record (for WHERE) and the second row is the
 	// entries of the new record (for SET).
@@ -149,12 +139,7 @@ func (e *BinlogDeleteEvent) NewValues() []interface{} {
 	return nil
 }
 
-func NewBinlogDeleteEvents(rowsEvent *replication.RowsEvent, tables TableSchemaCache) ([]DMLEvent, error) {
-	table, err := tables.Get(string(rowsEvent.Table.Schema), string(rowsEvent.Table.Table))
-	if err != nil {
-		return nil, err
-	}
-
+func NewBinlogDeleteEvents(table *schema.Table, rowsEvent *replication.RowsEvent) ([]DMLEvent, error) {
 	deleteEvents := make([]DMLEvent, len(rowsEvent.Rows))
 
 	for i, row := range rowsEvent.Rows {
@@ -181,15 +166,22 @@ func (e *BinlogDeleteEvent) AsSQLQuery(target *schema.Table) (string, []interfac
 
 func NewBinlogDMLEvents(ev *replication.BinlogEvent, tables TableSchemaCache) ([]DMLEvent, error) {
 	rowsEvent := ev.Event.(*replication.RowsEvent)
+	dbName, tableName := string(rowsEvent.Table.Schema), string(rowsEvent.Table.Table)
+
+	table := tables.Get(dbName, tableName)
+	if table == nil {
+		return nil, fmt.Errorf("table %s.%s not found in cache", dbName, tableName)
+	}
+
 	switch ev.Header.EventType {
 	case replication.WRITE_ROWS_EVENTv1, replication.WRITE_ROWS_EVENTv2:
-		return NewBinlogInsertEvents(rowsEvent, tables)
+		return NewBinlogInsertEvents(table, rowsEvent)
 	case replication.DELETE_ROWS_EVENTv1, replication.DELETE_ROWS_EVENTv2:
-		return NewBinlogDeleteEvents(rowsEvent, tables)
+		return NewBinlogDeleteEvents(table, rowsEvent)
 	case replication.UPDATE_ROWS_EVENTv1, replication.UPDATE_ROWS_EVENTv2:
-		return NewBinlogUpdateEvents(rowsEvent, tables)
+		return NewBinlogUpdateEvents(table, rowsEvent)
 	default:
-		return []DMLEvent{}, fmt.Errorf("unrecognized rows event: %s", ev.Header.EventType.String())
+		return nil, fmt.Errorf("unrecognized rows event: %s", ev.Header.EventType.String())
 	}
 }
 

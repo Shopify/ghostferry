@@ -138,13 +138,9 @@ func (c TableSchemaCache) AllTableNames() (tableNames []string) {
 	return
 }
 
-func (c TableSchemaCache) Get(database, table string) (*schema.Table, error) {
+func (c TableSchemaCache) Get(database, table string) *schema.Table {
 	fullTableName := fmt.Sprintf("%s.%s", database, table)
-	tableSchema, exists := c[fullTableName]
-	if !exists {
-		return nil, fmt.Errorf("table %s does not exist", fullTableName)
-	}
-	return tableSchema, nil
+	return c[fullTableName]
 }
 
 func showDatabases(c *sql.DB) ([]string, error) {

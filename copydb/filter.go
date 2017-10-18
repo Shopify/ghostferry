@@ -23,7 +23,7 @@ func (s *StaticTableFilter) ApplicableDatabases(dbs []string) []string {
 
 	applicables := applicableIdxs(dbs, s.Dbs)
 
-	applicableDbs := make([]string, 0, len(applicables))
+	applicableDbs := make([]string, len(applicables))
 	for i, j := range applicables {
 		applicableDbs[i] = dbs[j]
 	}
@@ -36,14 +36,14 @@ func (s *StaticTableFilter) ApplicableTables(tables []*schema.Table) []*schema.T
 		return tables
 	}
 
-	tableNames := make([]string, 0, len(tables))
-	for _, tableSchema := range tables {
-		tableNames = append(tableNames, tableSchema.Name)
+	tableNames := make([]string, len(tables))
+	for i, tableSchema := range tables {
+		tableNames[i] = tableSchema.Name
 	}
 
 	applicables := applicableIdxs(tableNames, s.Tables)
 
-	applicableSchemas := make([]*schema.Table, 0, len(applicables))
+	applicableSchemas := make([]*schema.Table, len(applicables))
 	for i, j := range applicables {
 		applicableSchemas[i] = tables[j]
 	}

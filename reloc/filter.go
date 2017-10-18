@@ -9,16 +9,16 @@ import (
 	"github.com/siddontang/go-mysql/schema"
 )
 
-type ShardingFilter struct {
+type ShardedRowFilter struct {
 	ShardingKey   string
 	ShardingValue interface{}
 }
 
-func (f *ShardingFilter) ConstrainSelect(builder sq.SelectBuilder) (sq.SelectBuilder, error) {
+func (f *ShardedRowFilter) ConstrainSelect(builder sq.SelectBuilder) (sq.SelectBuilder, error) {
 	return builder.Where(sq.Eq{f.ShardingKey: f.ShardingValue}), nil
 }
 
-func (f *ShardingFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, error) {
+func (f *ShardedRowFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, error) {
 	columns := event.TableSchema().Columns
 	for idx, column := range columns {
 		if column.Name == f.ShardingKey {
@@ -44,13 +44,8 @@ type ShardedTableFilter struct {
 	ShardingKey string
 }
 
-func (s *ShardedTableFilter) ApplicableDatabases(dbs []string) (applicable []string) {
-	for _, db := range dbs {
-		if db == s.SourceShard {
-			applicable = append(applicable, db)
-		}
-	}
-	return
+func (s *ShardedTableFilter) ApplicableDatabases(dbs []string) []string {
+	return []string{s.SourceShard}
 }
 
 func (s *ShardedTableFilter) ApplicableTables(tables []*schema.Table) (applicable []*schema.Table) {
