@@ -34,7 +34,7 @@ func setupSingleTableDatabase(f *testhelpers.TestFerry) {
 func selectiveFerry(shardingValue interface{}) *testhelpers.TestFerry {
 	ferry := testhelpers.NewTestFerry()
 
-	ferry.Filter = &reloc.ShardedRowFilter{
+	ferry.Config.CopyFilter = &reloc.ShardedRowFilter{
 		ShardingKey:   "tenant_id",
 		ShardingValue: shardingValue,
 	}
