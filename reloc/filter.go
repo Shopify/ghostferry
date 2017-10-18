@@ -39,32 +39,29 @@ func (f *ShardingFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, error
 	return false, nil
 }
 
-type ShardedApplicableFilter struct {
+type ShardedTableFilter struct {
 	SourceShard string
 	ShardingKey string
 }
 
-func (s *ShardedApplicableFilter) ApplicableDatabases(dbs []string) []string {
-	applicable := []string{}
+func (s *ShardedTableFilter) ApplicableDatabases(dbs []string) (applicable []string) {
 	for _, db := range dbs {
 		if db == s.SourceShard {
 			applicable = append(applicable, db)
 		}
 	}
-	return applicable
+	return
 }
 
-func (s *ShardedApplicableFilter) ApplicableTables(tables []*schema.Table) []*schema.Table {
-	applicable := []*schema.Table{}
-
+func (s *ShardedTableFilter) ApplicableTables(tables []*schema.Table) (applicable []*schema.Table) {
 	for _, table := range tables {
 		columns := table.Columns
 		for _, column := range columns {
 			if column.Name == s.ShardingKey {
 				applicable = append(applicable, table)
+				break
 			}
 		}
 	}
-
-	return applicable
+	return
 }

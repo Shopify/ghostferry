@@ -17,7 +17,7 @@ func NewFerry(shardingKey string, shardingValue interface{}, sourceShardDb strin
 		ShardingValue: shardingValue,
 	}
 
-	config.Applicability = &ShardedApplicableFilter{
+	config.TableFilter = &ShardedTableFilter{
 		ShardingKey: shardingKey,
 		SourceShard: sourceShardDb,
 	}
@@ -34,19 +34,11 @@ func NewFerry(shardingKey string, shardingValue interface{}, sourceShardDb strin
 }
 
 func (this *RelocFerry) Initialize() error {
-	err := this.ferry.Initialize()
-	if err != nil {
-		return err
-	}
-	return nil
+	return this.ferry.Initialize()
 }
 
 func (this *RelocFerry) Start() error {
-	err := this.ferry.Start()
-	if err != nil {
-		return err
-	}
-	return nil
+	return this.ferry.Start()
 }
 
 func (this *RelocFerry) Run() {
