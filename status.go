@@ -42,6 +42,7 @@ type Status struct {
 	CompletedTableCount int
 	TotalTableCount     int
 	TableStatuses       []*TableStatus
+	AllTableNames       []string
 
 	VerifierSupport     bool
 	VerifierAvailable   bool
@@ -85,6 +86,9 @@ func FetchStatus(f *Ferry) *Status {
 
 	status.CompletedTableCount = len(completedTables)
 	status.TotalTableCount = len(f.Tables)
+
+	status.AllTableNames = f.Tables.AllTableNames()
+	sort.Strings(status.AllTableNames)
 
 	// We get the name first because we need to sort them
 	completedTableNames := make([]string, 0, len(completedTables))
