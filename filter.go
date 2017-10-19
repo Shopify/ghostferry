@@ -13,7 +13,9 @@ type CopyFilter interface {
 	// copying, allowing for restricting copying to a subset of data.
 	// Returning an error here will cause the query to be retried, until the
 	// retry limit is reached, at which point the ferry will be aborted.
-	ConstrainSelect(sq.SelectBuilder) (sq.SelectBuilder, error)
+	// ConstrainSelect is passed the table being copied, the last primary key
+	// value from the previous batch, and the batch size.
+	ConstrainSelect(*schema.Table, uint64, uint64) (sq.Sqlizer, error)
 
 	// ApplicableEvent is used to filter events for rows that have been
 	// filtered in ConstrainSelect. ApplicableEvent should return true if the
