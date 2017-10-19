@@ -147,8 +147,6 @@ type DataIterator struct {
 	ErrorHandler ErrorHandler
 	Throttler    *Throttler
 
-	TableSchema TableSchemaCache
-
 	Tables []*schema.Table
 	Filter CopyFilter
 

@@ -244,7 +244,6 @@ func (f *Ferry) Start() error {
 	}
 
 	// TODO(pushrax): handle changes to schema during copying and clean this up.
-	f.DataIterator.TableSchema = f.Tables
 	f.BinlogStreamer.TableSchema = f.Tables
 	f.DataIterator.Tables = f.Tables.AsSlice()
 

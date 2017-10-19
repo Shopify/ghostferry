@@ -216,7 +216,7 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 		return nil
 	}
 
-	dmlEvs, err := NewBinlogDMLEvents(ev, s.TableSchema)
+	dmlEvs, err := NewBinlogDMLEvents(table, ev)
 	if err != nil {
 		return err
 	}

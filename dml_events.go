@@ -164,14 +164,8 @@ func (e *BinlogDeleteEvent) AsSQLQuery(target *schema.Table) (string, []interfac
 	return query, e.oldValues, nil
 }
 
-func NewBinlogDMLEvents(ev *replication.BinlogEvent, tables TableSchemaCache) ([]DMLEvent, error) {
+func NewBinlogDMLEvents(table *schema.Table, ev *replication.BinlogEvent) ([]DMLEvent, error) {
 	rowsEvent := ev.Event.(*replication.RowsEvent)
-	dbName, tableName := string(rowsEvent.Table.Schema), string(rowsEvent.Table.Table)
-
-	table := tables.Get(dbName, tableName)
-	if table == nil {
-		return nil, fmt.Errorf("table %s.%s not found in cache", dbName, tableName)
-	}
 
 	switch ev.Header.EventType {
 	case replication.WRITE_ROWS_EVENTv1, replication.WRITE_ROWS_EVENTv2:
