@@ -14,6 +14,7 @@ type DMLEventsTestSuite struct {
 
 	tableMapEvent    *replication.TableMapEvent
 	tableSchemaCache ghostferry.TableSchemaCache
+	sourceTable      *schema.Table
 	targetTable      *schema.Table
 }
 
@@ -23,21 +24,26 @@ func (this *DMLEventsTestSuite) SetupTest() {
 		Table:  []byte("test_table"),
 	}
 
-	this.tableSchemaCache = map[string]*schema.Table{
-		"test_schema.test_table": &schema.Table{
-			Schema: "test_schema",
-			Name:   "test_table",
-			Columns: []schema.TableColumn{
-				{Name: "col1"},
-				{Name: "col2"},
-				{Name: "col3"},
-			},
-		},
+	columns := []schema.TableColumn{
+		{Name: "col1"},
+		{Name: "col2"},
+		{Name: "col3"},
+	}
+
+	this.sourceTable = &schema.Table{
+		Schema:  "test_schema",
+		Name:    "test_table",
+		Columns: columns,
 	}
 
 	this.targetTable = &schema.Table{
-		Schema: "target_schema",
-		Name:   "target_table",
+		Schema:  "target_schema",
+		Name:    "target_table",
+		Columns: columns,
+	}
+
+	this.tableSchemaCache = map[string]*schema.Table{
+		"test_schema.test_table": this.sourceTable,
 	}
 }
 
@@ -50,7 +56,7 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventGeneratesInsertQuery() {
 		},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogInsertEvents(rowsEvent, this.tableSchemaCache)
+	dmlEvents, err := ghostferry.NewBinlogInsertEvents(this.sourceTable, rowsEvent)
 	this.Require().Nil(err)
 	this.Require().Equal(2, len(dmlEvents))
 
@@ -71,7 +77,7 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventWithWrongColumnsReturnsErro
 		Rows:  [][]interface{}{{1000}},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogInsertEvents(rowsEvent, this.tableSchemaCache)
+	dmlEvents, err := ghostferry.NewBinlogInsertEvents(this.sourceTable, rowsEvent)
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 	_, _, err = dmlEvents[0].AsSQLQuery(this.targetTable)
@@ -85,7 +91,7 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventMetadata() {
 		Rows:  [][]interface{}{{1000}},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogInsertEvents(rowsEvent, this.tableSchemaCache)
+	dmlEvents, err := ghostferry.NewBinlogInsertEvents(this.sourceTable, rowsEvent)
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 	this.Require().Equal("test_schema", dmlEvents[0].Database())
@@ -105,7 +111,7 @@ func (this *DMLEventsTestSuite) TestBinlogUpdateEventGeneratesUpdateQuery() {
 		},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(rowsEvent, this.tableSchemaCache)
+	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(this.sourceTable, rowsEvent)
 	this.Require().Nil(err)
 	this.Require().Equal(2, len(dmlEvents))
 
@@ -126,7 +132,7 @@ func (this *DMLEventsTestSuite) TestBinlogUpdateEventWithWrongColumnsReturnsErro
 		Rows:  [][]interface{}{{1000}, {1000}},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(rowsEvent, this.tableSchemaCache)
+	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(this.sourceTable, rowsEvent)
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 	_, _, err = dmlEvents[0].AsSQLQuery(this.targetTable)
@@ -140,7 +146,7 @@ func (this *DMLEventsTestSuite) TestBinlogUpdateEventMetadata() {
 		Rows:  [][]interface{}{{1000}, {1001}},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(rowsEvent, this.tableSchemaCache)
+	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(this.sourceTable, rowsEvent)
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 	this.Require().Equal("test_schema", dmlEvents[0].Database())
@@ -158,7 +164,7 @@ func (this *DMLEventsTestSuite) TestBinlogDeleteEventGeneratesDeleteQuery() {
 		},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogDeleteEvents(rowsEvent, this.tableSchemaCache)
+	dmlEvents, err := ghostferry.NewBinlogDeleteEvents(this.sourceTable, rowsEvent)
 	this.Require().Nil(err)
 	this.Require().Equal(2, len(dmlEvents))
 
@@ -179,7 +185,7 @@ func (this *DMLEventsTestSuite) TestBinlogDeleteEventWithWrongColumnsReturnsErro
 		Rows:  [][]interface{}{{1000}},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogDeleteEvents(rowsEvent, this.tableSchemaCache)
+	dmlEvents, err := ghostferry.NewBinlogDeleteEvents(this.sourceTable, rowsEvent)
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 	_, _, err = dmlEvents[0].AsSQLQuery(this.targetTable)
@@ -193,7 +199,7 @@ func (this *DMLEventsTestSuite) TestBinlogDeleteEventMetadata() {
 		Rows:  [][]interface{}{{1000}},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogDeleteEvents(rowsEvent, this.tableSchemaCache)
+	dmlEvents, err := ghostferry.NewBinlogDeleteEvents(this.sourceTable, rowsEvent)
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 	this.Require().Equal("test_schema", dmlEvents[0].Database())
@@ -204,7 +210,7 @@ func (this *DMLEventsTestSuite) TestBinlogDeleteEventMetadata() {
 
 func (this *DMLEventsTestSuite) TestExistingRowEventGeneratesInsertQuery() {
 	vals := []interface{}{1000, []byte("val1"), true}
-	dmlEvent, err := ghostferry.NewExistingRowEvent(this.tableSchemaCache["test_schema.test_table"], vals)
+	dmlEvent, err := ghostferry.NewExistingRowEvent(this.sourceTable, vals)
 	this.Require().Nil(err)
 
 	q1, v1, err := dmlEvent.AsSQLQuery(this.targetTable)
@@ -215,7 +221,7 @@ func (this *DMLEventsTestSuite) TestExistingRowEventGeneratesInsertQuery() {
 
 func (this *DMLEventsTestSuite) TestExistingRowEventWithWrongColumnsReturnsError() {
 	vals := []interface{}{1000}
-	dmlEvent, err := ghostferry.NewExistingRowEvent(this.tableSchemaCache["test_schema.test_table"], vals)
+	dmlEvent, err := ghostferry.NewExistingRowEvent(this.sourceTable, vals)
 	this.Require().Nil(err)
 
 	_, _, err = dmlEvent.AsSQLQuery(this.targetTable)
@@ -225,7 +231,7 @@ func (this *DMLEventsTestSuite) TestExistingRowEventWithWrongColumnsReturnsError
 
 func (this *DMLEventsTestSuite) TestExistingRowEventMetadata() {
 	vals := []interface{}{1000}
-	dmlEvent, err := ghostferry.NewExistingRowEvent(this.tableSchemaCache["test_schema.test_table"], vals)
+	dmlEvent, err := ghostferry.NewExistingRowEvent(this.sourceTable, vals)
 	this.Require().Nil(err)
 
 	this.Require().Equal("test_schema", dmlEvent.Database())

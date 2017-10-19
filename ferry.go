@@ -52,7 +52,6 @@ type Ferry struct {
 	ErrorHandler   ErrorHandler
 	Throttler      *Throttler
 	Verifier       Verifier
-	Filter         CopyFilter
 
 	Tables TableSchemaCache
 
@@ -185,8 +184,7 @@ func (f *Ferry) Initialize() (err error) {
 		Config:       f.Config,
 		ErrorHandler: f.ErrorHandler,
 		Throttler:    f.Throttler,
-		Filter:       f.Filter,
-		TableFilter:  f.TableFilter,
+		Filter:       f.CopyFilter,
 	}
 	err = f.BinlogStreamer.Initialize()
 	if err != nil {
@@ -199,7 +197,7 @@ func (f *Ferry) Initialize() (err error) {
 		Config:       f.Config,
 		ErrorHandler: f.ErrorHandler,
 		Throttler:    f.Throttler,
-		Filter:       f.Filter,
+		Filter:       f.CopyFilter,
 	}
 
 	err = f.DataIterator.Initialize()

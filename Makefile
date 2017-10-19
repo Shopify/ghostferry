@@ -2,7 +2,7 @@
 .DEFAULT_GOAL := test
 
 # Variables to be built into the binary
-VERSION         := 1.0.0
+VERSION         := 1.1.0
 DIRTY_TREE      := $(shell git diff-index --quiet HEAD -- || echo '+dirty')
 COMMIT          := $(addsuffix $(DIRTY_TREE),$(shell git rev-parse --short HEAD))
 

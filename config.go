@@ -54,7 +54,9 @@ type Config struct {
 
 	// Config for Ferry
 	MaxWriteRetriesOnTargetDBError int
-	TableFilter                    TableFilter
+
+	TableFilter TableFilter
+	CopyFilter  CopyFilter
 
 	// Config for BinlogStreamer
 	MyServerId uint32
