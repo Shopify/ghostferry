@@ -43,6 +43,7 @@ type Status struct {
 	TotalTableCount     int
 	TableStatuses       []*TableStatus
 	AllTableNames       []string
+	AllDatabaseNames    []string
 
 	VerifierSupport     bool
 	VerifierAvailable   bool
@@ -89,6 +90,17 @@ func FetchStatus(f *Ferry) *Status {
 
 	status.AllTableNames = f.Tables.AllTableNames()
 	sort.Strings(status.AllTableNames)
+
+	dbSet := make(map[string]bool)
+	for _, table := range f.Tables.AsSlice() {
+		dbSet[table.Schema] = true
+	}
+
+	status.AllDatabaseNames = make([]string, 0, len(dbSet))
+	for dbName := range dbSet {
+		status.AllDatabaseNames = append(status.AllDatabaseNames, dbName)
+	}
+	sort.Strings(status.AllDatabaseNames)
 
 	// We get the name first because we need to sort them
 	completedTableNames := make([]string, 0, len(completedTables))
