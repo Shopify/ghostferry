@@ -1,6 +1,7 @@
 package reloc
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/Shopify/ghostferry"
@@ -10,7 +11,9 @@ type RelocFerry struct {
 	ferry *ghostferry.Ferry
 }
 
-func NewFerry(shardingKey string, shardingValue interface{}, sourceShardDb string, config *ghostferry.Config) *RelocFerry {
+func NewFerry(shardingKey string, shardingValue interface{}, sourceDb, targetDb string, config *ghostferry.Config) (*RelocFerry, error) {
+	config.DatabaseTargets = map[string]string{sourceDb: targetDb}
+
 	config.CopyFilter = &ShardedRowFilter{
 		ShardingKey:   shardingKey,
 		ShardingValue: shardingValue,
@@ -18,12 +21,16 @@ func NewFerry(shardingKey string, shardingValue interface{}, sourceShardDb strin
 
 	config.TableFilter = &ShardedTableFilter{
 		ShardingKey: shardingKey,
-		SourceShard: sourceShardDb,
+		SourceShard: sourceDb,
+	}
+
+	if err := config.ValidateConfig(); err != nil {
+		return nil, fmt.Errorf("failed to validate config: %v", err)
 	}
 
 	return &RelocFerry{
 		ferry: &ghostferry.Ferry{Config: config},
-	}
+	}, nil
 }
 
 func (this *RelocFerry) Initialize() error {

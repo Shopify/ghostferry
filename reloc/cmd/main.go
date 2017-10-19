@@ -45,14 +45,17 @@ func main() {
 	}
 
 	assertRequiredFlagsPresent()
-	config := parseAndValidateConfig()
+	config := parseConfig()
 
 	fmt.Printf("reloc built with ghostferry %s+%s\n", ghostferry.VersionNumber, ghostferry.VersionCommit)
-	fmt.Printf("will move tenant %s=%d", shardingKey, shardingValue)
+	fmt.Printf("will move tenant %s=%d\n", shardingKey, shardingValue)
 
-	ferry := reloc.NewFerry(shardingKey, shardingValue, sourceDb, config)
+	ferry, err := reloc.NewFerry(shardingKey, shardingValue, sourceDb, targetDb, config)
+	if err != nil {
+		errorAndExit(fmt.Sprintf("failed to create ferry: %v", err))
+	}
 
-	err := ferry.Initialize()
+	err = ferry.Initialize()
 	if err != nil {
 		errorAndExit(fmt.Sprintf("failed to initialize ferry: %v", err))
 	}
@@ -70,7 +73,7 @@ func errorAndExit(msg string) {
 	os.Exit(1)
 }
 
-func parseAndValidateConfig() *ghostferry.Config {
+func parseConfig() *ghostferry.Config {
 	config := &ghostferry.Config{
 		AutomaticCutover: false,
 		MyServerId:       99399,
@@ -99,13 +102,6 @@ func parseAndValidateConfig() *ghostferry.Config {
 	err = json.Unmarshal(data, config)
 	if err != nil {
 		errorAndExit(fmt.Sprintf("failed to parse config: %v", err))
-	}
-
-	config.DatabaseTargets = map[string]string{sourceDb: targetDb}
-
-	err = config.ValidateConfig()
-	if err != nil {
-		errorAndExit(fmt.Sprintf("failed to validate config: %v", err))
 	}
 
 	return config
