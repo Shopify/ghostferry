@@ -13,8 +13,8 @@ type TableStatus struct {
 	TableName        string
 	PrimaryKeyName   string
 	Status           string
-	LastSuccessfulPK int64
-	TargetPK         int64
+	LastSuccessfulPK uint64
+	TargetPK         uint64
 }
 
 type Status struct {
@@ -29,7 +29,7 @@ type Status struct {
 	TimeTaken         time.Duration
 	ETA               time.Duration
 	BinlogStreamerLag time.Duration
-	PKsPerSecond      int64
+	PKsPerSecond      uint64
 
 	AutomaticCutover            bool
 	BinlogStreamerStopRequested bool
@@ -170,8 +170,8 @@ func FetchStatus(f *Ferry) *Status {
 	// ETA estimation
 	// We do it here rather than in DataIteratorState to give the lock back
 	// ASAP. It's not supposed to be that accurate anyway.
-	var totalPKsToCopy int64 = 0
-	var completedPKs int64 = 0
+	var totalPKsToCopy uint64 = 0
+	var completedPKs uint64 = 0
 	estimatedPKsPerSecond := f.DataIterator.CurrentState.EstimatedPKProcessedPerSecond()
 	for _, targetPK := range targetPKs {
 		totalPKsToCopy += targetPK
@@ -182,7 +182,7 @@ func FetchStatus(f *Ferry) *Status {
 	}
 
 	status.ETA = time.Duration(math.Ceil(float64(totalPKsToCopy-completedPKs)/estimatedPKsPerSecond)) * time.Second
-	status.PKsPerSecond = int64(estimatedPKsPerSecond)
+	status.PKsPerSecond = uint64(estimatedPKsPerSecond)
 
 	// Verifier display
 	if f.Verifier != nil {

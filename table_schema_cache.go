@@ -26,8 +26,8 @@ func QuotedTableNameFromString(database, table string) string {
 	return fmt.Sprintf("`%s`.`%s`", database, table)
 }
 
-func MaxPrimaryKeys(db *sql.DB, tables []*schema.Table, logger *logrus.Entry) (map[*schema.Table]int64, []*schema.Table, error) {
-	tablesWithData := make(map[*schema.Table]int64)
+func MaxPrimaryKeys(db *sql.DB, tables []*schema.Table, logger *logrus.Entry) (map[*schema.Table]uint64, []*schema.Table, error) {
+	tablesWithData := make(map[*schema.Table]uint64)
 	emptyTables := make([]*schema.Table, 0, len(tables))
 
 	for _, table := range tables {
@@ -190,8 +190,8 @@ func showTablesFrom(c *sql.DB, dbname string) ([]string, error) {
 	return tables, nil
 }
 
-func maxPk(db *sql.DB, table *schema.Table) (int64, error) {
-	var maxPrimaryKey int64
+func maxPk(db *sql.DB, table *schema.Table) (uint64, error) {
+	var maxPrimaryKey uint64
 
 	primaryKeyColumn := table.GetPKColumn(0)
 	pkName := quoteField(primaryKeyColumn.Name)
