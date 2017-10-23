@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	sq "github.com/Masterminds/squirrel"
+	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/reloc"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/stretchr/testify/assert"
@@ -49,6 +50,7 @@ func TestShardedRowFilterSupportsJoinedTables(t *testing.T) {
 	}
 
 	table := &schema.Table{
+		Schema:    "shard_1",
 		Name:      "joined",
 		Columns:   []schema.TableColumn{{Name: "joined_pk"}},
 		PKColumns: []int{0},
@@ -58,13 +60,13 @@ func TestShardedRowFilterSupportsJoinedTables(t *testing.T) {
 	assert.Nil(t, err)
 
 	selectBuilder := sq.Select("*").
-		From("`shard_1`.`joined`").
+		From(ghostferry.QuotedTableName(table)).
 		Limit(1024).
 		OrderBy("`joined_pk`").
 		Suffix("FOR UPDATE")
 
 	sql, args, err := selectBuilder.Where(cond).ToSql()
 	assert.Nil(t, err)
-	assert.Equal(t, "SELECT * FROM `shard_1`.`joined` WHERE `joined_pk` IN (SELECT * FROM (SELECT `joined_pk1` AS reloc_join_alias FROM `join1` WHERE `tenant_id` = ? AND `joined_pk1` > ? UNION DISTINCT SELECT `joined_pk2` AS reloc_join_alias FROM `join2` WHERE `tenant_id` = ? AND `joined_pk2` > ? ORDER BY reloc_join_alias LIMIT 1024) AS reloc_join_table) ORDER BY `joined_pk` LIMIT 1024 FOR UPDATE", sql)
+	assert.Equal(t, "SELECT * FROM `shard_1`.`joined` WHERE `joined_pk` IN (SELECT * FROM (SELECT `joined_pk1` AS reloc_join_alias FROM `shard_1`.`join1` WHERE `tenant_id` = ? AND `joined_pk1` > ? UNION DISTINCT SELECT `joined_pk2` AS reloc_join_alias FROM `shard_1`.`join2` WHERE `tenant_id` = ? AND `joined_pk2` > ? ORDER BY reloc_join_alias LIMIT 1024) AS reloc_join_table) ORDER BY `joined_pk` LIMIT 1024 FOR UPDATE", sql)
 	assert.Equal(t, []interface{}{shardingValue, pkCursor, shardingValue, pkCursor}, args)
 }

@@ -2,7 +2,6 @@ package test
 
 import (
 	"database/sql"
-	"fmt"
 	"math/rand"
 	"testing"
 
@@ -11,24 +10,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func addTenantID(db *sql.DB, dbname, tablename string, numberOfTenants int) {
-	query := "ALTER TABLE %s.%s ADD tenant_id bigint(20)"
-	query = fmt.Sprintf(query, dbname, tablename)
-	_, err := db.Exec(query)
-	testhelpers.PanicIfError(err)
-
-	query = "UPDATE %s.%s SET tenant_id = id %% ?"
-	query = fmt.Sprintf(query, dbname, tablename)
-	_, err = db.Exec(query, numberOfTenants)
-	testhelpers.PanicIfError(err)
-}
-
 func setupSingleTableDatabase(f *testhelpers.TestFerry) {
 	testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 1000)
 	testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
 
-	addTenantID(f.SourceDB, "gftest", "table1", 3)
-	addTenantID(f.TargetDB, "gftest", "table1", 3)
+	testhelpers.AddTenantID(f.SourceDB, "gftest", "table1", 3)
+	testhelpers.AddTenantID(f.TargetDB, "gftest", "table1", 3)
 }
 
 func selectiveFerry(shardingValue interface{}) *testhelpers.TestFerry {

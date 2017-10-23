@@ -31,8 +31,8 @@ func (f *ShardedRowFilter) ConstrainSelect(table *schema.Table, lastPk uint64, b
 	var args []interface{}
 
 	for _, joinTable := range joinTables {
-		pattern := "SELECT `%s` AS reloc_join_alias FROM `%s` WHERE `%s` = ? AND `%s` > ?"
-		sql := fmt.Sprintf(pattern, joinTable.Column, joinTable.Name, f.ShardingKey, joinTable.Column)
+		pattern := "SELECT `%s` AS reloc_join_alias FROM `%s`.`%s` WHERE `%s` = ? AND `%s` > ?"
+		sql := fmt.Sprintf(pattern, joinTable.Column, table.Schema, joinTable.Name, f.ShardingKey, joinTable.Column)
 		clauses = append(clauses, sql)
 		args = append(args, f.ShardingValue, lastPk)
 	}
