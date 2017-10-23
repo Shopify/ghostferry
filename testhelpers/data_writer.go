@@ -11,7 +11,7 @@ import (
 
 var dataletters = []rune("abcdefghijklmnopqrstuvwxyz")
 
-func randData() string {
+func RandData() string {
 	b := make([]rune, 32)
 	for i := range b {
 		b[i] = dataletters[rand.Intn(len(dataletters))]
@@ -41,7 +41,7 @@ func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows int) {
 		query = "INSERT INTO %s.%s (id, data) VALUES (?, ?)"
 		query = fmt.Sprintf(query, dbname, tablename)
 
-		_, err = tx.Exec(query, nil, randData())
+		_, err = tx.Exec(query, nil, RandData())
 		PanicIfError(err)
 	}
 
@@ -134,7 +134,7 @@ func (this *MixedActionDataWriter) InsertData() error {
 
 	colvals := make(map[string]interface{})
 	colvals["id"] = nil
-	colvals["data"] = randData()
+	colvals["data"] = RandData()
 
 	if this.ExtraInsertData != nil {
 		this.ExtraInsertData(colvals)
@@ -158,7 +158,7 @@ func (this *MixedActionDataWriter) UpdateData() error {
 	}
 
 	colvals := make(map[string]interface{})
-	colvals["data"] = randData()
+	colvals["data"] = RandData()
 
 	if this.ExtraUpdateData != nil {
 		this.ExtraUpdateData(colvals)

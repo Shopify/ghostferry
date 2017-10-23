@@ -1,6 +1,7 @@
 package test
 
 import (
+	"database/sql"
 	"math/rand"
 	"testing"
 
@@ -77,6 +78,34 @@ func TestCopyDataWithDeleteLoad(t *testing.T) {
 			Tables:              []string{"gftest.table1"},
 		},
 		Ferry: testhelpers.NewTestFerry(),
+	}
+
+	testcase.Run()
+}
+
+func useUnsignedPK(db *sql.DB) {
+	_, err := db.Exec("ALTER TABLE gftest.table1 MODIFY id bigint(20) unsigned not null")
+	testhelpers.PanicIfError(err)
+}
+
+func setupSingleTableDatabaseWithHighBitUint64PKs(f *testhelpers.TestFerry) {
+	setupSingleTableDatabase(f)
+
+	useUnsignedPK(f.SourceDB)
+	useUnsignedPK(f.TargetDB)
+
+	stmt, err := f.SourceDB.Prepare("INSERT INTO gftest.table1 (id, data) VALUES (?, ?)")
+	testhelpers.PanicIfError(err)
+
+	_, err = stmt.Exec(^uint64(0), testhelpers.RandData())
+	testhelpers.PanicIfError(err)
+}
+
+func TestCopyDataWithLargePrimaryKeyValues(t *testing.T) {
+	testcase := &testhelpers.IntegrationTestCase{
+		T:           t,
+		SetupAction: setupSingleTableDatabaseWithHighBitUint64PKs,
+		Ferry:       testhelpers.NewTestFerry(),
 	}
 
 	testcase.Run()

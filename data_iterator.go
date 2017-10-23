@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"reflect"
+	"strconv"
 	"sync"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 )
 
 type PKPositionLog struct {
-	Position int64
+	Position uint64
 	At       time.Time
 }
 
@@ -22,8 +23,8 @@ type DataIteratorState struct {
 	// We need to lock these maps as Go does not support concurrent access to
 	// maps.
 	// Maybe able to convert to sync.Map in Go1.9
-	targetPrimaryKeys         map[string]int64
-	lastSuccessfulPrimaryKeys map[string]int64
+	targetPrimaryKeys         map[string]uint64
+	lastSuccessfulPrimaryKeys map[string]uint64
 	completedTables           map[string]bool
 	copySpeedLog              *ring.Ring
 
@@ -45,8 +46,8 @@ func newDataIteratorState(tableIteratorCount int) *DataIteratorState {
 	}
 
 	return &DataIteratorState{
-		targetPrimaryKeys:         make(map[string]int64),
-		lastSuccessfulPrimaryKeys: make(map[string]int64),
+		targetPrimaryKeys:         make(map[string]uint64),
+		lastSuccessfulPrimaryKeys: make(map[string]uint64),
 		completedTables:           make(map[string]bool),
 		copySpeedLog:              speedLog,
 		targetPkMutex:             &sync.RWMutex{},
@@ -55,14 +56,14 @@ func newDataIteratorState(tableIteratorCount int) *DataIteratorState {
 	}
 }
 
-func (this *DataIteratorState) UpdateTargetPK(table string, pk int64) {
+func (this *DataIteratorState) UpdateTargetPK(table string, pk uint64) {
 	this.targetPkMutex.Lock()
 	defer this.targetPkMutex.Unlock()
 
 	this.targetPrimaryKeys[table] = pk
 }
 
-func (this *DataIteratorState) UpdateLastSuccessfulPK(table string, pk int64) {
+func (this *DataIteratorState) UpdateLastSuccessfulPK(table string, pk uint64) {
 	this.successfulPkMutex.Lock()
 	defer this.successfulPkMutex.Unlock()
 
@@ -84,11 +85,11 @@ func (this *DataIteratorState) MarkTableAsCompleted(table string) {
 	this.completedTables[table] = true
 }
 
-func (this *DataIteratorState) TargetPrimaryKeys() map[string]int64 {
+func (this *DataIteratorState) TargetPrimaryKeys() map[string]uint64 {
 	this.targetPkMutex.RLock()
 	defer this.targetPkMutex.RUnlock()
 
-	m := make(map[string]int64)
+	m := make(map[string]uint64)
 	for k, v := range this.targetPrimaryKeys {
 		m[k] = v
 	}
@@ -96,11 +97,11 @@ func (this *DataIteratorState) TargetPrimaryKeys() map[string]int64 {
 	return m
 }
 
-func (this *DataIteratorState) LastSuccessfulPrimaryKeys() map[string]int64 {
+func (this *DataIteratorState) LastSuccessfulPrimaryKeys() map[string]uint64 {
 	this.successfulPkMutex.RLock()
 	defer this.successfulPkMutex.RUnlock()
 
-	m := make(map[string]int64)
+	m := make(map[string]uint64)
 	for k, v := range this.lastSuccessfulPrimaryKeys {
 		m[k] = v
 	}
@@ -251,13 +252,13 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 	logger := this.logger.WithField("table", table.String())
 	logger.Info("starting to copy table")
 
-	var lastSuccessfulPrimaryKey int64 = 0
+	var lastSuccessfulPrimaryKey uint64 = 0
 	maxPrimaryKey := this.CurrentState.TargetPrimaryKeys()[table.String()]
 
 	for lastSuccessfulPrimaryKey < maxPrimaryKey {
 		var tx *sql.Tx
 		var rowEvents []DMLEvent
-		var pkpos int64
+		var pkpos uint64
 
 		err := WithRetries(this.Config.MaxIterationReadRetries, 0, logger, "fetch rows", func() (err error) {
 			this.Throttler.ThrottleIfNecessary()
@@ -327,7 +328,7 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 	return nil
 }
 
-func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkColumn *schema.TableColumn, lastSuccessfulPk int64) (events []DMLEvent, pkpos int64, err error) {
+func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkColumn *schema.TableColumn, lastSuccessfulPk uint64) (events []DMLEvent, pkpos uint64, err error) {
 	logger := this.logger.WithFields(logrus.Fields{
 		"table": table.String(),
 	})
@@ -404,14 +405,22 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 		events = append(events, ev)
 
 		// Since it is possible to have many different types of integers in
-		// MySQL, we try to parse it all into int64.
-		//
-		// TODO: there is a theoretical overflow here, but I'm not sure if
-		//       we will hit it during any real use case.
-		if pkColumn.IsUnsigned {
-			pkpos = int64(reflect.ValueOf(values[pkIndex]).Uint())
+		// MySQL, we try to parse it all into uint64.
+		if valueByteSlice, ok := values[pkIndex].([]byte); ok {
+			valueString := string(valueByteSlice)
+			pkpos, err = strconv.ParseUint(valueString, 10, 64)
+			if err != nil {
+				logger.WithError(err).Error("failed to convert string primary key value to uint64")
+				return
+			}
 		} else {
-			pkpos = reflect.ValueOf(values[pkIndex]).Int()
+			signedPkPos := reflect.ValueOf(values[pkIndex]).Int()
+			if signedPkPos < 0 {
+				err = fmt.Errorf("primary key %s had value %d in table %s", pkName, signedPkPos, QuotedTableName(table))
+				logger.WithError(err).Error("failed to update primary key position")
+				return
+			}
+			pkpos = uint64(signedPkPos)
 		}
 	}
 
