@@ -75,8 +75,7 @@ func errorAndExit(msg string) {
 
 func parseConfig() *ghostferry.Config {
 	config := &ghostferry.Config{
-		AutomaticCutover: false,
-		MyServerId:       99399,
+		AutomaticCutover: true,
 	}
 
 	var data []byte
@@ -102,6 +101,10 @@ func parseConfig() *ghostferry.Config {
 	err = json.Unmarshal(data, config)
 	if err != nil {
 		errorAndExit(fmt.Sprintf("failed to parse config: %v", err))
+	}
+
+	if config.MyServerId != 0 {
+		errorAndExit("specifying MyServerId option manually is dangerous and disallowed")
 	}
 
 	return config

@@ -1,1 +1,81 @@
 package test
+
+import (
+	"database/sql"
+	"fmt"
+	"testing"
+
+	"github.com/Shopify/ghostferry"
+	"github.com/Shopify/ghostferry/testhelpers"
+
+	"github.com/go-sql-driver/mysql"
+	"github.com/stretchr/testify/suite"
+)
+
+type FerryTestSuite struct {
+	*testhelpers.GhostferryUnitTestSuite
+
+	config         *ghostferry.Config
+	binlogStreamer *ghostferry.BinlogStreamer
+}
+
+func (this *FerryTestSuite) SetupTest() {
+	this.GhostferryUnitTestSuite.SetupTest()
+
+	testFerry := testhelpers.NewTestFerry()
+
+	sourceConfig := &mysql.Config{
+		User:   testFerry.SourceUser,
+		Passwd: testFerry.SourcePass,
+		Net:    "tcp",
+		Addr:   fmt.Sprintf("%s:%d", testFerry.SourceHost, testFerry.SourcePort),
+	}
+
+	sourceDSN := sourceConfig.FormatDSN()
+	sourceDb, err := sql.Open("mysql", sourceDSN)
+	if err != nil {
+		this.Fail("failed to connect to source database")
+	}
+
+	this.binlogStreamer = &ghostferry.BinlogStreamer{
+		Db:           sourceDb,
+		Config:       testFerry.Config,
+		ErrorHandler: testFerry.ErrorHandler,
+		Throttler:    testFerry.Throttler,
+		Filter:       testFerry.CopyFilter,
+	}
+}
+
+func (this *FerryTestSuite) TestInitializeWithIdKeepsId() {
+	this.binlogStreamer.Config.MyServerId = 1421
+
+	err := this.binlogStreamer.Initialize()
+
+	this.Require().Nil(err)
+	this.Require().Equal(uint32(1421), this.binlogStreamer.Config.MyServerId)
+}
+
+func (this *FerryTestSuite) TestInitializeWithZeroIdGetsRandomServerId() {
+	this.binlogStreamer.Config.MyServerId = 0
+
+	err := this.binlogStreamer.Initialize()
+
+	this.Require().Nil(err)
+	this.Require().NotZero(this.binlogStreamer.Config.MyServerId)
+}
+
+func (this *FerryTestSuite) TestInitializeErrorsOutIfErrorInServerIdGeneration() {
+	this.binlogStreamer.Config.MyServerId = 0
+
+	this.binlogStreamer.Db.Close()
+
+	err := this.binlogStreamer.Initialize()
+
+	this.Require().NotNil(err)
+	this.Require().Zero(this.binlogStreamer.Config.MyServerId)
+}
+
+func TestFerryTestSuite(t *testing.T) {
+	testhelpers.SetupTest()
+	suite.Run(t, &FerryTestSuite{GhostferryUnitTestSuite: &testhelpers.GhostferryUnitTestSuite{}})
+}

@@ -100,10 +100,6 @@ func (c *Config) ValidateConfig() error {
 		return fmt.Errorf("target user is empty")
 	}
 
-	if c.MyServerId == 0 {
-		return fmt.Errorf("MyServerId must be non 0")
-	}
-
 	if c.TableFilter == nil {
 		return fmt.Errorf("Table filter function must be provided")
 	}
