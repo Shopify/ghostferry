@@ -11,17 +11,19 @@ type RelocFerry struct {
 	ferry *ghostferry.Ferry
 }
 
-func NewFerry(shardingKey string, shardingValue interface{}, sourceDb, targetDb string, config *ghostferry.Config) (*RelocFerry, error) {
-	config.DatabaseTargets = map[string]string{sourceDb: targetDb}
+func NewFerry(config *Config) (*RelocFerry, error) {
+	config.DatabaseTargets = map[string]string{config.SourceDB: config.TargetDB}
 
 	config.CopyFilter = &ShardedRowFilter{
-		ShardingKey:   shardingKey,
-		ShardingValue: shardingValue,
+		ShardingKey:   config.ShardingKey,
+		ShardingValue: config.ShardingValue,
+		JoinedTables:  config.JoinedTables,
 	}
 
 	config.TableFilter = &ShardedTableFilter{
-		ShardingKey: shardingKey,
-		SourceShard: sourceDb,
+		ShardingKey:  config.ShardingKey,
+		SourceShard:  config.SourceDB,
+		JoinedTables: config.JoinedTables,
 	}
 
 	if err := config.ValidateConfig(); err != nil {
@@ -29,7 +31,7 @@ func NewFerry(shardingKey string, shardingValue interface{}, sourceDb, targetDb 
 	}
 
 	return &RelocFerry{
-		ferry: &ghostferry.Ferry{Config: config},
+		ferry: &ghostferry.Ferry{Config: &config.Config},
 	}, nil
 }
 

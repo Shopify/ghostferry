@@ -43,7 +43,7 @@ func selectiveFerryWithJoin(shardingValue interface{}) *testhelpers.TestFerry {
 
 		JoinedTables: map[string][]reloc.JoinTable{
 			"joined_table": []reloc.JoinTable{
-				{Name: "join_table", Column: "join_id"},
+				{TableName: "join_table", JoinColumn: "join_id"},
 			},
 		},
 	}

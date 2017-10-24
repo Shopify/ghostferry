@@ -33,6 +33,22 @@ func TestShardedTableFilterSelectsTablesWithShardingKey(t *testing.T) {
 	assert.Equal(t, tables[1:3], applicable)
 }
 
+func TestShardedTableFilterSelectsJoinedTables(t *testing.T) {
+	filter := &reloc.ShardedTableFilter{
+		SourceShard:  "shard_42",
+		ShardingKey:  "tenant_id",
+		JoinedTables: map[string][]reloc.JoinTable{"table2": nil},
+	}
+
+	tables := []*schema.Table{
+		{Schema: "shard_42", Name: "table1", Columns: []schema.TableColumn{{Name: "id"}}},
+		{Schema: "shard_42", Name: "table2", Columns: []schema.TableColumn{{Name: "id"}}},
+	}
+
+	applicable := filter.ApplicableTables(tables)
+	assert.Equal(t, tables[1:], applicable)
+}
+
 func TestShardedRowFilterSupportsJoinedTables(t *testing.T) {
 	shardingValue := int64(1)
 	pkCursor := uint64(12345)
@@ -43,8 +59,8 @@ func TestShardedRowFilterSupportsJoinedTables(t *testing.T) {
 
 		JoinedTables: map[string][]reloc.JoinTable{
 			"joined": []reloc.JoinTable{
-				{Name: "join1", Column: "joined_pk1"},
-				{Name: "join2", Column: "joined_pk2"},
+				{TableName: "join1", JoinColumn: "joined_pk1"},
+				{TableName: "join2", JoinColumn: "joined_pk2"},
 			},
 		},
 	}

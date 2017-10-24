@@ -12,7 +12,7 @@ import (
 )
 
 type JoinTable struct {
-	Name, Column string
+	TableName, JoinColumn string
 }
 
 type ShardedRowFilter struct {
@@ -32,7 +32,7 @@ func (f *ShardedRowFilter) ConstrainSelect(table *schema.Table, lastPk uint64, b
 
 	for _, joinTable := range joinTables {
 		pattern := "SELECT `%s` AS reloc_join_alias FROM `%s`.`%s` WHERE `%s` = ? AND `%s` > ?"
-		sql := fmt.Sprintf(pattern, joinTable.Column, table.Schema, joinTable.Name, f.ShardingKey, joinTable.Column)
+		sql := fmt.Sprintf(pattern, joinTable.JoinColumn, table.Schema, joinTable.TableName, f.ShardingKey, joinTable.JoinColumn)
 		clauses = append(clauses, sql)
 		args = append(args, f.ShardingValue, lastPk)
 	}
@@ -66,8 +66,9 @@ func (f *ShardedRowFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, err
 }
 
 type ShardedTableFilter struct {
-	SourceShard string
-	ShardingKey string
+	SourceShard  string
+	ShardingKey  string
+	JoinedTables map[string][]JoinTable
 }
 
 func (s *ShardedTableFilter) ApplicableDatabases(dbs []string) []string {
@@ -82,6 +83,10 @@ func (s *ShardedTableFilter) ApplicableTables(tables []*schema.Table) (applicabl
 				applicable = append(applicable, table)
 				break
 			}
+		}
+
+		if _, exists := s.JoinedTables[table.Name]; exists {
+			applicable = append(applicable, table)
 		}
 	}
 	return
