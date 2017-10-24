@@ -38,10 +38,25 @@ type BinlogStreamer struct {
 
 func (s *BinlogStreamer) Initialize() (err error) {
 	s.logger = logrus.WithField("tag", "binlog_streamer")
+	s.stopRequested = false
+	return nil
+}
+
+func (s *BinlogStreamer) createBinlogSyncer() error {
+	var err error
 	var tlsConfig *tls.Config
+
 	if s.Config.SourceTLS != nil {
 		tlsConfig, err = s.Config.SourceTLS.BuildConfig()
 		if err != nil {
+			return err
+		}
+	}
+
+	if s.Config.MyServerId == 0 {
+		s.Config.MyServerId, err = s.generateNewServerId()
+		if err != nil {
+			s.logger.WithError(err).Error("could not generate unique server_id")
 			return err
 		}
 	}
@@ -57,13 +72,16 @@ func (s *BinlogStreamer) Initialize() (err error) {
 	}
 
 	s.binlogSyncer = replication.NewBinlogSyncer(syncerConfig)
-	s.stopRequested = false
 	return nil
 }
 
 func (s *BinlogStreamer) ConnectBinlogStreamerToMysql() error {
+	err := s.createBinlogSyncer()
+	if err != nil {
+		return err
+	}
+
 	s.logger.Info("reading current binlog position")
-	var err error
 	s.lastStreamedBinlogPosition, err = s.readCurrentBinlogPositionFromMasterStatus()
 	if err != nil {
 		s.logger.WithError(err).Error("failed to read current binlog position")
@@ -275,4 +293,62 @@ func (s *BinlogStreamer) readCurrentBinlogPositionFromMasterStatus() (mysql.Posi
 			Pos:  position,
 		}, nil
 	}
+}
+
+func (s *BinlogStreamer) generateNewServerId() (uint32, error) {
+	var id uint32
+
+	for {
+		id = randomServerId()
+
+		exists, err := idExistsOnServer(id, s.Db)
+		if err != nil {
+			return 0, err
+		}
+		if !exists {
+			break
+		}
+
+		s.logger.WithField("server_id", id).Warn("server_id was taken, retrying")
+	}
+
+	return id, nil
+}
+
+func idExistsOnServer(id uint32, db *sql.DB) (bool, error) {
+	curIds, err := idsOnServer(db)
+	if err != nil {
+		return false, err
+	}
+
+	for _, idd := range curIds {
+		if idd == id {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+func idsOnServer(db *sql.DB) ([]uint32, error) {
+	rows, err := db.Query("SHOW SLAVE HOSTS")
+	if err != nil {
+		return nil, fmt.Errorf("could not get slave hosts: %s", err)
+	}
+	defer rows.Close()
+
+	server_ids := make([]uint32, 0)
+	for rows.Next() {
+		var server_id uint32
+		var host, port, master_id, slave_uuid sql.NullString
+
+		err = rows.Scan(&server_id, &host, &port, &master_id, &slave_uuid)
+		if err != nil {
+			return nil, fmt.Errorf("could not scan SHOW SLAVE HOSTS row, err: %s", err.Error())
+		}
+
+		server_ids = append(server_ids, server_id)
+	}
+
+	return server_ids, nil
 }

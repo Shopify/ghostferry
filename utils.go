@@ -1,6 +1,8 @@
 package ghostferry
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -26,5 +28,15 @@ func WithRetries(maxRetries int, sleep time.Duration, logger *logrus.Entry, verb
 	}
 
 	logger.WithError(err).Errorf("failed to %s after %d attempts, retry limit exceeded", verb, try)
+
 	return
+}
+
+func randomServerId() uint32 {
+	var buf [4]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		panic(err)
+	}
+
+	return binary.LittleEndian.Uint32(buf[:])
 }

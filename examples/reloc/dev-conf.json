@@ -7,8 +7,5 @@
   "TargetHost": "shopify.railgun",
   "TargetPort": 20017,
   "TargetUser": "root",
-  "TargetPass": "",
-
-  "MyServerId": 99399,
-  "AutomaticCutover": true
+  "TargetPass": ""
 }

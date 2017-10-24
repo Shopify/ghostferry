@@ -79,12 +79,6 @@ func (this *ConfigTestSuite) TestRequireTargetUser() {
 	this.Require().EqualError(err, "target user is empty")
 }
 
-func (this *ConfigTestSuite) TestRequireMyServerId() {
-	this.config.MyServerId = 0
-	err := this.config.ValidateConfig()
-	this.Require().EqualError(err, "MyServerId must be non 0")
-}
-
 func (this *ConfigTestSuite) TestDefaultValues() {
 	err := this.config.ValidateConfig()
 	this.Require().Nil(err)
