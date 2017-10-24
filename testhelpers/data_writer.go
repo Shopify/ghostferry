@@ -48,6 +48,18 @@ func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows int) {
 	PanicIfError(tx.Commit())
 }
 
+func AddTenantID(db *sql.DB, dbName, tableName string, numberOfTenants int) {
+	query := "ALTER TABLE %s.%s ADD tenant_id bigint(20)"
+	query = fmt.Sprintf(query, dbName, tableName)
+	_, err := db.Exec(query)
+	PanicIfError(err)
+
+	query = "UPDATE %s.%s SET tenant_id = id %% ?"
+	query = fmt.Sprintf(query, dbName, tableName)
+	_, err = db.Exec(query, numberOfTenants)
+	PanicIfError(err)
+}
+
 type DataWriter interface {
 	Run()
 	Stop()

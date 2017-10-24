@@ -346,10 +346,12 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 		Suffix("FOR UPDATE")
 
 	if this.Filter != nil {
-		if selectBuilder, err = this.Filter.ConstrainSelect(selectBuilder); err != nil {
+		var cond sq.Sqlizer
+		if cond, err = this.Filter.ConstrainSelect(table, lastSuccessfulPk, this.Config.IterateChunksize); err != nil {
 			logger.WithError(err).Error("failed to apply filter for select")
 			return
 		}
+		selectBuilder = selectBuilder.Where(cond)
 	}
 
 	query, args, err := selectBuilder.ToSql()
