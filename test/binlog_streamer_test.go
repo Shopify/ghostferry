@@ -44,32 +44,34 @@ func (this *FerryTestSuite) SetupTest() {
 		Throttler:    testFerry.Throttler,
 		Filter:       testFerry.CopyFilter,
 	}
+
+	this.Require().Nil(this.binlogStreamer.Initialize())
 }
 
-func (this *FerryTestSuite) TestInitializeWithIdKeepsId() {
+func (this *FerryTestSuite) TestConnectWithIdKeepsId() {
 	this.binlogStreamer.Config.MyServerId = 1421
 
-	err := this.binlogStreamer.Initialize()
+	err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
 
 	this.Require().Nil(err)
 	this.Require().Equal(uint32(1421), this.binlogStreamer.Config.MyServerId)
 }
 
-func (this *FerryTestSuite) TestInitializeWithZeroIdGetsRandomServerId() {
+func (this *FerryTestSuite) TestConnectWithZeroIdGetsRandomServerId() {
 	this.binlogStreamer.Config.MyServerId = 0
 
-	err := this.binlogStreamer.Initialize()
+	err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
 
 	this.Require().Nil(err)
 	this.Require().NotZero(this.binlogStreamer.Config.MyServerId)
 }
 
-func (this *FerryTestSuite) TestInitializeErrorsOutIfErrorInServerIdGeneration() {
+func (this *FerryTestSuite) TestConnectErrorsOutIfErrorInServerIdGeneration() {
 	this.binlogStreamer.Config.MyServerId = 0
 
 	this.binlogStreamer.Db.Close()
 
-	err := this.binlogStreamer.Initialize()
+	err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
 
 	this.Require().NotNil(err)
 	this.Require().Zero(this.binlogStreamer.Config.MyServerId)

@@ -38,7 +38,14 @@ type BinlogStreamer struct {
 
 func (s *BinlogStreamer) Initialize() (err error) {
 	s.logger = logrus.WithField("tag", "binlog_streamer")
+	s.stopRequested = false
+	return nil
+}
+
+func (s *BinlogStreamer) createBinlogSyncer() error {
+	var err error
 	var tlsConfig *tls.Config
+
 	if s.Config.SourceTLS != nil {
 		tlsConfig, err = s.Config.SourceTLS.BuildConfig()
 		if err != nil {
@@ -47,7 +54,6 @@ func (s *BinlogStreamer) Initialize() (err error) {
 	}
 
 	if s.Config.MyServerId == 0 {
-		var err error
 		s.Config.MyServerId, err = s.generateNewServerId()
 		if err != nil {
 			s.logger.WithError(err).Error("could not generate unique server_id")
@@ -66,13 +72,16 @@ func (s *BinlogStreamer) Initialize() (err error) {
 	}
 
 	s.binlogSyncer = replication.NewBinlogSyncer(syncerConfig)
-	s.stopRequested = false
 	return nil
 }
 
 func (s *BinlogStreamer) ConnectBinlogStreamerToMysql() error {
+	err := s.createBinlogSyncer()
+	if err != nil {
+		return err
+	}
+
 	s.logger.Info("reading current binlog position")
-	var err error
 	s.lastStreamedBinlogPosition, err = s.readCurrentBinlogPositionFromMasterStatus()
 	if err != nil {
 		s.logger.WithError(err).Error("failed to read current binlog position")
@@ -287,21 +296,20 @@ func (s *BinlogStreamer) readCurrentBinlogPositionFromMasterStatus() (mysql.Posi
 }
 
 func (s *BinlogStreamer) generateNewServerId() (uint32, error) {
-	id := randomServerId()
+	var id uint32
 
 	for {
+		id = randomServerId()
+
 		exists, err := idExistsOnServer(id, s.Db)
 		if err != nil {
 			return 0, err
 		}
-
 		if !exists {
 			break
 		}
 
-		s.logger.WithField("server_id", id).Warn("server_id was taken, retrying with a new random server_id")
-
-		id = randomServerId()
+		s.logger.WithField("server_id", id).Warn("server_id was taken, retrying")
 	}
 
 	return id, nil
@@ -325,7 +333,7 @@ func idExistsOnServer(id uint32, db *sql.DB) (bool, error) {
 func idsOnServer(db *sql.DB) ([]uint32, error) {
 	rows, err := db.Query("SHOW SLAVE HOSTS")
 	if err != nil {
-		return nil, fmt.Errorf("could not get slave hosts")
+		return nil, fmt.Errorf("could not get slave hosts: %s", err)
 	}
 	defer rows.Close()
 

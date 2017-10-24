@@ -3,8 +3,6 @@ package ghostferry
 import (
 	"crypto/rand"
 	"encoding/binary"
-	"math/big"
-	"os"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -35,25 +33,10 @@ func WithRetries(maxRetries int, sleep time.Duration, logger *logrus.Entry, verb
 }
 
 func randomServerId() uint32 {
-	return binary.LittleEndian.Uint32(append(randomUint24(), pidToUint8()))
-}
-
-func randomUint24() []byte {
-	num, err := rand.Int(rand.Reader, big.NewInt(1<<24))
-	if err != nil {
-		panic("could not generate random number")
+	var buf [4]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		panic(err)
 	}
 
-	return num.Bytes()
-}
-
-func pidToUint8() byte {
-	pid := uint32(os.Getpid())
-
-	res := byte(pid)
-	res ^= byte(pid >> 8)
-	res ^= byte(pid >> 16)
-	res ^= byte(pid >> 24)
-
-	return res
+	return binary.LittleEndian.Uint32(buf[:])
 }
