@@ -91,21 +91,30 @@ func useUnsignedPK(db *sql.DB) {
 func setupSingleTableDatabaseWithHighBitUint64PKs(f *testhelpers.TestFerry) {
 	setupSingleTableDatabase(f)
 
+	_, err := f.SourceDB.Exec("TRUNCATE gftest.table1")
+	testhelpers.PanicIfError(err)
+
 	useUnsignedPK(f.SourceDB)
 	useUnsignedPK(f.TargetDB)
 
 	stmt, err := f.SourceDB.Prepare("INSERT INTO gftest.table1 (id, data) VALUES (?, ?)")
 	testhelpers.PanicIfError(err)
 
-	_, err = stmt.Exec(^uint64(0), testhelpers.RandData())
-	testhelpers.PanicIfError(err)
+	for i := uint64(0); i < 100; i++ {
+		_, err = stmt.Exec(^uint64(0)-i, testhelpers.RandData())
+		testhelpers.PanicIfError(err)
+	}
 }
 
 func TestCopyDataWithLargePrimaryKeyValues(t *testing.T) {
+	ferry := testhelpers.NewTestFerry()
+
+	ferry.Config.IterateChunksize = 10
+
 	testcase := &testhelpers.IntegrationTestCase{
 		T:           t,
 		SetupAction: setupSingleTableDatabaseWithHighBitUint64PKs,
-		Ferry:       testhelpers.NewTestFerry(),
+		Ferry:       ferry,
 	}
 
 	testcase.Run()
