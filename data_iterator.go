@@ -336,7 +336,6 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 	// This query must be a prepared query. If it is not, querying will use
 	// MySQL's plain text interface, which will scan all values into []uint8
 	// if we give it []interface{}.
-	// Right now the sq.GtOrEq forces this query to be a prepared one.
 	pkName := quoteField(pkColumn.Name)
 	selectBuilder := sq.Select("*").
 		From(QuotedTableName(table)).
@@ -365,7 +364,13 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 		"args": args,
 	})
 
-	rows, err := tx.Query(query, args...)
+	stmt, err := tx.Prepare(query)
+	if err != nil {
+		logger.WithError(err).Error("failed to prepare query")
+		return
+	}
+
+	rows, err := stmt.Query(args...)
 	if err != nil {
 		logger.WithError(err).Error("failed to query database")
 		return
