@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -218,30 +219,22 @@ func (f *Ferry) Run() {
 	f.logger.Info("starting ferry run")
 	f.OverallState = StateCopying
 
+	ctx, shutdown := context.WithCancel(context.Background())
+
 	f.coreServicesWg.Add(2)
 	go f.BinlogStreamer.Run(f.coreServicesWg)
 	go f.DataIterator.Run(f.coreServicesWg)
 
 	f.supportingServicesWg.Add(2)
-	go f.ErrorHandler.Run(f.supportingServicesWg)
-	go f.Throttler.Run(f.supportingServicesWg)
+	go f.ErrorHandler.Run(f.supportingServicesWg, ctx)
+	go f.Throttler.Run(f.supportingServicesWg, ctx)
 
 	f.coreServicesWg.Wait()
 
 	f.OverallState = StateDone
 	f.DoneTime = time.Now()
 
-	// Need to wait to ensure that the ErrorHandler does not get
-	// interrupted if it is received some errors, have not printed it
-	// out, but all other threads (including the main thread) has quit.
-	// Without some sort of waiting on the main thread for the
-	// ErrorHandler to exit first, the program could exit without ever
-	// printing out the error and panicking.
-	//
-	// Furthermore, in a normal run without errors we need to ensure this
-	// shuts down and does not block forever.
-	f.ErrorHandler.Stop()
-	f.Throttler.Stop()
+	shutdown()
 	f.supportingServicesWg.Wait()
 }
 

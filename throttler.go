@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -9,8 +10,7 @@ import (
 type Throttler interface {
 	Throttled() bool
 	SetPaused(bool)
-	Run(*sync.WaitGroup)
-	Stop()
+	Run(*sync.WaitGroup, context.Context)
 }
 
 func WaitForThrottle(t Throttler) {
@@ -38,8 +38,6 @@ func (t *PauserThrottler) SetPaused(paused bool) {
 	atomic.StoreInt32(&t.paused, val)
 }
 
-func (t *PauserThrottler) Run(wg *sync.WaitGroup) {
+func (t *PauserThrottler) Run(wg *sync.WaitGroup, ctx context.Context) {
 	wg.Done()
 }
-
-func (t *PauserThrottler) Stop() {}

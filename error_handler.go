@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,8 +12,7 @@ import (
 
 type ErrorHandler interface {
 	Initialize()
-	Run(*sync.WaitGroup)
-	Stop()
+	Run(*sync.WaitGroup, context.Context)
 	Fatal(from string, err error)
 }
 
@@ -30,15 +30,20 @@ func (this *PanicErrorHandler) Initialize() {
 	this.errCh = make(chan *FerryError)
 }
 
-func (this *PanicErrorHandler) Run(wg *sync.WaitGroup) {
+func (this *PanicErrorHandler) Run(wg *sync.WaitGroup, ctx context.Context) {
 	defer wg.Done()
 
 	logger := logrus.WithField("tag", "error_handler")
 	logger.Info("started error handler")
-	ferryErr, ok := <-this.errCh
-	if !ok {
-		logger.Info("no errors detected during run, quitting as errCh is closed")
+
+	var ferryErr *FerryError
+
+	select {
+	case <-ctx.Done():
+		logger.Info("no errors detected during run")
 		return
+	case ferryErr = <-this.errCh:
+		close(this.errCh)
 	}
 
 	state := make(map[string]interface{})
@@ -65,8 +70,4 @@ func (this *PanicErrorHandler) Fatal(from string, err error) {
 		err:  err,
 		from: from,
 	}
-}
-
-func (this *PanicErrorHandler) Stop() {
-	close(this.errCh)
 }
