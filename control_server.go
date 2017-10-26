@@ -30,7 +30,6 @@ func (this *ControlServer) Initialize() (err error) {
 	this.router.HandleFunc("/", this.HandleIndex).Methods("GET")
 	this.router.HandleFunc("/api/actions/pause", this.HandlePause).Methods("POST")
 	this.router.HandleFunc("/api/actions/unpause", this.HandleUnpause).Methods("POST")
-	this.router.HandleFunc("/api/actions/throttle", this.HandleThrottle).Methods("POST")
 	this.router.HandleFunc("/api/actions/cutover", this.HandleCutover).Queries("type", "{type:automatic|manual}").Methods("POST")
 	this.router.HandleFunc("/api/actions/stop", this.HandleStop).Methods("POST")
 	this.router.HandleFunc("/api/actions/verify", this.HandleVerify).Methods("POST")
@@ -92,19 +91,13 @@ func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 func (this *ControlServer) HandlePause(w http.ResponseWriter, r *http.Request) {
-	this.F.Throttler.Pause()
+	this.F.Throttler.SetPaused(true)
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (this *ControlServer) HandleUnpause(w http.ResponseWriter, r *http.Request) {
-	this.F.Throttler.Unpause()
-
-	http.Redirect(w, r, "/", http.StatusSeeOther)
-}
-
-func (this *ControlServer) HandleThrottle(w http.ResponseWriter, r *http.Request) {
-	this.F.Throttler.AddThrottleDuration(5 * time.Minute)
+	this.F.Throttler.SetPaused(false)
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

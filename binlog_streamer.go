@@ -19,7 +19,7 @@ type BinlogStreamer struct {
 	Db           *sql.DB
 	Config       *Config
 	ErrorHandler ErrorHandler
-	Throttler    *Throttler
+	Throttler    Throttler
 	Filter       CopyFilter
 
 	TableSchema TableSchemaCache
@@ -112,7 +112,7 @@ func (s *BinlogStreamer) Run(wg *sync.WaitGroup) {
 	s.logger.Info("starting binlog streamer")
 
 	for !s.stopRequested || (s.stopRequested && s.lastStreamedBinlogPosition.Compare(s.targetBinlogPosition) < 0) {
-		s.Throttler.ThrottleIfNecessary()
+		WaitForThrottle(s.Throttler)
 
 		var ev *replication.BinlogEvent
 		var timedOut bool

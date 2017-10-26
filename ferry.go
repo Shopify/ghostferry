@@ -49,7 +49,7 @@ type Ferry struct {
 	BinlogStreamer *BinlogStreamer
 	DataIterator   *DataIterator
 	ErrorHandler   ErrorHandler
-	Throttler      *Throttler
+	Throttler      Throttler
 	Verifier       Verifier
 
 	Tables TableSchemaCache
@@ -136,12 +136,9 @@ func (f *Ferry) Initialize() (err error) {
 	}
 	f.ErrorHandler.Initialize()
 
-	f.Throttler = &Throttler{
-		Db:           f.SourceDB,
-		Config:       f.Config,
-		ErrorHandler: f.ErrorHandler,
+	if f.Throttler == nil {
+		f.Throttler = &PauserThrottler{}
 	}
-	f.Throttler.Initialize()
 
 	// Initialize binlog streamer
 	f.BinlogStreamer = &BinlogStreamer{

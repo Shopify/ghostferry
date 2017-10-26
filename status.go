@@ -36,8 +36,7 @@ type Status struct {
 	LastSuccessfulBinlogPos     mysql.Position
 	TargetBinlogPos             mysql.Position
 
-	Throttled      bool
-	ThrottledUntil time.Time
+	Throttled bool
 
 	CompletedTableCount int
 	TotalTableCount     int
@@ -76,8 +75,7 @@ func FetchStatus(f *Ferry) *Status {
 	status.LastSuccessfulBinlogPos = f.BinlogStreamer.lastStreamedBinlogPosition
 	status.TargetBinlogPos = f.BinlogStreamer.targetBinlogPosition
 
-	status.ThrottledUntil = f.Throttler.ThrottleUntil()
-	status.Throttled = status.ThrottledUntil.After(status.CurrentTime)
+	status.Throttled = f.Throttler.Throttled()
 
 	// Getting all table statuses
 	status.TableStatuses = make([]*TableStatus, 0, len(f.Tables))
