@@ -3,6 +3,7 @@ package reloc
 import (
 	"fmt"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -66,9 +67,10 @@ func (f *ShardedRowFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, err
 }
 
 type ShardedTableFilter struct {
-	SourceShard  string
-	ShardingKey  string
-	JoinedTables map[string][]JoinTable
+	SourceShard   string
+	ShardingKey   string
+	JoinedTables  map[string][]JoinTable
+	IgnoredTables []*regexp.Regexp
 }
 
 func (s *ShardedTableFilter) ApplicableDatabases(dbs []string) []string {
@@ -77,6 +79,10 @@ func (s *ShardedTableFilter) ApplicableDatabases(dbs []string) []string {
 
 func (s *ShardedTableFilter) ApplicableTables(tables []*schema.Table) (applicable []*schema.Table) {
 	for _, table := range tables {
+		if s.isBlacklisted(table) {
+			continue
+		}
+
 		columns := table.Columns
 		for _, column := range columns {
 			if column.Name == s.ShardingKey {
@@ -90,4 +96,13 @@ func (s *ShardedTableFilter) ApplicableTables(tables []*schema.Table) (applicabl
 		}
 	}
 	return
+}
+
+func (s *ShardedTableFilter) isBlacklisted(table *schema.Table) bool {
+	for _, re := range s.IgnoredTables {
+		if re.Match([]byte(table.Name)) {
+			return true
+		}
+	}
+	return false
 }

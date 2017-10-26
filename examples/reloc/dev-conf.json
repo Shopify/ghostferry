@@ -1,4 +1,10 @@
 {
+  "ShardingKey": "shop_id",
+  "ShardingValue": 1,
+  "SourceDB": "shopify_test_shard_0",
+  "TargetDB": "shopify_test_shard_1",
+  "IgnoredTables": [],
+
   "SourceHost": "shopify.railgun",
   "SourcePort": 20015,
   "SourceUser": "root",
