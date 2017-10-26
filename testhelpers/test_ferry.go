@@ -28,15 +28,19 @@ var (
 
 func NewTestConfig() *ghostferry.Config {
 	config := &ghostferry.Config{
-		SourceHost: "127.0.0.1",
-		SourcePort: uint16(TestSourcePort),
-		SourceUser: "root",
-		SourcePass: "",
+		Source: ghostferry.DatabaseConfig{
+			Host: "127.0.0.1",
+			Port: uint16(TestSourcePort),
+			User: "root",
+			Pass: "",
+		},
 
-		TargetHost: "127.0.0.1",
-		TargetPort: uint16(TestTargetPort),
-		TargetUser: "root",
-		TargetPass: "",
+		Target: ghostferry.DatabaseConfig{
+			Host: "127.0.0.1",
+			Port: uint16(TestTargetPort),
+			User: "root",
+			Pass: "",
+		},
 
 		MyServerId:       91919,
 		AutomaticCutover: true,

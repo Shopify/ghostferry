@@ -2,13 +2,11 @@ package test
 
 import (
 	"database/sql"
-	"fmt"
 	"testing"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
 
-	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -24,12 +22,8 @@ func (this *FerryTestSuite) SetupTest() {
 
 	testFerry := testhelpers.NewTestFerry()
 
-	sourceConfig := &mysql.Config{
-		User:   testFerry.SourceUser,
-		Passwd: testFerry.SourcePass,
-		Net:    "tcp",
-		Addr:   fmt.Sprintf("%s:%d", testFerry.SourceHost, testFerry.SourcePort),
-	}
+	sourceConfig, err := testFerry.Source.MySQLConfig()
+	this.Require().Nil(err)
 
 	sourceDSN := sourceConfig.FormatDSN()
 	sourceDb, err := sql.Open("mysql", sourceDSN)

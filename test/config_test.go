@@ -18,13 +18,17 @@ type ConfigTestSuite struct {
 
 func (this *ConfigTestSuite) SetupTest() {
 	this.config = ghostferry.Config{
-		SourceHost: "example.com/host",
-		SourcePort: 3306,
-		SourceUser: "ghostferry",
+		Source: ghostferry.DatabaseConfig{
+			Host: "example.com/host",
+			Port: 3306,
+			User: "ghostferry",
+		},
 
-		TargetHost: "example.com/target",
-		TargetPort: 3306,
-		TargetUser: "ghostferry",
+		Target: ghostferry.DatabaseConfig{
+			Host: "example.com/target",
+			Port: 3306,
+			User: "ghostferry",
+		},
 
 		MyServerId: 99399,
 
@@ -44,39 +48,39 @@ func (this *ConfigTestSuite) TestRequireTableFilter() {
 }
 
 func (this *ConfigTestSuite) TestRequireSourceHost() {
-	this.config.SourceHost = ""
+	this.config.Source.Host = ""
 	err := this.config.ValidateConfig()
-	this.Require().EqualError(err, "source host is empty")
+	this.Require().EqualError(err, "source: host is empty")
 }
 
 func (this *ConfigTestSuite) TestRequireSourcePort() {
-	this.config.SourcePort = 0
+	this.config.Source.Port = 0
 	err := this.config.ValidateConfig()
-	this.Require().EqualError(err, "source port is not specified")
+	this.Require().EqualError(err, "source: port is not specified")
 }
 
 func (this *ConfigTestSuite) TestRequireSourceUser() {
-	this.config.SourceUser = ""
+	this.config.Source.User = ""
 	err := this.config.ValidateConfig()
-	this.Require().EqualError(err, "source user is empty")
+	this.Require().EqualError(err, "source: user is empty")
 }
 
 func (this *ConfigTestSuite) TestRequireTargetHost() {
-	this.config.TargetHost = ""
+	this.config.Target.Host = ""
 	err := this.config.ValidateConfig()
-	this.Require().EqualError(err, "target host is empty")
+	this.Require().EqualError(err, "target: host is empty")
 }
 
 func (this *ConfigTestSuite) TestRequireTargetPort() {
-	this.config.TargetPort = 0
+	this.config.Target.Port = 0
 	err := this.config.ValidateConfig()
-	this.Require().EqualError(err, "target port is not specified")
+	this.Require().EqualError(err, "target: port is not specified")
 }
 
 func (this *ConfigTestSuite) TestRequireTargetUser() {
-	this.config.TargetUser = ""
+	this.config.Target.User = ""
 	err := this.config.ValidateConfig()
-	this.Require().EqualError(err, "target user is empty")
+	this.Require().EqualError(err, "target: user is empty")
 }
 
 func (this *ConfigTestSuite) TestDefaultValues() {

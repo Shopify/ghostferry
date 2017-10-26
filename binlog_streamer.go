@@ -46,8 +46,8 @@ func (s *BinlogStreamer) createBinlogSyncer() error {
 	var err error
 	var tlsConfig *tls.Config
 
-	if s.Config.SourceTLS != nil {
-		tlsConfig, err = s.Config.SourceTLS.BuildConfig()
+	if s.Config.Source.TLS != nil {
+		tlsConfig, err = s.Config.Source.TLS.BuildConfig()
 		if err != nil {
 			return err
 		}
@@ -63,10 +63,10 @@ func (s *BinlogStreamer) createBinlogSyncer() error {
 
 	syncerConfig := &replication.BinlogSyncerConfig{
 		ServerID:  s.Config.MyServerId,
-		Host:      s.Config.SourceHost,
-		Port:      s.Config.SourcePort,
-		User:      s.Config.SourceUser,
-		Password:  s.Config.SourcePass,
+		Host:      s.Config.Source.Host,
+		Port:      s.Config.Source.Port,
+		User:      s.Config.Source.User,
+		Password:  s.Config.Source.Pass,
 		TLSConfig: tlsConfig,
 		LogLevel:  "warn",
 	}
