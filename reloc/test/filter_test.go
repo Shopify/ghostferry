@@ -1,6 +1,7 @@
 package test
 
 import (
+	"regexp"
 	"testing"
 
 	sq "github.com/Masterminds/squirrel"
@@ -17,6 +18,24 @@ func TestShardedTableFilterSelectsSingleDatabase(t *testing.T) {
 
 	applicable = filter.ApplicableDatabases(nil)
 	assert.Equal(t, []string{"shard_42"}, applicable)
+}
+
+func TestShardedTableFilterRejectsIgnoredTables(t *testing.T) {
+	filter := &reloc.ShardedTableFilter{
+		SourceShard:   "shard_42",
+		ShardingKey:   "tenant_id",
+		IgnoredTables: []*regexp.Regexp{regexp.MustCompile("__.*")},
+	}
+
+	tables := []*schema.Table{
+		{Schema: "shard_42", Name: "__rejected1", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}},
+		{Schema: "shard_42", Name: "__rejected2", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}},
+		{Schema: "shard_42", Name: "accepted1", Columns: []schema.TableColumn{{Name: "foo"}, {Name: "tenant_id"}}},
+		{Schema: "shard_42", Name: "accepted2", Columns: []schema.TableColumn{{Name: "bar"}, {Name: "tenant_id"}}},
+	}
+
+	applicable := filter.ApplicableTables(tables)
+	assert.Equal(t, tables[2:], applicable)
 }
 
 func TestShardedTableFilterSelectsTablesWithShardingKey(t *testing.T) {

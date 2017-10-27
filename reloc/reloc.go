@@ -2,6 +2,7 @@ package reloc
 
 import (
 	"fmt"
+	"regexp"
 	"sync"
 
 	"github.com/Shopify/ghostferry"
@@ -20,10 +21,16 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 		JoinedTables:  config.JoinedTables,
 	}
 
+	ignored, err := compileRegexps(config.IgnoredTables)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile ignored tables: %v", err)
+	}
+
 	config.TableFilter = &ShardedTableFilter{
-		ShardingKey:  config.ShardingKey,
-		SourceShard:  config.SourceDB,
-		JoinedTables: config.JoinedTables,
+		ShardingKey:   config.ShardingKey,
+		SourceShard:   config.SourceDB,
+		JoinedTables:  config.JoinedTables,
+		IgnoredTables: ignored,
 	}
 
 	if err := config.ValidateConfig(); err != nil {
@@ -62,4 +69,19 @@ func (this *RelocFerry) Run() {
 
 	// Source and target are identical.
 	// Call cutover unlock callback here.
+}
+
+func compileRegexps(exps []string) ([]*regexp.Regexp, error) {
+	var err error
+	res := make([]*regexp.Regexp, len(exps))
+
+	for i, exp := range exps {
+		res[i], err = regexp.Compile(exp)
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return res, nil
 }
