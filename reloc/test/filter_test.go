@@ -20,7 +20,7 @@ func TestShardedTableFilterSelectsSingleDatabase(t *testing.T) {
 	assert.Equal(t, []string{"shard_42"}, applicable)
 }
 
-func TestShardedTableFilterRejectsBlacklistedTables(t *testing.T) {
+func TestShardedTableFilterRejectsIgnoredTables(t *testing.T) {
 	filter := &reloc.ShardedTableFilter{
 		SourceShard:   "shard_42",
 		ShardingKey:   "tenant_id",

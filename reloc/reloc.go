@@ -21,16 +21,16 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 		JoinedTables:  config.JoinedTables,
 	}
 
-	blacklist, err := compileRegexps(config.IgnoredTables)
+	ignored, err := compileRegexps(config.IgnoredTables)
 	if err != nil {
-		return nil, fmt.Errorf("failed to compile tables blacklist: %v", err)
+		return nil, fmt.Errorf("failed to compile ignored tables: %v", err)
 	}
 
 	config.TableFilter = &ShardedTableFilter{
 		ShardingKey:   config.ShardingKey,
 		SourceShard:   config.SourceDB,
 		JoinedTables:  config.JoinedTables,
-		IgnoredTables: blacklist,
+		IgnoredTables: ignored,
 	}
 
 	if err := config.ValidateConfig(); err != nil {

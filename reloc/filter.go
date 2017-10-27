@@ -79,7 +79,7 @@ func (s *ShardedTableFilter) ApplicableDatabases(dbs []string) []string {
 
 func (s *ShardedTableFilter) ApplicableTables(tables []*schema.Table) (applicable []*schema.Table) {
 	for _, table := range tables {
-		if s.isBlacklisted(table) {
+		if s.isIgnored(table) {
 			continue
 		}
 
@@ -98,7 +98,7 @@ func (s *ShardedTableFilter) ApplicableTables(tables []*schema.Table) (applicabl
 	return
 }
 
-func (s *ShardedTableFilter) isBlacklisted(table *schema.Table) bool {
+func (s *ShardedTableFilter) isIgnored(table *schema.Table) bool {
 	for _, re := range s.IgnoredTables {
 		if re.Match([]byte(table.Name)) {
 			return true
