@@ -1,5 +1,5 @@
 hash: 81495bf76f8f780c5eced1cb458261102dea583dac8a9f37ff351008178c3708
-updated: 2017-10-27T14:41:23.930808619-04:00
+updated: 2017-10-30T12:57:51.945331881-04:00
 imports:
 - name: github.com/davecgh/go-spew
   version: 6d212800a42e8ab5c146b8ace3490ee17e5225f9
@@ -52,6 +52,10 @@ imports:
   - assert
   - require
   - suite
+- name: golang.org/x/crypto
+  version: 2509b142fb2b797aa7587dad548f113b2c0f20ce
+  subpackages:
+  - ssh/terminal
 - name: golang.org/x/net
   version: 6acef71eb69611914f7a30939ea9f6e194c78172
   subpackages:
@@ -60,4 +64,5 @@ imports:
   version: f1e7f7a8ac17a049db88e72899c00f1f841a676f
   subpackages:
   - unix
+  - windows
 testImports: []

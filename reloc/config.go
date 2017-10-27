@@ -12,6 +12,8 @@ type Config struct {
 	SourceDB      string
 	TargetDB      string
 
+	StatsDAddress string
+
 	JoinedTables  map[string][]JoinTable
 	IgnoredTables []string
 }
