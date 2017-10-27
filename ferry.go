@@ -238,7 +238,9 @@ func (f *Ferry) Start() error {
 	// in order to determine the PrimaryKey of each table as well as finding
 	// which value in the binlog event correspond to which field in the
 	// table.
-	f.Tables, err = LoadTables(f.SourceDB, f.TableFilter)
+	metrics.Measure("LoadTables", nil, 1.0, func() {
+		f.Tables, err = LoadTables(f.SourceDB, f.TableFilter)
+	})
 	if err != nil {
 		return err
 	}
