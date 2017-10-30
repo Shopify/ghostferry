@@ -31,7 +31,7 @@ func quoteField(field string) string {
 	return fmt.Sprintf("`%s`", field)
 }
 
-func maskedDSN(c *mysql.Config) string {
+func MaskedDSN(c *mysql.Config) string {
 	oldPass := c.Passwd
 	c.Passwd = "<masked>"
 	defer func() {
@@ -86,7 +86,7 @@ func (f *Ferry) Initialize() (err error) {
 	}
 
 	sourceDSN := sourceConfig.FormatDSN()
-	maskedSourceDSN := maskedDSN(sourceConfig)
+	maskedSourceDSN := MaskedDSN(sourceConfig)
 
 	f.logger.WithField("dsn", maskedSourceDSN).Info("connecting to the source database")
 	f.SourceDB, err = sql.Open("mysql", sourceDSN)
@@ -114,7 +114,7 @@ func (f *Ferry) Initialize() (err error) {
 	}
 
 	targetDSN := targetConfig.FormatDSN()
-	maskedTargetDSN := maskedDSN(targetConfig)
+	maskedTargetDSN := MaskedDSN(targetConfig)
 
 	f.logger.WithField("dsn", maskedTargetDSN).Info("connecting to the target database")
 	f.TargetDB, err = sql.Open("mysql", targetDSN)
@@ -221,13 +221,26 @@ func (f *Ferry) Run() {
 
 	ctx, shutdown := context.WithCancel(context.Background())
 
+	handleError := func(name string, err error) {
+		if err != nil && err != context.Canceled {
+			f.ErrorHandler.Fatal(name, err)
+		}
+	}
+
+	f.supportingServicesWg.Add(2)
+	go func() {
+		defer f.supportingServicesWg.Done()
+		f.ErrorHandler.Run(ctx)
+	}()
+
+	go func() {
+		defer f.supportingServicesWg.Done()
+		handleError("throttler", f.Throttler.Run(ctx))
+	}()
+
 	f.coreServicesWg.Add(2)
 	go f.BinlogStreamer.Run(f.coreServicesWg)
 	go f.DataIterator.Run(f.coreServicesWg)
-
-	f.supportingServicesWg.Add(2)
-	go f.ErrorHandler.Run(f.supportingServicesWg, ctx)
-	go f.Throttler.Run(f.supportingServicesWg, ctx)
 
 	f.coreServicesWg.Wait()
 

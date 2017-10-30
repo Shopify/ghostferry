@@ -5,14 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sync"
 
 	"github.com/sirupsen/logrus"
 )
 
 type ErrorHandler interface {
 	Initialize()
-	Run(*sync.WaitGroup, context.Context)
+	Run(context.Context)
 	Fatal(from string, err error)
 }
 
@@ -30,9 +29,7 @@ func (this *PanicErrorHandler) Initialize() {
 	this.errCh = make(chan *FerryError)
 }
 
-func (this *PanicErrorHandler) Run(wg *sync.WaitGroup, ctx context.Context) {
-	defer wg.Done()
-
+func (this *PanicErrorHandler) Run(ctx context.Context) {
 	logger := logrus.WithField("tag", "error_handler")
 	logger.Info("started error handler")
 

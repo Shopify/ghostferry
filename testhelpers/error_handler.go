@@ -2,7 +2,6 @@ package testhelpers
 
 import (
 	"context"
-	"sync"
 )
 
 type ErrorHandler struct {
@@ -11,8 +10,7 @@ type ErrorHandler struct {
 
 func (this *ErrorHandler) Initialize() {}
 
-func (this *ErrorHandler) Run(wg *sync.WaitGroup, ctx context.Context) {
-	wg.Done()
+func (this *ErrorHandler) Run(ctx context.Context) {
 }
 
 func (this *ErrorHandler) Fatal(from string, err error) {
