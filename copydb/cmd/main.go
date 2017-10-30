@@ -49,15 +49,15 @@ func main() {
 	// Default values for configurations
 	config := &copydb.Config{
 		Config: ghostferry.Config{
-			SourceHost: "",
-			SourcePort: 3306,
-			SourceUser: "ghostferry",
-			SourcePass: "",
+			Source: ghostferry.DatabaseConfig{
+				Port: 3306,
+				User: "ghostferry",
+			},
 
-			TargetHost: "",
-			TargetPort: 3306,
-			TargetUser: "ghostferry",
-			TargetPass: "",
+			Target: ghostferry.DatabaseConfig{
+				Port: 3306,
+				User: "ghostferry",
+			},
 
 			MyServerId:       99399,
 			AutomaticCutover: false,

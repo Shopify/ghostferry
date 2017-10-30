@@ -1,7 +1,6 @@
 package ghostferry
 
 import (
-	"crypto/tls"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -78,57 +77,16 @@ func (f *Ferry) Initialize() (err error) {
 
 	f.logger.Infof("hello world from %s+%s", VersionNumber, VersionCommit)
 
-	sourceConfig := &mysql.Config{
-		User:   f.SourceUser,
-		Passwd: f.SourcePass,
-		Net:    "tcp",
-		Addr:   fmt.Sprintf("%s:%d", f.SourceHost, f.SourcePort),
-	}
-
-	targetConfig := &mysql.Config{
-		User:   f.TargetUser,
-		Passwd: f.TargetPass,
-		Net:    "tcp",
-		Addr:   fmt.Sprintf("%s:%d", f.TargetHost, f.TargetPort),
-	}
-
-	// TLS Config
-	var sourceTLSConfig, targetTLSConfig *tls.Config
-	if f.SourceTLS != nil {
-		sourceTLSConfig, err = f.SourceTLS.BuildConfig()
-		if err != nil {
-			f.logger.WithError(err).Error("failed to get source TLS config")
-			return err
-		}
-
-		err = mysql.RegisterTLSConfig("source", sourceTLSConfig)
-		if err != nil {
-			f.logger.WithError(err).Error("failed to register source TLS config")
-			return err
-		}
-
-		sourceConfig.TLSConfig = "source"
-	}
-
-	if f.TargetTLS != nil {
-		targetTLSConfig, err = f.SourceTLS.BuildConfig()
-		if err != nil {
-			f.logger.WithError(err).Error("failed to get target TLS config")
-			return err
-		}
-
-		err = mysql.RegisterTLSConfig("target", targetTLSConfig)
-		if err != nil {
-			f.logger.WithError(err).Error("failed to register target TLS config")
-			return err
-		}
-
-		targetConfig.TLSConfig = "target"
-	}
-
 	// Connect to the database
+	sourceConfig, err := f.Source.MySQLConfig()
+	if err != nil {
+		f.logger.WithError(err).Error("failed to build config for source database")
+		return err
+	}
+
 	sourceDSN := sourceConfig.FormatDSN()
 	maskedSourceDSN := maskedDSN(sourceConfig)
+
 	f.logger.WithField("dsn", maskedSourceDSN).Info("connecting to the source database")
 	f.SourceDB, err = sql.Open("mysql", sourceDSN)
 	if err != nil {
@@ -148,8 +106,15 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
+	targetConfig, err := f.Target.MySQLConfig()
+	if err != nil {
+		f.logger.WithError(err).Error("failed to build config for target database")
+		return err
+	}
+
 	targetDSN := targetConfig.FormatDSN()
 	maskedTargetDSN := maskedDSN(targetConfig)
+
 	f.logger.WithField("dsn", maskedTargetDSN).Info("connecting to the target database")
 	f.TargetDB, err = sql.Open("mysql", targetDSN)
 	if err != nil {

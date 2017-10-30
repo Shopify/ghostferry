@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 type TLSConfig struct {
@@ -36,21 +38,63 @@ func (this *TLSConfig) BuildConfig() (*tls.Config, error) {
 	return this.tlsConfig, nil
 }
 
-type Config struct {
-	SourceHost string
-	SourcePort uint16
-	SourceUser string
-	SourcePass string
+type DatabaseConfig struct {
+	Host string
+	Port uint16
+	User string
+	Pass string
 
-	TargetHost string
-	TargetPort uint16
-	TargetUser string
-	TargetPass string
+	TLS *TLSConfig
+}
+
+func (dbc *DatabaseConfig) MySQLConfig() (*mysql.Config, error) {
+	cfg := &mysql.Config{
+		User:   dbc.User,
+		Passwd: dbc.Pass,
+		Net:    "tcp",
+		Addr:   fmt.Sprintf("%s:%d", dbc.Host, dbc.Port),
+	}
+
+	if dbc.TLS != nil {
+		tlsConfig, err := dbc.TLS.BuildConfig()
+		if err != nil {
+			return nil, fmt.Errorf("failed to build TLS config: %v", err)
+		}
+
+		cfgName := fmt.Sprintf("%s@%s:%s", dbc.User, dbc.Host, dbc.Port)
+
+		err = mysql.RegisterTLSConfig(cfgName, tlsConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to register TLS config: %v", err)
+		}
+
+		cfg.TLSConfig = cfgName
+	}
+
+	return cfg, nil
+}
+
+func (c *DatabaseConfig) Validate() error {
+	if c.Host == "" {
+		return fmt.Errorf("host is empty")
+	}
+
+	if c.Port == 0 {
+		return fmt.Errorf("port is not specified")
+	}
+
+	if c.User == "" {
+		return fmt.Errorf("user is empty")
+	}
+
+	return nil
+}
+
+type Config struct {
+	Source DatabaseConfig
+	Target DatabaseConfig
 
 	DatabaseTargets map[string]string
-
-	SourceTLS *TLSConfig
-	TargetTLS *TLSConfig
 
 	// Config for Ferry
 	MaxWriteRetriesOnTargetDBError int
@@ -76,28 +120,12 @@ type Config struct {
 }
 
 func (c *Config) ValidateConfig() error {
-	if c.SourceHost == "" {
-		return fmt.Errorf("source host is empty")
+	if err := c.Source.Validate(); err != nil {
+		return fmt.Errorf("source: %s", err)
 	}
 
-	if c.SourcePort == 0 {
-		return fmt.Errorf("source port is not specified")
-	}
-
-	if c.SourceUser == "" {
-		return fmt.Errorf("source user is empty")
-	}
-
-	if c.TargetHost == "" {
-		return fmt.Errorf("target host is empty")
-	}
-
-	if c.TargetPort == 0 {
-		return fmt.Errorf("target port is not specified")
-	}
-
-	if c.TargetUser == "" {
-		return fmt.Errorf("target user is empty")
+	if err := c.Target.Validate(); err != nil {
+		return fmt.Errorf("target: %s", err)
 	}
 
 	if c.TableFilter == nil {

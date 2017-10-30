@@ -58,8 +58,8 @@ func FetchStatus(f *Ferry) *Status {
 
 	status.GhostferryVersion = fmt.Sprintf("%s+%s", VersionNumber, VersionCommit)
 
-	status.SourceHostPort = fmt.Sprintf("%s:%d", f.SourceHost, f.SourcePort)
-	status.TargetHostPort = fmt.Sprintf("%s:%d", f.TargetHost, f.TargetPort)
+	status.SourceHostPort = fmt.Sprintf("%s:%d", f.Source.Host, f.Source.Port)
+	status.TargetHostPort = fmt.Sprintf("%s:%d", f.Target.Host, f.Target.Port)
 
 	status.OverallState = f.OverallState
 	status.StartTime = f.StartTime
