@@ -207,11 +207,10 @@ func maxPk(db *sql.DB, table *schema.Table) (uint64, error) {
 
 func tableIsEmpty(db *sql.DB, table *schema.Table) (bool, error) {
 	rows, err := db.Query(fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", QuotedTableName(table)))
-	defer rows.Close()
-
 	if err != nil {
 		return false, err
 	}
+	defer rows.Close()
 
 	if !rows.Next() {
 		return true, nil
