@@ -6,22 +6,44 @@ import (
 	"github.com/Shopify/ghostferry"
 )
 
+// With nothing specified, it assumes that everything is applicable.
+type FiltersRenames struct {
+	Whitelist []string
+	Blacklist []string
+	Renames   map[string]string
+}
+
+func (f FiltersRenames) Validate() error {
+	if len(f.Whitelist) > 0 && len(f.Blacklist) > 0 {
+		return fmt.Errorf("Whitelist and Blacklist cannot both be specified")
+	}
+
+	return nil
+}
+
 type Config struct {
 	ghostferry.Config
 
-	ApplicableDatabases map[string]bool
-	ApplicableTables    map[string]bool
+	Databases FiltersRenames
+	Tables    FiltersRenames
 }
 
-func (c *Config) ValidateConfig() error {
-	if len(c.ApplicableDatabases) == 0 {
-		return fmt.Errorf("failed to validate config: no applicable databases specified")
+func (c *Config) InitializeAndValidateConfig() error {
+	if err := c.Databases.Validate(); err != nil {
+		return err
+	}
+
+	if err := c.Tables.Validate(); err != nil {
+		return err
 	}
 
 	c.TableFilter = NewStaticTableFilter(
-		c.ApplicableDatabases,
-		c.ApplicableTables,
+		c.Databases,
+		c.Tables,
 	)
+
+	c.DatabaseRenames = c.Databases.Renames
+	c.TableRenames = c.Tables.Renames
 
 	if err := c.Config.ValidateConfig(); err != nil {
 		return err

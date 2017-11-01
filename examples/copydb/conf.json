@@ -25,12 +25,11 @@
     }
   },
 
-  "ApplicableDatabases": {
-    "abc": true
+  "Databases": {
+    "Whitelist": ["abc"]
   },
 
-  "ApplicableTables": {
-    "schema_migrations": false,
-    "ApplicableByDefault!": true
+  "Tables": {
+    "Blacklist": ["schema_migrations"]
   }
 }

@@ -76,7 +76,7 @@ func main() {
 		errorAndExit(fmt.Sprintf("failed to parse config file: %v", err))
 	}
 
-	err = config.ValidateConfig()
+	err = config.InitializeAndValidateConfig()
 	if err != nil {
 		errorAndExit(fmt.Sprintf("failed to validate config: %v", err))
 	}

@@ -5,68 +5,81 @@ import (
 )
 
 type StaticTableFilter struct {
-	Dbs    map[string]bool
-	Tables map[string]bool
+	Dbs            map[string]bool
+	DbsIsBlacklist bool
+
+	Tables            map[string]bool
+	TablesIsBlacklist bool
 }
 
-func NewStaticTableFilter(dbs, tables map[string]bool) *StaticTableFilter {
-	return &StaticTableFilter{
-		Dbs:    dbs,
-		Tables: tables,
+func sliceToMap(slice []string) map[string]bool {
+	m := make(map[string]bool)
+	for _, v := range slice {
+		m[v] = true
 	}
+
+	return m
+}
+
+func NewStaticTableFilter(dbs, tables FiltersRenames) *StaticTableFilter {
+	f := &StaticTableFilter{}
+	// default scenario is blacklist, which would mean nothing is filtered if
+	// whitelist == [] and blacklist == []
+	f.DbsIsBlacklist = len(dbs.Whitelist) == 0
+	f.TablesIsBlacklist = len(tables.Whitelist) == 0
+
+	if f.DbsIsBlacklist {
+		f.Dbs = sliceToMap(dbs.Blacklist)
+	} else {
+		f.Dbs = sliceToMap(dbs.Whitelist)
+	}
+
+	if f.TablesIsBlacklist {
+		f.Tables = sliceToMap(tables.Blacklist)
+	} else {
+		f.Tables = sliceToMap(tables.Whitelist)
+	}
+
+	return f
 }
 
 func (s *StaticTableFilter) ApplicableDatabases(dbs []string) []string {
-	if s.Dbs == nil {
-		return dbs
-	}
+	applicableDbs := make([]string, 0, len(dbs))
+	for _, name := range dbs {
+		var applicable bool
 
-	applicables := applicableIdxs(dbs, s.Dbs)
+		b, _ := s.Dbs[name]
+		if s.DbsIsBlacklist {
+			applicable = !b
+		} else {
+			applicable = b
+		}
 
-	applicableDbs := make([]string, len(applicables))
-	for i, j := range applicables {
-		applicableDbs[i] = dbs[j]
+		if applicable {
+			applicableDbs = append(applicableDbs, name)
+		}
 	}
 
 	return applicableDbs
 }
 
 func (s *StaticTableFilter) ApplicableTables(tables []*schema.Table) []*schema.Table {
-	if s.Tables == nil {
-		return tables
-	}
+	applicableTables := make([]*schema.Table, 0, len(tables))
 
-	tableNames := make([]string, len(tables))
-	for i, tableSchema := range tables {
-		tableNames[i] = tableSchema.Name
-	}
+	for _, tableSchema := range tables {
+		var applicable bool
 
-	applicables := applicableIdxs(tableNames, s.Tables)
-
-	applicableSchemas := make([]*schema.Table, len(applicables))
-	for i, j := range applicables {
-		applicableSchemas[i] = tables[j]
-	}
-
-	return applicableSchemas
-}
-
-func applicableIdxs(list []string, applicabilityMap map[string]bool) []int {
-	applicableByDefault := applicabilityMap["ApplicableByDefault!"]
-
-	idxs := make([]int, 0, len(list))
-	for idx, element := range list {
-		applicable, specified := applicabilityMap[element]
-		if specified && !applicable {
-			continue
+		b, _ := s.Tables[tableSchema.Name]
+		if s.TablesIsBlacklist {
+			applicable = !b
+		} else {
+			applicable = b
 		}
 
-		if !specified && !applicableByDefault {
-			continue
+		if applicable {
+			applicableTables = append(applicableTables, tableSchema)
 		}
-
-		idxs = append(idxs, idx)
 	}
 
-	return idxs
+	return applicableTables
 }

@@ -18,7 +18,7 @@ type RelocFerry struct {
 
 func NewFerry(config *Config) (*RelocFerry, error) {
 	var err error
-	config.DatabaseTargets = map[string]string{config.SourceDB: config.TargetDB}
+	config.DatabaseRenames = map[string]string{config.SourceDB: config.TargetDB}
 
 	config.CopyFilter = &ShardedRowFilter{
 		ShardingKey:   config.ShardingKey,
