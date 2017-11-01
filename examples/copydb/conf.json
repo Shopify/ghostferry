@@ -4,6 +4,10 @@
     "Port": 29291,
     "User": "ghostferry",
     "Pass": "ghostferry",
+    "Collation": "utf8mb4_unicode_ci",
+    "Params": {
+      "charset": "utf8mb4"
+    },
     "TLS": {
       "CertPath": "/home/vagrant/.mysql-vending-machine/mysqls/gf.n1/data/server-cert.pem",
       "ServerName": "MySQL_Server_5.7.18-15_Auto_Generated_Server_Certificate"
@@ -14,7 +18,11 @@
     "Host": "127.0.0.1",
     "Port": 29292,
     "User": "ghostferry",
-    "Pass": "ghostferry"
+    "Pass": "ghostferry",
+    "Collation": "utf8mb4_unicode_ci",
+    "Params": {
+      "charset": "utf8mb4"
+    }
   },
 
   "ApplicableDatabases": {
