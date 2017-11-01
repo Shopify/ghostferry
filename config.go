@@ -39,20 +39,24 @@ func (this *TLSConfig) BuildConfig() (*tls.Config, error) {
 }
 
 type DatabaseConfig struct {
-	Host string
-	Port uint16
-	User string
-	Pass string
+	Host      string
+	Port      uint16
+	User      string
+	Pass      string
+	Collation string
+	Params    map[string]string
 
 	TLS *TLSConfig
 }
 
 func (dbc *DatabaseConfig) MySQLConfig() (*mysql.Config, error) {
 	cfg := &mysql.Config{
-		User:   dbc.User,
-		Passwd: dbc.Pass,
-		Net:    "tcp",
-		Addr:   fmt.Sprintf("%s:%d", dbc.Host, dbc.Port),
+		User:      dbc.User,
+		Passwd:    dbc.Pass,
+		Net:       "tcp",
+		Addr:      fmt.Sprintf("%s:%d", dbc.Host, dbc.Port),
+		Collation: dbc.Collation,
+		Params:    dbc.Params,
 	}
 
 	if dbc.TLS != nil {
