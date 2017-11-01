@@ -16,7 +16,7 @@ func RandData() string {
 	for i := range b {
 		b[i] = dataletters[rand.Intn(len(dataletters))]
 	}
-	return string(b)
+	return string(b) + "👻"
 }
 
 func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows int) {

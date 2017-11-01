@@ -118,6 +118,19 @@ func (this *ConfigTestSuite) TestBuildTLSConfiguredAlready() {
 	this.Require().Equal(expectedConfig, actualConfig)
 }
 
+func (this *ConfigTestSuite) TestParamsAndCollationGetsPassedToMysqlConfig() {
+	this.config.Source.Collation = "utf8mb4_general_ci"
+	this.config.Source.Params = map[string]string{
+		"charset": "utf8mb4",
+	}
+
+	mysqlConfig, err := this.config.Source.MySQLConfig()
+	this.Require().Nil(err)
+
+	this.Require().Equal("utf8mb4", mysqlConfig.Params["charset"])
+	this.Require().Equal("utf8mb4_general_ci", mysqlConfig.Collation)
+}
+
 func TestConfig(t *testing.T) {
 	testhelpers.SetupTest()
 	suite.Run(t, new(ConfigTestSuite))

@@ -29,17 +29,25 @@ var (
 func NewTestConfig() *ghostferry.Config {
 	config := &ghostferry.Config{
 		Source: ghostferry.DatabaseConfig{
-			Host: "127.0.0.1",
-			Port: uint16(TestSourcePort),
-			User: "root",
-			Pass: "",
+			Host:      "127.0.0.1",
+			Port:      uint16(TestSourcePort),
+			User:      "root",
+			Pass:      "",
+			Collation: "utf8mb4_unicode_ci",
+			Params: map[string]string{
+				"charset": "utf8mb4",
+			},
 		},
 
 		Target: ghostferry.DatabaseConfig{
-			Host: "127.0.0.1",
-			Port: uint16(TestTargetPort),
-			User: "root",
-			Pass: "",
+			Host:      "127.0.0.1",
+			Port:      uint16(TestTargetPort),
+			User:      "root",
+			Pass:      "",
+			Collation: "utf8mb4_unicode_ci",
+			Params: map[string]string{
+				"charset": "utf8mb4",
+			},
 		},
 
 		MyServerId:       91919,
