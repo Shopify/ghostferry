@@ -59,6 +59,7 @@ func (this *RelocFerry) Run() {
 	}()
 
 	this.ferry.WaitUntilRowCopyIsComplete()
+
 	this.ferry.WaitUntilBinlogStreamerCatchesUp()
 
 	// Call cutover lock callback here.
