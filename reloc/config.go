@@ -4,6 +4,11 @@ import (
 	"github.com/Shopify/ghostferry"
 )
 
+type HTTPCallback struct {
+	URI     string
+	Payload string
+}
+
 type Config struct {
 	ghostferry.Config
 
@@ -13,6 +18,8 @@ type Config struct {
 	TargetDB      string
 
 	StatsDAddress string
+	CutoverLock   HTTPCallback
+	CutoverUnlock HTTPCallback
 
 	JoinedTables  map[string][]JoinTable
 	IgnoredTables []string

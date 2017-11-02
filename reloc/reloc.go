@@ -1,15 +1,22 @@
 package reloc
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"regexp"
 	"sync"
 
 	"github.com/Shopify/ghostferry"
+	"github.com/sirupsen/logrus"
 )
 
 type RelocFerry struct {
-	ferry *ghostferry.Ferry
+	ferry  *ghostferry.Ferry
+	config *Config
+	logger *logrus.Entry
 }
 
 func NewFerry(config *Config) (*RelocFerry, error) {
@@ -52,6 +59,8 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 			Config:    &config.Config,
 			Throttler: throttler,
 		},
+		config: config,
+		logger: logrus.WithField("tag", "reloc"),
 	}, nil
 }
 
@@ -75,14 +84,57 @@ func (this *RelocFerry) Run() {
 
 	this.ferry.WaitUntilBinlogStreamerCatchesUp()
 
-	// Call cutover lock callback here.
 	// The callback must ensure all writes are committed to the binlog by the time it returns.
+	client := &http.Client{}
+	lockErr := this.postCallback(client, this.config.CutoverLock.URI, map[string]interface{}{
+		"Payload": this.config.CutoverLock.Payload,
+	})
 
 	this.ferry.FlushBinlogAndStopStreaming()
 	copyWG.Wait()
 
-	// Source and target are identical.
-	// Call cutover unlock callback here.
+	if lockErr != nil {
+		this.logger.WithField("error", lockErr).Errorf("aborting unlock")
+		return
+	}
+
+	unlockErr := this.postCallback(client, this.config.CutoverUnlock.URI, map[string]interface{}{
+		"Payload": this.config.CutoverUnlock.Payload,
+	})
+
+	if unlockErr != nil {
+		this.logger.WithField("error", unlockErr).Errorf("run failed")
+		return
+	}
+}
+
+func (this *RelocFerry) postCallback(client *http.Client, uri string, body interface{}) error {
+	buf := bytes.Buffer{}
+
+	err := json.NewEncoder(&buf).Encode(body)
+	if err != nil {
+		return err
+	}
+
+	logger := this.logger.WithField("uri", uri)
+	logger.Infof("sending callback")
+
+	res, err := client.Post(uri, "application/json", &buf)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != 200 {
+		resBody, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			logger.WithField("error", err).Errorf("error reading callback body")
+		}
+		logger.WithField("status", res.StatusCode).WithField("body", string(resBody)).Errorf("callback not ok")
+		return fmt.Errorf("callback returned %s", res.Status)
+	}
+
+	return nil
 }
 
 func compileRegexps(exps []string) ([]*regexp.Regexp, error) {
