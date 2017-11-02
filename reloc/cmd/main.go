@@ -15,7 +15,7 @@ var configPath string
 var printVersion bool
 
 func usage() {
-	fmt.Printf("reloc built with ghostferry %s+%s\n", ghostferry.VersionNumber, ghostferry.VersionCommit)
+	fmt.Printf("reloc built with ghostferry %s\n", ghostferry.VersionString)
 	fmt.Println()
 	fmt.Printf("Usage: %s < conf.json \n", os.Args[0])
 	fmt.Printf("    or %s -config-path conf.json \n", os.Args[0])
@@ -32,13 +32,13 @@ func main() {
 	flag.Parse()
 
 	if printVersion {
-		fmt.Printf("%s+%s", ghostferry.VersionNumber, ghostferry.VersionCommit)
+		fmt.Print(ghostferry.VersionString)
 		os.Exit(0)
 	}
 
 	config := parseConfig()
 
-	fmt.Printf("reloc built with ghostferry %s+%s\n", ghostferry.VersionNumber, ghostferry.VersionCommit)
+	fmt.Printf("reloc built with ghostferry %s\n", ghostferry.VersionString)
 	fmt.Printf("will move tenant %s=%d\n", config.ShardingKey, config.ShardingValue)
 
 	ferry, err := reloc.NewFerry(config)

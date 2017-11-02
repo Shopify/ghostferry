@@ -3,11 +3,10 @@ VERSION         := 1.1.0
 DATETIME        := $(shell date -u +%Y%m%d%H%M%S)
 DIRTY_TREE      := $(shell git diff-index --quiet HEAD -- || echo '+dirty')
 COMMIT          := $(addsuffix $(DIRTY_TREE),$(shell git rev-parse --short HEAD))
-DEB_VERSION     := $(VERSION)+$(DATETIME)+$(COMMIT)
+VERSION_STR     := $(VERSION)+$(DATETIME)+$(COMMIT)
 
 # Flags
-LDFLAGS         += -X github.com/Shopify/ghostferry.VersionNumber=$(VERSION)
-LDFLAGS         += -X github.com/Shopify/ghostferry.VersionCommit=$(COMMIT)
+LDFLAGS         += -X github.com/Shopify/ghostferry.VersionString=$(VERSION_STR)
 
 # Paths
 GOBIN           := $(GOPATH)/bin
@@ -24,7 +23,7 @@ PROJECT_DEBS    := $(foreach name,$(PROJECTS),$(name)-deb)
 PROJECT_PKG      = ./$(proj)/cmd
 PROJECT_BIN      = ghostferry-$(proj)
 BIN_TARGET       = $(GOBIN)/$(PROJECT_BIN)
-DEB_TARGET       = $(BUILD_DIR)/$(PROJECT_BIN)_$(DEB_VERSION).deb
+DEB_TARGET       = $(BUILD_DIR)/$(PROJECT_BIN)_$(VERSION_STR).deb
 
 .PHONY: test clean reset-deb-dir $(PROJECTS) $(PROJECT_DEBS)
 .DEFAULT_GOAL := test
@@ -36,7 +35,7 @@ $(PROJECTS): $(GOBIN) $(SOURCES)
 $(PROJECT_DEBS): LDFLAGS += -X github.com/Shopify/ghostferry.WebUiBasedir=/$(SHARE_DIR)
 $(PROJECT_DEBS): reset-deb-dir
 	$(eval proj := $(subst -deb,,$@))
-	sed -e "s/{version}/$(DEB_VERSION)/" $(proj)/debian/control > $(DEB_PREFIX)/DEBIAN/control
+	sed -e "s/{version}/$(VERSION_STR)/" $(proj)/debian/control > $(DEB_PREFIX)/DEBIAN/control
 	go build -ldflags "$(LDFLAGS)" -o $(DEB_PREFIX)/$(BIN_DIR)/$(PROJECT_BIN) $(PROJECT_PKG)
 	cp -ar webui $(DEB_PREFIX)/$(SHARE_DIR)
 	dpkg-deb -b $(DEB_PREFIX) $(DEB_TARGET)
