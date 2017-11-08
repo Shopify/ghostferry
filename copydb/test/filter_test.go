@@ -30,8 +30,12 @@ func (this *FilterTestSuite) TestLoadTablesWithWhitelist() {
 	tables, err := ghostferry.LoadTables(
 		this.Ferry.SourceDB,
 		copydb.NewStaticTableFilter(
-			map[string]bool{testhelpers.TestSchemaName: true},
-			map[string]bool{"test_table_2": true},
+			copydb.FiltersRenames{
+				Whitelist: []string{testhelpers.TestSchemaName},
+			},
+			copydb.FiltersRenames{
+				Whitelist: []string{"test_table_2"},
+			},
 		),
 	)
 
@@ -49,8 +53,12 @@ func (this *FilterTestSuite) TestLoadTablesWithBlacklist() {
 	tables, err := ghostferry.LoadTables(
 		this.Ferry.SourceDB,
 		copydb.NewStaticTableFilter(
-			map[string]bool{testhelpers.TestSchemaName: true},
-			map[string]bool{"test_table_2": false, "ApplicableByDefault!": true},
+			copydb.FiltersRenames{
+				Whitelist: []string{testhelpers.TestSchemaName},
+			},
+			copydb.FiltersRenames{
+				Blacklist: []string{"test_table_2"},
+			},
 		),
 	)
 
@@ -70,57 +78,47 @@ func (this *FilterTestSuite) TestLoadTablesWithBlacklist() {
 	}
 }
 
-func (this *FilterTestSuite) TestFilterForApplicableNil() {
+func (this *FilterTestSuite) TestFilterWithSimpleWhitelist() {
 	list := []string{"str1", "str2", "str3"}
-	this.assertBothFilters(list, nil, list)
-}
-
-func (this *FilterTestSuite) TestFilterForApplicableSimple() {
-	list := []string{"str1", "str2", "str3"}
-	filter := map[string]bool{
-		"str1": true,
-		"str2": false,
+	filter := copydb.FiltersRenames{
+		Whitelist: []string{"str1"},
 	}
 
 	this.assertBothFilters([]string{"str1"}, filter, list)
 }
 
-func (this *FilterTestSuite) TestFilterForApplicableNonExistentKey() {
+func (this *FilterTestSuite) TestFilterWithNonExistentKeyInWhitelist() {
 	list := []string{"str1", "str2", "str3"}
-	filter := map[string]bool{
-		"str1":        true,
-		"nonexistent": true,
+	filter := copydb.FiltersRenames{
+		Whitelist: []string{"str1", "nonexistent"},
 	}
 
 	this.assertBothFilters([]string{"str1"}, filter, list)
 }
 
-func (this *FilterTestSuite) TestFilterForApplicableDefaultFalse() {
+func (this *FilterTestSuite) TestFilterWithSimpleBlacklist() {
 	list := []string{"str1", "str2", "str3"}
-	filter := map[string]bool{
-		"ApplicableByDefault!": false,
+
+	filter := copydb.FiltersRenames{
+		Blacklist: []string{"str1"},
 	}
 
-	this.assertBothFilters([]string{}, filter, list)
+	this.assertBothFilters([]string{"str2", "str3"}, filter, list)
 }
 
-func (this *FilterTestSuite) TestFilterForApplicableDefaultTrue() {
+func (this *FilterTestSuite) TestFilterWithEmptyFilter() {
 	list := []string{"str1", "str2", "str3"}
-	filter := map[string]bool{
-		"ApplicableByDefault!": true,
-	}
+	filter := copydb.FiltersRenames{}
 	this.assertBothFilters(list, filter, list)
 }
 
-func (this *FilterTestSuite) TestFilterForApplicableEmptyList() {
+func (this *FilterTestSuite) TestFilterForEmptyList() {
 	list := []string{}
-	filter := map[string]bool{
-		"ApplicableByDefault!": true,
-	}
+	filter := copydb.FiltersRenames{}
 	this.assertBothFilters(list, filter, list)
 }
 
-func (this *FilterTestSuite) assertBothFilters(expected []string, filter map[string]bool, list []string) {
+func (this *FilterTestSuite) assertBothFilters(expected []string, filter copydb.FiltersRenames, list []string) {
 	tableFilter := copydb.NewStaticTableFilter(filter, filter)
 
 	this.Require().Equal(expected, tableFilter.ApplicableDatabases(list))
