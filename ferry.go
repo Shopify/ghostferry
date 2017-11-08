@@ -13,8 +13,7 @@ import (
 )
 
 var (
-	VersionNumber string = "?.?.?"
-	VersionCommit string = "??????"
+	VersionString string = "?.?.?+??????????????+???????"
 	WebUiBasedir  string = ""
 )
 
@@ -75,7 +74,7 @@ func (f *Ferry) Initialize() (err error) {
 	f.logger = logrus.WithField("tag", "ferry")
 	f.rowCopyCompleteCh = make(chan struct{})
 
-	f.logger.Infof("hello world from %s+%s", VersionNumber, VersionCommit)
+	f.logger.Infof("hello world from %s", VersionString)
 
 	// Connect to the database
 	sourceConfig, err := f.Source.MySQLConfig()

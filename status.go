@@ -56,7 +56,7 @@ type Status struct {
 func FetchStatus(f *Ferry) *Status {
 	status := &Status{}
 
-	status.GhostferryVersion = fmt.Sprintf("%s+%s", VersionNumber, VersionCommit)
+	status.GhostferryVersion = VersionString
 
 	status.SourceHostPort = fmt.Sprintf("%s:%d", f.Source.Host, f.Source.Port)
 	status.TargetHostPort = fmt.Sprintf("%s:%d", f.Target.Host, f.Target.Port)
