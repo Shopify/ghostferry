@@ -22,20 +22,33 @@ func TestShardedTableFilterSelectsSingleDatabase(t *testing.T) {
 
 func TestShardedTableFilterRejectsIgnoredTables(t *testing.T) {
 	filter := &reloc.ShardedTableFilter{
-		SourceShard:   "shard_42",
-		ShardingKey:   "tenant_id",
-		IgnoredTables: []*regexp.Regexp{regexp.MustCompile("__.*")},
+		SourceShard: "shard_42",
+		ShardingKey: "tenant_id",
+		IgnoredTables: []*regexp.Regexp{
+			regexp.MustCompile("^_(.*)_new$"),
+			regexp.MustCompile("^_(.*)_old$"),
+			regexp.MustCompile("^lhm._(.*)"),
+			regexp.MustCompile("^_(.*)_gho$"),
+		},
 	}
 
 	tables := []*schema.Table{
-		{Schema: "shard_42", Name: "__rejected1", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}},
-		{Schema: "shard_42", Name: "__rejected2", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}},
-		{Schema: "shard_42", Name: "accepted1", Columns: []schema.TableColumn{{Name: "foo"}, {Name: "tenant_id"}}},
-		{Schema: "shard_42", Name: "accepted2", Columns: []schema.TableColumn{{Name: "bar"}, {Name: "tenant_id"}}},
+		{Schema: "shard_42", Name: "_table_name_new", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}},
+		{Schema: "shard_42", Name: "_table_name_old", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}},
+		{Schema: "shard_42", Name: "_table_name_gho", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}},
+		{Schema: "shard_42", Name: "lhma_1234_table_name", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}},
+		{Schema: "shard_42", Name: "lhmn_1234_table_name", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}},
+		{Schema: "shard_42", Name: "new", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}},
+		{Schema: "shard_42", Name: "old", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}},
+		{Schema: "shard_42", Name: "table_new", Columns: []schema.TableColumn{{Name: "foo"}, {Name: "tenant_id"}}},
+		{Schema: "shard_42", Name: "ghost", Columns: []schema.TableColumn{{Name: "foo"}, {Name: "tenant_id"}}},
+		{Schema: "shard_42", Name: "lhm_test", Columns: []schema.TableColumn{{Name: "foo"}, {Name: "tenant_id"}}},
+		{Schema: "shard_42", Name: "x_lhmn_table_name", Columns: []schema.TableColumn{{Name: "bar"}, {Name: "tenant_id"}}},
+		{Schema: "shard_42", Name: "table_name", Columns: []schema.TableColumn{{Name: "bar"}, {Name: "tenant_id"}}},
 	}
 
 	applicable := filter.ApplicableTables(tables)
-	assert.Equal(t, tables[2:], applicable)
+	assert.Equal(t, tables[5:], applicable)
 }
 
 func TestShardedTableFilterSelectsTablesWithShardingKey(t *testing.T) {
