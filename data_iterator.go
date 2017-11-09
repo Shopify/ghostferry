@@ -146,7 +146,7 @@ type DataIterator struct {
 	Db           *sql.DB
 	Config       *Config
 	ErrorHandler ErrorHandler
-	Throttler    *Throttler
+	Throttler    Throttler
 
 	Tables []*schema.Table
 	Filter CopyFilter
@@ -261,7 +261,7 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 		var pkpos uint64
 
 		err := WithRetries(this.Config.MaxIterationReadRetries, 0, logger, "fetch rows", func() (err error) {
-			this.Throttler.ThrottleIfNecessary()
+			WaitForThrottle(this.Throttler)
 
 			// We need to lock SELECT until we apply the updates (done in the
 			// listeners). We need a transaction that is open all the way until

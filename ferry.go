@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -29,7 +30,7 @@ func quoteField(field string) string {
 	return fmt.Sprintf("`%s`", field)
 }
 
-func maskedDSN(c *mysql.Config) string {
+func MaskedDSN(c *mysql.Config) string {
 	oldPass := c.Passwd
 	c.Passwd = "<masked>"
 	defer func() {
@@ -48,7 +49,7 @@ type Ferry struct {
 	BinlogStreamer *BinlogStreamer
 	DataIterator   *DataIterator
 	ErrorHandler   ErrorHandler
-	Throttler      *Throttler
+	Throttler      Throttler
 	Verifier       Verifier
 
 	Tables TableSchemaCache
@@ -84,7 +85,7 @@ func (f *Ferry) Initialize() (err error) {
 	}
 
 	sourceDSN := sourceConfig.FormatDSN()
-	maskedSourceDSN := maskedDSN(sourceConfig)
+	maskedSourceDSN := MaskedDSN(sourceConfig)
 
 	f.logger.WithField("dsn", maskedSourceDSN).Info("connecting to the source database")
 	f.SourceDB, err = sql.Open("mysql", sourceDSN)
@@ -112,7 +113,7 @@ func (f *Ferry) Initialize() (err error) {
 	}
 
 	targetDSN := targetConfig.FormatDSN()
-	maskedTargetDSN := maskedDSN(targetConfig)
+	maskedTargetDSN := MaskedDSN(targetConfig)
 
 	f.logger.WithField("dsn", maskedTargetDSN).Info("connecting to the target database")
 	f.TargetDB, err = sql.Open("mysql", targetDSN)
@@ -135,12 +136,9 @@ func (f *Ferry) Initialize() (err error) {
 	}
 	f.ErrorHandler.Initialize()
 
-	f.Throttler = &Throttler{
-		Db:           f.SourceDB,
-		Config:       f.Config,
-		ErrorHandler: f.ErrorHandler,
+	if f.Throttler == nil {
+		f.Throttler = &PauserThrottler{}
 	}
-	f.Throttler.Initialize()
 
 	// Initialize binlog streamer
 	f.BinlogStreamer = &BinlogStreamer{
@@ -222,30 +220,35 @@ func (f *Ferry) Run() {
 	f.logger.Info("starting ferry run")
 	f.OverallState = StateCopying
 
+	ctx, shutdown := context.WithCancel(context.Background())
+
+	handleError := func(name string, err error) {
+		if err != nil && err != context.Canceled {
+			f.ErrorHandler.Fatal(name, err)
+		}
+	}
+
+	f.supportingServicesWg.Add(2)
+	go func() {
+		defer f.supportingServicesWg.Done()
+		f.ErrorHandler.Run(ctx)
+	}()
+
+	go func() {
+		defer f.supportingServicesWg.Done()
+		handleError("throttler", f.Throttler.Run(ctx))
+	}()
+
 	f.coreServicesWg.Add(2)
 	go f.BinlogStreamer.Run(f.coreServicesWg)
 	go f.DataIterator.Run(f.coreServicesWg)
-
-	f.supportingServicesWg.Add(2)
-	go f.ErrorHandler.Run(f.supportingServicesWg)
-	go f.Throttler.Run(f.supportingServicesWg)
 
 	f.coreServicesWg.Wait()
 
 	f.OverallState = StateDone
 	f.DoneTime = time.Now()
 
-	// Need to wait to ensure that the ErrorHandler does not get
-	// interrupted if it is received some errors, have not printed it
-	// out, but all other threads (including the main thread) has quit.
-	// Without some sort of waiting on the main thread for the
-	// ErrorHandler to exit first, the program could exit without ever
-	// printing out the error and panicking.
-	//
-	// Furthermore, in a normal run without errors we need to ensure this
-	// shuts down and does not block forever.
-	f.ErrorHandler.Stop()
-	f.Throttler.Stop()
+	shutdown()
 	f.supportingServicesWg.Wait()
 }
 

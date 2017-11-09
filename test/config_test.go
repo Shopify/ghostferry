@@ -93,7 +93,6 @@ func (this *ConfigTestSuite) TestDefaultValues() {
 	this.Require().Equal(5, this.config.MaxIterationReadRetries)
 	this.Require().Equal("0.0.0.0:8000", this.config.ServerBindAddr)
 	this.Require().Equal(".", this.config.WebBasedir)
-	this.Require().NotNil(this.config.MaxVariableLoad)
 }
 
 func (this *ConfigTestSuite) TestCorruptCert() {

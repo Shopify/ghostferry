@@ -13,6 +13,7 @@ type RelocFerry struct {
 }
 
 func NewFerry(config *Config) (*RelocFerry, error) {
+	var err error
 	config.DatabaseTargets = map[string]string{config.SourceDB: config.TargetDB}
 
 	config.CopyFilter = &ShardedRowFilter{
@@ -37,8 +38,20 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 		return nil, fmt.Errorf("failed to validate config: %v", err)
 	}
 
+	var throttler ghostferry.Throttler
+
+	if config.Throttle != nil {
+		throttler, err = NewLagThrottler(config.Throttle)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create throttler: %v", err)
+		}
+	}
+
 	return &RelocFerry{
-		ferry: &ghostferry.Ferry{Config: &config.Config},
+		ferry: &ghostferry.Ferry{
+			Config:    &config.Config,
+			Throttler: throttler,
+		},
 	}, nil
 }
 
