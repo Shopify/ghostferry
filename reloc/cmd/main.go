@@ -41,6 +41,11 @@ func main() {
 	fmt.Printf("reloc built with ghostferry %s\n", ghostferry.VersionString)
 	fmt.Printf("will move tenant %s=%d\n", config.ShardingKey, config.ShardingValue)
 
+	err := reloc.InitializeMetrics("reloc", config.StatsDAddress)
+	if err != nil {
+		errorAndExit(fmt.Sprintf("failed to initialize metrics: %v", err))
+	}
+
 	ferry, err := reloc.NewFerry(config)
 	if err != nil {
 		errorAndExit(fmt.Sprintf("failed to create ferry: %v", err))
@@ -117,6 +122,10 @@ func parseConfig() *reloc.Config {
 
 	if config.TargetDB == "" {
 		errorAndExit("missing TargetDB config")
+	}
+
+	if config.StatsDAddress == "" {
+		config.StatsDAddress = "127.0.0.1:8125"
 	}
 
 	return config
