@@ -140,6 +140,25 @@ func (this *DMLEventsTestSuite) TestBinlogUpdateEventWithWrongColumnsReturnsErro
 	this.Require().Contains(err.Error(), "test_table has 3 columns but event has 1 column")
 }
 
+func (this *DMLEventsTestSuite) TestBinlogUpdateEventWithNull() {
+	rowsEvent := &replication.RowsEvent{
+		Table: this.tableMapEvent,
+		Rows: [][]interface{}{
+			{1000, []byte("val1"), nil},
+			{1000, []byte("val2"), nil},
+		},
+	}
+
+	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(this.sourceTable, rowsEvent)
+	this.Require().Nil(err)
+	this.Require().Equal(1, len(dmlEvents))
+
+	q1, v1, err := dmlEvents[0].AsSQLQuery(this.targetTable)
+	this.Require().Nil(err)
+	this.Require().Equal("UPDATE `target_schema`.`target_table` SET `col1` = ?, `col2` = ?, `col3` = ? WHERE `col1` = ? AND `col2` = ? AND `col3` IS NULL", q1)
+	this.Require().Equal(append(rowsEvent.Rows[1], rowsEvent.Rows[0][0:2]...), v1)
+}
+
 func (this *DMLEventsTestSuite) TestBinlogUpdateEventMetadata() {
 	rowsEvent := &replication.RowsEvent{
 		Table: this.tableMapEvent,
@@ -177,6 +196,24 @@ func (this *DMLEventsTestSuite) TestBinlogDeleteEventGeneratesDeleteQuery() {
 	this.Require().Nil(err)
 	this.Require().Equal("DELETE FROM `target_schema`.`target_table` WHERE `col1` = ? AND `col2` = ? AND `col3` = ?", q2)
 	this.Require().Equal(rowsEvent.Rows[1], v2)
+}
+
+func (this *DMLEventsTestSuite) TestBinlogDeleteEventWithNull() {
+	rowsEvent := &replication.RowsEvent{
+		Table: this.tableMapEvent,
+		Rows: [][]interface{}{
+			{1000, []byte("val1"), nil},
+		},
+	}
+
+	dmlEvents, err := ghostferry.NewBinlogDeleteEvents(this.sourceTable, rowsEvent)
+	this.Require().Nil(err)
+	this.Require().Equal(1, len(dmlEvents))
+
+	q1, v1, err := dmlEvents[0].AsSQLQuery(this.targetTable)
+	this.Require().Nil(err)
+	this.Require().Equal("DELETE FROM `target_schema`.`target_table` WHERE `col1` = ? AND `col2` = ? AND `col3` IS NULL", q1)
+	this.Require().Equal(rowsEvent.Rows[0][0:2], v1)
 }
 
 func (this *DMLEventsTestSuite) TestBinlogDeleteEventWithWrongColumnsReturnsError() {
