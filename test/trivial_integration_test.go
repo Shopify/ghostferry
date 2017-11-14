@@ -119,3 +119,31 @@ func TestCopyDataWithLargePrimaryKeyValues(t *testing.T) {
 
 	testcase.Run()
 }
+
+func setupSingleTableDatabaseWithExtraNullColumn(f *testhelpers.TestFerry) {
+	setupSingleTableDatabase(f)
+
+	testhelpers.AddTenantID(f.SourceDB, "gftest", "table1", 1)
+	testhelpers.AddTenantID(f.TargetDB, "gftest", "table1", 1)
+
+	_, err := f.SourceDB.Exec("UPDATE gftest.table1 SET tenant_id = NULL")
+	testhelpers.PanicIfError(err)
+}
+
+func TestCopyDataWithNullInColumn(t *testing.T) {
+	ferry := testhelpers.NewTestFerry()
+
+	testcase := &testhelpers.IntegrationTestCase{
+		T:           t,
+		SetupAction: setupSingleTableDatabaseWithExtraNullColumn,
+		Ferry:       ferry,
+
+		DataWriter: &testhelpers.MixedActionDataWriter{
+			ProbabilityOfUpdate: 1.0,
+			NumberOfWriters:     2,
+			Tables:              []string{"gftest.table1"},
+		},
+	}
+
+	testcase.Run()
+}

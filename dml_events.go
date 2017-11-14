@@ -114,15 +114,16 @@ func (e *BinlogUpdateEvent) AsSQLQuery(target *schema.Table) (string, []interfac
 		return "", nil, err
 	}
 
-	conditions := conditionsForTable(columns)
+	setConditions, _ := conditionsForTable(columns, nil)
+	whereConditions, whereValues := conditionsForTable(columns, e.oldValues)
 
 	query := "UPDATE " + QuotedTableNameFromString(target.Schema, target.Name) +
-		" SET " + strings.Join(conditions, ", ") +
-		" WHERE " + strings.Join(conditions, " AND ")
+		" SET " + strings.Join(setConditions, ", ") +
+		" WHERE " + strings.Join(whereConditions, " AND ")
 
 	var args []interface{}
 	args = append(args, e.newValues...)
-	args = append(args, e.oldValues...)
+	args = append(args, whereValues...)
 	return query, args, nil
 }
 
@@ -158,10 +159,12 @@ func (e *BinlogDeleteEvent) AsSQLQuery(target *schema.Table) (string, []interfac
 		return "", nil, err
 	}
 
-	query := "DELETE FROM " + QuotedTableNameFromString(target.Schema, target.Name) +
-		" WHERE " + strings.Join(conditionsForTable(columns), " AND ")
+	whereConditions, whereValues := conditionsForTable(columns, e.oldValues)
 
-	return query, e.oldValues, nil
+	query := "DELETE FROM " + QuotedTableNameFromString(target.Schema, target.Name) +
+		" WHERE " + strings.Join(whereConditions, " AND ")
+
+	return query, whereValues, nil
 }
 
 func NewBinlogDMLEvents(table *schema.Table, ev *replication.BinlogEvent) ([]DMLEvent, error) {
@@ -211,12 +214,23 @@ func (e *ExistingRowEvent) AsSQLQuery(target *schema.Table) (string, []interface
 	return query, e.values, nil
 }
 
-func conditionsForTable(columns []string) []string {
+func conditionsForTable(columns []string, args []interface{}) ([]string, []interface{}) {
 	conditions := make([]string, len(columns))
+	values := make([]interface{}, 0, len(args))
+
 	for i, name := range columns {
-		conditions[i] = name + " = ?"
+		if args != nil && args[i] == nil {
+			conditions[i] = name + " IS NULL"
+		} else {
+			conditions[i] = name + " = ?"
+
+			if args != nil {
+				values = append(values, args[i])
+			}
+		}
 	}
-	return conditions
+
+	return conditions, values
 }
 
 func loadColumnsForEvent(table schema.Table, valuesToVerify ...[]interface{}) ([]string, error) {
