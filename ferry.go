@@ -134,7 +134,6 @@ func (f *Ferry) Initialize() (err error) {
 			Ferry: f,
 		}
 	}
-	f.ErrorHandler.Initialize()
 
 	if f.Throttler == nil {
 		f.Throttler = &PauserThrottler{}
@@ -228,12 +227,7 @@ func (f *Ferry) Run() {
 		}
 	}
 
-	f.supportingServicesWg.Add(2)
-	go func() {
-		defer f.supportingServicesWg.Done()
-		f.ErrorHandler.Run(ctx)
-	}()
-
+	f.supportingServicesWg.Add(1)
 	go func() {
 		defer f.supportingServicesWg.Done()
 		handleError("throttler", f.Throttler.Run(ctx))
