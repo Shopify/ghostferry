@@ -1,10 +1,7 @@
 package reloc
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"regexp"
 	"sync"
@@ -72,7 +69,7 @@ func (this *RelocFerry) Start() error {
 	return this.ferry.Start()
 }
 
-func (this *RelocFerry) Run() error {
+func (this *RelocFerry) Run() {
 	copyWG := &sync.WaitGroup{}
 	copyWG.Add(1)
 	go func() {
@@ -87,57 +84,17 @@ func (this *RelocFerry) Run() error {
 	// The callback must ensure that all in-flight transactions are complete and
 	// there will be no more writes to the database after it returns.
 	client := &http.Client{}
-	lockErr := this.postCallback(client, this.config.CutoverLock.URI, map[string]interface{}{
-		"Payload": this.config.CutoverLock.Payload,
-	})
-
-	this.ferry.FlushBinlogAndStopStreaming()
-	copyWG.Wait()
-
-	if lockErr != nil {
-		this.logger.WithField("error", lockErr).Errorf("aborting unlock")
-		return lockErr
-	}
-
-	unlockErr := this.postCallback(client, this.config.CutoverUnlock.URI, map[string]interface{}{
-		"Payload": this.config.CutoverUnlock.Payload,
-	})
-
-	if unlockErr != nil {
-		this.logger.WithField("error", unlockErr).Errorf("run failed")
-		return unlockErr
-	}
-
-	return nil
-}
-
-func (this *RelocFerry) postCallback(client *http.Client, uri string, body interface{}) error {
-	buf := bytes.Buffer{}
-
-	err := json.NewEncoder(&buf).Encode(body)
+	err := this.config.CutoverLock.Post(client)
 	if err != nil {
-		return err
+		this.logger.WithField("error", err).Errorf("aborting unlock")
+		this.ferry.ErrorHandler.Fatal("reloc-callbacks", err)
 	}
 
-	logger := this.logger.WithField("uri", uri)
-	logger.Infof("sending callback")
-
-	res, err := client.Post(uri, "application/json", &buf)
+	err = this.config.CutoverUnlock.Post(client)
 	if err != nil {
-		return err
+		this.logger.WithField("error", err).Errorf("run failed")
+		this.ferry.ErrorHandler.Fatal("reloc-callbacks", err)
 	}
-	defer res.Body.Close()
-
-	if res.StatusCode != 200 {
-		resBody, err := ioutil.ReadAll(res.Body)
-		if err != nil {
-			logger.WithField("error", err).Errorf("error reading callback body")
-		}
-		logger.WithField("status", res.StatusCode).WithField("body", string(resBody)).Errorf("callback not ok")
-		return fmt.Errorf("callback returned %s", res.Status)
-	}
-
-	return nil
 }
 
 func compileRegexps(exps []string) ([]*regexp.Regexp, error) {

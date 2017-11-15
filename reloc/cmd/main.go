@@ -61,10 +61,7 @@ func main() {
 		errorAndExit(fmt.Sprintf("failed to start ferry: %v", err))
 	}
 
-	err = ferry.Run()
-	if err != nil {
-		errorAndExit(fmt.Sprintf("ferry run failed: %v", err))
-	}
+	ferry.Run()
 }
 
 func errorAndExit(msg string) {
