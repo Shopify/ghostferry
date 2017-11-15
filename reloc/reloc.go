@@ -72,7 +72,7 @@ func (this *RelocFerry) Start() error {
 	return this.ferry.Start()
 }
 
-func (this *RelocFerry) Run() {
+func (this *RelocFerry) Run() error {
 	copyWG := &sync.WaitGroup{}
 	copyWG.Add(1)
 	go func() {
@@ -95,7 +95,7 @@ func (this *RelocFerry) Run() {
 
 	if lockErr != nil {
 		this.logger.WithField("error", lockErr).Errorf("aborting unlock")
-		return
+		return lockErr
 	}
 
 	unlockErr := this.postCallback(client, this.config.CutoverUnlock.URI, map[string]interface{}{
@@ -104,8 +104,10 @@ func (this *RelocFerry) Run() {
 
 	if unlockErr != nil {
 		this.logger.WithField("error", unlockErr).Errorf("run failed")
-		return
+		return unlockErr
 	}
+
+	return nil
 }
 
 func (this *RelocFerry) postCallback(client *http.Client, uri string, body interface{}) error {
