@@ -84,7 +84,8 @@ func (this *RelocFerry) Run() error {
 
 	this.ferry.WaitUntilBinlogStreamerCatchesUp()
 
-	// The callback must ensure all writes are committed to the binlog by the time it returns.
+	// The callback must ensure that all in-flight transactions are complete and
+	// there will be no more writes to the database after it returns.
 	client := &http.Client{}
 	lockErr := this.postCallback(client, this.config.CutoverLock.URI, map[string]interface{}{
 		"Payload": this.config.CutoverLock.Payload,
