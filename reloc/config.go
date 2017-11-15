@@ -17,6 +17,10 @@ type HTTPCallback struct {
 }
 
 func (h *HTTPCallback) Post(client *http.Client) error {
+	if h.URI == "" {
+		return nil
+	}
+
 	payload := map[string]interface{}{"Payload": h.Payload}
 	return postCallback(client, h.URI, payload)
 }
