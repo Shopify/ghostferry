@@ -11,7 +11,7 @@ import (
 )
 
 type RelocFerry struct {
-	ferry  *ghostferry.Ferry
+	Ferry  *ghostferry.Ferry
 	config *Config
 	logger *logrus.Entry
 }
@@ -52,7 +52,7 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 	}
 
 	return &RelocFerry{
-		ferry: &ghostferry.Ferry{
+		Ferry: &ghostferry.Ferry{
 			Config:    &config.Config,
 			Throttler: throttler,
 		},
@@ -62,11 +62,11 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 }
 
 func (this *RelocFerry) Initialize() error {
-	return this.ferry.Initialize()
+	return this.Ferry.Initialize()
 }
 
 func (this *RelocFerry) Start() error {
-	return this.ferry.Start()
+	return this.Ferry.Start()
 }
 
 func (this *RelocFerry) Run() {
@@ -74,26 +74,29 @@ func (this *RelocFerry) Run() {
 	copyWG.Add(1)
 	go func() {
 		defer copyWG.Done()
-		this.ferry.Run()
+		this.Ferry.Run()
 	}()
 
-	this.ferry.WaitUntilRowCopyIsComplete()
+	this.Ferry.WaitUntilRowCopyIsComplete()
 
-	this.ferry.WaitUntilBinlogStreamerCatchesUp()
+	this.Ferry.WaitUntilBinlogStreamerCatchesUp()
 
 	// The callback must ensure that all in-flight transactions are complete and
 	// there will be no more writes to the database after it returns.
 	client := &http.Client{}
 	err := this.config.CutoverLock.Post(client)
 	if err != nil {
-		this.logger.WithField("error", err).Errorf("aborting unlock")
-		this.ferry.ErrorHandler.Fatal("reloc-callbacks", err)
+		this.logger.WithField("error", err).Errorf("locking failed, aborting run")
+		this.Ferry.ErrorHandler.Fatal("reloc-callbacks", err)
 	}
+
+	this.Ferry.FlushBinlogAndStopStreaming()
+	copyWG.Wait()
 
 	err = this.config.CutoverUnlock.Post(client)
 	if err != nil {
-		this.logger.WithField("error", err).Errorf("run failed")
-		this.ferry.ErrorHandler.Fatal("reloc-callbacks", err)
+		this.logger.WithField("error", err).Errorf("unlocking failed, aborting run")
+		this.Ferry.ErrorHandler.Fatal("reloc-callbacks", err)
 	}
 }
 
