@@ -109,6 +109,13 @@ func (s *CallbacksTestSuite) TestPostsCallbacks() {
 	s.ferry.Run()
 	s.Require().True(lockReceived)
 	s.Require().True(unlockReceived)
+
+	testhelpers.AssertTwoQueriesHaveEqualResult(
+		s.T(),
+		s.ferry.Ferry,
+		"SELECT * FROM gftest1.table1 WHERE tenant_id = 2",
+		"SELECT * FROM gftest2.table1",
+	)
 }
 
 func (s *CallbacksTestSuite) setupRelocFerry() {
@@ -141,15 +148,11 @@ func (s *CallbacksTestSuite) setupRelocFerry() {
 }
 
 func (s *CallbacksTestSuite) dropTestDbs() {
-	if s.ferry.Ferry.SourceDB != nil {
-		_, err := s.ferry.Ferry.SourceDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", "gftest1"))
-		s.Require().Nil(err)
-	}
+	_, err := s.ferry.Ferry.SourceDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", "gftest1"))
+	s.Require().Nil(err)
 
-	if s.ferry.Ferry.TargetDB != nil {
-		_, err := s.ferry.Ferry.TargetDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", "gftest2"))
-		s.Require().Nil(err)
-	}
+	_, err = s.ferry.Ferry.TargetDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", "gftest2"))
+	s.Require().Nil(err)
 }
 
 func (s *CallbacksTestSuite) requestMap(r *http.Request) map[string]string {
