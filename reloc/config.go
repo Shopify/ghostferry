@@ -5,7 +5,7 @@ import (
 )
 
 type Config struct {
-	ghostferry.Config
+	*ghostferry.Config
 
 	ShardingKey   string
 	ShardingValue int64

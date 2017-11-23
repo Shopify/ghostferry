@@ -48,20 +48,19 @@ func postCallback(client *http.Client, uri string, body interface{}) error {
 
 	if res.StatusCode == 200 {
 		io.Copy(ioutil.Discard, res.Body)
-	} else {
-		resBody, err := ioutil.ReadAll(res.Body)
-
-		if err != nil {
-			logger.WithField("error", err).Errorf("error reading callback body")
-		}
-
-		logger.WithFields(logrus.Fields{
-			"status": res.StatusCode,
-			"body":   string(resBody),
-		}).Errorf("callback not ok")
-
-		return fmt.Errorf("callback returned %s", res.Status)
+		return nil
 	}
 
-	return nil
+	resBody, err := ioutil.ReadAll(res.Body)
+
+	if err != nil {
+		logger.WithField("error", err).Errorf("error reading callback body")
+	}
+
+	logger.WithFields(logrus.Fields{
+		"status": res.StatusCode,
+		"body":   string(resBody),
+	}).Errorf("callback not ok")
+
+	return fmt.Errorf("callback returned %s", res.Status)
 }

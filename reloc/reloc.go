@@ -53,7 +53,7 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 
 	return &RelocFerry{
 		Ferry: &ghostferry.Ferry{
-			Config:    &config.Config,
+			Config:    config.Config,
 			Throttler: throttler,
 		},
 		config: config,
@@ -87,7 +87,7 @@ func (this *RelocFerry) Run() {
 	err := this.config.CutoverLock.Post(client)
 	if err != nil {
 		this.logger.WithField("error", err).Errorf("locking failed, aborting run")
-		this.Ferry.ErrorHandler.Fatal("reloc-callbacks", err)
+		this.Ferry.ErrorHandler.Fatal("reloc", err)
 	}
 
 	this.Ferry.FlushBinlogAndStopStreaming()
@@ -96,7 +96,7 @@ func (this *RelocFerry) Run() {
 	err = this.config.CutoverUnlock.Post(client)
 	if err != nil {
 		this.logger.WithField("error", err).Errorf("unlocking failed, aborting run")
-		this.Ferry.ErrorHandler.Fatal("reloc-callbacks", err)
+		this.Ferry.ErrorHandler.Fatal("reloc", err)
 	}
 }
 
