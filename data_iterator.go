@@ -169,10 +169,9 @@ func (this *DataIterator) Initialize() error {
 	return nil
 }
 
-func (this *DataIterator) Run(doneWg *sync.WaitGroup) {
+func (this *DataIterator) Run() {
 	defer func() {
 		this.logger.Info("data iterator done")
-		doneWg.Done()
 	}()
 
 	this.logger.WithField("tablesCount", len(this.Tables)).Info("starting data iterator run")

@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/Shopify/ghostferry"
+	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -79,12 +80,18 @@ func (this *RelocFerry) Run() {
 
 	this.Ferry.WaitUntilRowCopyIsComplete()
 
+	err := this.reiterateJoinedTables()
+	if err != nil {
+		this.logger.WithField("error", err).Errorf("failed to reiterate joined tables before locking")
+		this.Ferry.ErrorHandler.Fatal("reloc", err)
+	}
+
 	this.Ferry.WaitUntilBinlogStreamerCatchesUp()
 
 	// The callback must ensure that all in-flight transactions are complete and
 	// there will be no more writes to the database after it returns.
 	client := &http.Client{}
-	err := this.config.CutoverLock.Post(client)
+	err = this.config.CutoverLock.Post(client)
 	if err != nil {
 		this.logger.WithField("error", err).Errorf("locking failed, aborting run")
 		this.Ferry.ErrorHandler.Fatal("reloc", err)
@@ -93,11 +100,29 @@ func (this *RelocFerry) Run() {
 	this.Ferry.FlushBinlogAndStopStreaming()
 	copyWG.Wait()
 
+	err := this.reiterateJoinedTables()
+	if err != nil {
+		this.logger.WithField("error", err).Errorf("failed to reiterate joined tables after locking")
+		this.Ferry.ErrorHandler.Fatal("reloc", err)
+	}
+
 	err = this.config.CutoverUnlock.Post(client)
 	if err != nil {
 		this.logger.WithField("error", err).Errorf("unlocking failed, aborting run")
 		this.Ferry.ErrorHandler.Fatal("reloc", err)
 	}
+}
+
+func (this *RelocFerry) reiterateJoinedTables() error {
+	tables := []*schema.Table{}
+
+	for _, table := range this.Ferry.Tables.AsSlice() {
+		if _, exists := this.config.JoinedTables[table.Name]; exists {
+			tables = append(tables, table)
+		}
+	}
+
+	return this.Ferry.ReiterateTables(tables)
 }
 
 func compileRegexps(exps []string) ([]*regexp.Regexp, error) {

@@ -60,7 +60,7 @@ func (this *DataIteratorTestSuite) TestNoEventsForEmptyTable() {
 	_, err := this.Ferry.SourceDB.Query(fmt.Sprintf("DELETE FROM `%s`.`%s`", testhelpers.TestSchemaName, testhelpers.TestTable1Name))
 	this.Require().Nil(err)
 
-	this.runDataIterator()
+	this.di.Run()
 
 	this.Require().Equal(0, len(this.receivedEvents))
 	this.Require().Equal(this.di.CurrentState.CompletedTables(), map[string]bool{fmt.Sprintf("%s.%s", testhelpers.TestSchemaName, testhelpers.TestTable1Name): true})
@@ -87,7 +87,7 @@ func (this *DataIteratorTestSuite) TestExistingRowsAreIterated() {
 
 	this.Require().Equal(0, len(this.di.CurrentState.CompletedTables()))
 
-	this.runDataIterator()
+	this.di.Run()
 
 	for idx, ev := range this.receivedEvents {
 		this.Require().Equal(ev.NewValues(), ev.OldValues())
@@ -110,7 +110,7 @@ func (this *DataIteratorTestSuite) TestDoneListenerGetsNotifiedWhenDone() {
 		return nil
 	})
 
-	this.runDataIterator()
+	this.di.Run()
 
 	this.Require().True(wasNotified)
 }
@@ -124,15 +124,6 @@ func (this *DataIteratorTestSuite) TestInitialize() {
 	this.Require().Nil(err)
 
 	this.Require().NotNil(di.CurrentState)
-}
-
-func (this *DataIteratorTestSuite) runDataIterator() {
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-
-	this.di.Run(wg)
-
-	wg.Wait()
 }
 
 func TestDataIterator(t *testing.T) {
