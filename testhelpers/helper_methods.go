@@ -57,6 +57,27 @@ func ProcessListContainsQueries(db *sql.DB, queries []string) bool {
 	return true
 }
 
+func AssertTwoQueriesHaveEqualResult(t *testing.T, ferry *ghostferry.Ferry, sourceQuery string, targetQuery string, args ...interface{}) []map[string]interface{} {
+	rows1, err := ferry.SourceDB.Query(sourceQuery, args...)
+	assert.Nil(t, err)
+	defer rows1.Close()
+
+	rows2, err := ferry.TargetDB.Query(targetQuery, args...)
+	assert.Nil(t, err)
+	defer rows2.Close()
+
+	results1, err := LoadResults(rows1)
+	assert.Nil(t, err)
+
+	results2, err := LoadResults(rows2)
+	assert.Nil(t, err)
+
+	assert.Equal(t, results1, results2)
+	assert.True(t, len(results1) > 0)
+
+	return results1
+}
+
 func AssertQueriesHaveEqualResult(t *testing.T, ferry *ghostferry.Ferry, query string, args ...interface{}) []map[string]interface{} {
 	rows1, err := ferry.SourceDB.Query(query, args...)
 	assert.Nil(t, err)

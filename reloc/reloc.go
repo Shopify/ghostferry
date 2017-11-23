@@ -2,14 +2,18 @@ package reloc
 
 import (
 	"fmt"
+	"net/http"
 	"regexp"
 	"sync"
 
 	"github.com/Shopify/ghostferry"
+	"github.com/sirupsen/logrus"
 )
 
 type RelocFerry struct {
-	ferry *ghostferry.Ferry
+	Ferry  *ghostferry.Ferry
+	config *Config
+	logger *logrus.Entry
 }
 
 func NewFerry(config *Config) (*RelocFerry, error) {
@@ -48,19 +52,21 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 	}
 
 	return &RelocFerry{
-		ferry: &ghostferry.Ferry{
-			Config:    &config.Config,
+		Ferry: &ghostferry.Ferry{
+			Config:    config.Config,
 			Throttler: throttler,
 		},
+		config: config,
+		logger: logrus.WithField("tag", "reloc"),
 	}, nil
 }
 
 func (this *RelocFerry) Initialize() error {
-	return this.ferry.Initialize()
+	return this.Ferry.Initialize()
 }
 
 func (this *RelocFerry) Start() error {
-	return this.ferry.Start()
+	return this.Ferry.Start()
 }
 
 func (this *RelocFerry) Run() {
@@ -68,21 +74,30 @@ func (this *RelocFerry) Run() {
 	copyWG.Add(1)
 	go func() {
 		defer copyWG.Done()
-		this.ferry.Run()
+		this.Ferry.Run()
 	}()
 
-	this.ferry.WaitUntilRowCopyIsComplete()
+	this.Ferry.WaitUntilRowCopyIsComplete()
 
-	this.ferry.WaitUntilBinlogStreamerCatchesUp()
+	this.Ferry.WaitUntilBinlogStreamerCatchesUp()
 
-	// Call cutover lock callback here.
-	// The callback must ensure all writes are committed to the binlog by the time it returns.
+	// The callback must ensure that all in-flight transactions are complete and
+	// there will be no more writes to the database after it returns.
+	client := &http.Client{}
+	err := this.config.CutoverLock.Post(client)
+	if err != nil {
+		this.logger.WithField("error", err).Errorf("locking failed, aborting run")
+		this.Ferry.ErrorHandler.Fatal("reloc", err)
+	}
 
-	this.ferry.FlushBinlogAndStopStreaming()
+	this.Ferry.FlushBinlogAndStopStreaming()
 	copyWG.Wait()
 
-	// Source and target are identical.
-	// Call cutover unlock callback here.
+	err = this.config.CutoverUnlock.Post(client)
+	if err != nil {
+		this.logger.WithField("error", err).Errorf("unlocking failed, aborting run")
+		this.Ferry.ErrorHandler.Fatal("reloc", err)
+	}
 }
 
 func compileRegexps(exps []string) ([]*regexp.Regexp, error) {

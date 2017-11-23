@@ -5,7 +5,7 @@ import (
 )
 
 type Config struct {
-	ghostferry.Config
+	*ghostferry.Config
 
 	ShardingKey   string
 	ShardingValue int64
@@ -13,6 +13,8 @@ type Config struct {
 	TargetDB      string
 
 	StatsDAddress string
+	CutoverLock   HTTPCallback
+	CutoverUnlock HTTPCallback
 
 	JoinedTables  map[string][]JoinTable
 	IgnoredTables []string

@@ -71,7 +71,7 @@ func errorAndExit(msg string) {
 
 func parseConfig() *reloc.Config {
 	config := &reloc.Config{
-		Config: ghostferry.Config{AutomaticCutover: true},
+		Config: &ghostferry.Config{AutomaticCutover: true},
 
 		ShardingValue: -1,
 	}

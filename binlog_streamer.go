@@ -258,6 +258,11 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 			"database": dmlEv.Database(),
 			"table":    dmlEv.Table(),
 		}).Debugf("received event %T at %v", dmlEv, eventTime)
+
+		metrics.Count("RowEvent", 1, []MetricTag{
+			MetricTag{"table", dmlEv.Table()},
+			MetricTag{"source", "binlog"},
+		}, 1.0)
 	}
 
 	for _, listener := range s.eventListeners {

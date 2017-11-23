@@ -409,6 +409,11 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 			return
 		}
 
+		metrics.Count("RowEvent", 1, []MetricTag{
+			MetricTag{"table", ev.Table()},
+			MetricTag{"source", "table"},
+		}, 1.0)
+
 		events = append(events, ev)
 
 		// Since it is possible to have many different types of integers in
