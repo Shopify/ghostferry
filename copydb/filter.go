@@ -5,20 +5,21 @@ import (
 )
 
 type StaticTableFilter struct {
-	Dbs            map[string]bool
+	Dbs            []string
 	DbsIsBlacklist bool
 
-	Tables            map[string]bool
+	Tables            []string
 	TablesIsBlacklist bool
 }
 
-func sliceToMap(slice []string) map[string]bool {
-	m := make(map[string]bool)
-	for _, v := range slice {
-		m[v] = true
+func contains(s []string, item string) bool {
+	for _, v := range s {
+		if item == v {
+			return true
+		}
 	}
 
-	return m
+	return false
 }
 
 func NewStaticTableFilter(dbs, tables FilterAndRewriteConfigs) *StaticTableFilter {
@@ -29,15 +30,15 @@ func NewStaticTableFilter(dbs, tables FilterAndRewriteConfigs) *StaticTableFilte
 	f.TablesIsBlacklist = len(tables.Whitelist) == 0
 
 	if f.DbsIsBlacklist {
-		f.Dbs = sliceToMap(dbs.Blacklist)
+		f.Dbs = dbs.Blacklist
 	} else {
-		f.Dbs = sliceToMap(dbs.Whitelist)
+		f.Dbs = dbs.Whitelist
 	}
 
 	if f.TablesIsBlacklist {
-		f.Tables = sliceToMap(tables.Blacklist)
+		f.Tables = tables.Blacklist
 	} else {
-		f.Tables = sliceToMap(tables.Whitelist)
+		f.Tables = tables.Whitelist
 	}
 
 	return f
@@ -48,7 +49,7 @@ func (s *StaticTableFilter) ApplicableDatabases(dbs []string) []string {
 	for _, name := range dbs {
 		var applicable bool
 
-		b, _ := s.Dbs[name]
+		b := contains(s.Dbs, name)
 		if s.DbsIsBlacklist {
 			applicable = !b
 		} else {
@@ -69,7 +70,7 @@ func (s *StaticTableFilter) ApplicableTables(tables []*schema.Table) []*schema.T
 	for _, tableSchema := range tables {
 		var applicable bool
 
-		b, _ := s.Tables[tableSchema.Name]
+		b := contains(s.Tables, tableSchema.Name)
 		if s.TablesIsBlacklist {
 			applicable = !b
 		} else {
