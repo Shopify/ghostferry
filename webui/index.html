@@ -76,9 +76,14 @@
               <th>Tables Copied</th>
               <td>{{.CompletedTableCount}}/{{.TotalTableCount}}</td>
             </tr>
+
             <tr>
               <th>Binlog Streaming Lag</th>
-              <td>{{.BinlogStreamerLag}}</td>
+              {{if not (eq .OverallState "done")}}
+                <td>{{.BinlogStreamerLag}}</td>
+              {{else}}
+                <td>None - copying is complete</td>
+              {{end}}
             </tr>
             <tr>
               <th>Automatic Cutover Allowed</th>
