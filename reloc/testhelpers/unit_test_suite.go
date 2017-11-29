@@ -129,7 +129,6 @@ func (t *RelocUnitTestSuite) setupRelocFerry() {
 }
 
 func (t *RelocUnitTestSuite) dropTestDbs() {
-	fmt.Printf("t.Ferry = %+v\n", t.Ferry)
 	_, err := t.Ferry.Ferry.SourceDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", sourceDbName))
 	t.Require().Nil(err)
 

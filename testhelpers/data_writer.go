@@ -79,7 +79,7 @@ type MixedActionDataWriter struct {
 	Tables          []string
 
 	ExtraInsertData func(string, map[string]interface{})
-	ExtraUpdateData func(map[string]interface{})
+	ExtraUpdateData func(string, map[string]interface{})
 
 	wg     *sync.WaitGroup
 	doneCh chan struct{}
@@ -126,7 +126,7 @@ func (this *MixedActionDataWriter) WriteData(i int) {
 		r := rand.Float32()
 		var err error
 		if r >= insertProbability[0] && r < insertProbability[1] {
-			err = this.InsertData(i)
+			err = this.InsertData()
 		} else if r >= updateProbability[0] && r < updateProbability[1] {
 			err = this.UpdateData()
 		} else if r >= deleteProbability[0] && r < deleteProbability[1] {
@@ -141,18 +141,11 @@ func (this *MixedActionDataWriter) WriteData(i int) {
 	}
 }
 
-func (this *MixedActionDataWriter) InsertData(offset int) error {
+func (this *MixedActionDataWriter) InsertData() error {
 	table := this.pickRandomTable()
 
-	var maxId int
-	row := this.Db.QueryRow(fmt.Sprintf("SELECT IFNULL(MAX(id), 0) FROM %s", table))
-	err := row.Scan(&maxId)
-	PanicIfError(err)
-
-	fmt.Printf("maxId = %+v\n", maxId)
-
 	colvals := make(map[string]interface{})
-	colvals["id"] = maxId + 1
+	colvals["id"] = nil
 	colvals["data"] = RandData()
 
 	if this.ExtraInsertData != nil {
@@ -180,7 +173,7 @@ func (this *MixedActionDataWriter) UpdateData() error {
 	colvals["data"] = RandData()
 
 	if this.ExtraUpdateData != nil {
-		this.ExtraUpdateData(colvals)
+		this.ExtraUpdateData(table, colvals)
 	}
 
 	sql, args, err := sq.Update(table).

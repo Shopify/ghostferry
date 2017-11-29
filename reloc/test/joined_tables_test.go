@@ -22,16 +22,19 @@ func (t *JoinedTablesTestSuite) SetupTest() {
 
 	t.DataWriter = &testhelpers.MixedActionDataWriter{
 		ProbabilityOfInsert: 1.0,
-		NumberOfWriters:     1,
+		NumberOfWriters:     2,
 		Tables:              []string{"gftest1.join_table", "gftest1.joined_table"},
 
 		ExtraInsertData: func(tableName string, vals map[string]interface{}) {
-			if tableName == "gftest1.joined_table" {
-				return
-			}
+			if tableName == "gftest1.join_table" {
+				var maxIdInJoinedTable int
+				row := t.Ferry.Ferry.SourceDB.QueryRow("SELECT MAX(id) FROM gftest1.joined_table")
+				err := row.Scan(&maxIdInJoinedTable)
+				testhelpers.PanicIfError(err)
 
-			vals["tenant_id"] = rand.Intn(3)
-			vals["join_id"] = vals["id"]
+				vals["join_id"] = maxIdInJoinedTable
+				vals["tenant_id"] = rand.Intn(3)
+			}
 		},
 	}
 
@@ -42,7 +45,7 @@ func (t *JoinedTablesTestSuite) SetupTest() {
 }
 
 func (t *JoinedTablesTestSuite) TearDownTest() {
-	// t.RelocUnitTestSuite.TearDownTest()
+	t.RelocUnitTestSuite.TearDownTest()
 }
 
 func (t *JoinedTablesTestSuite) TestJoinedTablesWithDataWriter() {
@@ -74,7 +77,7 @@ func (t *JoinedTablesTestSuite) TestJoinedTablesWithDataWriter() {
 	t.Require().Equal(0, count)
 
 	var expectedCount int
-	row = t.Ferry.Ferry.TargetDB.QueryRow("SELECT count(*) FROM gftest2.join_table jt WHERE jt.tenant_id = 2")
+	row = t.Ferry.Ferry.TargetDB.QueryRow("SELECT count(distinct(join_id)) FROM gftest2.join_table jt WHERE jt.tenant_id = 2")
 	testhelpers.PanicIfError(row.Scan(&expectedCount))
 
 	var actualCount int
