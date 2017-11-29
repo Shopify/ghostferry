@@ -7,15 +7,14 @@ import (
 	"time"
 
 	"github.com/Shopify/ghostferry"
-	"github.com/Shopify/ghostferry/reloc"
 	"github.com/Shopify/ghostferry/testhelpers"
 	"github.com/stretchr/testify/assert"
 )
 
-func newThrottler() *reloc.LagThrottler {
+func newThrottler() *ghostferry.LagThrottler {
 	testConfig := testhelpers.NewTestConfig()
 
-	config := &reloc.ThrottlerConfig{
+	config := &ghostferry.LagThrottlerConfig{
 		Connection:      testConfig.Target,
 		MaxLag:          6,
 		HeartbeatTable:  "meta.heartbeat",
@@ -23,7 +22,7 @@ func newThrottler() *reloc.LagThrottler {
 		UpdateInterval:  "5ms",
 	}
 
-	throttler, err := reloc.NewLagThrottler(config)
+	throttler, err := ghostferry.NewLagThrottler(config)
 	testhelpers.PanicIfError(err)
 	return throttler
 }
@@ -39,7 +38,7 @@ func setupHeartbeatTable(db *sql.DB, ctx context.Context) {
 	testhelpers.PanicIfError(err)
 }
 
-func heartbeat(throttler *reloc.LagThrottler, serverId int, beat time.Time) {
+func heartbeat(throttler *ghostferry.LagThrottler, serverId int, beat time.Time) {
 	_, err := throttler.DB.Exec("INSERT INTO meta.heartbeat (ts, server_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE ts = ?", beat, serverId, beat)
 	testhelpers.PanicIfError(err)
 	time.Sleep(10 * time.Millisecond)
@@ -103,34 +102,34 @@ func TestNewThrottlerConfigErrors(t *testing.T) {
 		User: "hunter2",
 	}
 
-	okConfig := reloc.ThrottlerConfig{
+	okConfig := ghostferry.LagThrottlerConfig{
 		Connection:      connConfig,
 		HeartbeatTable:  "meta.heartbeat",
 		HeartbeatColumn: "ts",
 	}
 
 	config := okConfig
-	_, err := reloc.NewLagThrottler(&config)
+	_, err := ghostferry.NewLagThrottler(&config)
 	assert.Nil(t, err)
 
 	config = okConfig
 	config.HeartbeatTable = ""
-	_, err = reloc.NewLagThrottler(&config)
+	_, err = ghostferry.NewLagThrottler(&config)
 	assert.NotNil(t, err)
 
 	config = okConfig
 	config.HeartbeatColumn = ""
-	_, err = reloc.NewLagThrottler(&config)
+	_, err = ghostferry.NewLagThrottler(&config)
 	assert.NotNil(t, err)
 
 	config = okConfig
 	config.Connection.Host = ""
-	_, err = reloc.NewLagThrottler(&config)
+	_, err = ghostferry.NewLagThrottler(&config)
 	assert.NotNil(t, err)
 
 	config = okConfig
 	config.UpdateInterval = "hunter2"
-	_, err = reloc.NewLagThrottler(&config)
+	_, err = ghostferry.NewLagThrottler(&config)
 	assert.NotNil(t, err)
 }
 

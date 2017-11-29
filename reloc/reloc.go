@@ -45,7 +45,7 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 	var throttler ghostferry.Throttler
 
 	if config.Throttle != nil {
-		throttler, err = NewLagThrottler(config.Throttle)
+		throttler, err = ghostferry.NewLagThrottler(config.Throttle)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create throttler: %v", err)
 		}
