@@ -100,7 +100,7 @@ func (this *RelocFerry) Run() {
 	this.Ferry.FlushBinlogAndStopStreaming()
 	copyWG.Wait()
 
-	err := this.reiterateJoinedTables()
+	err = this.reiterateJoinedTables()
 	if err != nil {
 		this.logger.WithField("error", err).Errorf("failed to reiterate joined tables after locking")
 		this.Ferry.ErrorHandler.Fatal("reloc", err)
