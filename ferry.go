@@ -313,12 +313,12 @@ func (f *Ferry) writeEventsToTarget(events []DMLEvent) error {
 
 	for _, ev := range events {
 		eventDatabaseName := ev.Database()
-		if targetDatabaseName, exists := f.Config.DatabaseRenames[eventDatabaseName]; exists {
+		if targetDatabaseName, exists := f.Config.DatabaseRewrites[eventDatabaseName]; exists {
 			eventDatabaseName = targetDatabaseName
 		}
 
 		eventTableName := ev.Table()
-		if targetTableName, exists := f.Config.TableRenames[eventTableName]; exists {
+		if targetTableName, exists := f.Config.TableRewrites[eventTableName]; exists {
 			eventTableName = targetTableName
 		}
 

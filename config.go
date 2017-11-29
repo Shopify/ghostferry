@@ -98,8 +98,8 @@ type Config struct {
 	Source DatabaseConfig
 	Target DatabaseConfig
 
-	DatabaseRenames map[string]string
-	TableRenames    map[string]string
+	DatabaseRewrites map[string]string
+	TableRewrites    map[string]string
 
 	// Config for Ferry
 	MaxWriteRetriesOnTargetDBError int

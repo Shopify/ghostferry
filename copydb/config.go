@@ -7,13 +7,13 @@ import (
 )
 
 // With nothing specified, it assumes that everything is applicable.
-type FiltersRenames struct {
+type FilterAndRewriteConfigs struct {
 	Whitelist []string
 	Blacklist []string
-	Renames   map[string]string
+	Rewrites  map[string]string
 }
 
-func (f FiltersRenames) Validate() error {
+func (f FilterAndRewriteConfigs) Validate() error {
 	if len(f.Whitelist) > 0 && len(f.Blacklist) > 0 {
 		return fmt.Errorf("Whitelist and Blacklist cannot both be specified")
 	}
@@ -24,8 +24,8 @@ func (f FiltersRenames) Validate() error {
 type Config struct {
 	ghostferry.Config
 
-	Databases FiltersRenames
-	Tables    FiltersRenames
+	Databases FilterAndRewriteConfigs
+	Tables    FilterAndRewriteConfigs
 }
 
 func (c *Config) InitializeAndValidateConfig() error {
@@ -42,8 +42,8 @@ func (c *Config) InitializeAndValidateConfig() error {
 		c.Tables,
 	)
 
-	c.DatabaseRenames = c.Databases.Renames
-	c.TableRenames = c.Tables.Renames
+	c.DatabaseRewrites = c.Databases.Rewrites
+	c.TableRewrites = c.Tables.Rewrites
 
 	if err := c.Config.ValidateConfig(); err != nil {
 		return err

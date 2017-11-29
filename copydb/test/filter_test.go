@@ -30,10 +30,10 @@ func (this *FilterTestSuite) TestLoadTablesWithWhitelist() {
 	tables, err := ghostferry.LoadTables(
 		this.Ferry.SourceDB,
 		copydb.NewStaticTableFilter(
-			copydb.FiltersRenames{
+			copydb.FilterAndRewriteConfigs{
 				Whitelist: []string{testhelpers.TestSchemaName},
 			},
-			copydb.FiltersRenames{
+			copydb.FilterAndRewriteConfigs{
 				Whitelist: []string{"test_table_2"},
 			},
 		),
@@ -53,10 +53,10 @@ func (this *FilterTestSuite) TestLoadTablesWithBlacklist() {
 	tables, err := ghostferry.LoadTables(
 		this.Ferry.SourceDB,
 		copydb.NewStaticTableFilter(
-			copydb.FiltersRenames{
+			copydb.FilterAndRewriteConfigs{
 				Whitelist: []string{testhelpers.TestSchemaName},
 			},
-			copydb.FiltersRenames{
+			copydb.FilterAndRewriteConfigs{
 				Blacklist: []string{"test_table_2"},
 			},
 		),
@@ -80,7 +80,7 @@ func (this *FilterTestSuite) TestLoadTablesWithBlacklist() {
 
 func (this *FilterTestSuite) TestFilterWithSimpleWhitelist() {
 	list := []string{"str1", "str2", "str3"}
-	filter := copydb.FiltersRenames{
+	filter := copydb.FilterAndRewriteConfigs{
 		Whitelist: []string{"str1"},
 	}
 
@@ -89,7 +89,7 @@ func (this *FilterTestSuite) TestFilterWithSimpleWhitelist() {
 
 func (this *FilterTestSuite) TestFilterWithNonExistentKeyInWhitelist() {
 	list := []string{"str1", "str2", "str3"}
-	filter := copydb.FiltersRenames{
+	filter := copydb.FilterAndRewriteConfigs{
 		Whitelist: []string{"str1", "nonexistent"},
 	}
 
@@ -99,7 +99,7 @@ func (this *FilterTestSuite) TestFilterWithNonExistentKeyInWhitelist() {
 func (this *FilterTestSuite) TestFilterWithSimpleBlacklist() {
 	list := []string{"str1", "str2", "str3"}
 
-	filter := copydb.FiltersRenames{
+	filter := copydb.FilterAndRewriteConfigs{
 		Blacklist: []string{"str1"},
 	}
 
@@ -108,17 +108,17 @@ func (this *FilterTestSuite) TestFilterWithSimpleBlacklist() {
 
 func (this *FilterTestSuite) TestFilterWithEmptyFilter() {
 	list := []string{"str1", "str2", "str3"}
-	filter := copydb.FiltersRenames{}
+	filter := copydb.FilterAndRewriteConfigs{}
 	this.assertBothFilters(list, filter, list)
 }
 
 func (this *FilterTestSuite) TestFilterForEmptyList() {
 	list := []string{}
-	filter := copydb.FiltersRenames{}
+	filter := copydb.FilterAndRewriteConfigs{}
 	this.assertBothFilters(list, filter, list)
 }
 
-func (this *FilterTestSuite) assertBothFilters(expected []string, filter copydb.FiltersRenames, list []string) {
+func (this *FilterTestSuite) assertBothFilters(expected []string, filter copydb.FilterAndRewriteConfigs, list []string) {
 	tableFilter := copydb.NewStaticTableFilter(filter, filter)
 
 	this.Require().Equal(expected, tableFilter.ApplicableDatabases(list))

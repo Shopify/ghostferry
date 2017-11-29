@@ -21,7 +21,7 @@ func sliceToMap(slice []string) map[string]bool {
 	return m
 }
 
-func NewStaticTableFilter(dbs, tables FiltersRenames) *StaticTableFilter {
+func NewStaticTableFilter(dbs, tables FilterAndRewriteConfigs) *StaticTableFilter {
 	f := &StaticTableFilter{}
 	// default scenario is blacklist, which would mean nothing is filtered if
 	// whitelist == [] and blacklist == []

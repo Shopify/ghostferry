@@ -137,11 +137,11 @@ func TestCopyDataWhileRenamingDatabaseAndTable(t *testing.T) {
 		}
 	}
 
-	testcase.Ferry.DatabaseRenames = map[string]string{
+	testcase.Ferry.DatabaseRewrites = map[string]string{
 		sourceDatabaseName: targetDatabaseName,
 	}
 
-	testcase.Ferry.TableRenames = map[string]string{
+	testcase.Ferry.TableRewrites = map[string]string{
 		sourceTableName: targetTableName,
 	}
 
