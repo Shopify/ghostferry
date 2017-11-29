@@ -22,3 +22,10 @@ deployment:
       - ln -sr "$(pwd)" "$USERGOPATH/src/github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME"
       - make reloc-deb GOPATH="$USERGOPATH"
       - package_cloud push --url https://packages.shopify.io shopify/reloc/ubuntu/trusty build/ghostferry-reloc_*.deb
+  copydb-stable:
+    branch: /.*-stable/
+    commands:
+      - mkdir -p "$USERGOPATH/src/github.com/$CIRCLE_PROJECT_USERNAME"
+      - ln -sr "$(pwd)" "$USERGOPATH/src/github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME"
+      - make copydb-deb GOPATH="$USERGOPATH"
+      - package_cloud push --url https://packages.shopify.io shopify/ghostferry/ubuntu/xenial build/ghostferry-copydb_*.deb
