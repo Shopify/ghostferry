@@ -17,6 +17,8 @@ type IntegrationTestCase struct {
 	AfterStoppedBinlogStreaming   func(*TestFerry)
 	CustomVerifyAction            func(*TestFerry)
 
+	DisableChecksumVerifier bool
+
 	DataWriter DataWriter
 	Ferry      *TestFerry
 
@@ -90,13 +92,15 @@ func (this *IntegrationTestCase) StopStreamingAndWaitForGhostferryFinish() {
 }
 
 func (this *IntegrationTestCase) VerifyData() {
-	tablesMismatched, err := this.verifyTableChecksum()
-	if err != nil {
-		this.T.Fatalf("error while verifying data: %v", err)
-	}
+	if !this.DisableChecksumVerifier {
+		tablesMismatched, err := this.verifyTableChecksum()
+		if err != nil {
+			this.T.Fatalf("error while verifying data: %v", err)
+		}
 
-	if len(tablesMismatched) > 0 {
-		this.T.Fatalf("%d tables mismatched: %v", len(tablesMismatched), tablesMismatched)
+		if len(tablesMismatched) > 0 {
+			this.T.Fatalf("%d tables mismatched: %v", len(tablesMismatched), tablesMismatched)
+		}
 	}
 
 	this.callCustomAction(this.CustomVerifyAction)

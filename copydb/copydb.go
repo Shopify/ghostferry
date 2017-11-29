@@ -59,9 +59,6 @@ func (this *CopydbFerry) CreateDatabasesAndTables() error {
 	// as the ones we are copying.
 	for tableName := range this.ferry.Tables {
 		t := strings.Split(tableName, ".")
-		if _, exists := this.config.ApplicableDatabases[t[0]]; !exists {
-			continue
-		}
 
 		err := this.createDatabaseIfExistsOnTarget(t[0])
 		if err != nil {

@@ -313,11 +313,16 @@ func (f *Ferry) writeEventsToTarget(events []DMLEvent) error {
 
 	for _, ev := range events {
 		eventDatabaseName := ev.Database()
-		if targetDatabaseName, exists := f.Config.DatabaseTargets[eventDatabaseName]; exists {
+		if targetDatabaseName, exists := f.Config.DatabaseRewrites[eventDatabaseName]; exists {
 			eventDatabaseName = targetDatabaseName
 		}
 
-		sql, args, err := ev.AsSQLQuery(&schema.Table{Schema: eventDatabaseName, Name: ev.Table()})
+		eventTableName := ev.Table()
+		if targetTableName, exists := f.Config.TableRewrites[eventTableName]; exists {
+			eventTableName = targetTableName
+		}
+
+		sql, args, err := ev.AsSQLQuery(&schema.Table{Schema: eventDatabaseName, Name: eventTableName})
 		if err != nil {
 			err = fmt.Errorf("during generating sql query: %v", err)
 			return rollback(err)
