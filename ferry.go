@@ -259,7 +259,7 @@ func (f *Ferry) Run() {
 	supportingServicesWg.Wait()
 }
 
-func (f *Ferry) ReiterateTables(tables []*schema.Table) error {
+func (f *Ferry) IterateAndCopyTables(tables []*schema.Table) error {
 	if len(tables) == 0 {
 		return nil
 	}
@@ -273,11 +273,11 @@ func (f *Ferry) ReiterateTables(tables []*schema.Table) error {
 
 	iterator.AddEventListener(f.writeEventsToTargetWithRetries)
 	iterator.AddDoneListener(func() error {
-		f.logger.WithField("tables", tables).Info("Finished reiteration of tables")
+		f.logger.WithField("tables", tables).Info("Finished iterating tables")
 		return nil
 	})
 
-	f.logger.WithField("tables", tables).Info("Reiterating joined tables")
+	f.logger.WithField("tables", tables).Info("Iterating tables")
 
 	iterator.Run()
 

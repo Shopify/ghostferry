@@ -80,18 +80,12 @@ func (this *RelocFerry) Run() {
 
 	this.Ferry.WaitUntilRowCopyIsComplete()
 
-	err := this.reiterateJoinedTables()
-	if err != nil {
-		this.logger.WithField("error", err).Errorf("failed to reiterate joined tables before locking")
-		this.Ferry.ErrorHandler.Fatal("reloc", err)
-	}
-
 	this.Ferry.WaitUntilBinlogStreamerCatchesUp()
 
 	// The callback must ensure that all in-flight transactions are complete and
 	// there will be no more writes to the database after it returns.
 	client := &http.Client{}
-	err = this.config.CutoverLock.Post(client)
+	err := this.config.CutoverLock.Post(client)
 	if err != nil {
 		this.logger.WithField("error", err).Errorf("locking failed, aborting run")
 		this.Ferry.ErrorHandler.Fatal("reloc", err)
@@ -100,9 +94,11 @@ func (this *RelocFerry) Run() {
 	this.Ferry.FlushBinlogAndStopStreaming()
 	copyWG.Wait()
 
-	err = this.reiterateJoinedTables()
+	metrics.Measure("deltaCopyJoinedTables", nil, 1.0, func() {
+		err = this.deltaCopyJoinedTables()
+	})
 	if err != nil {
-		this.logger.WithField("error", err).Errorf("failed to reiterate joined tables after locking")
+		this.logger.WithField("error", err).Errorf("failed to delta-copy joined tables after locking")
 		this.Ferry.ErrorHandler.Fatal("reloc", err)
 	}
 
@@ -113,16 +109,16 @@ func (this *RelocFerry) Run() {
 	}
 }
 
-func (this *RelocFerry) reiterateJoinedTables() error {
+func (this *RelocFerry) deltaCopyJoinedTables() error {
 	tables := []*schema.Table{}
 
-	for _, table := range this.Ferry.Tables.AsSlice() {
+	for _, table := range this.Ferry.Tables {
 		if _, exists := this.config.JoinedTables[table.Name]; exists {
 			tables = append(tables, table)
 		}
 	}
 
-	return this.Ferry.ReiterateTables(tables)
+	return this.Ferry.IterateAndCopyTables(tables)
 }
 
 func compileRegexps(exps []string) ([]*regexp.Regexp, error) {

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
+	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/reloc"
 	"github.com/Shopify/ghostferry/testhelpers"
 
@@ -25,7 +26,9 @@ const (
 
 type RelocUnitTestSuite struct {
 	suite.Suite
-	server *httptest.Server
+	server      *httptest.Server
+	metricsSink chan interface{}
+	metrics     *ghostferry.Metrics
 
 	Ferry  *reloc.RelocFerry
 	Config *reloc.Config
@@ -56,6 +59,9 @@ func (t *RelocUnitTestSuite) TearDownSuite() {
 }
 
 func (t *RelocUnitTestSuite) SetupTest() {
+	t.metricsSink = make(chan interface{}, 1024)
+	reloc.SetGlobalMetrics("reloc_test", t.metricsSink)
+
 	t.setupRelocFerry()
 	t.dropTestDbs()
 
