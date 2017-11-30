@@ -109,16 +109,16 @@ func (this *RelocFerry) Run() {
 	}
 }
 
-func (this *RelocFerry) deltaCopyJoinedTables() error {
+func (r *RelocFerry) deltaCopyJoinedTables() error {
 	tables := []*schema.Table{}
 
-	for _, table := range this.Ferry.Tables {
-		if _, exists := this.config.JoinedTables[table.Name]; exists {
+	for _, table := range r.Ferry.Tables {
+		if _, exists := r.config.JoinedTables[table.Name]; exists {
 			tables = append(tables, table)
 		}
 	}
 
-	return this.Ferry.IterateAndCopyTables(tables)
+	return r.Ferry.IterateAndCopyTables(tables)
 }
 
 func compileRegexps(exps []string) ([]*regexp.Regexp, error) {
