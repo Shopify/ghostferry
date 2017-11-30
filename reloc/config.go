@@ -19,5 +19,5 @@ type Config struct {
 	JoinedTables  map[string][]JoinTable
 	IgnoredTables []string
 
-	Throttle *ThrottlerConfig
+	Throttle *ghostferry.LagThrottlerConfig
 }
