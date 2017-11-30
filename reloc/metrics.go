@@ -16,12 +16,14 @@ func InitializeMetrics(prefix, address string) error {
 	}
 
 	metricsChan := make(chan interface{}, 1024)
-
-	metrics = ghostferry.SetGlobalMetrics(prefix, metricsChan)
-
+	SetGlobalMetrics(prefix, metricsChan)
 	go consumeMetrics(client, metricsChan)
 
 	return nil
+}
+
+func SetGlobalMetrics(prefix string, metricsChan chan interface{}) {
+	metrics = ghostferry.SetGlobalMetrics(prefix, metricsChan)
 }
 
 func consumeMetrics(client *dogstatsd.Client, metricsChan chan interface{}) {

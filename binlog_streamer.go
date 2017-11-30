@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"fmt"
-	"sync"
 	"time"
 
 	"github.com/siddontang/go-mysql/mysql"
@@ -102,11 +101,10 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysql() error {
 	return nil
 }
 
-func (s *BinlogStreamer) Run(wg *sync.WaitGroup) {
+func (s *BinlogStreamer) Run() {
 	defer func() {
 		s.logger.Info("exiting binlog streamer")
 		s.binlogSyncer.Close()
-		wg.Done()
 	}()
 
 	s.logger.Info("starting binlog streamer")

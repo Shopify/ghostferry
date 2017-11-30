@@ -78,8 +78,8 @@ type MixedActionDataWriter struct {
 	Db              *sql.DB
 	Tables          []string
 
-	ExtraInsertData func(map[string]interface{})
-	ExtraUpdateData func(map[string]interface{})
+	ExtraInsertData func(string, map[string]interface{})
+	ExtraUpdateData func(string, map[string]interface{})
 
 	wg     *sync.WaitGroup
 	doneCh chan struct{}
@@ -149,7 +149,7 @@ func (this *MixedActionDataWriter) InsertData() error {
 	colvals["data"] = RandData()
 
 	if this.ExtraInsertData != nil {
-		this.ExtraInsertData(colvals)
+		this.ExtraInsertData(table, colvals)
 	}
 
 	sql, args, err := sq.Insert(table).SetMap(colvals).ToSql()
@@ -173,7 +173,7 @@ func (this *MixedActionDataWriter) UpdateData() error {
 	colvals["data"] = RandData()
 
 	if this.ExtraUpdateData != nil {
-		this.ExtraUpdateData(colvals)
+		this.ExtraUpdateData(table, colvals)
 	}
 
 	sql, args, err := sq.Update(table).

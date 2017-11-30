@@ -60,9 +60,24 @@ type Ferry struct {
 
 	logger *logrus.Entry
 
-	coreServicesWg       *sync.WaitGroup
-	supportingServicesWg *sync.WaitGroup
-	rowCopyCompleteCh    chan struct{}
+	rowCopyCompleteCh chan struct{}
+}
+
+func (f *Ferry) NewDataIterator() (*DataIterator, error) {
+	dataIterator := &DataIterator{
+		Db:           f.SourceDB,
+		Config:       f.Config,
+		ErrorHandler: f.ErrorHandler,
+		Throttler:    f.Throttler,
+		Filter:       f.CopyFilter,
+	}
+
+	err := dataIterator.Initialize()
+	if err != nil {
+		return nil, err
+	}
+
+	return dataIterator, nil
 }
 
 // Initialize all the components of Ghostferry and connect to the Database
@@ -70,8 +85,6 @@ func (f *Ferry) Initialize() (err error) {
 	f.StartTime = time.Now().Truncate(time.Second)
 	f.OverallState = StateStarting
 
-	f.coreServicesWg = &sync.WaitGroup{}
-	f.supportingServicesWg = &sync.WaitGroup{}
 	f.logger = logrus.WithField("tag", "ferry")
 	f.rowCopyCompleteCh = make(chan struct{})
 
@@ -128,7 +141,6 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
-	// Initialize the ErrorHandler
 	if f.ErrorHandler == nil {
 		f.ErrorHandler = &PanicErrorHandler{
 			Ferry: f,
@@ -139,7 +151,6 @@ func (f *Ferry) Initialize() (err error) {
 		f.Throttler = &PauserThrottler{}
 	}
 
-	// Initialize binlog streamer
 	f.BinlogStreamer = &BinlogStreamer{
 		Db:           f.SourceDB,
 		Config:       f.Config,
@@ -152,16 +163,7 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
-	// Initialize the DataIterator
-	f.DataIterator = &DataIterator{
-		Db:           f.SourceDB,
-		Config:       f.Config,
-		ErrorHandler: f.ErrorHandler,
-		Throttler:    f.Throttler,
-		Filter:       f.CopyFilter,
-	}
-
-	err = f.DataIterator.Initialize()
+	f.DataIterator, err = f.NewDataIterator()
 	if err != nil {
 		return err
 	}
@@ -227,23 +229,59 @@ func (f *Ferry) Run() {
 		}
 	}
 
-	f.supportingServicesWg.Add(1)
+	supportingServicesWg := &sync.WaitGroup{}
+	supportingServicesWg.Add(1)
+
 	go func() {
-		defer f.supportingServicesWg.Done()
+		defer supportingServicesWg.Done()
 		handleError("throttler", f.Throttler.Run(ctx))
 	}()
 
-	f.coreServicesWg.Add(2)
-	go f.BinlogStreamer.Run(f.coreServicesWg)
-	go f.DataIterator.Run(f.coreServicesWg)
+	coreServicesWg := &sync.WaitGroup{}
+	coreServicesWg.Add(2)
 
-	f.coreServicesWg.Wait()
+	go func() {
+		defer coreServicesWg.Done()
+		f.BinlogStreamer.Run()
+	}()
+
+	go func() {
+		defer coreServicesWg.Done()
+		f.DataIterator.Run()
+	}()
+
+	coreServicesWg.Wait()
 
 	f.OverallState = StateDone
 	f.DoneTime = time.Now()
 
 	shutdown()
-	f.supportingServicesWg.Wait()
+	supportingServicesWg.Wait()
+}
+
+func (f *Ferry) IterateAndCopyTables(tables []*schema.Table) error {
+	if len(tables) == 0 {
+		return nil
+	}
+
+	iterator, err := f.NewDataIterator()
+	if err != nil {
+		return err
+	}
+
+	iterator.Tables = tables
+
+	iterator.AddEventListener(f.writeEventsToTargetWithRetries)
+	iterator.AddDoneListener(func() error {
+		f.logger.WithField("tables", tables).Info("Finished iterating tables")
+		return nil
+	})
+
+	f.logger.WithField("tables", tables).Info("Iterating tables")
+
+	iterator.Run()
+
+	return nil
 }
 
 // Call this method and perform the cutover after this method returns.

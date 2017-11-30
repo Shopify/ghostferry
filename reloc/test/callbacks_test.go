@@ -2,12 +2,9 @@ package test
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
-	"github.com/Shopify/ghostferry/reloc"
 	rtesthelpers "github.com/Shopify/ghostferry/reloc/testhelpers"
 	"github.com/Shopify/ghostferry/testhelpers"
 
@@ -17,40 +14,11 @@ import (
 type CallbacksTestSuite struct {
 	*rtesthelpers.RelocUnitTestSuite
 
-	server   *httptest.Server
-	respFunc func(http.ResponseWriter, *http.Request)
-
 	errHandler testhelpers.ErrorHandler
-}
-
-func (t *CallbacksTestSuite) SetupSuite() {
-	t.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if t.respFunc != nil {
-			t.respFunc(w, r)
-		} else {
-			w.WriteHeader(http.StatusOK)
-		}
-	}))
-}
-
-func (t *CallbacksTestSuite) TearDownSuite() {
-	t.server.Close()
 }
 
 func (t *CallbacksTestSuite) SetupTest() {
 	t.RelocUnitTestSuite.SetupTest()
-
-	t.respFunc = nil
-
-	t.Config.CutoverLock = reloc.HTTPCallback{
-		URI:     fmt.Sprintf("%s/lock", t.server.URL),
-		Payload: "test_lock",
-	}
-
-	t.Config.CutoverUnlock = reloc.HTTPCallback{
-		URI:     fmt.Sprintf("%s/unlock", t.server.URL),
-		Payload: "test_unlock",
-	}
 
 	t.Ferry.Ferry.ErrorHandler = &t.errHandler
 
@@ -64,11 +32,9 @@ func (t *CallbacksTestSuite) TearDownTest() {
 
 func (t *CallbacksTestSuite) TestFailsRunOnUnlockError() {
 	callbackReceived := false
-	t.respFunc = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/unlock" {
-			callbackReceived = true
-			w.WriteHeader(http.StatusInternalServerError)
-		}
+	t.CutoverUnlock = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callbackReceived = true
+		w.WriteHeader(http.StatusInternalServerError)
 	})
 
 	t.Ferry.Run()
@@ -81,11 +47,9 @@ func (t *CallbacksTestSuite) TestFailsRunOnUnlockError() {
 
 func (t *CallbacksTestSuite) TestFailsRunOnLockError() {
 	callbackReceived := false
-	t.respFunc = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/lock" {
-			callbackReceived = true
-			w.WriteHeader(http.StatusInternalServerError)
-		}
+	t.CutoverLock = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callbackReceived = true
+		w.WriteHeader(http.StatusInternalServerError)
 	})
 
 	t.Ferry.Run()
@@ -98,19 +62,17 @@ func (t *CallbacksTestSuite) TestFailsRunOnLockError() {
 
 func (t *CallbacksTestSuite) TestPostsCallbacks() {
 	lockReceived := false
+	t.CutoverLock = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lockReceived = true
+		resp := t.requestMap(r)
+		t.Require().Equal("test_lock", resp["Payload"])
+	})
+
 	unlockReceived := false
-	t.respFunc = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/lock" {
-			lockReceived = true
-			resp := t.requestMap(r)
-			t.Require().Equal("test_lock", resp["Payload"])
-		} else if r.URL.Path == "/unlock" {
-			unlockReceived = true
-			resp := t.requestMap(r)
-			t.Require().Equal("test_unlock", resp["Payload"])
-		} else {
-			t.Fail("Unexpected callback made")
-		}
+	t.CutoverUnlock = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		unlockReceived = true
+		resp := t.requestMap(r)
+		t.Require().Equal("test_unlock", resp["Payload"])
 	})
 
 	t.Ferry.Run()

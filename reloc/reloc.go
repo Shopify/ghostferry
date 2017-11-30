@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/Shopify/ghostferry"
+	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -93,11 +94,31 @@ func (this *RelocFerry) Run() {
 	this.Ferry.FlushBinlogAndStopStreaming()
 	copyWG.Wait()
 
+	metrics.Measure("deltaCopyJoinedTables", nil, 1.0, func() {
+		err = this.deltaCopyJoinedTables()
+	})
+	if err != nil {
+		this.logger.WithField("error", err).Errorf("failed to delta-copy joined tables after locking")
+		this.Ferry.ErrorHandler.Fatal("reloc", err)
+	}
+
 	err = this.config.CutoverUnlock.Post(client)
 	if err != nil {
 		this.logger.WithField("error", err).Errorf("unlocking failed, aborting run")
 		this.Ferry.ErrorHandler.Fatal("reloc", err)
 	}
+}
+
+func (this *RelocFerry) deltaCopyJoinedTables() error {
+	tables := []*schema.Table{}
+
+	for _, table := range this.Ferry.Tables {
+		if _, exists := this.config.JoinedTables[table.Name]; exists {
+			tables = append(tables, table)
+		}
+	}
+
+	return this.Ferry.IterateAndCopyTables(tables)
 }
 
 func compileRegexps(exps []string) ([]*regexp.Regexp, error) {

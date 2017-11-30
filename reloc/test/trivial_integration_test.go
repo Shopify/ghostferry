@@ -58,7 +58,7 @@ func TestSelectiveCopyDataWithInsertLoadOnOtherTenants(t *testing.T) {
 			NumberOfWriters:     2,
 			Tables:              []string{"gftest.table1"},
 
-			ExtraInsertData: func(vals map[string]interface{}) {
+			ExtraInsertData: func(tableName string, vals map[string]interface{}) {
 				vals["tenant_id"] = rand.Intn(2)
 			},
 		},
@@ -86,7 +86,7 @@ func TestSelectiveCopyDataWithInsertLoadOnAllTenants(t *testing.T) {
 			NumberOfWriters:     2,
 			Tables:              []string{"gftest.table1"},
 
-			ExtraInsertData: func(vals map[string]interface{}) {
+			ExtraInsertData: func(tableName string, vals map[string]interface{}) {
 				vals["tenant_id"] = rand.Intn(3)
 			},
 		},
