@@ -29,3 +29,4 @@ deployment:
       - ln -sr "$(pwd)" "$USERGOPATH/src/github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME"
       - make copydb-deb GOPATH="$USERGOPATH"
       - package_cloud push --url https://packages.shopify.io shopify/ghostferry/ubuntu/xenial build/ghostferry-copydb_*.deb
+      - package_cloud push --url https://packages.shopify.io shopify/ghostferry/debian/stretch build/ghostferry-copydb_*.deb
