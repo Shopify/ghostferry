@@ -83,11 +83,15 @@ func (this *RelocFerry) Run() {
 
 	this.Ferry.WaitUntilBinlogStreamerCatchesUp()
 
+	var err error
+	client := &http.Client{}
+
 	cutoverStart := time.Now()
 	// The callback must ensure that all in-flight transactions are complete and
 	// there will be no more writes to the database after it returns.
-	client := &http.Client{}
-	err := this.config.CutoverLock.Post(client)
+	metrics.Measure("CutoverLock", nil, 1.0, func() {
+		err = this.config.CutoverLock.Post(client)
+	})
 	if err != nil {
 		this.logger.WithField("error", err).Errorf("locking failed, aborting run")
 		this.Ferry.ErrorHandler.Fatal("reloc", err)
@@ -104,7 +108,9 @@ func (this *RelocFerry) Run() {
 		this.Ferry.ErrorHandler.Fatal("reloc", err)
 	}
 
-	err = this.config.CutoverUnlock.Post(client)
+	metrics.Measure("CutoverUnlock", nil, 1.0, func() {
+		err = this.config.CutoverUnlock.Post(client)
+	})
 	if err != nil {
 		this.logger.WithField("error", err).Errorf("unlocking failed, aborting run")
 		this.Ferry.ErrorHandler.Fatal("reloc", err)
