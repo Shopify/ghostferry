@@ -214,13 +214,11 @@ func (s *BinlogStreamer) updateLastStreamedPosAndTime(ev *replication.BinlogEven
 	}
 
 	s.lastStreamedBinlogPosition.Pos = ev.Header.LogPos
-
 	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
-	if eventTime.Before(s.lastProcessedEventTime) {
-		s.logger.Warnf("new event time is before the last event time: %v < %v", eventTime, s.lastProcessedEventTime)
-	}
-
 	s.lastProcessedEventTime = eventTime
+
+	lag := time.Since(eventTime)
+	metrics.Gauge("BinlogStreamer.Lag", lag.Seconds(), nil, 1.0)
 }
 
 func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
