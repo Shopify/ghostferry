@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"regexp"
 	"sync"
+	"time"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/siddontang/go-mysql/schema"
@@ -82,6 +83,7 @@ func (this *RelocFerry) Run() {
 
 	this.Ferry.WaitUntilBinlogStreamerCatchesUp()
 
+	cutoverStart := time.Now()
 	// The callback must ensure that all in-flight transactions are complete and
 	// there will be no more writes to the database after it returns.
 	client := &http.Client{}
@@ -107,6 +109,8 @@ func (this *RelocFerry) Run() {
 		this.logger.WithField("error", err).Errorf("unlocking failed, aborting run")
 		this.Ferry.ErrorHandler.Fatal("reloc", err)
 	}
+
+	metrics.Timer("CutoverTime", time.Since(cutoverStart), nil, 1.0)
 }
 
 func (r *RelocFerry) deltaCopyJoinedTables() error {
