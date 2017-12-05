@@ -19,6 +19,32 @@ func RandData() string {
 	return string(b) + "👻"
 }
 
+func RandByteData() []byte {
+	b := make([]byte, 32)
+	for i := range b {
+		b[i] = byte(rand.Intn(0x100))
+	}
+	return b
+}
+
+func RandUTF8MB4Data() string {
+	b := make([]rune, 32)
+	for i := range b {
+		b[i] = randUnicodeRune()
+	}
+	return string(b)
+}
+
+func randUnicodeRune() rune {
+	// The maximum unicode code point is 10FFFF
+	r := rune(rand.Intn(0x10FFFF + 1))
+	// U+D800 through U+DFFF are prohibited
+	if r >= 0xD800 && r <= 0xDFFF {
+		r += (0xDFFF - 0xD800)
+	}
+	return r
+}
+
 func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows int) {
 	var query string
 	var err error

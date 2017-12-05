@@ -363,15 +363,15 @@ func (f *Ferry) writeBinlogEventsToTarget(events []DMLEvent) error {
 			eventTableName = targetTableName
 		}
 
-		sql, args, err := ev.AsSQLQuery(&schema.Table{Schema: eventDatabaseName, Name: eventTableName})
+		sql, err := ev.AsSQLString(&schema.Table{Schema: eventDatabaseName, Name: eventTableName})
 		if err != nil {
 			err = fmt.Errorf("during generating sql query: %v", err)
 			return rollback(err)
 		}
 
-		_, err = tx.Exec(sql, args...)
+		_, err = tx.Exec(sql)
 		if err != nil {
-			err = fmt.Errorf("during exec query (%s %v): %v", sql, args, err)
+			err = fmt.Errorf("during exec query (%s): %v", sql, err)
 			return rollback(err)
 		}
 	}

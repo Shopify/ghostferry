@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/siddontang/go-mysql/replication"
@@ -15,6 +16,7 @@ type DMLEvent interface {
 	Table() string
 	TableSchema() *schema.Table
 	AsSQLQuery(target *schema.Table) (string, []interface{}, error)
+	AsSQLString(target *schema.Table) (string, error)
 	OldValues() RowData
 	NewValues() RowData
 }
@@ -55,6 +57,23 @@ func (e *BinlogInsertEvent) AsSQLQuery(target *schema.Table) (string, []interfac
 		" (" + strings.Join(columns, ",") + ") VALUES (" + strings.Repeat("?,", len(columns)-1) + "?)"
 
 	return query, e.newValues, nil
+}
+
+func (e *BinlogInsertEvent) AsSQLString(target *schema.Table) (string, error) {
+	columns, err := loadColumnsForTable(&e.table, e.newValues)
+	if err != nil {
+		return "", err
+	}
+
+	query := "INSERT IGNORE INTO " +
+		QuotedTableNameFromString(target.Schema, target.Name) +
+		" (" +
+		strings.Join(columns, ",") +
+		") VALUES (" +
+		buildStringListForValues(e.newValues) +
+		")"
+
+	return query, nil
 }
 
 type BinlogUpdateEvent struct {
@@ -113,6 +132,19 @@ func (e *BinlogUpdateEvent) AsSQLQuery(target *schema.Table) (string, []interfac
 	return query, args, nil
 }
 
+func (e *BinlogUpdateEvent) AsSQLString(target *schema.Table) (string, error) {
+	columns, err := loadColumnsForTable(&e.table, e.oldValues, e.newValues)
+	if err != nil {
+		return "", err
+	}
+
+	query := "UPDATE " + QuotedTableNameFromString(target.Schema, target.Name) +
+		" SET " + buildStringMapForSet(columns, e.newValues) +
+		" WHERE " + buildStringMapForWhere(columns, e.oldValues)
+
+	return query, nil
+}
+
 type BinlogDeleteEvent struct {
 	oldValues RowData
 	TableCopy
@@ -151,6 +183,18 @@ func (e *BinlogDeleteEvent) AsSQLQuery(target *schema.Table) (string, []interfac
 		" WHERE " + strings.Join(whereConditions, " AND ")
 
 	return query, whereValues, nil
+}
+
+func (e *BinlogDeleteEvent) AsSQLString(target *schema.Table) (string, error) {
+	columns, err := loadColumnsForTable(&e.table, e.oldValues)
+	if err != nil {
+		return "", err
+	}
+
+	query := "DELETE FROM " + QuotedTableNameFromString(target.Schema, target.Name) +
+		" WHERE " + buildStringMapForWhere(columns, e.oldValues)
+
+	return query, nil
 }
 
 func NewBinlogDMLEvents(table *schema.Table, ev *replication.BinlogEvent) ([]DMLEvent, error) {
@@ -216,4 +260,137 @@ func verifyValuesHasTheSameLengthAsColumns(table *schema.Table, values RowData) 
 		)
 	}
 	return nil
+}
+
+func buildStringListForValues(values []interface{}) string {
+	var buffer []byte
+
+	for i, value := range values {
+		if i > 0 {
+			buffer = append(buffer, ',')
+		}
+
+		if value == nil {
+			buffer = append(buffer, "NULL"...)
+		} else if vb, ok := value.([]byte); ok && vb == nil {
+			buffer = append(buffer, "NULL"...)
+		} else {
+			buffer = appendEscapedValue(buffer, value)
+		}
+	}
+
+	return string(buffer)
+}
+
+func buildStringMapForWhere(columns []string, values []interface{}) string {
+	var buffer []byte
+
+	for i, value := range values {
+		if i > 0 {
+			buffer = append(buffer, " AND "...)
+		}
+
+		buffer = append(buffer, columns[i]...)
+
+		if value == nil {
+			buffer = append(buffer, " IS NULL"...)
+		} else if vb, ok := value.([]byte); ok && vb == nil {
+			buffer = append(buffer, " IS NULL"...)
+		} else {
+			buffer = append(buffer, '=')
+			buffer = appendEscapedValue(buffer, value)
+		}
+	}
+
+	return string(buffer)
+}
+
+func buildStringMapForSet(columns []string, values []interface{}) string {
+	var buffer []byte
+
+	for i, value := range values {
+		if i > 0 {
+			buffer = append(buffer, ',')
+		}
+
+		buffer = append(buffer, columns[i]...)
+
+		if value == nil {
+			buffer = append(buffer, "=NULL"...)
+		} else if vb, ok := value.([]byte); ok && vb == nil {
+			buffer = append(buffer, "=NULL"...)
+		} else {
+			buffer = append(buffer, '=')
+			buffer = appendEscapedValue(buffer, value)
+		}
+	}
+
+	return string(buffer)
+}
+
+func appendEscapedValue(buffer []byte, value interface{}) []byte {
+	switch v := value.(type) {
+	case string:
+		return appendEscapedString(buffer, v)
+	case []byte:
+		return appendEscapedBuffer(buffer, v)
+	case int64:
+		return strconv.AppendInt(buffer, v, 10)
+	case int32:
+		return strconv.AppendInt(buffer, int64(v), 10)
+	case int16:
+		return strconv.AppendInt(buffer, int64(v), 10)
+	case int8:
+		return strconv.AppendInt(buffer, int64(v), 10)
+	case int:
+		return strconv.AppendInt(buffer, int64(v), 10)
+	case bool:
+		if v {
+			return append(buffer, '1')
+		} else {
+			return append(buffer, '0')
+		}
+	case float64:
+		return strconv.AppendFloat(buffer, v, 'g', -1, 64)
+	case float32:
+		return strconv.AppendFloat(buffer, float64(v), 'g', -1, 64)
+	default:
+		panic(fmt.Sprintf("unsupported type %t", value))
+	}
+}
+
+// appendEscapedString replaces single quotes with quote-escaped single quotes.
+// When the NO_BACKSLASH_ESCAPES mode is on, this is the extent of escaping
+// necessary for strings.
+//
+// ref: https://github.com/mysql/mysql-server/blob/mysql-5.7.5/mysys/charset.c#L963-L1038
+// ref: https://github.com/go-sql-driver/mysql/blob/9181e3a86a19bacd63e68d43ae8b7b36320d8092/utils.go#L717-L758
+func appendEscapedString(buffer []byte, value string) []byte {
+	buffer = append(buffer, '\'')
+
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if c == '\'' {
+			buffer = append(buffer, '\'', '\'')
+		} else {
+			buffer = append(buffer, c)
+		}
+	}
+
+	return append(buffer, '\'')
+}
+
+func appendEscapedBuffer(buffer, value []byte) []byte {
+	buffer = append(buffer, "_binary'"...)
+
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		if c == '\'' {
+			buffer = append(buffer, '\'', '\'')
+		} else {
+			buffer = append(buffer, c)
+		}
+	}
+
+	return append(buffer, '\'')
 }
