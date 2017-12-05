@@ -26,6 +26,8 @@ const (
 	StateDone              = "done"
 )
 
+const binlogWriteBatchSize = 100
+
 func quoteField(field string) string {
 	return fmt.Sprintf("`%s`", field)
 }
@@ -62,6 +64,7 @@ type Ferry struct {
 	batchWriter *BatchWriter
 
 	rowCopyCompleteCh chan struct{}
+	binlogEvents      chan DMLEvent
 }
 
 func (f *Ferry) NewDataIterator() (*DataIterator, error) {
@@ -88,6 +91,7 @@ func (f *Ferry) Initialize() (err error) {
 
 	f.logger = logrus.WithField("tag", "ferry")
 	f.rowCopyCompleteCh = make(chan struct{})
+	f.binlogEvents = make(chan DMLEvent, binlogWriteBatchSize)
 
 	f.logger.Infof("hello world from %s", VersionString)
 
@@ -190,7 +194,7 @@ func (f *Ferry) Start() error {
 	// Registering the builtin event listeners in Start allows the consumer
 	// of the library to register event listeners that gets called before
 	// and after the data gets written to the target database.
-	f.BinlogStreamer.AddEventListener(f.writeBinlogEventsToTargetWithRetries)
+	f.BinlogStreamer.AddEventListener(f.bufferBinlogEvents)
 	f.DataIterator.AddBatchListener(f.writeRowBatchToTargetWithRetries)
 	f.DataIterator.AddDoneListener(f.onFinishedIterations)
 
@@ -246,16 +250,24 @@ func (f *Ferry) Run() {
 	}()
 
 	coreServicesWg := &sync.WaitGroup{}
-	coreServicesWg.Add(2)
+	coreServicesWg.Add(3)
 
 	go func() {
-		defer coreServicesWg.Done()
+		defer func() {
+			close(f.binlogEvents)
+			coreServicesWg.Done()
+		}()
 		f.BinlogStreamer.Run()
 	}()
 
 	go func() {
 		defer coreServicesWg.Done()
 		f.DataIterator.Run()
+	}()
+
+	go func() {
+		defer coreServicesWg.Done()
+		f.flushBinlogEventBuffer()
 	}()
 
 	coreServicesWg.Wait()
@@ -330,10 +342,46 @@ func (f *Ferry) onFinishedIterations() error {
 	return nil
 }
 
-func (f *Ferry) writeBinlogEventsToTargetWithRetries(events []DMLEvent) error {
-	return WithRetries(f.MaxWriteRetriesOnTargetDBError, 0, f.logger, "write event to target", func() error {
-		return f.writeBinlogEventsToTarget(events)
-	})
+func (f *Ferry) bufferBinlogEvents(events []DMLEvent) error {
+	for _, event := range events {
+		f.binlogEvents <- event
+	}
+	return nil
+}
+
+func (f *Ferry) flushBinlogEventBuffer() {
+	var batch []DMLEvent
+	for {
+		firstEvent := <-f.binlogEvents
+		if firstEvent == nil {
+			break
+		}
+
+		batch = append(batch, firstEvent)
+		wantMoreEvents := true
+
+		for wantMoreEvents && len(batch) < binlogWriteBatchSize {
+			select {
+			case event := <-f.binlogEvents:
+				if event != nil {
+					batch = append(batch, event)
+				} else {
+					wantMoreEvents = false
+				}
+			default:
+				wantMoreEvents = false
+			}
+		}
+
+		err := WithRetries(f.MaxWriteRetriesOnTargetDBError, 0, f.logger, "write events to target", func() error {
+			return f.writeBinlogEventsToTarget(batch)
+		})
+		if err != nil {
+			f.ErrorHandler.Fatal("binlog_writer", err)
+			return
+		}
+		batch = batch[0:0]
+	}
 }
 
 func (f *Ferry) writeRowBatchToTargetWithRetries(batch *RowBatch) error {
@@ -343,14 +391,7 @@ func (f *Ferry) writeRowBatchToTargetWithRetries(batch *RowBatch) error {
 }
 
 func (f *Ferry) writeBinlogEventsToTarget(events []DMLEvent) error {
-	tx, err := f.TargetDB.Begin()
-	if err != nil {
-		return err
-	}
-	rollback := func(err error) error {
-		tx.Rollback()
-		return err
-	}
+	queryBuffer := []byte("BEGIN;\n")
 
 	for _, ev := range events {
 		eventDatabaseName := ev.Database()
@@ -365,18 +406,21 @@ func (f *Ferry) writeBinlogEventsToTarget(events []DMLEvent) error {
 
 		sql, err := ev.AsSQLString(&schema.Table{Schema: eventDatabaseName, Name: eventTableName})
 		if err != nil {
-			err = fmt.Errorf("during generating sql query: %v", err)
-			return rollback(err)
+			return fmt.Errorf("generating sql query: %v", err)
 		}
 
-		_, err = tx.Exec(sql)
-		if err != nil {
-			err = fmt.Errorf("during exec query (%s): %v", sql, err)
-			return rollback(err)
-		}
+		queryBuffer = append(queryBuffer, sql...)
+		queryBuffer = append(queryBuffer, ";\n"...)
 	}
 
-	return tx.Commit()
+	queryBuffer = append(queryBuffer, "COMMIT"...)
+
+	query := string(queryBuffer)
+	_, err := f.TargetDB.Exec(query)
+	if err != nil {
+		return fmt.Errorf("exec query (%s): %v", query, err)
+	}
+	return nil
 }
 
 func checkConnection(logger *logrus.Entry, dsn string, db *sql.DB) error {

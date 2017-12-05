@@ -16,13 +16,17 @@ func addTypesToTable(db *sql.DB, dbName, tableName string) {
 		"ADD float_col FLOAT," +
 		"ADD double_col DOUBLE," +
 		"ADD decimal_col DECIMAL(4, 2)," +
+		"ADD year_col YEAR," +
 		"ADD date_col DATE," +
-		"ADD time_col TIMESTAMP," + // TODO broken on master
+		"ADD time_col TIME," +
+		"ADD dt_col DATETIME," +
+		"ADD ts_col TIMESTAMP," + // TODO broken on master
 		"ADD varchar_col VARCHAR(128)," +
 		"ADD enum_col ENUM('foo', 'bar')," +
+		"ADD set_col SET('foo', 'bar', 'baz')," +
 		"ADD utfmb4_col TEXT CHARSET utf8mb4," +
-		"ADD utf32_col TEXT CHARSET utf32," + // TODO broken on master
-		"ADD latin1_col TEXT CHARSET latin1 COLLATE latin1_swedish_ci," + // TODO broken on master
+		"ADD utf32_col TEXT CHARSET utf32," +
+		"ADD latin1_col TEXT CHARSET latin1 COLLATE latin1_swedish_ci," +
 		"ADD blob_col BLOB"
 
 	query = fmt.Sprintf(query, dbName, tableName)
@@ -42,8 +46,8 @@ func setupMultiTypeTable(f *testhelpers.TestFerry) {
 
 	for i := 0; i < 100; i++ {
 		query := "INSERT INTO gftest.table1 " +
-			"(id, data, tiny_col, float_col, double_col, decimal_col, date_col, varchar_col, enum_col, utfmb4_col, blob_col)" +
-			"VALUES (NULL, ?, ?, 3.14, 2.72, 42.42, NOW(), ?, ?, ?, ?)"
+			"(id, data, tiny_col, float_col, double_col, decimal_col, year_col, date_col, time_col, dt_col, varchar_col, enum_col, set_col, utfmb4_col, utf32_col, latin1_col, blob_col)" +
+			"VALUES (NULL, ?, ?, 3.14, 2.72, 42.42, NOW(), NOW(), NOW(), NOW(), ?, ?, 'foo,baz', ?, ?, ?, ?)"
 
 		enumVal := "foo"
 		if i%2 == 0 {
@@ -51,9 +55,10 @@ func setupMultiTypeTable(f *testhelpers.TestFerry) {
 		}
 		randStr := testhelpers.RandData()
 		randUStr := testhelpers.RandUTF8MB4Data()
+		randLStr := testhelpers.RandLatin1Data()
 		randBytes := testhelpers.RandByteData()
 
-		_, err = tx.Exec(query, randStr, rand.Intn(2), randStr, enumVal, randUStr, randBytes)
+		_, err = tx.Exec(query, randStr, rand.Intn(2), randStr, enumVal, randUStr, randUStr, randLStr, randBytes)
 		testhelpers.PanicIfError(err)
 	}
 

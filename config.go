@@ -57,6 +57,8 @@ func (c *DatabaseConfig) MySQLConfig() (*mysql.Config, error) {
 		Addr:      fmt.Sprintf("%s:%d", c.Host, c.Port),
 		Collation: c.Collation,
 		Params:    c.Params,
+
+		MultiStatements: true,
 	}
 
 	if c.TLS != nil {
@@ -96,7 +98,7 @@ func (c *DatabaseConfig) Validate() error {
 		return err
 	}
 
-	err = c.assertParamSet("sql_mode", "STRICT_ALL_TABLES")
+	err = c.assertParamSet("sql_mode", "'STRICT_ALL_TABLES,NO_BACKSLASH_ESCAPES'")
 	if err != nil {
 		return err
 	}

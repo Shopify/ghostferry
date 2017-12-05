@@ -19,6 +19,7 @@ func RandData() string {
 	return string(b) + "👻"
 }
 
+// RandByteData returns a slice of random bytes
 func RandByteData() []byte {
 	b := make([]byte, 32)
 	for i := range b {
@@ -27,10 +28,20 @@ func RandByteData() []byte {
 	return b
 }
 
+// RandUTF8MB4Data returns a UTF-8 string with valid codepoints up to U+10FFFF
 func RandUTF8MB4Data() string {
 	b := make([]rune, 32)
 	for i := range b {
 		b[i] = randUnicodeRune()
+	}
+	return string(b)
+}
+
+// RandLatin1Data returns a UTF-8 string with valid codepoints for a latin1 charset
+func RandLatin1Data() string {
+	b := make([]rune, 32)
+	for i := range b {
+		b[i] = rune(rand.Intn(95) + 160)
 	}
 	return string(b)
 }
