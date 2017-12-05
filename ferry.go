@@ -182,8 +182,8 @@ func (f *Ferry) Start() error {
 	// Registering the builtin event listeners in Start allows the consumer
 	// of the library to register event listeners that gets called before
 	// and after the data gets written to the target database.
-	f.BinlogStreamer.AddEventListener(f.writeEventsToTargetWithRetries)
-	f.DataIterator.AddEventListener(f.writeEventsToTargetWithRetries)
+	f.BinlogStreamer.AddEventListener(f.writeBinlogEventsToTargetWithRetries)
+	f.DataIterator.AddEventListener(f.writeExistingRowsToTargetWithRetries)
 	f.DataIterator.AddDoneListener(f.onFinishedIterations)
 
 	// The starting binlog coordinates must be determined first. If it is
@@ -271,7 +271,7 @@ func (f *Ferry) IterateAndCopyTables(tables []*schema.Table) error {
 
 	iterator.Tables = tables
 
-	iterator.AddEventListener(f.writeEventsToTargetWithRetries)
+	iterator.AddEventListener(f.writeExistingRowsToTargetWithRetries)
 	iterator.AddDoneListener(func() error {
 		f.logger.WithField("tables", tables).Info("Finished iterating tables")
 		return nil
@@ -322,13 +322,67 @@ func (f *Ferry) onFinishedIterations() error {
 	return nil
 }
 
-func (f *Ferry) writeEventsToTargetWithRetries(events []DMLEvent) error {
+func (f *Ferry) writeBinlogEventsToTargetWithRetries(events []DMLEvent) error {
 	return WithRetries(f.MaxWriteRetriesOnTargetDBError, 0, f.logger, "write event to target", func() error {
-		return f.writeEventsToTarget(events)
+		return f.writeBinlogEventsToTarget(events)
 	})
 }
 
-func (f *Ferry) writeEventsToTarget(events []DMLEvent) error {
+func (f *Ferry) writeExistingRowsToTargetWithRetries(events []DMLEvent) error {
+	return WithRetries(f.MaxWriteRetriesOnTargetDBError, 0, f.logger, "write row to target", func() error {
+		return f.writeExistingRowsToTarget(events)
+	})
+}
+
+func (f *Ferry) writeBinlogEventsToTarget(events []DMLEvent) error {
+	tx, err := f.TargetDB.Begin()
+	if err != nil {
+		return err
+	}
+	rollback := func(err error) error {
+		tx.Rollback()
+		return err
+	}
+
+	sessionQuery := `
+		SET SESSION time_zone = '+00:00',
+		sql_mode = CONCAT(@@session.sql_mode, ',STRICT_ALL_TABLES')
+	`
+
+	_, err = tx.Exec(sessionQuery)
+	if err != nil {
+		err = fmt.Errorf("during setting session: %v", err)
+		return rollback(err)
+	}
+
+	for _, ev := range events {
+		eventDatabaseName := ev.Database()
+		if targetDatabaseName, exists := f.Config.DatabaseRewrites[eventDatabaseName]; exists {
+			eventDatabaseName = targetDatabaseName
+		}
+
+		eventTableName := ev.Table()
+		if targetTableName, exists := f.Config.TableRewrites[eventTableName]; exists {
+			eventTableName = targetTableName
+		}
+
+		sql, args, err := ev.AsSQLQuery(&schema.Table{Schema: eventDatabaseName, Name: eventTableName})
+		if err != nil {
+			err = fmt.Errorf("during generating sql query: %v", err)
+			return rollback(err)
+		}
+
+		_, err = tx.Exec(sql, args...)
+		if err != nil {
+			err = fmt.Errorf("during exec query (%s %v): %v", sql, args, err)
+			return rollback(err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (f *Ferry) writeExistingRowsToTarget(events []DMLEvent) error {
 	tx, err := f.TargetDB.Begin()
 	if err != nil {
 		return err
