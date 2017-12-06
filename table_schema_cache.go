@@ -68,7 +68,11 @@ func LoadTables(db *sql.DB, tableFilter TableFilter) (TableSchemaCache, error) {
 		return tableSchemaCache, err
 	}
 
-	dbnames = tableFilter.ApplicableDatabases(dbnames)
+	dbnames, err = tableFilter.ApplicableDatabases(dbnames)
+	if err != nil {
+		logger.WithError(err).Error("could not apply database filter")
+		return tableSchemaCache, err
+	}
 
 	// For each database, get a list of tables from it and cache the table's schema
 	for _, dbname := range dbnames {
@@ -93,7 +97,10 @@ func LoadTables(db *sql.DB, tableFilter TableFilter) (TableSchemaCache, error) {
 			tableSchemas = append(tableSchemas, tableSchema)
 		}
 
-		tableSchemas = tableFilter.ApplicableTables(tableSchemas)
+		tableSchemas, err = tableFilter.ApplicableTables(tableSchemas)
+		if err != nil {
+			return tableSchemaCache, nil
+		}
 
 		for _, tableSchema := range tableSchemas {
 			tableName := tableSchema.Name

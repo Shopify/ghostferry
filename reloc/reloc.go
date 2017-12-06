@@ -22,10 +22,16 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 	var err error
 	config.DatabaseRewrites = map[string]string{config.SourceDB: config.TargetDB}
 
+	primaryKeyTables := map[string]struct{}{}
+	for _, name := range config.PrimaryKeyTables {
+		primaryKeyTables[name] = struct{}{}
+	}
+
 	config.CopyFilter = &ShardedRowFilter{
-		ShardingKey:   config.ShardingKey,
-		ShardingValue: config.ShardingValue,
-		JoinedTables:  config.JoinedTables,
+		ShardingKey:      config.ShardingKey,
+		ShardingValue:    config.ShardingValue,
+		JoinedTables:     config.JoinedTables,
+		PrimaryKeyTables: primaryKeyTables,
 	}
 
 	ignored, err := compileRegexps(config.IgnoredTables)
@@ -34,10 +40,11 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 	}
 
 	config.TableFilter = &ShardedTableFilter{
-		ShardingKey:   config.ShardingKey,
-		SourceShard:   config.SourceDB,
-		JoinedTables:  config.JoinedTables,
-		IgnoredTables: ignored,
+		ShardingKey:      config.ShardingKey,
+		SourceShard:      config.SourceDB,
+		JoinedTables:     config.JoinedTables,
+		IgnoredTables:    ignored,
+		PrimaryKeyTables: primaryKeyTables,
 	}
 
 	if err := config.ValidateConfig(); err != nil {
@@ -63,25 +70,25 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 	}, nil
 }
 
-func (this *RelocFerry) Initialize() error {
-	return this.Ferry.Initialize()
+func (r *RelocFerry) Initialize() error {
+	return r.Ferry.Initialize()
 }
 
-func (this *RelocFerry) Start() error {
-	return this.Ferry.Start()
+func (r *RelocFerry) Start() error {
+	return r.Ferry.Start()
 }
 
-func (this *RelocFerry) Run() {
+func (r *RelocFerry) Run() {
 	copyWG := &sync.WaitGroup{}
 	copyWG.Add(1)
 	go func() {
 		defer copyWG.Done()
-		this.Ferry.Run()
+		r.Ferry.Run()
 	}()
 
-	this.Ferry.WaitUntilRowCopyIsComplete()
+	r.Ferry.WaitUntilRowCopyIsComplete()
 
-	this.Ferry.WaitUntilBinlogStreamerCatchesUp()
+	r.Ferry.WaitUntilBinlogStreamerCatchesUp()
 
 	var err error
 	client := &http.Client{}
@@ -90,30 +97,30 @@ func (this *RelocFerry) Run() {
 	// The callback must ensure that all in-flight transactions are complete and
 	// there will be no more writes to the database after it returns.
 	metrics.Measure("CutoverLock", nil, 1.0, func() {
-		err = this.config.CutoverLock.Post(client)
+		err = r.config.CutoverLock.Post(client)
 	})
 	if err != nil {
-		this.logger.WithField("error", err).Errorf("locking failed, aborting run")
-		this.Ferry.ErrorHandler.Fatal("reloc", err)
+		r.logger.WithField("error", err).Errorf("locking failed, aborting run")
+		r.Ferry.ErrorHandler.Fatal("reloc", err)
 	}
 
-	this.Ferry.FlushBinlogAndStopStreaming()
+	r.Ferry.FlushBinlogAndStopStreaming()
 	copyWG.Wait()
 
 	metrics.Measure("deltaCopyJoinedTables", nil, 1.0, func() {
-		err = this.deltaCopyJoinedTables()
+		err = r.deltaCopyJoinedTables()
 	})
 	if err != nil {
-		this.logger.WithField("error", err).Errorf("failed to delta-copy joined tables after locking")
-		this.Ferry.ErrorHandler.Fatal("reloc", err)
+		r.logger.WithField("error", err).Errorf("failed to delta-copy joined tables after locking")
+		r.Ferry.ErrorHandler.Fatal("reloc", err)
 	}
 
 	metrics.Measure("CutoverUnlock", nil, 1.0, func() {
-		err = this.config.CutoverUnlock.Post(client)
+		err = r.config.CutoverUnlock.Post(client)
 	})
 	if err != nil {
-		this.logger.WithField("error", err).Errorf("unlocking failed, aborting run")
-		this.Ferry.ErrorHandler.Fatal("reloc", err)
+		r.logger.WithField("error", err).Errorf("unlocking failed, aborting run")
+		r.Ferry.ErrorHandler.Fatal("reloc", err)
 	}
 
 	metrics.Timer("CutoverTime", time.Since(cutoverStart), nil, 1.0)

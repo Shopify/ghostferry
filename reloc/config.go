@@ -16,8 +16,9 @@ type Config struct {
 	CutoverLock   HTTPCallback
 	CutoverUnlock HTTPCallback
 
-	JoinedTables  map[string][]JoinTable
-	IgnoredTables []string
+	JoinedTables     map[string][]JoinTable
+	IgnoredTables    []string
+	PrimaryKeyTables []string
 
 	Throttle *ghostferry.LagThrottlerConfig
 }

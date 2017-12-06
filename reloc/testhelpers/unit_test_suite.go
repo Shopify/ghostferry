@@ -17,6 +17,7 @@ const (
 	sourceDbName    = "gftest1"
 	targetDbName    = "gftest2"
 	testTable       = "table1"
+	primaryKeyTable = "single_row_table"
 	joinedTableName = "joined_table"
 	joinTableName   = "join_table"
 	joiningKey      = "join_id"
@@ -82,6 +83,9 @@ func (t *RelocUnitTestSuite) SetupTest() {
 
 	addJoinID(t.Ferry.Ferry.SourceDB, sourceDbName, joinTableName)
 	addJoinID(t.Ferry.Ferry.TargetDB, targetDbName, joinTableName)
+
+	testhelpers.SeedInitialData(t.Ferry.Ferry.SourceDB, sourceDbName, primaryKeyTable, 3)
+	testhelpers.SeedInitialData(t.Ferry.Ferry.TargetDB, targetDbName, primaryKeyTable, 0)
 }
 
 func (t *RelocUnitTestSuite) TearDownTest() {
@@ -114,6 +118,8 @@ func (t *RelocUnitTestSuite) setupRelocFerry() {
 				{TableName: joinTableName, JoinColumn: joiningKey},
 			},
 		},
+
+		PrimaryKeyTables: []string{primaryKeyTable},
 
 		CutoverLock: reloc.HTTPCallback{
 			URI:     fmt.Sprintf("%s/lock", t.server.URL),

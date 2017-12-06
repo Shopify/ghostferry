@@ -13,10 +13,12 @@ import (
 
 func TestShardedTableFilterSelectsSingleDatabase(t *testing.T) {
 	filter := &reloc.ShardedTableFilter{SourceShard: "shard_42", ShardingKey: "tenant_id"}
-	applicable := filter.ApplicableDatabases([]string{"shard_41", "shard_42", "shard_43"})
+	applicable, err := filter.ApplicableDatabases([]string{"shard_41", "shard_42", "shard_43"})
+	assert.Nil(t, err)
 	assert.Equal(t, []string{"shard_42"}, applicable)
 
-	applicable = filter.ApplicableDatabases(nil)
+	applicable, err = filter.ApplicableDatabases(nil)
+	assert.Nil(t, err)
 	assert.Equal(t, []string{"shard_42"}, applicable)
 }
 
@@ -47,7 +49,8 @@ func TestShardedTableFilterRejectsIgnoredTables(t *testing.T) {
 		{Schema: "shard_42", Name: "table_name", Columns: []schema.TableColumn{{Name: "bar"}, {Name: "tenant_id"}}},
 	}
 
-	applicable := filter.ApplicableTables(tables)
+	applicable, err := filter.ApplicableTables(tables)
+	assert.Nil(t, err)
 	assert.Equal(t, tables[5:], applicable)
 }
 
@@ -61,7 +64,8 @@ func TestShardedTableFilterSelectsTablesWithShardingKey(t *testing.T) {
 		{Schema: "shard_42", Name: "table4", Columns: []schema.TableColumn{{Name: "bar"}}},
 	}
 
-	applicable := filter.ApplicableTables(tables)
+	applicable, err := filter.ApplicableTables(tables)
+	assert.Nil(t, err)
 	assert.Equal(t, tables[1:3], applicable)
 }
 
@@ -77,7 +81,8 @@ func TestShardedTableFilterSelectsJoinedTables(t *testing.T) {
 		{Schema: "shard_42", Name: "table2", Columns: []schema.TableColumn{{Name: "id"}}},
 	}
 
-	applicable := filter.ApplicableTables(tables)
+	applicable, err := filter.ApplicableTables(tables)
+	assert.Nil(t, err)
 	assert.Equal(t, tables[1:], applicable)
 }
 
