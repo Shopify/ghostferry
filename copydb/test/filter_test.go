@@ -121,15 +121,20 @@ func (this *FilterTestSuite) TestFilterForEmptyList() {
 func (this *FilterTestSuite) assertBothFilters(expected []string, filter copydb.FilterAndRewriteConfigs, list []string) {
 	tableFilter := copydb.NewStaticTableFilter(filter, filter)
 
-	this.Require().Equal(expected, tableFilter.ApplicableDatabases(list))
+	actual, err := tableFilter.ApplicableDatabases(list)
+	this.Require().Nil(err)
+	this.Require().Equal(expected, actual)
 
 	var schemas []*sqlSchema.Table
 	for _, table := range list {
 		schemas = append(schemas, &sqlSchema.Table{Name: table})
 	}
 
+	filtered, err := tableFilter.ApplicableTables(schemas)
+	this.Require().Nil(err)
+
 	applicableTables := []string{}
-	for _, table := range tableFilter.ApplicableTables(schemas) {
+	for _, table := range filtered {
 		applicableTables = append(applicableTables, table.Name)
 	}
 

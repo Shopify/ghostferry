@@ -7,20 +7,20 @@ type TestTableFilter struct {
 	TablesFunc func([]*schema.Table) []*schema.Table
 }
 
-func (t *TestTableFilter) ApplicableDatabases(dbs []string) []string {
+func (t *TestTableFilter) ApplicableDatabases(dbs []string) ([]string, error) {
 	if t.DbsFunc != nil {
-		return t.DbsFunc(dbs)
+		return t.DbsFunc(dbs), nil
 	}
 
-	return dbs
+	return dbs, nil
 }
 
-func (t *TestTableFilter) ApplicableTables(tables []*schema.Table) []*schema.Table {
+func (t *TestTableFilter) ApplicableTables(tables []*schema.Table) ([]*schema.Table, error) {
 	if t.TablesFunc != nil {
-		return t.TablesFunc(tables)
+		return t.TablesFunc(tables), nil
 	}
 
-	return tables
+	return tables, nil
 }
 
 func DbApplicabilityFilter(applicableDbs []string) func([]string) []string {

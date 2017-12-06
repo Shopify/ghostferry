@@ -26,6 +26,6 @@ type CopyFilter interface {
 }
 
 type TableFilter interface {
-	ApplicableTables([]*schema.Table) []*schema.Table
-	ApplicableDatabases([]string) []string
+	ApplicableTables([]*schema.Table) ([]*schema.Table, error)
+	ApplicableDatabases([]string) ([]string, error)
 }

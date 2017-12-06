@@ -44,7 +44,7 @@ func NewStaticTableFilter(dbs, tables FilterAndRewriteConfigs) *StaticTableFilte
 	return f
 }
 
-func (s *StaticTableFilter) ApplicableDatabases(dbs []string) []string {
+func (s *StaticTableFilter) ApplicableDatabases(dbs []string) ([]string, error) {
 	applicableDbs := make([]string, 0, len(dbs))
 	for _, name := range dbs {
 		var applicable bool
@@ -61,10 +61,10 @@ func (s *StaticTableFilter) ApplicableDatabases(dbs []string) []string {
 		}
 	}
 
-	return applicableDbs
+	return applicableDbs, nil
 }
 
-func (s *StaticTableFilter) ApplicableTables(tables []*schema.Table) []*schema.Table {
+func (s *StaticTableFilter) ApplicableTables(tables []*schema.Table) ([]*schema.Table, error) {
 	applicableTables := make([]*schema.Table, 0, len(tables))
 
 	for _, tableSchema := range tables {
@@ -82,5 +82,5 @@ func (s *StaticTableFilter) ApplicableTables(tables []*schema.Table) []*schema.T
 		}
 	}
 
-	return applicableTables
+	return applicableTables, nil
 }

@@ -26,6 +26,11 @@ func selectiveFerry(shardingValue interface{}) *testhelpers.TestFerry {
 		ShardingValue: shardingValue,
 	}
 
+	ferry.Config.TableFilter = &reloc.ShardedTableFilter{
+		ShardingKey: "tenant_id",
+		SourceShard: "gftest",
+	}
+
 	return ferry
 }
 

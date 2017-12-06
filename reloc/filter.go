@@ -17,12 +17,18 @@ type JoinTable struct {
 }
 
 type ShardedRowFilter struct {
-	ShardingKey   string
-	ShardingValue interface{}
-	JoinedTables  map[string][]JoinTable
+	ShardingKey      string
+	ShardingValue    interface{}
+	JoinedTables     map[string][]JoinTable
+	PrimaryKeyTables map[string]struct{}
 }
 
 func (f *ShardedRowFilter) ConstrainSelect(table *schema.Table, lastPk uint64, batchSize uint64) (sq.Sqlizer, error) {
+	if _, exists := f.PrimaryKeyTables[table.Name]; exists {
+		pkName := table.GetPKColumn(0).Name
+		return sq.Eq{pkName: f.ShardingValue}, nil
+	}
+
 	joinTables, exists := f.JoinedTables[table.Name]
 	if !exists {
 		return sq.Eq{f.ShardingKey: f.ShardingValue}, nil
@@ -46,9 +52,14 @@ func (f *ShardedRowFilter) ConstrainSelect(table *schema.Table, lastPk uint64, b
 }
 
 func (f *ShardedRowFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, error) {
+	shardingKey := f.ShardingKey
+	if _, exists := f.PrimaryKeyTables[event.Table()]; exists {
+		shardingKey = event.TableSchema().GetPKColumn(0).Name
+	}
+
 	columns := event.TableSchema().Columns
 	for idx, column := range columns {
-		if column.Name == f.ShardingKey {
+		if column.Name == shardingKey {
 			oldValues, newValues := event.OldValues(), event.NewValues()
 
 			oldEqual := oldValues != nil && reflect.DeepEqual(oldValues[idx], f.ShardingValue)
@@ -67,17 +78,18 @@ func (f *ShardedRowFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, err
 }
 
 type ShardedTableFilter struct {
-	SourceShard   string
-	ShardingKey   string
-	JoinedTables  map[string][]JoinTable
-	IgnoredTables []*regexp.Regexp
+	SourceShard      string
+	ShardingKey      string
+	JoinedTables     map[string][]JoinTable
+	IgnoredTables    []*regexp.Regexp
+	PrimaryKeyTables map[string]struct{}
 }
 
-func (s *ShardedTableFilter) ApplicableDatabases(dbs []string) []string {
-	return []string{s.SourceShard}
+func (s *ShardedTableFilter) ApplicableDatabases(dbs []string) ([]string, error) {
+	return []string{s.SourceShard}, nil
 }
 
-func (s *ShardedTableFilter) ApplicableTables(tables []*schema.Table) (applicable []*schema.Table) {
+func (s *ShardedTableFilter) ApplicableTables(tables []*schema.Table) (applicable []*schema.Table, err error) {
 	for _, table := range tables {
 		if s.isIgnored(table) {
 			continue
@@ -92,6 +104,13 @@ func (s *ShardedTableFilter) ApplicableTables(tables []*schema.Table) (applicabl
 		}
 
 		if _, exists := s.JoinedTables[table.Name]; exists {
+			applicable = append(applicable, table)
+		}
+
+		if _, exists := s.PrimaryKeyTables[table.Name]; exists {
+			if len(table.PKColumns) != 1 {
+				return nil, fmt.Errorf("Multiple PK columns are not supported with the PrimaryKeyTables tables option")
+			}
 			applicable = append(applicable, table)
 		}
 	}
