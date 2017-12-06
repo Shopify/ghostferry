@@ -14,9 +14,9 @@ import (
 type DataIteratorTestSuite struct {
 	*testhelpers.GhostferryUnitTestSuite
 
-	di             *ghostferry.DataIterator
-	wg             *sync.WaitGroup
-	receivedEvents []ghostferry.DMLEvent
+	di           *ghostferry.DataIterator
+	wg           *sync.WaitGroup
+	receivedRows []ghostferry.RowData
 }
 
 func (this *DataIteratorTestSuite) SetupTest() {
@@ -47,11 +47,11 @@ func (this *DataIteratorTestSuite) SetupTest() {
 		Tables: tables.AsSlice(),
 	}
 
-	this.receivedEvents = make([]ghostferry.DMLEvent, 0)
+	this.receivedRows = make([]ghostferry.RowData, 0)
 
 	this.di.Initialize()
-	this.di.AddEventListener(func(ev []ghostferry.DMLEvent) error {
-		this.receivedEvents = append(this.receivedEvents, ev...)
+	this.di.AddBatchListener(func(ev *ghostferry.RowBatch) error {
+		this.receivedRows = append(this.receivedRows, ev.Values()...)
 		return nil
 	})
 }
@@ -62,7 +62,7 @@ func (this *DataIteratorTestSuite) TestNoEventsForEmptyTable() {
 
 	this.di.Run()
 
-	this.Require().Equal(0, len(this.receivedEvents))
+	this.Require().Equal(0, len(this.receivedRows))
 	this.Require().Equal(this.di.CurrentState.CompletedTables(), map[string]bool{fmt.Sprintf("%s.%s", testhelpers.TestSchemaName, testhelpers.TestTable1Name): true})
 }
 
@@ -87,13 +87,16 @@ func (this *DataIteratorTestSuite) TestExistingRowsAreIterated() {
 
 	this.Require().Equal(0, len(this.di.CurrentState.CompletedTables()))
 
+	this.Require().Equal(5, len(ids))
+	this.Require().Equal(0, len(this.receivedRows))
+
 	this.di.Run()
 
-	for idx, ev := range this.receivedEvents {
-		this.Require().Equal(ev.NewValues(), ev.OldValues())
+	this.Require().Equal(5, len(this.receivedRows))
 
-		id := int64(ev.NewValues()[0].(int64))
-		data := string(ev.NewValues()[1].([]byte))
+	for idx, row := range this.receivedRows {
+		id := int64(row[0].(int64))
+		data := string(row[1].([]byte))
 
 		this.Require().Equal(ids[idx], id)
 		this.Require().Equal(datas[idx], data)

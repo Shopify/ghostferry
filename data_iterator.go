@@ -154,7 +154,7 @@ type DataIterator struct {
 	CurrentState *DataIteratorState
 
 	tableCh        chan *schema.Table
-	eventListeners []func([]DMLEvent) error
+	batchListeners []func(*RowBatch) error
 	doneListeners  []func() error
 
 	logger *logrus.Entry
@@ -212,8 +212,8 @@ func (this *DataIterator) Run() {
 	}
 }
 
-func (this *DataIterator) AddEventListener(listener func([]DMLEvent) error) {
-	this.eventListeners = append(this.eventListeners, listener)
+func (this *DataIterator) AddBatchListener(listener func(*RowBatch) error) {
+	this.batchListeners = append(this.batchListeners, listener)
 }
 
 func (this *DataIterator) AddDoneListener(listener func() error) {
@@ -256,7 +256,7 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 
 	for lastSuccessfulPrimaryKey < maxPrimaryKey {
 		var tx *sql.Tx
-		var rowEvents []DMLEvent
+		var batch *RowBatch
 		var pkpos uint64
 
 		err := WithRetries(this.Config.MaxIterationReadRetries, 0, logger, "fetch rows", func() (err error) {
@@ -274,7 +274,7 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 				return err
 			}
 
-			rowEvents, pkpos, err = this.fetchRowsInBatch(tx, table, table.GetPKColumn(0), lastSuccessfulPrimaryKey)
+			batch, pkpos, err = this.fetchRowsInBatch(tx, table, table.GetPKColumn(0), lastSuccessfulPrimaryKey)
 			if err == nil {
 				return nil
 			}
@@ -287,14 +287,14 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 			return err
 		}
 
-		if len(rowEvents) == 0 {
+		if batch.Size() == 0 {
 			tx.Rollback()
 			logger.Info("did not reach max primary key, but the table is completed as there are no more rows")
 			break
 		}
 
-		for _, listener := range this.eventListeners {
-			err = listener(rowEvents)
+		for _, listener := range this.batchListeners {
+			err = listener(batch)
 			if err != nil {
 				tx.Rollback()
 				logger.WithError(err).Error("failed to process events with listeners")
@@ -327,7 +327,7 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 	return nil
 }
 
-func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkColumn *schema.TableColumn, lastSuccessfulPk uint64) (events []DMLEvent, pkpos uint64, err error) {
+func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkColumn *schema.TableColumn, lastSuccessfulPk uint64) (batch *RowBatch, pkpos uint64, err error) {
 	logger := this.logger.WithFields(logrus.Fields{
 		"table": table.String(),
 	})
@@ -397,33 +397,21 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 		}
 	}
 
-	var ev DMLEvent
-	var values []interface{}
-	events = make([]DMLEvent, 0)
+	var rowData RowData
+	var batchData []RowData
 
 	for rows.Next() {
-		values, err = ScanGenericRow(rows, len(columns))
+		rowData, err = ScanGenericRow(rows, len(columns))
 		if err != nil {
 			logger.WithError(err).Error("failed to scan row")
 			return
 		}
 
-		ev, err = NewExistingRowEvent(table, values)
-		if err != nil {
-			logger.WithError(err).Error("failed to create row event")
-			return
-		}
-
-		metrics.Count("RowEvent", 1, []MetricTag{
-			MetricTag{"table", ev.Table()},
-			MetricTag{"source", "table"},
-		}, 1.0)
-
-		events = append(events, ev)
+		batchData = append(batchData, rowData)
 
 		// Since it is possible to have many different types of integers in
 		// MySQL, we try to parse it all into uint64.
-		if valueByteSlice, ok := values[pkIndex].([]byte); ok {
+		if valueByteSlice, ok := rowData[pkIndex].([]byte); ok {
 			valueString := string(valueByteSlice)
 			pkpos, err = strconv.ParseUint(valueString, 10, 64)
 			if err != nil {
@@ -431,7 +419,7 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 				return
 			}
 		} else {
-			signedPkPos := reflect.ValueOf(values[pkIndex]).Int()
+			signedPkPos := reflect.ValueOf(rowData[pkIndex]).Int()
 			if signedPkPos < 0 {
 				err = fmt.Errorf("primary key %s had value %d in table %s", pkName, signedPkPos, QuotedTableName(table))
 				logger.WithError(err).Error("failed to update primary key position")
@@ -441,15 +429,29 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 		}
 	}
 
-	logger.Debugf("found %d rows", len(events))
-
 	err = rows.Err()
+	if err != nil {
+		return
+	}
+
+	batch, err = NewRowBatch(table, batchData)
+	if err != nil {
+		return
+	}
+
+	logger.Debugf("found %d rows", batch.Size())
+
+	metrics.Count("RowEvent", int64(batch.Size()), []MetricTag{
+		MetricTag{"table", table.Name},
+		MetricTag{"source", "table"},
+	}, 1.0)
+
 	return
 }
 
-func ScanGenericRow(rows *sql.Rows, columnCount int) ([]interface{}, error) {
-	values := make([]interface{}, columnCount)
-	valuePtrs := make([]interface{}, columnCount)
+func ScanGenericRow(rows *sql.Rows, columnCount int) (RowData, error) {
+	values := make(RowData, columnCount)
+	valuePtrs := make(RowData, columnCount)
 
 	for i, _ := range values {
 		valuePtrs[i] = &values[i]

@@ -97,7 +97,7 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventMetadata() {
 	this.Require().Equal("test_schema", dmlEvents[0].Database())
 	this.Require().Equal("test_table", dmlEvents[0].Table())
 	this.Require().Nil(dmlEvents[0].OldValues())
-	this.Require().Equal([]interface{}{1000}, dmlEvents[0].NewValues())
+	this.Require().Equal(ghostferry.RowData{1000}, dmlEvents[0].NewValues())
 }
 
 func (this *DMLEventsTestSuite) TestBinlogUpdateEventGeneratesUpdateQuery() {
@@ -170,8 +170,8 @@ func (this *DMLEventsTestSuite) TestBinlogUpdateEventMetadata() {
 	this.Require().Equal(1, len(dmlEvents))
 	this.Require().Equal("test_schema", dmlEvents[0].Database())
 	this.Require().Equal("test_table", dmlEvents[0].Table())
-	this.Require().Equal([]interface{}{1000}, dmlEvents[0].OldValues())
-	this.Require().Equal([]interface{}{1001}, dmlEvents[0].NewValues())
+	this.Require().Equal(ghostferry.RowData{1000}, dmlEvents[0].OldValues())
+	this.Require().Equal(ghostferry.RowData{1001}, dmlEvents[0].NewValues())
 }
 
 func (this *DMLEventsTestSuite) TestBinlogDeleteEventGeneratesDeleteQuery() {
@@ -241,40 +241,8 @@ func (this *DMLEventsTestSuite) TestBinlogDeleteEventMetadata() {
 	this.Require().Equal(1, len(dmlEvents))
 	this.Require().Equal("test_schema", dmlEvents[0].Database())
 	this.Require().Equal("test_table", dmlEvents[0].Table())
-	this.Require().Equal([]interface{}{1000}, dmlEvents[0].OldValues())
+	this.Require().Equal(ghostferry.RowData{1000}, dmlEvents[0].OldValues())
 	this.Require().Nil(dmlEvents[0].NewValues())
-}
-
-func (this *DMLEventsTestSuite) TestExistingRowEventGeneratesInsertQuery() {
-	vals := []interface{}{1000, []byte("val1"), true}
-	dmlEvent, err := ghostferry.NewExistingRowEvent(this.sourceTable, vals)
-	this.Require().Nil(err)
-
-	q1, v1, err := dmlEvent.AsSQLQuery(this.targetTable)
-	this.Require().Nil(err)
-	this.Require().Equal("INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col2`,`col3`) VALUES (?,?,?)", q1)
-	this.Require().Equal(vals, v1)
-}
-
-func (this *DMLEventsTestSuite) TestExistingRowEventWithWrongColumnsReturnsError() {
-	vals := []interface{}{1000}
-	dmlEvent, err := ghostferry.NewExistingRowEvent(this.sourceTable, vals)
-	this.Require().Nil(err)
-
-	_, _, err = dmlEvent.AsSQLQuery(this.targetTable)
-	this.Require().NotNil(err)
-	this.Require().Contains(err.Error(), "test_table has 3 columns but event has 1 column")
-}
-
-func (this *DMLEventsTestSuite) TestExistingRowEventMetadata() {
-	vals := []interface{}{1000}
-	dmlEvent, err := ghostferry.NewExistingRowEvent(this.sourceTable, vals)
-	this.Require().Nil(err)
-
-	this.Require().Equal("test_schema", dmlEvent.Database())
-	this.Require().Equal("test_table", dmlEvent.Table())
-	this.Require().Equal([]interface{}{1000}, dmlEvent.OldValues())
-	this.Require().Equal([]interface{}{1000}, dmlEvent.NewValues())
 }
 
 func TestDMLEventsTestSuite(t *testing.T) {

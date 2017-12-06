@@ -21,10 +21,10 @@ func TestSelectUpdateBinlogCopy(t *testing.T) {
 		Ferry:       testhelpers.NewTestFerry(),
 	}
 
-	testcase.Ferry.BeforeRowCopyListener = func(events []ghostferry.DMLEvent) error {
-		queries := make([]string, len(events))
-		for i, ev := range events {
-			id := ev.NewValues()[0].(int64)
+	testcase.Ferry.BeforeBatchCopyListener = func(batch *ghostferry.RowBatch) error {
+		queries := make([]string, len(batch.Values()))
+		for i, row := range batch.Values() {
+			id := row[0].(int64)
 			queries[i] = "UPDATE gftest.table1 SET data = 'changed' WHERE id = ?"
 
 			go func(query string) {
@@ -102,7 +102,7 @@ func TestOnlyDeleteRowWithMaxPrimaryKey(t *testing.T) {
 	testcase.Ferry.IterateChunksize = 1
 
 	lastRowDeleted := false
-	testcase.Ferry.BeforeRowCopyListener = func(ev []ghostferry.DMLEvent) error {
+	testcase.Ferry.BeforeBatchCopyListener = func(batch *ghostferry.RowBatch) error {
 		if lastRowDeleted {
 			return nil
 		}

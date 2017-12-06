@@ -8,34 +8,20 @@ import (
 	"github.com/siddontang/go-mysql/schema"
 )
 
+type RowData []interface{}
+
 type DMLEvent interface {
 	Database() string
 	Table() string
 	TableSchema() *schema.Table
 	AsSQLQuery(target *schema.Table) (string, []interface{}, error)
-	OldValues() []interface{}
-	NewValues() []interface{}
-}
-
-type DMLEventBase struct {
-	table schema.Table
-}
-
-func (e *DMLEventBase) Database() string {
-	return e.table.Schema
-}
-
-func (e *DMLEventBase) Table() string {
-	return e.table.Name
-}
-
-func (e *DMLEventBase) TableSchema() *schema.Table {
-	return &e.table
+	OldValues() RowData
+	NewValues() RowData
 }
 
 type BinlogInsertEvent struct {
-	newValues []interface{}
-	DMLEventBase
+	newValues RowData
+	TableCopy
 }
 
 func NewBinlogInsertEvents(table *schema.Table, rowsEvent *replication.RowsEvent) ([]DMLEvent, error) {
@@ -43,24 +29,24 @@ func NewBinlogInsertEvents(table *schema.Table, rowsEvent *replication.RowsEvent
 
 	for i, row := range rowsEvent.Rows {
 		insertEvents[i] = &BinlogInsertEvent{
-			newValues:    row,
-			DMLEventBase: DMLEventBase{table: *table},
+			newValues: row,
+			TableCopy: TableCopy{table: *table},
 		}
 	}
 
 	return insertEvents, nil
 }
 
-func (e *BinlogInsertEvent) OldValues() []interface{} {
+func (e *BinlogInsertEvent) OldValues() RowData {
 	return nil
 }
 
-func (e *BinlogInsertEvent) NewValues() []interface{} {
+func (e *BinlogInsertEvent) NewValues() RowData {
 	return e.newValues
 }
 
 func (e *BinlogInsertEvent) AsSQLQuery(target *schema.Table) (string, []interface{}, error) {
-	columns, err := loadColumnsForEvent(&e.table, e.newValues)
+	columns, err := loadColumnsForTable(&e.table, e.newValues)
 	if err != nil {
 		return "", nil, err
 	}
@@ -72,9 +58,9 @@ func (e *BinlogInsertEvent) AsSQLQuery(target *schema.Table) (string, []interfac
 }
 
 type BinlogUpdateEvent struct {
-	oldValues []interface{}
-	newValues []interface{}
-	DMLEventBase
+	oldValues RowData
+	newValues RowData
+	TableCopy
 }
 
 func NewBinlogUpdateEvents(table *schema.Table, rowsEvent *replication.RowsEvent) ([]DMLEvent, error) {
@@ -91,25 +77,25 @@ func NewBinlogUpdateEvents(table *schema.Table, rowsEvent *replication.RowsEvent
 		}
 
 		updateEvents[i/2] = &BinlogUpdateEvent{
-			oldValues:    row,
-			newValues:    rowsEvent.Rows[i+1],
-			DMLEventBase: DMLEventBase{table: *table},
+			oldValues: row,
+			newValues: rowsEvent.Rows[i+1],
+			TableCopy: TableCopy{table: *table},
 		}
 	}
 
 	return updateEvents, nil
 }
 
-func (e *BinlogUpdateEvent) OldValues() []interface{} {
+func (e *BinlogUpdateEvent) OldValues() RowData {
 	return e.oldValues
 }
 
-func (e *BinlogUpdateEvent) NewValues() []interface{} {
+func (e *BinlogUpdateEvent) NewValues() RowData {
 	return e.newValues
 }
 
 func (e *BinlogUpdateEvent) AsSQLQuery(target *schema.Table) (string, []interface{}, error) {
-	columns, err := loadColumnsForEvent(&e.table, e.oldValues, e.newValues)
+	columns, err := loadColumnsForTable(&e.table, e.oldValues, e.newValues)
 	if err != nil {
 		return "", nil, err
 	}
@@ -128,15 +114,15 @@ func (e *BinlogUpdateEvent) AsSQLQuery(target *schema.Table) (string, []interfac
 }
 
 type BinlogDeleteEvent struct {
-	oldValues []interface{}
-	DMLEventBase
+	oldValues RowData
+	TableCopy
 }
 
-func (e *BinlogDeleteEvent) OldValues() []interface{} {
+func (e *BinlogDeleteEvent) OldValues() RowData {
 	return e.oldValues
 }
 
-func (e *BinlogDeleteEvent) NewValues() []interface{} {
+func (e *BinlogDeleteEvent) NewValues() RowData {
 	return nil
 }
 
@@ -145,8 +131,8 @@ func NewBinlogDeleteEvents(table *schema.Table, rowsEvent *replication.RowsEvent
 
 	for i, row := range rowsEvent.Rows {
 		deleteEvents[i] = &BinlogDeleteEvent{
-			oldValues:    row,
-			DMLEventBase: DMLEventBase{table: *table},
+			oldValues: row,
+			TableCopy: TableCopy{table: *table},
 		}
 	}
 
@@ -154,7 +140,7 @@ func NewBinlogDeleteEvents(table *schema.Table, rowsEvent *replication.RowsEvent
 }
 
 func (e *BinlogDeleteEvent) AsSQLQuery(target *schema.Table) (string, []interface{}, error) {
-	columns, err := loadColumnsForEvent(&e.table, e.oldValues)
+	columns, err := loadColumnsForTable(&e.table, e.oldValues)
 	if err != nil {
 		return "", nil, err
 	}
@@ -182,41 +168,9 @@ func NewBinlogDMLEvents(table *schema.Table, ev *replication.BinlogEvent) ([]DML
 	}
 }
 
-type ExistingRowEvent struct {
-	values []interface{}
-	DMLEventBase
-}
-
-func NewExistingRowEvent(table *schema.Table, values []interface{}) (DMLEvent, error) {
-	return &ExistingRowEvent{
-		values:       values,
-		DMLEventBase: DMLEventBase{table: *table},
-	}, nil
-}
-
-func (e *ExistingRowEvent) OldValues() []interface{} {
-	return e.values
-}
-
-func (e *ExistingRowEvent) NewValues() []interface{} {
-	return e.values
-}
-
-func (e *ExistingRowEvent) AsSQLQuery(target *schema.Table) (string, []interface{}, error) {
-	columns, err := loadColumnsForEvent(&e.table, e.values)
-	if err != nil {
-		return "", nil, err
-	}
-
-	query := "INSERT IGNORE INTO " + QuotedTableNameFromString(target.Schema, target.Name) +
-		" (" + strings.Join(columns, ",") + ") VALUES (" + strings.Repeat("?,", len(columns)-1) + "?)"
-
-	return query, e.values, nil
-}
-
-func conditionsForTable(columns []string, args []interface{}) ([]string, []interface{}) {
+func conditionsForTable(columns []string, args RowData) ([]string, RowData) {
 	conditions := make([]string, len(columns))
-	values := make([]interface{}, 0, len(args))
+	values := make(RowData, 0, len(args))
 
 	for i, name := range columns {
 		if args != nil && args[i] == nil {
@@ -233,7 +187,7 @@ func conditionsForTable(columns []string, args []interface{}) ([]string, []inter
 	return conditions, values
 }
 
-func loadColumnsForEvent(table *schema.Table, valuesToVerify ...[]interface{}) ([]string, error) {
+func loadColumnsForTable(table *schema.Table, valuesToVerify ...RowData) ([]string, error) {
 	for _, values := range valuesToVerify {
 		if err := verifyValuesHasTheSameLengthAsColumns(table, values); err != nil {
 			return nil, err
@@ -251,7 +205,7 @@ func quotedColumnNames(table *schema.Table) []string {
 	return cols
 }
 
-func verifyValuesHasTheSameLengthAsColumns(table *schema.Table, values []interface{}) error {
+func verifyValuesHasTheSameLengthAsColumns(table *schema.Table, values RowData) error {
 	if len(table.Columns) != len(values) {
 		return fmt.Errorf(
 			"table %s.%s has %d columns but event has %d columns instead",

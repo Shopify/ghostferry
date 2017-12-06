@@ -10,11 +10,11 @@ import (
 type TestFerry struct {
 	*ghostferry.Ferry
 
-	BeforeRowCopyListener     func(events []ghostferry.DMLEvent) error
+	BeforeBatchCopyListener   func(batch *ghostferry.RowBatch) error
 	BeforeBinlogApplyListener func(events []ghostferry.DMLEvent) error
 	BeforeRowCopyDoneListener func() error
 
-	AfterRowCopyListener     func(events []ghostferry.DMLEvent) error
+	AfterBatchCopyListener   func(batch *ghostferry.RowBatch) error
 	AfterBinlogApplyListener func(events []ghostferry.DMLEvent) error
 	AfterRowCopyDoneListener func() error
 }
@@ -78,8 +78,8 @@ func (this *TestFerry) Initialize() error {
 }
 
 func (this *TestFerry) Start() error {
-	if this.BeforeRowCopyListener != nil {
-		this.Ferry.DataIterator.AddEventListener(this.BeforeRowCopyListener)
+	if this.BeforeBatchCopyListener != nil {
+		this.Ferry.DataIterator.AddBatchListener(this.BeforeBatchCopyListener)
 	}
 
 	if this.BeforeBinlogApplyListener != nil {
@@ -99,8 +99,8 @@ func (this *TestFerry) Start() error {
 		TablesToCheck: this.Ferry.Tables.AsSlice(),
 	}
 
-	if this.AfterRowCopyListener != nil {
-		this.Ferry.DataIterator.AddEventListener(this.AfterRowCopyListener)
+	if this.AfterBatchCopyListener != nil {
+		this.Ferry.DataIterator.AddBatchListener(this.AfterBatchCopyListener)
 	}
 
 	if this.AfterBinlogApplyListener != nil {

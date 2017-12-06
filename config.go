@@ -49,23 +49,23 @@ type DatabaseConfig struct {
 	TLS *TLSConfig
 }
 
-func (dbc *DatabaseConfig) MySQLConfig() (*mysql.Config, error) {
+func (c *DatabaseConfig) MySQLConfig() (*mysql.Config, error) {
 	cfg := &mysql.Config{
-		User:      dbc.User,
-		Passwd:    dbc.Pass,
+		User:      c.User,
+		Passwd:    c.Pass,
 		Net:       "tcp",
-		Addr:      fmt.Sprintf("%s:%d", dbc.Host, dbc.Port),
-		Collation: dbc.Collation,
-		Params:    dbc.Params,
+		Addr:      fmt.Sprintf("%s:%d", c.Host, c.Port),
+		Collation: c.Collation,
+		Params:    c.Params,
 	}
 
-	if dbc.TLS != nil {
-		tlsConfig, err := dbc.TLS.BuildConfig()
+	if c.TLS != nil {
+		tlsConfig, err := c.TLS.BuildConfig()
 		if err != nil {
 			return nil, fmt.Errorf("failed to build TLS config: %v", err)
 		}
 
-		cfgName := fmt.Sprintf("%s@%s:%s", dbc.User, dbc.Host, dbc.Port)
+		cfgName := fmt.Sprintf("%s@%s:%s", c.User, c.Host, c.Port)
 
 		err = mysql.RegisterTLSConfig(cfgName, tlsConfig)
 		if err != nil {
@@ -90,6 +90,29 @@ func (c *DatabaseConfig) Validate() error {
 	if c.User == "" {
 		return fmt.Errorf("user is empty")
 	}
+
+	err := c.assertParamSet("time_zone", "UTC")
+	if err != nil {
+		return err
+	}
+
+	err = c.assertParamSet("sql_mode", "STRICT_ALL_TABLES")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *DatabaseConfig) assertParamSet(param, value string) error {
+	if c.Params == nil {
+		c.Params = make(map[string]string)
+	}
+
+	if c.Params[param] != "" && c.Params[param] != value {
+		return fmt.Errorf("%s must be set to %s", param, value)
+	}
+	c.Params[param] = value
 
 	return nil
 }
