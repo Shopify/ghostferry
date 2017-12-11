@@ -20,6 +20,8 @@ type RelocFerry struct {
 
 func NewFerry(config *Config) (*RelocFerry, error) {
 	var err error
+
+	config.IgnorePrimaryIndex = true
 	config.DatabaseRewrites = map[string]string{config.SourceDB: config.TargetDB}
 
 	primaryKeyTables := map[string]struct{}{}

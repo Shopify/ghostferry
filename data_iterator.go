@@ -332,12 +332,18 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 		"table": table.String(),
 	})
 
+	tableName := QuotedTableName(table)
+
+	if this.Config.IgnorePrimaryIndex {
+		tableName += " IGNORE INDEX (PRIMARY)"
+	}
+
 	// This query must be a prepared query. If it is not, querying will use
 	// MySQL's plain text interface, which will scan all values into []uint8
 	// if we give it []interface{}.
 	pkName := quoteField(pkColumn.Name)
 	selectBuilder := sq.Select("*").
-		From(QuotedTableName(table)).
+		From(tableName).
 		Where(sq.Gt{pkName: lastSuccessfulPk}).
 		Limit(this.Config.IterateChunksize).
 		OrderBy(pkName).
