@@ -9,13 +9,14 @@ import (
 // data. This typically involves adding a WHERE condition in the ConstrainSelect
 // function, and returning false for unwanted rows in ApplicableEvent.
 type CopyFilter interface {
-	// ConstrainSelect is used to augment the query used for batch data
-	// copying, allowing for restricting copying to a subset of data.
-	// Returning an error here will cause the query to be retried, until the
-	// retry limit is reached, at which point the ferry will be aborted.
-	// ConstrainSelect is passed the table being copied, the last primary key
-	// value from the previous batch, and the batch size.
-	ConstrainSelect(*schema.Table, uint64, uint64) (sq.Sqlizer, error)
+	// BuildSelect is used to set up the query used for batch data copying,
+	// allowing for restricting copying to a subset of data. Returning an error
+	// here will cause the query to be retried, until the retry limit is
+	// reached, at which point the ferry will be aborted. BuildSelect is passed
+	// the table being copied, the last primary key value from the previous
+	// batch, and the batch size. Call DefaultBuildSelect to generate the
+	// default query, which may be used as a starting point.
+	BuildSelect(*schema.Table, uint64, uint64) (sq.SelectBuilder, error)
 
 	// ApplicableEvent is used to filter events for rows that have been
 	// filtered in ConstrainSelect. ApplicableEvent should return true if the

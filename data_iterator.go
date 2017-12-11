@@ -327,36 +327,33 @@ func (this *DataIterator) iterateTable(table *schema.Table) error {
 	return nil
 }
 
+func DefaultBuildSelect(table *schema.Table, lastPk, batchSize uint64) sq.SelectBuilder {
+	quotedPK := quoteField(table.GetPKColumn(0).Name)
+
+	return sq.Select("*").
+		From(QuotedTableName(table)).
+		Where(sq.Gt{quotedPK: lastPk}).
+		Limit(batchSize).
+		OrderBy(quotedPK)
+}
+
 func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkColumn *schema.TableColumn, lastSuccessfulPk uint64) (batch *RowBatch, pkpos uint64, err error) {
 	logger := this.logger.WithFields(logrus.Fields{
 		"table": table.String(),
 	})
 
-	tableName := QuotedTableName(table)
-
-	if this.Config.IgnorePrimaryIndex {
-		tableName += " IGNORE INDEX (PRIMARY)"
-	}
-
-	// This query must be a prepared query. If it is not, querying will use
-	// MySQL's plain text interface, which will scan all values into []uint8
-	// if we give it []interface{}.
-	pkName := quoteField(pkColumn.Name)
-	selectBuilder := sq.Select("*").
-		From(tableName).
-		Where(sq.Gt{pkName: lastSuccessfulPk}).
-		Limit(this.Config.IterateChunksize).
-		OrderBy(pkName).
-		Suffix("FOR UPDATE")
+	var selectBuilder sq.SelectBuilder
 
 	if this.Filter != nil {
-		var cond sq.Sqlizer
-		if cond, err = this.Filter.ConstrainSelect(table, lastSuccessfulPk, this.Config.IterateChunksize); err != nil {
+		if selectBuilder, err = this.Filter.BuildSelect(table, lastSuccessfulPk, this.Config.IterateChunksize); err != nil {
 			logger.WithError(err).Error("failed to apply filter for select")
 			return
 		}
-		selectBuilder = selectBuilder.Where(cond)
+	} else {
+		selectBuilder = DefaultBuildSelect(table, lastSuccessfulPk, this.Config.IterateChunksize)
 	}
+
+	selectBuilder = selectBuilder.Suffix("FOR UPDATE")
 
 	query, args, err := selectBuilder.ToSql()
 	if err != nil {
@@ -369,6 +366,9 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 		"args": args,
 	})
 
+	// This query must be a prepared query. If it is not, querying will use
+	// MySQL's plain text interface, which will scan all values into []uint8
+	// if we give it []interface{}.
 	stmt, err := tx.Prepare(query)
 	if err != nil {
 		logger.WithError(err).Error("failed to prepare query")
@@ -421,7 +421,7 @@ func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkCo
 		} else {
 			signedPkPos := reflect.ValueOf(rowData[pkIndex]).Int()
 			if signedPkPos < 0 {
-				err = fmt.Errorf("primary key %s had value %d in table %s", pkName, signedPkPos, QuotedTableName(table))
+				err = fmt.Errorf("primary key %s had value %d in table %s", pkColumn.Name, signedPkPos, QuotedTableName(table))
 				logger.WithError(err).Error("failed to update primary key position")
 				return
 			}

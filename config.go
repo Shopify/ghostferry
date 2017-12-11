@@ -145,8 +145,6 @@ type Config struct {
 	// Config for the ControlServer
 	ServerBindAddr string
 	WebBasedir     string
-
-	IgnorePrimaryIndex bool
 }
 
 func (c *Config) ValidateConfig() error {

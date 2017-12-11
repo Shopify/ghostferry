@@ -23,15 +23,25 @@ type ShardedRowFilter struct {
 	PrimaryKeyTables map[string]struct{}
 }
 
-func (f *ShardedRowFilter) ConstrainSelect(table *schema.Table, lastPk uint64, batchSize uint64) (sq.Sqlizer, error) {
+func (f *ShardedRowFilter) BuildSelect(table *schema.Table, lastPk, batchSize uint64) (sq.SelectBuilder, error) {
+	quotedPK := "`" + table.GetPKColumn(0).Name + "`"
+	quotedTable := ghostferry.QuotedTableName(table)
+
 	if _, exists := f.PrimaryKeyTables[table.Name]; exists {
-		pkName := table.GetPKColumn(0).Name
-		return sq.Eq{pkName: f.ShardingValue}, nil
+		return sq.Select("*").
+			From(quotedTable).
+			Where(sq.Eq{quotedPK: f.ShardingValue}). // Both WHERE conditions are necessary to prevent infinite iteration.
+			Where(sq.Gt{quotedPK: lastPk}), nil      // LIMIT not necessary since we are selecting a single primary key.
 	}
 
 	joinTables, exists := f.JoinedTables[table.Name]
 	if !exists {
-		return sq.Eq{f.ShardingKey: f.ShardingValue}, nil
+		return sq.Select("*").
+			From(quotedTable + " IGNORE INDEX (PRIMARY)").
+			Where(sq.Eq{f.ShardingKey: f.ShardingValue}).
+			Where(sq.Gt{quotedPK: lastPk}).
+			Limit(batchSize).
+			OrderBy(quotedPK), nil
 	}
 
 	var clauses []string
@@ -47,8 +57,12 @@ func (f *ShardedRowFilter) ConstrainSelect(table *schema.Table, lastPk uint64, b
 	subquery := strings.Join(clauses, " UNION DISTINCT ")
 	subquery += " ORDER BY reloc_join_alias LIMIT " + strconv.FormatUint(batchSize, 10)
 
-	condition := fmt.Sprintf("`%s` IN (SELECT * FROM (%s) AS reloc_join_table)", table.GetPKColumn(0).Name, subquery)
-	return sq.Expr(condition, args...), nil
+	condition := fmt.Sprintf("%s IN (SELECT * FROM (%s) AS reloc_join_table)", quotedPK, subquery)
+
+	return sq.Select("*").
+		From(quotedTable).
+		Where(sq.Expr(condition, args...)).
+		OrderBy(quotedPK), nil // LIMIT comes from the subquery.
 }
 
 func (f *ShardedRowFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, error) {
