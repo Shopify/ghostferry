@@ -17,12 +17,17 @@ type Throttler interface {
 }
 
 func WaitForThrottle(t Throttler) {
+	if !t.Throttled() {
+		return
+	}
+
 	metrics.Measure("WaitForThrottle", nil, 1.0, func() {
 		for {
+			time.Sleep(500 * time.Millisecond)
+
 			if !t.Throttled() {
 				break
 			}
-			time.Sleep(500 * time.Millisecond)
 		}
 	})
 }

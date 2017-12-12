@@ -28,6 +28,7 @@ type BinlogStreamer struct {
 	lastStreamedBinlogPosition mysql.Position
 	targetBinlogPosition       mysql.Position
 	lastProcessedEventTime     time.Time
+	lastLagMetricEmittedTime   time.Time
 
 	stopRequested bool
 
@@ -217,8 +218,11 @@ func (s *BinlogStreamer) updateLastStreamedPosAndTime(ev *replication.BinlogEven
 	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
 	s.lastProcessedEventTime = eventTime
 
-	lag := time.Since(eventTime)
-	metrics.Gauge("BinlogStreamer.Lag", lag.Seconds(), nil, 1.0)
+	if time.Since(s.lastLagMetricEmittedTime) >= time.Second {
+		lag := time.Since(eventTime)
+		metrics.Gauge("BinlogStreamer.Lag", lag.Seconds(), nil, 1.0)
+		s.lastLagMetricEmittedTime = time.Now()
+	}
 }
 
 func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
