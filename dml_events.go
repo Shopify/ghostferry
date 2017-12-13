@@ -67,11 +67,8 @@ func (e *BinlogInsertEvent) AsSQLString(target *schema.Table) (string, error) {
 
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(target.Schema, target.Name) +
-		" (" +
-		strings.Join(columns, ",") +
-		") VALUES (" +
-		buildStringListForValues(e.newValues) +
-		")"
+		" (" + strings.Join(columns, ",") + ")" +
+		" VALUES (" + buildStringListForValues(e.newValues) + ")"
 
 	return query, nil
 }
@@ -292,9 +289,7 @@ func buildStringMapForWhere(columns []string, values []interface{}) string {
 
 		buffer = append(buffer, columns[i]...)
 
-		if value == nil {
-			buffer = append(buffer, " IS NULL"...)
-		} else if vb, ok := value.([]byte); ok && vb == nil {
+		if isNilValue(value) {
 			buffer = append(buffer, " IS NULL"...)
 		} else {
 			buffer = append(buffer, '=')
@@ -314,21 +309,27 @@ func buildStringMapForSet(columns []string, values []interface{}) string {
 		}
 
 		buffer = append(buffer, columns[i]...)
-
-		if value == nil {
-			buffer = append(buffer, "=NULL"...)
-		} else if vb, ok := value.([]byte); ok && vb == nil {
-			buffer = append(buffer, "=NULL"...)
-		} else {
-			buffer = append(buffer, '=')
-			buffer = appendEscapedValue(buffer, value)
-		}
+		buffer = append(buffer, '=')
+		buffer = appendEscapedValue(buffer, value)
 	}
 
 	return string(buffer)
 }
 
+func isNilValue(value interface{}) bool {
+	if value == nil {
+		return true
+	} else if vb, ok := value.([]byte); ok && vb == nil {
+		return true
+	}
+	return false
+}
+
 func appendEscapedValue(buffer []byte, value interface{}) []byte {
+	if isNilValue(value) {
+		return append(buffer, "NULL"...)
+	}
+
 	switch v := value.(type) {
 	case string:
 		return appendEscapedString(buffer, v)

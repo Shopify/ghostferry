@@ -133,7 +133,8 @@ type Config struct {
 	CopyFilter  CopyFilter
 
 	// Config for BinlogStreamer
-	MyServerId uint32
+	MyServerId           uint32
+	BinlogEventBatchSize int
 
 	// Config for DataIterator
 	IterateChunksize        uint64
@@ -167,6 +168,10 @@ func (c *Config) ValidateConfig() error {
 
 	if c.IterateChunksize == 0 {
 		c.IterateChunksize = 200
+	}
+
+	if c.BinlogEventBatchSize == 0 {
+		c.BinlogEventBatchSize = 100
 	}
 
 	if c.NumberOfTableIterators == 0 {

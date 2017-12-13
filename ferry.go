@@ -26,8 +26,6 @@ const (
 	StateDone              = "done"
 )
 
-const binlogWriteBatchSize = 100
-
 func quoteField(field string) string {
 	return fmt.Sprintf("`%s`", field)
 }
@@ -91,7 +89,7 @@ func (f *Ferry) Initialize() (err error) {
 
 	f.logger = logrus.WithField("tag", "ferry")
 	f.rowCopyCompleteCh = make(chan struct{})
-	f.binlogEvents = make(chan DMLEvent, binlogWriteBatchSize)
+	f.binlogEvents = make(chan DMLEvent, f.BinlogEventBatchSize)
 
 	f.logger.Infof("hello world from %s", VersionString)
 
@@ -360,7 +358,7 @@ func (f *Ferry) flushBinlogEventBuffer() {
 		batch = append(batch, firstEvent)
 		wantMoreEvents := true
 
-		for wantMoreEvents && len(batch) < binlogWriteBatchSize {
+		for wantMoreEvents && len(batch) < f.BinlogEventBatchSize {
 			select {
 			case event := <-f.binlogEvents:
 				if event != nil {
@@ -418,7 +416,7 @@ func (f *Ferry) writeBinlogEventsToTarget(events []DMLEvent) error {
 	query := string(queryBuffer)
 	_, err := f.TargetDB.Exec(query)
 	if err != nil {
-		return fmt.Errorf("exec query (%s): %v", query, err)
+		return fmt.Errorf("exec query (%d bytes): %v", len(query), err)
 	}
 	return nil
 }
