@@ -15,7 +15,6 @@ type DMLEvent interface {
 	Database() string
 	Table() string
 	TableSchema() *schema.Table
-	AsSQLQuery(target *schema.Table) (string, []interface{}, error)
 	AsSQLString(target *schema.Table) (string, error)
 	OldValues() RowData
 	NewValues() RowData
@@ -45,18 +44,6 @@ func (e *BinlogInsertEvent) OldValues() RowData {
 
 func (e *BinlogInsertEvent) NewValues() RowData {
 	return e.newValues
-}
-
-func (e *BinlogInsertEvent) AsSQLQuery(target *schema.Table) (string, []interface{}, error) {
-	columns, err := loadColumnsForTable(&e.table, e.newValues)
-	if err != nil {
-		return "", nil, err
-	}
-
-	query := "INSERT IGNORE INTO " + QuotedTableNameFromString(target.Schema, target.Name) +
-		" (" + strings.Join(columns, ",") + ") VALUES (" + strings.Repeat("?,", len(columns)-1) + "?)"
-
-	return query, e.newValues, nil
 }
 
 func (e *BinlogInsertEvent) AsSQLString(target *schema.Table) (string, error) {
@@ -110,25 +97,6 @@ func (e *BinlogUpdateEvent) NewValues() RowData {
 	return e.newValues
 }
 
-func (e *BinlogUpdateEvent) AsSQLQuery(target *schema.Table) (string, []interface{}, error) {
-	columns, err := loadColumnsForTable(&e.table, e.oldValues, e.newValues)
-	if err != nil {
-		return "", nil, err
-	}
-
-	setConditions, _ := conditionsForTable(columns, nil)
-	whereConditions, whereValues := conditionsForTable(columns, e.oldValues)
-
-	query := "UPDATE " + QuotedTableNameFromString(target.Schema, target.Name) +
-		" SET " + strings.Join(setConditions, ", ") +
-		" WHERE " + strings.Join(whereConditions, " AND ")
-
-	var args []interface{}
-	args = append(args, e.newValues...)
-	args = append(args, whereValues...)
-	return query, args, nil
-}
-
 func (e *BinlogUpdateEvent) AsSQLString(target *schema.Table) (string, error) {
 	columns, err := loadColumnsForTable(&e.table, e.oldValues, e.newValues)
 	if err != nil {
@@ -168,20 +136,6 @@ func NewBinlogDeleteEvents(table *schema.Table, rowsEvent *replication.RowsEvent
 	return deleteEvents, nil
 }
 
-func (e *BinlogDeleteEvent) AsSQLQuery(target *schema.Table) (string, []interface{}, error) {
-	columns, err := loadColumnsForTable(&e.table, e.oldValues)
-	if err != nil {
-		return "", nil, err
-	}
-
-	whereConditions, whereValues := conditionsForTable(columns, e.oldValues)
-
-	query := "DELETE FROM " + QuotedTableNameFromString(target.Schema, target.Name) +
-		" WHERE " + strings.Join(whereConditions, " AND ")
-
-	return query, whereValues, nil
-}
-
 func (e *BinlogDeleteEvent) AsSQLString(target *schema.Table) (string, error) {
 	columns, err := loadColumnsForTable(&e.table, e.oldValues)
 	if err != nil {
@@ -207,25 +161,6 @@ func NewBinlogDMLEvents(table *schema.Table, ev *replication.BinlogEvent) ([]DML
 	default:
 		return nil, fmt.Errorf("unrecognized rows event: %s", ev.Header.EventType.String())
 	}
-}
-
-func conditionsForTable(columns []string, args RowData) ([]string, RowData) {
-	conditions := make([]string, len(columns))
-	values := make(RowData, 0, len(args))
-
-	for i, name := range columns {
-		if args != nil && args[i] == nil {
-			conditions[i] = name + " IS NULL"
-		} else {
-			conditions[i] = name + " = ?"
-
-			if args != nil {
-				values = append(values, args[i])
-			}
-		}
-	}
-
-	return conditions, values
 }
 
 func loadColumnsForTable(table *schema.Table, valuesToVerify ...RowData) ([]string, error) {
@@ -267,13 +202,7 @@ func buildStringListForValues(values []interface{}) string {
 			buffer = append(buffer, ',')
 		}
 
-		if value == nil {
-			buffer = append(buffer, "NULL"...)
-		} else if vb, ok := value.([]byte); ok && vb == nil {
-			buffer = append(buffer, "NULL"...)
-		} else {
-			buffer = appendEscapedValue(buffer, value)
-		}
+		buffer = appendEscapedValue(buffer, value)
 	}
 
 	return string(buffer)
@@ -290,6 +219,7 @@ func buildStringMapForWhere(columns []string, values []interface{}) string {
 		buffer = append(buffer, columns[i]...)
 
 		if isNilValue(value) {
+			// "WHERE value = NULL" will never match rows.
 			buffer = append(buffer, " IS NULL"...)
 		} else {
 			buffer = append(buffer, '=')

@@ -352,6 +352,7 @@ func (f *Ferry) flushBinlogEventBuffer() {
 	for {
 		firstEvent := <-f.binlogEvents
 		if firstEvent == nil {
+			// Channel is closed, no more events to write.
 			break
 		}
 
@@ -364,6 +365,7 @@ func (f *Ferry) flushBinlogEventBuffer() {
 				if event != nil {
 					batch = append(batch, event)
 				} else {
+					// Channel is closed, finish writing batch.
 					wantMoreEvents = false
 				}
 			default:
