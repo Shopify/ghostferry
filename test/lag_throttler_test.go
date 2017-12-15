@@ -63,7 +63,7 @@ func TestThrottlerThrottlesAndUnthrottles(t *testing.T) {
 	heartbeat(throttler, 1, time.Now().Add(-5*time.Second))
 	assert.False(t, throttler.Throttled())
 
-	heartbeat(throttler, 1, time.Now().Add(-8*time.Second))
+	heartbeat(throttler, 1, time.Now().Add(-9*time.Second))
 	assert.True(t, throttler.Throttled())
 
 	heartbeat(throttler, 1, time.Now().Add(-5*time.Second))
