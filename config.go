@@ -91,7 +91,7 @@ func (c *DatabaseConfig) Validate() error {
 		return fmt.Errorf("user is empty")
 	}
 
-	err := c.assertParamSet("time_zone", "UTC")
+	err := c.assertParamSet("time_zone", "'+00:00'")
 	if err != nil {
 		return err
 	}
