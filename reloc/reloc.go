@@ -28,7 +28,7 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 		primaryKeyTables[name] = struct{}{}
 	}
 
-	config.CopyFilter = &ShardedRowFilter{
+	config.CopyFilter = &ShardedCopyFilter{
 		ShardingKey:      config.ShardingKey,
 		ShardingValue:    config.ShardingValue,
 		JoinedTables:     config.JoinedTables,

@@ -6,30 +6,35 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/Shopify/ghostferry"
 	"github.com/siddontang/go-mysql/schema"
+	log "github.com/sirupsen/logrus"
 )
 
 type JoinTable struct {
 	TableName, JoinColumn string
 }
 
-type ShardedRowFilter struct {
+type ShardedCopyFilter struct {
 	ShardingKey      string
 	ShardingValue    interface{}
 	JoinedTables     map[string][]JoinTable
 	PrimaryKeyTables map[string]struct{}
+
+	missingShardingKeyIndexLogged sync.Map
 }
 
-func (f *ShardedRowFilter) BuildSelect(table *schema.Table, lastPk, batchSize uint64) (sq.SelectBuilder, error) {
+func (f *ShardedCopyFilter) BuildSelect(table *schema.Table, lastPk, batchSize uint64) (sq.SelectBuilder, error) {
 	quotedPK := "`" + table.GetPKColumn(0).Name + "`"
+	quotedShardingKey := "`" + f.ShardingKey + "`"
 	quotedTable := ghostferry.QuotedTableName(table)
 
 	if _, exists := f.PrimaryKeyTables[table.Name]; exists {
 		return sq.Select("*").
-			From(quotedTable).
+			From(quotedTable + " USE INDEX (PRIMARY)").
 			Where(sq.Eq{quotedPK: f.ShardingValue}). // Both WHERE conditions are necessary to prevent infinite iteration.
 			Where(sq.Gt{quotedPK: lastPk}), nil      // LIMIT not necessary since we are selecting a single primary key.
 	}
@@ -37,8 +42,8 @@ func (f *ShardedRowFilter) BuildSelect(table *schema.Table, lastPk, batchSize ui
 	joinTables, exists := f.JoinedTables[table.Name]
 	if !exists {
 		return sq.Select("*").
-			From(quotedTable + " IGNORE INDEX (PRIMARY)").
-			Where(sq.Eq{f.ShardingKey: f.ShardingValue}).
+			From(quotedTable + " " + f.shardingKeyIndexHint(table)).
+			Where(sq.Eq{quotedShardingKey: f.ShardingValue}).
 			Where(sq.Gt{quotedPK: lastPk}).
 			Limit(batchSize).
 			OrderBy(quotedPK), nil
@@ -65,7 +70,39 @@ func (f *ShardedRowFilter) BuildSelect(table *schema.Table, lastPk, batchSize ui
 		OrderBy(quotedPK), nil // LIMIT comes from the subquery.
 }
 
-func (f *ShardedRowFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, error) {
+func (f *ShardedCopyFilter) shardingKeyIndexHint(table *schema.Table) string {
+	if indexName := f.shardingKeyIndexName(table); indexName != "" {
+		return "USE INDEX (`" + indexName + "`)"
+	} else {
+		if _, logged := f.missingShardingKeyIndexLogged.Load(table.Name); !logged {
+			log.WithFields(log.Fields{"tag": "reloc", "table": table.Name}).Warnf("missing suitable index")
+			metrics.Count("MissingShardingKeyIndex", 1, []ghostferry.MetricTag{{"table", table.Name}}, 1.0)
+			f.missingShardingKeyIndexLogged.Store(table.Name, true)
+		}
+		return "IGNORE INDEX (PRIMARY)"
+	}
+}
+
+func (f *ShardedCopyFilter) shardingKeyIndexName(table *schema.Table) string {
+	indexName := ""
+	pkName := table.GetPKColumn(0).Name
+
+	for _, x := range table.Indexes {
+		if x.Columns[0] == f.ShardingKey {
+			if len(x.Columns) == 1 {
+				// This index will work in InnoDB, but there may be a more specific one to prefer.
+				indexName = x.Name
+			} else if x.Columns[1] == pkName {
+				// This index satisfies (sharding key, primary key).
+				indexName = x.Name
+				break
+			}
+		}
+	}
+	return indexName
+}
+
+func (f *ShardedCopyFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, error) {
 	shardingKey := f.ShardingKey
 	if _, exists := f.PrimaryKeyTables[event.Table()]; exists {
 		shardingKey = event.TableSchema().GetPKColumn(0).Name
