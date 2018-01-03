@@ -7,7 +7,12 @@ import (
 	"github.com/Shopify/go-dogstatsd"
 )
 
-var metrics *ghostferry.Metrics
+var (
+	metrics = &ghostferry.Metrics{
+		Prefix: "ghostferry",
+		Sink:   nil,
+	}
+)
 
 func InitializeMetrics(prefix, address string) error {
 	client, err := dogstatsd.New(address, &dogstatsd.Context{})

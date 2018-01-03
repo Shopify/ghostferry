@@ -27,9 +27,14 @@ func (t *CopyFilterTestSuite) SetupTest() {
 	t.normalTable = &schema.Table{
 		Schema:    "shard_1",
 		Name:      "normaltable",
-		Columns:   []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}},
+		Columns:   []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}, {Name: "data"}},
 		PKColumns: []int{0},
-		Indexes:   []*schema.Index{{Name: "sharding_index", Columns: []string{"tenant_id", "id"}}},
+		Indexes: []*schema.Index{
+			{Name: "unrelated_index", Columns: []string{"tenant_id", "data"}},
+			{Name: "less_good_sharding_index", Columns: []string{"tenant_id"}},
+			{Name: "good_sharding_index", Columns: []string{"tenant_id", "id"}},
+			{Name: "unrelated_index2", Columns: []string{"data"}},
+		},
 	}
 
 	t.joinedTable = &schema.Table{
@@ -67,12 +72,24 @@ func (t *CopyFilterTestSuite) TestSelectsRegularTables() {
 
 	sql, args, err := selectBuilder.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` USE INDEX (`sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` USE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024", sql)
+	t.Require().Equal([]interface{}{t.shardingValue, t.pkCursor}, args)
+}
+
+func (t *CopyFilterTestSuite) TestFallsBackToLessGoodIndex() {
+	t.normalTable.Indexes[2].Columns = []string{"data"} // Remove good index.
+	selectBuilder, err := t.filter.BuildSelect(t.normalTable, t.pkCursor, 1024)
+	t.Require().Nil(err)
+
+	sql, args, err := selectBuilder.ToSql()
+	t.Require().Nil(err)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` USE INDEX (`less_good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.pkCursor}, args)
 }
 
 func (t *CopyFilterTestSuite) TestFallsBackToIgnoredPrimaryIndex() {
-	t.normalTable.Indexes = nil
+	t.normalTable.Indexes[1].Columns = []string{"data"} // Remove less good index.
+	t.normalTable.Indexes[2].Columns = []string{"data"} // Remove good index.
 	selectBuilder, err := t.filter.BuildSelect(t.normalTable, t.pkCursor, 1024)
 	t.Require().Nil(err)
 

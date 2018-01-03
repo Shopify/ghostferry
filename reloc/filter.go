@@ -76,6 +76,7 @@ func (f *ShardedCopyFilter) shardingKeyIndexHint(table *schema.Table) string {
 	} else {
 		if _, logged := f.missingShardingKeyIndexLogged.Load(table.Name); !logged {
 			log.WithFields(log.Fields{"tag": "reloc", "table": table.Name}).Warnf("missing suitable index")
+			metrics.Count("MissingShardingKeyIndex", 1, []ghostferry.MetricTag{{"table", table.Name}}, 1.0)
 			f.missingShardingKeyIndexLogged.Store(table.Name, true)
 		}
 		return "IGNORE INDEX (PRIMARY)"
