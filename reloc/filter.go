@@ -40,12 +40,18 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *schema.Table, l
 
 	joinTables, exists := f.JoinedTables[table.Name]
 	if !exists {
-		return sq.Select(columns...).
+		subquery, args, err := sq.Select(quotedPK).
 			From(quotedTable + " " + f.shardingKeyIndexHint(table)).
 			Where(sq.Eq{quotedShardingKey: f.ShardingValue}).
 			Where(sq.Gt{quotedPK: lastPk}).
 			Limit(batchSize).
-			OrderBy(quotedPK), nil
+			OrderBy(quotedPK).
+			ToSql()
+		if err != nil {
+			return sq.Select(), err
+		}
+
+		return sq.Select(columns...).From(quotedTable).Join("("+subquery+") AS subset USING("+quotedPK+")", args...), nil
 	}
 
 	var clauses []string

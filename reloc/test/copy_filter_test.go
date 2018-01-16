@@ -75,7 +75,7 @@ func (t *CopyFilterTestSuite) TestSelectsRegularTables() {
 
 	sql, args, err := selectBuilder.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` USE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` USE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS subset USING(`id`)", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.pkCursor}, args)
 }
 
@@ -86,7 +86,7 @@ func (t *CopyFilterTestSuite) TestFallsBackToLessGoodIndex() {
 
 	sql, args, err := selectBuilder.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` USE INDEX (`less_good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` USE INDEX (`less_good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS subset USING(`id`)", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.pkCursor}, args)
 }
 
@@ -98,7 +98,7 @@ func (t *CopyFilterTestSuite) TestFallsBackToIgnoredPrimaryIndex() {
 
 	sql, args, err := selectBuilder.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` IGNORE INDEX (PRIMARY) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` IGNORE INDEX (PRIMARY) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS subset USING(`id`)", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.pkCursor}, args)
 }
 
