@@ -32,28 +32,73 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *schema.Table, l
 	quotedTable := ghostferry.QuotedTableName(table)
 
 	if _, exists := f.PrimaryKeyTables[table.Name]; exists {
-		return sq.Select(columns...).
+		// This table uses the sharding key as its primary key, and thus contains
+		// a single row per sharding key. This can commonly occur when representing
+		// the model for a single tenant in a multitenant database, e.g. a shop on
+		// a multitenant commerce platform.
+		//
+		// It is necessary to use two WHERE conditions on quotedPK so the second batch will be empty.
+		// No LIMIT clause is necessary since at most one row is present.
+		return sq.
+			sq.Select(columns...).
 			From(quotedTable + " USE INDEX (PRIMARY)").
-			Where(sq.Eq{quotedPK: f.ShardingValue}). // Both WHERE conditions are necessary to prevent infinite iteration.
-			Where(sq.Gt{quotedPK: lastPk}), nil      // LIMIT not necessary since we are selecting a single primary key.
+			Where(sq.Eq{quotedPK: f.ShardingValue}).
+			Where(sq.Gt{quotedPK: lastPk}), nil
 	}
 
 	joinTables, exists := f.JoinedTables[table.Name]
 	if !exists {
-		subquery, args, err := sq.Select(quotedPK).
-			From(quotedTable + " " + f.shardingKeyIndexHint(table)).
-			Where(sq.Eq{quotedShardingKey: f.ShardingValue}).
-			Where(sq.Gt{quotedPK: lastPk}).
-			Limit(batchSize).
-			OrderBy(quotedPK).
-			ToSql()
-		if err != nil {
-			return sq.Select(), err
-		}
+		// This is a normal sharded table; functionally:
+		//   SELECT * FROM x
+		//     WHERE ShardingKey = ShardingValue AND PrimaryKey > LastPrimaryKey
+		//     ORDER BY PrimaryKey LIMIT BatchSize
+		//
+		// However, we found that for some tables, MySQL would not use the
+		// covering index correctly, indicated in EXPLAIN by used_key_parts
+		// including only the sharding key. Copying a sharding key having many
+		// rows in an affected table was very slow.
+		//
+		// To force MySQL to use the index fully, we use:
+		//   SELECT * FROM x JOIN (SELECT PrimaryKey FROM x ...) USING (PrimaryKey)
+		//
+		// i.e. load the primary keys first, then load the rest of the columns.
 
-		return sq.Select(columns...).From(quotedTable).Join("("+subquery+") AS subset USING("+quotedPK+")", args...), nil
+		selectPrimaryKeys := "SELECT " + quotedPK + " FROM " + quotedTable + " " + f.shardingKeyIndexHint(table) +
+			" WHERE " + quotedShardingKey + " = ? AND " + quotedPK + " > ?" +
+			" ORDER BY " + quotedPK + " LIMIT " + strconv.Itoa(int(batchSize))
+
+		return sq.
+			Select(columns...).
+			From(quotedTable).
+			Join("("+selectPrimaryKeys+") AS `batch` USING("+quotedPK+")", f.ShardingValue, lastPk), nil
 	}
 
+	// This is a "joined table". It is the only supported type of table that
+	// does not have the sharding key in any column. This only occurs when a
+	// row may be shared between multiple sharding values, otherwise a sharding
+	// key column can be added.
+	//
+	// To determine which rows in the joined table are copied, the "join table"
+	// is consulted. The join table must contain a sharding key column and a
+	// column relating the joined table. There may be multiple join tables for
+	// for one joined table.
+	//
+	// Such tables are typically going to have reference-counted/copy-on-write
+	// values, and we require their rows to be immutable (no UPDATE) and
+	// uniquely identified by primary key (perhaps the hash of another column).
+	//
+	// The final query is something like:
+	//
+	// SELECT * FROM x WHERE PrimaryKey IN (
+	//   (SELECT PrimaryKey FROM JoinTable1 WHERE ShardingKey = ? AND JoinTable1.PrimaryKey > ?)
+	//   UNION DISTINCT
+	//   (SELECT PrimaryKey FROM JoinTable2 WHERE ShardingKey = ? AND JoinTable2.PrimaryKey > ?)
+	//      < ... more UNION DISTINCT for each other join table >
+	//   ORDER BY PrimaryKey LIMIT BatchSize
+	// )
+	//
+	// i.e. load the primary keys for each join table, take their UNION, limit
+	// it to a batch, then select the rest of the columns.
 	var clauses []string
 	var args []interface{}
 
