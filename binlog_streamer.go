@@ -203,6 +203,7 @@ func (s *BinlogStreamer) FlushAndStop() {
 		s.ErrorHandler.Fatal("binlog_streamer", err)
 		return
 	}
+	s.logger.WithField("target_position", s.targetBinlogPosition).Info("current stop binlog position was recorded")
 
 	s.stopRequested = true
 }
