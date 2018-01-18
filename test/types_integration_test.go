@@ -28,7 +28,10 @@ func addTypesToTable(db *sql.DB, dbName, tableName string) {
 		"ADD utf32_col TEXT CHARSET utf32," +
 		"ADD latin1_col TEXT CHARSET latin1 COLLATE latin1_swedish_ci," +
 		"ADD blob_col BLOB," +
-		"ADD uint64_col BIGINT UNSIGNED"
+		"ADD uint64_col BIGINT UNSIGNED," +
+		"ADD uint32_col INT UNSIGNED," +
+		"ADD uint16_col SMALLINT UNSIGNED," +
+		"ADD uint8_col TINYINT UNSIGNED"
 
 	query = fmt.Sprintf(query, dbName, tableName)
 	_, err := db.Exec(query)
@@ -47,8 +50,8 @@ func setupMultiTypeTable(f *testhelpers.TestFerry) {
 
 	for i := 0; i < 100; i++ {
 		query := "INSERT INTO gftest.table1 " +
-			"(id, data, tiny_col, float_col, double_col, decimal_col, year_col, date_col, time_col, dt_col, varchar_col, enum_col, set_col, utfmb4_col, utf32_col, latin1_col, blob_col, uint64_col)" +
-			"VALUES (NULL, ?, ?, 3.14, 2.72, 42.42, NOW(), NOW(), NOW(), NOW(), ?, ?, 'foo,baz', ?, ?, ?, ?, 18446744073709551615)"
+			"(id, data, tiny_col, float_col, double_col, decimal_col, year_col, date_col, time_col, dt_col, varchar_col, enum_col, set_col, utfmb4_col, utf32_col, latin1_col, blob_col, uint64_col, uint32_col, uint16_col, uint8_col)" +
+			"VALUES (NULL, ?, ?, 3.14, 2.72, 42.42, NOW(), NOW(), NOW(), NOW(), ?, ?, 'foo,baz', ?, ?, ?, ?, 18446744073709551615, 3221225472, 49152, 192)"
 
 		enumVal := "foo"
 		if i%2 == 0 {
@@ -71,7 +74,7 @@ func TestCopyDataWithManyTypes(t *testing.T) {
 	testcase := &testhelpers.IntegrationTestCase{
 		T:           t,
 		SetupAction: setupMultiTypeTable,
-		DataWriter: &testhelpers.MixedActionDataWriter{ // TODO: there's no guarentee that this data writer will update the data of the existing rows.
+		DataWriter: &testhelpers.MixedActionDataWriter{ // TODO: there's no guarantee that this data writer will update the data of the existing rows.
 			ProbabilityOfInsert: 1.0 / 3.0,
 			ProbabilityOfUpdate: 1.0 / 3.0,
 			ProbabilityOfDelete: 1.0 / 3.0,
