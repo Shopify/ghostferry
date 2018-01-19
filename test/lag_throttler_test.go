@@ -15,11 +15,10 @@ func newThrottler() *ghostferry.LagThrottler {
 	testConfig := testhelpers.NewTestConfig()
 
 	config := &ghostferry.LagThrottlerConfig{
-		Connection:      testConfig.Target,
-		MaxLag:          6,
-		HeartbeatTable:  "meta.heartbeat",
-		HeartbeatColumn: "ts",
-		UpdateInterval:  "5ms",
+		Connection:     testConfig.Target,
+		MaxLag:         6,
+		Query:          "SELECT MAX(lag) FROM meta.lag_table",
+		UpdateInterval: "5ms",
 	}
 
 	throttler, err := ghostferry.NewLagThrottler(config)
@@ -27,19 +26,19 @@ func newThrottler() *ghostferry.LagThrottler {
 	return throttler
 }
 
-func setupHeartbeatTable(db *sql.DB, ctx context.Context) {
+func setupLagTable(db *sql.DB, ctx context.Context) {
 	_, err := db.Exec("DROP DATABASE IF EXISTS meta")
 	testhelpers.PanicIfError(err)
 
 	_, err = db.Exec("CREATE DATABASE meta")
 	testhelpers.PanicIfError(err)
 
-	_, err = db.Exec("CREATE TABLE meta.heartbeat (ts varchar(26) NOT NULL, server_id int unsigned NOT NULL PRIMARY KEY)")
+	_, err = db.Exec("CREATE TABLE meta.lag_table (lag FLOAT NOT NULL, server_id int unsigned NOT NULL PRIMARY KEY)")
 	testhelpers.PanicIfError(err)
 }
 
-func heartbeat(throttler *ghostferry.LagThrottler, serverId int, beat time.Time) {
-	_, err := throttler.DB.Exec("INSERT INTO meta.heartbeat (ts, server_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE ts = ?", beat, serverId, beat)
+func setLag(throttler *ghostferry.LagThrottler, serverId int, lag float32) {
+	_, err := throttler.DB.Exec("INSERT INTO meta.lag_table (lag, server_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE lag = ?", lag, serverId, lag)
 	testhelpers.PanicIfError(err)
 	time.Sleep(10 * time.Millisecond)
 }
@@ -49,7 +48,7 @@ func TestThrottlerThrottlesAndUnthrottles(t *testing.T) {
 	defer done()
 
 	throttler := newThrottler()
-	setupHeartbeatTable(throttler.DB, ctx)
+	setupLagTable(throttler.DB, ctx)
 
 	go func() {
 		assert.Equal(t, context.Canceled, throttler.Run(ctx))
@@ -57,16 +56,16 @@ func TestThrottlerThrottlesAndUnthrottles(t *testing.T) {
 
 	assert.False(t, throttler.Throttled())
 
-	heartbeat(throttler, 1, time.Now())
+	setLag(throttler, 1, 0)
 	assert.False(t, throttler.Throttled())
 
-	heartbeat(throttler, 1, time.Now().Add(-5*time.Second))
+	setLag(throttler, 1, 5)
 	assert.False(t, throttler.Throttled())
 
-	heartbeat(throttler, 1, time.Now().Add(-9*time.Second))
+	setLag(throttler, 1, 9)
 	assert.True(t, throttler.Throttled())
 
-	heartbeat(throttler, 1, time.Now().Add(-5*time.Second))
+	setLag(throttler, 1, 5)
 	assert.False(t, throttler.Throttled())
 }
 
@@ -75,23 +74,23 @@ func TestThrottlerMultipleServerIDs(t *testing.T) {
 	defer done()
 
 	throttler := newThrottler()
-	setupHeartbeatTable(throttler.DB, ctx)
+	setupLagTable(throttler.DB, ctx)
 
 	go func() {
 		assert.Equal(t, context.Canceled, throttler.Run(ctx))
 	}()
 
-	heartbeat(throttler, 1, time.Now())
+	setLag(throttler, 1, 0)
 	assert.False(t, throttler.Throttled())
 
-	heartbeat(throttler, 2, time.Now().Add(-10*time.Second))
+	setLag(throttler, 2, 10)
 	assert.True(t, throttler.Throttled())
 
-	heartbeat(throttler, 1, time.Now().Add(-10*time.Second))
-	heartbeat(throttler, 2, time.Now())
+	setLag(throttler, 1, 10)
+	setLag(throttler, 2, 0)
 	assert.True(t, throttler.Throttled())
 
-	heartbeat(throttler, 1, time.Now())
+	setLag(throttler, 1, 0)
 	assert.False(t, throttler.Throttled())
 }
 
@@ -103,9 +102,8 @@ func TestNewThrottlerConfigErrors(t *testing.T) {
 	}
 
 	okConfig := ghostferry.LagThrottlerConfig{
-		Connection:      connConfig,
-		HeartbeatTable:  "meta.heartbeat",
-		HeartbeatColumn: "ts",
+		Connection: connConfig,
+		Query:      "SELECT MAX(lag) FROM meta.lag_table",
 	}
 
 	config := okConfig
@@ -113,12 +111,7 @@ func TestNewThrottlerConfigErrors(t *testing.T) {
 	assert.Nil(t, err)
 
 	config = okConfig
-	config.HeartbeatTable = ""
-	_, err = ghostferry.NewLagThrottler(&config)
-	assert.NotNil(t, err)
-
-	config = okConfig
-	config.HeartbeatColumn = ""
+	config.Query = ""
 	_, err = ghostferry.NewLagThrottler(&config)
 	assert.NotNil(t, err)
 
@@ -143,7 +136,7 @@ func TestThrottlerRunErrors(t *testing.T) {
 
 	err = throttler.Run(ctx)
 	assert.NotNil(t, err)
-	assert.Equal(t, "Error 1146: Table 'meta.heartbeat' doesn't exist", err.Error())
+	assert.Equal(t, "Error 1146: Table 'meta.lag_table' doesn't exist", err.Error())
 
 	done()
 	err = throttler.Run(ctx)
