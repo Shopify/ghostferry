@@ -53,11 +53,10 @@ func (t *PauserThrottler) Run(ctx context.Context) error {
 }
 
 type LagThrottlerConfig struct {
-	Connection      DatabaseConfig
-	MaxLag          int
-	HeartbeatTable  string
-	HeartbeatColumn string
-	UpdateInterval  string
+	Connection     DatabaseConfig
+	MaxLag         int
+	Query          string
+	UpdateInterval string
 }
 
 type LagThrottler struct {
@@ -79,12 +78,8 @@ func NewLagThrottler(config *LagThrottlerConfig) (*LagThrottler, error) {
 		config.UpdateInterval = "1s"
 	}
 
-	if config.HeartbeatTable == "" {
-		return nil, fmt.Errorf("HeartbeatTable required")
-	}
-
-	if config.HeartbeatColumn == "" {
-		return nil, fmt.Errorf("HeartbeatColumn required")
+	if config.Query == "" {
+		return nil, fmt.Errorf("lag Query required")
 	}
 
 	interval, err := time.ParseDuration(config.UpdateInterval)
@@ -140,11 +135,8 @@ func (t *LagThrottler) Run(ctx context.Context) error {
 }
 
 func (t *LagThrottler) updateLag(ctx context.Context) error {
-	query := "SELECT MAX(TIMESTAMPDIFF(SECOND, %s, NOW())) FROM %s"
-	query = fmt.Sprintf(query, t.config.HeartbeatColumn, t.config.HeartbeatTable)
-
 	var newLag int
-	err := t.DB.QueryRowContext(ctx, query).Scan(&newLag)
+	err := t.DB.QueryRowContext(ctx, t.config.Query).Scan(&newLag)
 	if err != nil {
 		return err
 	}
