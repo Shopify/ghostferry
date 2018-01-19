@@ -151,6 +151,34 @@ func (e *BinlogDeleteEvent) AsSQLString(target *schema.Table) (string, error) {
 func NewBinlogDMLEvents(table *schema.Table, ev *replication.BinlogEvent) ([]DMLEvent, error) {
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
+	for _, row := range rowsEvent.Rows {
+		if len(row) != len(table.Columns) {
+			return nil, fmt.Errorf(
+				"table %s.%s has %d columns but event has %d columns instead",
+				table.Schema,
+				table.Name,
+				len(table.Columns),
+				len(row),
+			)
+		}
+		for i, col := range table.Columns {
+			if col.IsUnsigned {
+				switch v := row[i].(type) {
+				case int64:
+					row[i] = uint64(v)
+				case int32:
+					row[i] = uint32(v)
+				case int16:
+					row[i] = uint16(v)
+				case int8:
+					row[i] = uint8(v)
+				case int:
+					row[i] = uint(v)
+				}
+			}
+		}
+	}
+
 	switch ev.Header.EventType {
 	case replication.WRITE_ROWS_EVENTv1, replication.WRITE_ROWS_EVENTv2:
 		return NewBinlogInsertEvents(table, rowsEvent)
@@ -265,12 +293,20 @@ func appendEscapedValue(buffer []byte, value interface{}) []byte {
 		return appendEscapedString(buffer, v)
 	case []byte:
 		return appendEscapedBuffer(buffer, v)
+	case uint64:
+		return strconv.AppendUint(buffer, v, 10)
 	case int64:
 		return strconv.AppendInt(buffer, v, 10)
+	case uint32:
+		return strconv.AppendUint(buffer, uint64(v), 10)
 	case int32:
 		return strconv.AppendInt(buffer, int64(v), 10)
+	case uint16:
+		return strconv.AppendUint(buffer, uint64(v), 10)
 	case int16:
 		return strconv.AppendInt(buffer, int64(v), 10)
+	case uint8:
+		return strconv.AppendUint(buffer, uint64(v), 10)
 	case int8:
 		return strconv.AppendInt(buffer, int64(v), 10)
 	case int:
