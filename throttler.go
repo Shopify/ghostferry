@@ -12,12 +12,14 @@ import (
 
 type Throttler interface {
 	Throttled() bool
+	Disabled() bool
+	SetDisabled(bool)
 	SetPaused(bool)
 	Run(context.Context) error
 }
 
 func WaitForThrottle(t Throttler) {
-	if !t.Throttled() {
+	if t.Disabled() || !t.Throttled() {
 		return
 	}
 
@@ -25,14 +27,31 @@ func WaitForThrottle(t Throttler) {
 		for {
 			time.Sleep(500 * time.Millisecond)
 
-			if !t.Throttled() {
+			if t.Disabled() || !t.Throttled() {
 				break
 			}
 		}
 	})
 }
 
+type ThrottlerBase struct {
+	disabled int32
+}
+
+func (t *ThrottlerBase) Disabled() bool {
+	return atomic.LoadInt32(&t.disabled) != 0
+}
+
+func (t *ThrottlerBase) SetDisabled(disabled bool) {
+	var val int32
+	if disabled {
+		val = 1
+	}
+	atomic.StoreInt32(&t.disabled, val)
+}
+
 type PauserThrottler struct {
+	ThrottlerBase
 	paused int32
 }
 
@@ -60,6 +79,7 @@ type LagThrottlerConfig struct {
 }
 
 type LagThrottler struct {
+	ThrottlerBase
 	PauserThrottler
 	config *LagThrottlerConfig
 

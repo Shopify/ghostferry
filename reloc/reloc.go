@@ -105,6 +105,8 @@ func (r *RelocFerry) Run() {
 		r.Ferry.ErrorHandler.Fatal("reloc", err)
 	}
 
+	r.Ferry.Throttler.SetDisabled(true)
+
 	r.Ferry.FlushBinlogAndStopStreaming()
 	copyWG.Wait()
 
@@ -115,6 +117,8 @@ func (r *RelocFerry) Run() {
 		r.logger.WithField("error", err).Errorf("failed to delta-copy joined tables after locking")
 		r.Ferry.ErrorHandler.Fatal("reloc", err)
 	}
+
+	r.Ferry.Throttler.SetDisabled(false)
 
 	metrics.Measure("CutoverUnlock", nil, 1.0, func() {
 		err = r.config.CutoverUnlock.Post(client)
