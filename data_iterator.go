@@ -222,11 +222,11 @@ func (this *DataIterator) AddDoneListener(listener func() error) {
 
 func (this *DataIterator) runTableIterator(id uint32, doneWg *sync.WaitGroup) {
 	defer func() {
-		this.logger.Infof("table iterator %d done", id)
+		this.logger.Debugf("table iterator %d done", id)
 		doneWg.Done()
 	}()
 
-	this.logger.Infof("starting table iterator instance %d", id)
+	this.logger.Debugf("starting table iterator instance %d", id)
 
 	for {
 		table, ok := <-this.tableCh
