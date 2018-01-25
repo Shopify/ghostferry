@@ -142,7 +142,7 @@ func (r *RelocFerry) deltaCopyJoinedTables() error {
 		}
 	}
 
-	return r.Ferry.IterateAndCopyTables(tables)
+	return r.Ferry.RunStandaloneDataCopy(tables)
 }
 
 func compileRegexps(exps []string) ([]*regexp.Regexp, error) {

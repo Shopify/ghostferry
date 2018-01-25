@@ -50,6 +50,7 @@ type Ferry struct {
 	BinlogWriter   *BinlogWriter
 
 	DataIterator *DataIterator
+	BatchWriter  *BatchWriter
 
 	ErrorHandler ErrorHandler
 	Throttler    Throttler
@@ -61,27 +62,32 @@ type Ferry struct {
 	DoneTime     time.Time
 	OverallState string
 
-	logger      *logrus.Entry
-	batchWriter *BatchWriter
+	logger *logrus.Entry
 
 	rowCopyCompleteCh chan struct{}
 }
 
-func (f *Ferry) NewDataIterator() (*DataIterator, error) {
+func (f *Ferry) newDataIterator() (*DataIterator, error) {
 	dataIterator := &DataIterator{
-		Db:           f.SourceDB,
-		Config:       f.Config,
+		DB:          f.SourceDB,
+		Concurrency: f.Config.NumberOfTableIterators,
+
 		ErrorHandler: f.ErrorHandler,
-		Throttler:    f.Throttler,
-		Filter:       f.CopyFilter,
+		CursorConfig: &CursorConfig{
+			DB:        f.SourceDB,
+			Throttler: f.Throttler,
+
+			BatchSize:   f.Config.IterateChunksize,
+			ReadRetries: f.Config.MaxIterationReadRetries,
+		},
+	}
+
+	if f.CopyFilter != nil {
+		dataIterator.CursorConfig.BuildSelect = f.CopyFilter.BuildSelect
 	}
 
 	err := dataIterator.Initialize()
-	if err != nil {
-		return nil, err
-	}
-
-	return dataIterator, nil
+	return dataIterator, err
 }
 
 // Initialize all the components of Ghostferry and connect to the Database
@@ -183,17 +189,20 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
-	f.DataIterator, err = f.NewDataIterator()
+	f.DataIterator, err = f.newDataIterator()
 	if err != nil {
 		return err
 	}
 
-	f.batchWriter = &BatchWriter{
+	f.BatchWriter = &BatchWriter{
+		DB: f.TargetDB,
+
 		DatabaseRewrites: f.Config.DatabaseRewrites,
 		TableRewrites:    f.Config.TableRewrites,
-		DB:               f.TargetDB,
+
+		WriteRetries: f.Config.MaxWriteRetriesOnTargetDBError,
 	}
-	f.batchWriter.Initialize()
+	f.BatchWriter.Initialize()
 
 	f.logger.Info("ferry initialized")
 	return nil
@@ -210,7 +219,7 @@ func (f *Ferry) Start() error {
 	// of the library to register event listeners that gets called before
 	// and after the data gets written to the target database.
 	f.BinlogStreamer.AddEventListener(f.BinlogWriter.BufferBinlogEvents)
-	f.DataIterator.AddBatchListener(f.writeRowBatchToTargetWithRetries)
+	f.DataIterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
 	f.DataIterator.AddDoneListener(f.onFinishedIterations)
 
 	// The starting binlog coordinates must be determined first. If it is
@@ -293,27 +302,21 @@ func (f *Ferry) Run() {
 	supportingServicesWg.Wait()
 }
 
-func (f *Ferry) IterateAndCopyTables(tables []*schema.Table) error {
+func (f *Ferry) RunStandaloneDataCopy(tables []*schema.Table) error {
 	if len(tables) == 0 {
 		return nil
 	}
 
-	iterator, err := f.NewDataIterator()
+	dataIterator, err := f.newDataIterator()
 	if err != nil {
 		return err
 	}
 
-	iterator.Tables = tables
+	dataIterator.Tables = tables
+	dataIterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
+	f.logger.WithField("tables", tables).Info("starting standalone table copy")
 
-	iterator.AddBatchListener(f.writeRowBatchToTargetWithRetries)
-	iterator.AddDoneListener(func() error {
-		f.logger.WithField("tables", tables).Info("Finished iterating tables")
-		return nil
-	})
-
-	f.logger.WithField("tables", tables).Info("Iterating tables")
-
-	iterator.Run()
+	dataIterator.Run()
 
 	return nil
 }
@@ -354,12 +357,6 @@ func (f *Ferry) onFinishedIterations() error {
 	// TODO: make it so that this is non-blocking
 	f.rowCopyCompleteCh <- struct{}{}
 	return nil
-}
-
-func (f *Ferry) writeRowBatchToTargetWithRetries(batch *RowBatch) error {
-	return WithRetries(f.MaxWriteRetriesOnTargetDBError, 0, f.logger, "write batch to target", func() error {
-		return f.batchWriter.Write(batch)
-	})
 }
 
 func checkConnection(logger *logrus.Entry, dsn string, db *sql.DB) error {

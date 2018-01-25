@@ -39,10 +39,18 @@ func (this *DataIteratorTestSuite) SetupTest() {
 	config.IterateChunksize = 2
 
 	this.di = &ghostferry.DataIterator{
-		Db:           sourceDb,
-		Config:       config,
+		DB:          sourceDb,
+		Concurrency: config.NumberOfTableIterators,
+
 		ErrorHandler: errorHandler,
-		Throttler:    throttler,
+		CursorConfig: &ghostferry.CursorConfig{
+			DB:        sourceDb,
+			Throttler: throttler,
+
+			BuildSelect: nil,
+			BatchSize:   config.IterateChunksize,
+			ReadRetries: config.MaxIterationReadRetries,
+		},
 
 		Tables: tables.AsSlice(),
 	}
@@ -119,14 +127,7 @@ func (this *DataIteratorTestSuite) TestDoneListenerGetsNotifiedWhenDone() {
 }
 
 func (this *DataIteratorTestSuite) TestInitialize() {
-	di := &ghostferry.DataIterator{
-		Config: this.Ferry.Config,
-	}
-
-	err := di.Initialize()
-	this.Require().Nil(err)
-
-	this.Require().NotNil(di.CurrentState)
+	this.Require().NotNil(this.di.CurrentState)
 }
 
 func TestDataIterator(t *testing.T) {

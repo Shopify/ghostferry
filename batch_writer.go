@@ -6,52 +6,60 @@ import (
 	"sync"
 
 	"github.com/siddontang/go-mysql/schema"
+	"github.com/sirupsen/logrus"
 )
 
 type BatchWriter struct {
+	DB *sql.DB
+
 	DatabaseRewrites map[string]string
 	TableRewrites    map[string]string
-	DB               *sql.DB
+
+	WriteRetries int
 
 	mut        sync.RWMutex
 	statements map[string]*sql.Stmt
+	logger     *logrus.Entry
 }
 
 func (w *BatchWriter) Initialize() {
 	w.statements = make(map[string]*sql.Stmt)
+	w.logger = logrus.WithField("tag", "batch_writer")
 }
 
-func (w *BatchWriter) Write(batch *RowBatch) error {
-	if batch.Size() == 0 {
+func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
+	return WithRetries(w.WriteRetries, 0, w.logger, "write batch to target", func() error {
+		if batch.Size() == 0 {
+			return nil
+		}
+
+		db := batch.Database()
+		if targetDbName, exists := w.DatabaseRewrites[db]; exists {
+			db = targetDbName
+		}
+
+		table := batch.Table()
+		if targetTableName, exists := w.TableRewrites[table]; exists {
+			table = targetTableName
+		}
+
+		query, args, err := batch.AsSQLQuery(&schema.Table{Schema: db, Name: table})
+		if err != nil {
+			return fmt.Errorf("during generating sql query: %v", err)
+		}
+
+		stmt, err := w.stmtFor(query)
+		if err != nil {
+			return fmt.Errorf("during preparing query (%s): %v", query, err)
+		}
+
+		_, err = stmt.Exec(args...)
+		if err != nil {
+			return fmt.Errorf("during exec query (%s): %v", query, err)
+		}
+
 		return nil
-	}
-
-	db := batch.Database()
-	if targetDbName, exists := w.DatabaseRewrites[db]; exists {
-		db = targetDbName
-	}
-
-	table := batch.Table()
-	if targetTableName, exists := w.TableRewrites[table]; exists {
-		table = targetTableName
-	}
-
-	query, args, err := batch.AsSQLQuery(&schema.Table{Schema: db, Name: table})
-	if err != nil {
-		return fmt.Errorf("during generating sql query: %v", err)
-	}
-
-	stmt, err := w.stmtFor(query)
-	if err != nil {
-		return fmt.Errorf("during preparing query (%s): %v", query, err)
-	}
-
-	_, err = stmt.Exec(args...)
-	if err != nil {
-		return fmt.Errorf("during exec query (%s): %v", query, err)
-	}
-
-	return nil
+	})
 }
 
 func (w *BatchWriter) stmtFor(query string) (*sql.Stmt, error) {
