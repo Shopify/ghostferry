@@ -89,6 +89,8 @@ func (r *RelocFerry) Run() {
 
 	r.Ferry.WaitUntilRowCopyIsComplete()
 
+	ghostferry.WaitForThrottle(r.Ferry.Throttler)
+
 	r.Ferry.WaitUntilBinlogStreamerCatchesUp()
 
 	var err error
