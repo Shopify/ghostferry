@@ -33,22 +33,16 @@ func MaxPrimaryKeys(db *sql.DB, tables []*schema.Table, logger *logrus.Entry) (m
 	for _, table := range tables {
 		logger := logger.WithField("table", table.String())
 
-		isEmpty, err := tableIsEmpty(db, table)
-		if err != nil {
-			logger.WithError(err).Error("failed to see if rows exist in table")
-			return tablesWithData, emptyTables, err
-		}
-
-		if isEmpty {
-			emptyTables = append(emptyTables, table)
-			logger.Warn("no data in this table, skipping")
-			continue
-		}
-
-		maxPk, err := maxPk(db, table)
+		maxPk, maxPkExists, err := maxPk(db, table)
 		if err != nil {
 			logger.WithError(err).Errorf("failed to get max primary key %s", table.GetPKColumn(0).Name)
 			return tablesWithData, emptyTables, err
+		}
+
+		if !maxPkExists {
+			emptyTables = append(emptyTables, table)
+			logger.Warn("no data in this table, skipping")
+			continue
 		}
 
 		tablesWithData[table] = maxPk
@@ -197,31 +191,30 @@ func showTablesFrom(c *sql.DB, dbname string) ([]string, error) {
 	return tables, nil
 }
 
-func maxPk(db *sql.DB, table *schema.Table) (uint64, error) {
-	var maxPrimaryKey uint64
-
+func maxPk(db *sql.DB, table *schema.Table) (uint64, bool, error) {
 	primaryKeyColumn := table.GetPKColumn(0)
 	pkName := quoteField(primaryKeyColumn.Name)
 
-	query, args, err := sq.Select(fmt.Sprintf("MAX(%s)", pkName)).From(QuotedTableName(table)).ToSql()
+	query, args, err := sq.
+		Select(pkName).
+		From(QuotedTableName(table)).
+		OrderBy(fmt.Sprintf("%s DESC", pkName)).
+		Limit(1).
+		ToSql()
+
 	if err != nil {
-		return maxPrimaryKey, err
+		return 0, false, err
 	}
 
+	var maxPrimaryKey uint64
 	err = db.QueryRow(query, args...).Scan(&maxPrimaryKey)
-	return maxPrimaryKey, err
-}
 
-func tableIsEmpty(db *sql.DB, table *schema.Table) (bool, error) {
-	rows, err := db.Query(fmt.Sprintf("SELECT 1 FROM %s LIMIT 1", QuotedTableName(table)))
-	if err != nil {
-		return false, err
+	switch {
+	case err == sql.ErrNoRows:
+		return 0, false, nil
+	case err != nil:
+		return 0, false, err
+	default:
+		return maxPrimaryKey, true, nil
 	}
-	defer rows.Close()
-
-	if !rows.Next() {
-		return true, nil
-	}
-
-	return false, nil
 }
