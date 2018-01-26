@@ -2,7 +2,6 @@ package reloc
 
 import (
 	"fmt"
-	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -113,10 +112,20 @@ func (f *ShardedCopyFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, er
 		if column.Name == shardingKey {
 			oldValues, newValues := event.OldValues(), event.NewValues()
 
-			oldEqual := oldValues != nil && reflect.DeepEqual(oldValues[idx], f.ShardingValue)
-			newEqual := newValues != nil && reflect.DeepEqual(newValues[idx], f.ShardingValue)
+			oldShardingValue, oldExists, err := parseShardingValue(oldValues, idx)
+			if err != nil {
+				return false, fmt.Errorf("parsing old sharding key: %s", err)
+			}
 
-			if oldEqual != newEqual && oldValues != nil && newValues != nil {
+			newShardingValue, newExists, err := parseShardingValue(newValues, idx)
+			if err != nil {
+				return false, fmt.Errorf("parsing new sharding key: %s", err)
+			}
+
+			oldEqual := oldExists && oldShardingValue == f.ShardingValue
+			newEqual := newExists && newShardingValue == f.ShardingValue
+
+			if oldEqual != newEqual && oldExists && newExists {
 				// The value of the sharding key for a row was changed - this is unsafe.
 				err := fmt.Errorf("sharding key changed from %v to %v", oldValues[idx], newValues[idx])
 				return false, err
@@ -175,4 +184,17 @@ func (s *ShardedTableFilter) isIgnored(table *schema.Table) bool {
 		}
 	}
 	return false
+}
+
+func parseShardingValue(values []interface{}, index int) (int64, bool, error) {
+	if values == nil {
+		return 0, false, nil
+	}
+	if v, ok := ghostferry.Uint64Value(values[index]); ok {
+		return int64(v), true, nil
+	}
+	if v, ok := ghostferry.Int64Value(values[index]); ok {
+		return v, true, nil
+	}
+	return 0, true, fmt.Errorf("invalid type %t", values[index])
 }

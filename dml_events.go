@@ -288,29 +288,19 @@ func appendEscapedValue(buffer []byte, value interface{}) []byte {
 		return append(buffer, "NULL"...)
 	}
 
+	if uintv, ok := Uint64Value(value); ok {
+		return strconv.AppendUint(buffer, uintv, 10)
+	}
+
+	if intv, ok := Int64Value(value); ok {
+		return strconv.AppendInt(buffer, intv, 10)
+	}
+
 	switch v := value.(type) {
 	case string:
 		return appendEscapedString(buffer, v)
 	case []byte:
 		return appendEscapedBuffer(buffer, v)
-	case uint64:
-		return strconv.AppendUint(buffer, v, 10)
-	case int64:
-		return strconv.AppendInt(buffer, v, 10)
-	case uint32:
-		return strconv.AppendUint(buffer, uint64(v), 10)
-	case int32:
-		return strconv.AppendInt(buffer, int64(v), 10)
-	case uint16:
-		return strconv.AppendUint(buffer, uint64(v), 10)
-	case int16:
-		return strconv.AppendInt(buffer, int64(v), 10)
-	case uint8:
-		return strconv.AppendUint(buffer, uint64(v), 10)
-	case int8:
-		return strconv.AppendInt(buffer, int64(v), 10)
-	case int:
-		return strconv.AppendInt(buffer, int64(v), 10)
 	case bool:
 		if v {
 			return append(buffer, '1')
@@ -324,6 +314,38 @@ func appendEscapedValue(buffer []byte, value interface{}) []byte {
 	default:
 		panic(fmt.Sprintf("unsupported type %t", value))
 	}
+}
+
+func Uint64Value(value interface{}) (uint64, bool) {
+	switch v := value.(type) {
+	case uint64:
+		return v, true
+	case uint32:
+		return uint64(v), true
+	case uint16:
+		return uint64(v), true
+	case uint8:
+		return uint64(v), true
+	case uint:
+		return uint64(v), true
+	}
+	return 0, false
+}
+
+func Int64Value(value interface{}) (int64, bool) {
+	switch v := value.(type) {
+	case int64:
+		return v, true
+	case int32:
+		return int64(v), true
+	case int16:
+		return int64(v), true
+	case int8:
+		return int64(v), true
+	case int:
+		return int64(v), true
+	}
+	return 0, false
 }
 
 // appendEscapedString replaces single quotes with quote-escaped single quotes.
