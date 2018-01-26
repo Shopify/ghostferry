@@ -1,10 +1,14 @@
 package test
 
 import (
+	"fmt"
+	"reflect"
 	"testing"
 
+	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/reloc"
 
+	"github.com/siddontang/go-mysql/replication"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/stretchr/testify/suite"
 )
@@ -117,6 +121,36 @@ func (t *CopyFilterTestSuite) TestSelectsPrimaryKeyTables() {
 	t.Require().Nil(err)
 	t.Require().Equal("SELECT * FROM `shard_1`.`pktable` USE INDEX (PRIMARY) WHERE `tenant_id` = ? AND `tenant_id` > ?", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.pkCursor}, args)
+}
+
+func (t *CopyFilterTestSuite) TestShardingValueTypes() {
+	tenantIds := []interface{}{
+		string("1"), []byte("1"),
+		uint64(1), uint32(1), uint16(1), uint8(1), uint(1),
+		int64(1), int32(1), int16(1), int8(1), int(1),
+		float64(1.0), float32(1.0),
+	}
+
+	for _, tenantId := range tenantIds {
+		dmlEvents, err := ghostferry.NewBinlogInsertEvents(t.normalTable, t.newRowsEvent([]interface{}{1001, tenantId, "data"}))
+		applicable, err := t.filter.ApplicableEvent(dmlEvents[0])
+		t.Require().Nil(err)
+		t.Require().True(applicable, fmt.Sprintf("value type %s wasnt applicable", reflect.TypeOf(tenantId)))
+	}
+}
+
+func (t *CopyFilterTestSuite) newRowsEvent(rowData []interface{}) *replication.RowsEvent {
+	normalTableMapEvent := &replication.TableMapEvent{
+		Schema: []byte(t.normalTable.Schema),
+		Table:  []byte(t.normalTable.Name),
+	}
+
+	rowsEvent := &replication.RowsEvent{
+		Table: normalTableMapEvent,
+		Rows:  [][]interface{}{rowData},
+	}
+
+	return rowsEvent
 }
 
 func TestCopyFilterTestSuite(t *testing.T) {

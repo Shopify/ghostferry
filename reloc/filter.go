@@ -2,7 +2,6 @@ package reloc
 
 import (
 	"fmt"
-	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -113,8 +112,8 @@ func (f *ShardedCopyFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, er
 		if column.Name == shardingKey {
 			oldValues, newValues := event.OldValues(), event.NewValues()
 
-			oldEqual := oldValues != nil && reflect.DeepEqual(oldValues[idx], f.ShardingValue)
-			newEqual := newValues != nil && reflect.DeepEqual(newValues[idx], f.ShardingValue)
+			oldEqual := oldValues != nil && stringRepresentation(oldValues[idx]) == stringRepresentation(f.ShardingValue)
+			newEqual := newValues != nil && stringRepresentation(newValues[idx]) == stringRepresentation(f.ShardingValue)
 
 			if oldEqual != newEqual && oldValues != nil && newValues != nil {
 				// The value of the sharding key for a row was changed - this is unsafe.
@@ -175,4 +174,13 @@ func (s *ShardedTableFilter) isIgnored(table *schema.Table) bool {
 		}
 	}
 	return false
+}
+
+func stringRepresentation(ival interface{}) string {
+	switch ival.(type) {
+	case []byte:
+		return string(ival.([]byte))
+	default:
+		return fmt.Sprint(ival)
+	}
 }
