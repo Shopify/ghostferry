@@ -2,7 +2,6 @@ package test
 
 import (
 	"fmt"
-	"reflect"
 	"testing"
 
 	"github.com/Shopify/ghostferry"
@@ -125,18 +124,22 @@ func (t *CopyFilterTestSuite) TestSelectsPrimaryKeyTables() {
 
 func (t *CopyFilterTestSuite) TestShardingValueTypes() {
 	tenantIds := []interface{}{
-		string("1"), []byte("1"),
 		uint64(1), uint32(1), uint16(1), uint8(1), uint(1),
 		int64(1), int32(1), int16(1), int8(1), int(1),
-		float64(1.0), float32(1.0),
 	}
 
 	for _, tenantId := range tenantIds {
-		dmlEvents, err := ghostferry.NewBinlogInsertEvents(t.normalTable, t.newRowsEvent([]interface{}{1001, tenantId, "data"}))
+		dmlEvents, _ := ghostferry.NewBinlogInsertEvents(t.normalTable, t.newRowsEvent([]interface{}{1001, tenantId, "data"}))
 		applicable, err := t.filter.ApplicableEvent(dmlEvents[0])
 		t.Require().Nil(err)
-		t.Require().True(applicable, fmt.Sprintf("value type %s wasnt applicable", reflect.TypeOf(tenantId)))
+		t.Require().True(applicable, fmt.Sprintf("value %t wasn't applicable", tenantId))
 	}
+}
+
+func (t *CopyFilterTestSuite) TestInvalidShardingValueTypesErrors() {
+	dmlEvents, err := ghostferry.NewBinlogInsertEvents(t.normalTable, t.newRowsEvent([]interface{}{1001, string("1"), "data"}))
+	_, err = t.filter.ApplicableEvent(dmlEvents[0])
+	t.Require().Equal("parsing new sharding key: invalid type %!t(string=1)", err.Error())
 }
 
 func (t *CopyFilterTestSuite) newRowsEvent(rowData []interface{}) *replication.RowsEvent {
