@@ -26,8 +26,9 @@ type MetricBase struct {
 }
 
 type Metrics struct {
-	Prefix string
-	Sink   chan interface{}
+	Prefix      string
+	DefaultTags []MetricTag
+	Sink        chan interface{}
 }
 
 func SetGlobalMetrics(prefix string, sink chan interface{}) *Metrics {
@@ -47,7 +48,7 @@ func (m *Metrics) Count(key string, value int64, tags []MetricTag, sampleRate fl
 	m.sendMetric(CountMetric{
 		MetricBase: MetricBase{
 			Key:        m.applyPrefix(key),
-			Tags:       tags,
+			Tags:       m.mergeWithDefaultTags(tags),
 			SampleRate: sampleRate,
 		},
 		Value: value,
@@ -63,7 +64,7 @@ func (m *Metrics) Gauge(key string, value float64, tags []MetricTag, sampleRate 
 	m.sendMetric(GaugeMetric{
 		MetricBase: MetricBase{
 			Key:        m.applyPrefix(key),
-			Tags:       tags,
+			Tags:       m.mergeWithDefaultTags(tags),
 			SampleRate: sampleRate,
 		},
 		Value: value,
@@ -79,7 +80,7 @@ func (m *Metrics) Timer(key string, duration time.Duration, tags []MetricTag, sa
 	m.sendMetric(TimerMetric{
 		MetricBase: MetricBase{
 			Key:        m.applyPrefix(key),
-			Tags:       tags,
+			Tags:       m.mergeWithDefaultTags(tags),
 			SampleRate: sampleRate,
 		},
 		Value: duration,
@@ -89,7 +90,7 @@ func (m *Metrics) Timer(key string, duration time.Duration, tags []MetricTag, sa
 func (m *Metrics) Measure(key string, tags []MetricTag, sampleRate float64, f func()) {
 	start := time.Now()
 	f()
-	m.Timer(key, time.Since(start), tags, sampleRate)
+	m.Timer(key, time.Since(start), m.mergeWithDefaultTags(tags), sampleRate)
 }
 
 func (m *Metrics) sendMetric(metric interface{}) {
@@ -108,4 +109,28 @@ func (m *Metrics) sendMetric(metric interface{}) {
 
 func (m *Metrics) applyPrefix(key string) string {
 	return fmt.Sprintf("%s.%s", m.Prefix, key)
+}
+
+func (m *Metrics) mergeWithDefaultTags(tags []MetricTag) []MetricTag {
+	mergedTags := make([]MetricTag, 0, len(tags)+len(m.DefaultTags))
+
+	for _, tag := range tags {
+		mergedTags = append(mergedTags, tag)
+	}
+
+	for _, tag := range m.DefaultTags {
+		exists := false
+		for _, existingTag := range mergedTags {
+			if tag.Name == existingTag.Name {
+				exists = true
+				break
+			}
+		}
+
+		if !exists {
+			mergedTags = append(mergedTags, tag)
+		}
+	}
+
+	return mergedTags
 }

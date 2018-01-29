@@ -41,7 +41,7 @@ func main() {
 	fmt.Printf("reloc built with ghostferry %s\n", ghostferry.VersionString)
 	fmt.Printf("will move tenant %s=%d\n", config.ShardingKey, config.ShardingValue)
 
-	err := reloc.InitializeMetrics("reloc", config.StatsDAddress)
+	err := reloc.InitializeMetrics("reloc", config)
 	if err != nil {
 		errorAndExit(fmt.Sprintf("failed to initialize metrics: %v", err))
 	}

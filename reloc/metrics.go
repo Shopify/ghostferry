@@ -14,7 +14,9 @@ var (
 	}
 )
 
-func InitializeMetrics(prefix, address string) error {
+func InitializeMetrics(prefix string, config *Config) error {
+	address := config.StatsDAddress
+
 	client, err := dogstatsd.New(address, &dogstatsd.Context{})
 	if err != nil {
 		return err
@@ -22,6 +24,12 @@ func InitializeMetrics(prefix, address string) error {
 
 	metricsChan := make(chan interface{}, 1024)
 	SetGlobalMetrics(prefix, metricsChan)
+
+	metrics.DefaultTags = []ghostferry.MetricTag{
+		{Name: "SourceDB", Value: config.SourceDB},
+		{Name: "TargetDB", Value: config.TargetDB},
+	}
+
 	go consumeMetrics(client, metricsChan)
 
 	return nil

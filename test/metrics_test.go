@@ -30,6 +30,58 @@ func (this *MetricsTestSuite) SetupTest() {
 	}
 }
 
+func (this *MetricsTestSuite) TestDefaultTagsWithNoMetricTags() {
+	this.metrics.DefaultTags = []ghostferry.MetricTag{ghostferry.MetricTag{"foo", "bar"}}
+	this.metrics.Count("test_key", 42, nil, 1.0)
+
+	expected := ghostferry.CountMetric{
+		MetricBase: ghostferry.MetricBase{
+			Key:        "test.test_key",
+			Tags:       this.metrics.DefaultTags,
+			SampleRate: 1.0,
+		},
+		Value: 42,
+	}
+
+	this.Require().Equal(expected, <-this.sink)
+}
+
+func (this *MetricsTestSuite) TestDefaultTagsWithOtherMetricTags() {
+	this.metrics.DefaultTags = []ghostferry.MetricTag{ghostferry.MetricTag{"foo", "bar"}}
+	this.metrics.Count("test_key", 42, []ghostferry.MetricTag{ghostferry.MetricTag{"bla", "hello"}}, 1.0)
+
+	expected := ghostferry.CountMetric{
+		MetricBase: ghostferry.MetricBase{
+			Key: "test.test_key",
+			Tags: []ghostferry.MetricTag{
+				ghostferry.MetricTag{"bla", "hello"},
+				ghostferry.MetricTag{"foo", "bar"},
+			},
+			SampleRate: 1.0,
+		},
+		Value: 42,
+	}
+
+	this.Require().Equal(expected, <-this.sink)
+}
+
+func (this *MetricsTestSuite) TestMetricTagsTakePrecedenceOverDefaultTags() {
+	this.metrics.DefaultTags = []ghostferry.MetricTag{ghostferry.MetricTag{"foo", "bar"}}
+	expectedTags := []ghostferry.MetricTag{ghostferry.MetricTag{"foo", "omg"}}
+	this.metrics.Count("test_key", 42, expectedTags, 1.0)
+
+	expected := ghostferry.CountMetric{
+		MetricBase: ghostferry.MetricBase{
+			Key:        "test.test_key",
+			Tags:       expectedTags,
+			SampleRate: 1.0,
+		},
+		Value: 42,
+	}
+
+	this.Require().Equal(expected, <-this.sink)
+}
+
 func (this *MetricsTestSuite) TestPrefix() {
 	this.metrics.Prefix = "test42"
 	this.metrics.Count("test_key", 42, nil, 1.0)
@@ -37,7 +89,7 @@ func (this *MetricsTestSuite) TestPrefix() {
 	expected := ghostferry.CountMetric{
 		MetricBase: ghostferry.MetricBase{
 			Key:        "test42.test_key",
-			Tags:       nil,
+			Tags:       []ghostferry.MetricTag{},
 			SampleRate: 1.0,
 		},
 		Value: 42,
