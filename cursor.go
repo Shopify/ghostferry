@@ -11,6 +11,26 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// both `sql.Tx` and `sql.DB` allow a SQL query to be `Prepare`d
+type SqlPreparer interface {
+	Prepare(string) (*sql.Stmt, error)
+}
+
+type SqlDBWithFakeRollback struct {
+	*sql.DB
+}
+
+func (d *SqlDBWithFakeRollback) Rollback() error {
+	return nil
+}
+
+// sql.DB does not implement Rollback, but can use SqlDBWithFakeRollback
+// to perform a noop.
+type SqlPreparerAndRollbacker interface {
+	Prepare(string) (*sql.Stmt, error)
+	Rollback() error
+}
+
 type CursorConfig struct {
 	DB        *sql.DB
 	Throttler Throttler
@@ -59,7 +79,7 @@ func (c *Cursor) Each(f func(*RowBatch, uint64) error) error {
 	c.pkColumn = c.Table.GetPKColumn(0)
 
 	for c.lastSuccessfulPrimaryKey < c.MaxPrimaryKey {
-		var tx *sql.Tx
+		var tx SqlPreparerAndRollbacker
 		var batch *RowBatch
 		var pkpos uint64
 
@@ -68,9 +88,16 @@ func (c *Cursor) Each(f func(*RowBatch, uint64) error) error {
 				WaitForThrottle(c.Throttler)
 			}
 
-			tx, err = c.DB.Begin()
-			if err != nil {
-				return err
+			// Only need to use a transaction if RowLock == true. Otherwise
+			// we'd be wasting two extra round trips per batch, doing
+			// essentially a no-op.
+			if c.RowLock {
+				tx, err = c.DB.Begin()
+				if err != nil {
+					return err
+				}
+			} else {
+				tx = &SqlDBWithFakeRollback{c.DB}
 			}
 
 			batch, pkpos, err = c.Fetch(tx)
@@ -114,7 +141,7 @@ func (c *Cursor) Each(f func(*RowBatch, uint64) error) error {
 	return nil
 }
 
-func (c *Cursor) Fetch(tx *sql.Tx) (batch *RowBatch, pkpos uint64, err error) {
+func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, pkpos uint64, err error) {
 	var selectBuilder squirrel.SelectBuilder
 
 	if c.BuildSelect != nil {
@@ -145,11 +172,13 @@ func (c *Cursor) Fetch(tx *sql.Tx) (batch *RowBatch, pkpos uint64, err error) {
 	// This query must be a prepared query. If it is not, querying will use
 	// MySQL's plain text interface, which will scan all values into []uint8
 	// if we give it []interface{}.
-	stmt, err := tx.Prepare(query)
+	stmt, err := db.Prepare(query)
 	if err != nil {
 		logger.WithError(err).Error("failed to prepare query")
 		return
 	}
+
+	defer stmt.Close()
 
 	rows, err := stmt.Query(args...)
 	if err != nil {
