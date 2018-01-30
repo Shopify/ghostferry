@@ -3,8 +3,6 @@ package ghostferry
 import (
 	"database/sql"
 	"fmt"
-	"reflect"
-	"strconv"
 
 	"github.com/Masterminds/squirrel"
 	"github.com/siddontang/go-mysql/schema"
@@ -213,23 +211,10 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, pkpos uint64, err error
 		}
 
 		batchData = append(batchData, rowData)
-		// Since it is possible to have many different types of integers in
-		// MySQL, we try to parse it all into uint64.
-		if valueByteSlice, ok := rowData[pkIndex].([]byte); ok {
-			valueString := string(valueByteSlice)
-			pkpos, err = strconv.ParseUint(valueString, 10, 64)
-			if err != nil {
-				logger.WithError(err).Error("failed to convert string primary key value to uint64")
-				return
-			}
-		} else {
-			signedPkPos := reflect.ValueOf(rowData[pkIndex]).Int()
-			if signedPkPos < 0 {
-				err = fmt.Errorf("primary key %s had value %d in table %s", c.pkColumn.Name, signedPkPos, QuotedTableName(c.Table))
-				logger.WithError(err).Error("failed to update primary key position")
-				return
-			}
-			pkpos = uint64(signedPkPos)
+		pkpos, err = rowData.GetUint64(pkIndex)
+		if err != nil {
+			logger.WithError(err).Error("failed to get uint64 pk value")
+			return
 		}
 	}
 

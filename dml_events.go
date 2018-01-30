@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -10,6 +11,26 @@ import (
 )
 
 type RowData []interface{}
+
+// The mysql driver never actually gives you a uint64 from Scan, instead you
+// get an int64 for values that fit in int64 or a byte slice decimal string
+// with the uint64 value in it.
+func (r RowData) GetUint64(colIdx int) (res uint64, err error) {
+	if valueByteSlice, ok := r[colIdx].([]byte); ok {
+		valueString := string(valueByteSlice)
+		res, err = strconv.ParseUint(valueString, 10, 64)
+		if err != nil {
+			return 0, err
+		}
+	} else {
+		signedInt := reflect.ValueOf(r[colIdx]).Int()
+		if signedInt < 0 {
+			return 0, fmt.Errorf("expected position %d in row to contain an unsigned number", colIdx)
+		}
+		res = uint64(signedInt)
+	}
+	return
+}
 
 type DMLEvent interface {
 	Database() string
