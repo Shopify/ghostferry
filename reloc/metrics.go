@@ -30,6 +30,7 @@ func InitializeMetrics(prefix string, config *Config) error {
 		{Name: "TargetDB", Value: config.TargetDB},
 	}
 
+	metrics.AddConsumer()
 	go consumeMetrics(client, metricsChan)
 
 	return nil
@@ -39,7 +40,12 @@ func SetGlobalMetrics(prefix string, metricsChan chan interface{}) {
 	metrics = ghostferry.SetGlobalMetrics(prefix, metricsChan)
 }
 
+func StopAndFlushMetrics() {
+	metrics.StopAndFlush()
+}
+
 func consumeMetrics(client *dogstatsd.Client, metricsChan chan interface{}) {
+	defer metrics.DoneConsumer()
 	for {
 		switch metric := (<-metricsChan).(type) {
 		case ghostferry.CountMetric:
@@ -48,6 +54,8 @@ func consumeMetrics(client *dogstatsd.Client, metricsChan chan interface{}) {
 			handleErr(client.Gauge(metric.Key, metric.Value, tagsToStrings(metric.Tags), metric.SampleRate), metric)
 		case ghostferry.TimerMetric:
 			handleErr(client.Timer(metric.Key, metric.Value, tagsToStrings(metric.Tags), metric.SampleRate), metric)
+		case nil:
+			return
 		}
 	}
 }
