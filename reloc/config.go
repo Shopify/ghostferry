@@ -15,6 +15,7 @@ type Config struct {
 	StatsDAddress string
 	CutoverLock   HTTPCallback
 	CutoverUnlock HTTPCallback
+	PanicCallback HTTPCallback
 
 	JoinedTables              map[string][]JoinTable
 	IgnoredTables             []string

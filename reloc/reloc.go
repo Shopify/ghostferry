@@ -62,13 +62,25 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 		}
 	}
 
-	return &RelocFerry{
-		Ferry: &ghostferry.Ferry{
-			Config:    config.Config,
-			Throttler: throttler,
+	ferry := &ghostferry.Ferry{
+		Config:    config.Config,
+		Throttler: throttler,
+	}
+
+	logger := logrus.WithField("tag", "reloc")
+
+	ferry.ErrorHandler = &RelocErrorHandler{
+		ErrorHandler: &ghostferry.PanicErrorHandler{
+			Ferry: ferry,
 		},
+		PanicCallback: config.PanicCallback,
+		Logger:        logger,
+	}
+
+	return &RelocFerry{
+		Ferry:  ferry,
 		config: config,
-		logger: logrus.WithField("tag", "reloc"),
+		logger: logger,
 	}, nil
 }
 
