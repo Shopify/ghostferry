@@ -53,8 +53,7 @@ func (this *RowBatchTestSuite) TestRowBatchGeneratesInsertQuery() {
 		ghostferry.RowData{1001, []byte("val2"), true},
 		ghostferry.RowData{1002, []byte("val3"), true},
 	}
-	batch, err := ghostferry.NewRowBatch(this.sourceTable, vals)
-	this.Require().Nil(err)
+	batch := ghostferry.NewRowBatch(this.sourceTable, vals, 0)
 	this.Require().Equal(vals, batch.Values())
 
 	q1, v1, err := batch.AsSQLQuery(this.targetTable)
@@ -76,10 +75,9 @@ func (this *RowBatchTestSuite) TestRowBatchWithWrongColumnsReturnsError() {
 		ghostferry.RowData{1001},
 		ghostferry.RowData{1002, []byte("val2"), true},
 	}
-	batch, err := ghostferry.NewRowBatch(this.sourceTable, vals)
-	this.Require().Nil(err)
+	batch := ghostferry.NewRowBatch(this.sourceTable, vals, 0)
 
-	_, _, err = batch.AsSQLQuery(this.targetTable)
+	_, _, err := batch.AsSQLQuery(this.targetTable)
 	this.Require().NotNil(err)
 	this.Require().Contains(err.Error(), "test_table has 3 columns but event has 1 column")
 }
@@ -88,11 +86,22 @@ func (this *RowBatchTestSuite) TestRowBatchMetadata() {
 	vals := []ghostferry.RowData{
 		ghostferry.RowData{1000},
 	}
-	batch, err := ghostferry.NewRowBatch(this.sourceTable, vals)
-	this.Require().Nil(err)
+	batch := ghostferry.NewRowBatch(this.sourceTable, vals, 0)
 
 	this.Require().Equal("test_schema", batch.Database())
 	this.Require().Equal("test_table", batch.Table())
+	this.Require().Equal(true, batch.ValuesContainPk())
+	this.Require().Equal(0, batch.PkIndex())
+	this.Require().Equal(1000, batch.Values()[0][batch.PkIndex()])
+}
+
+func (this *RowBatchTestSuite) TestRowBatchNoPkIndex() {
+	vals := []ghostferry.RowData{
+		ghostferry.RowData{"hello"},
+	}
+	batch := ghostferry.NewRowBatch(this.sourceTable, vals, -1)
+
+	this.Require().Equal(false, batch.ValuesContainPk())
 }
 
 func TestRowBatchTestSuite(t *testing.T) {

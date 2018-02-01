@@ -194,7 +194,7 @@ func (d *DataIterator) Run() {
 				logger := d.logger.WithField("table", table.String())
 
 				cursor := d.CursorConfig.NewCursor(table, d.CurrentState.TargetPrimaryKeys()[table.String()])
-				err := cursor.Each(func(batch *RowBatch, pkpos uint64) error {
+				err := cursor.Each(func(batch *RowBatch) error {
 					metrics.Count("RowEvent", int64(batch.Size()), []MetricTag{
 						MetricTag{"table", table.Name},
 						MetricTag{"source", "table"},
@@ -218,6 +218,13 @@ func (d *DataIterator) Run() {
 					// TODO: it is also perhaps possible to save the Cursor objects
 					// directly as opposed to saving a state, but that is left to
 					// the future.
+					lastRow := batch.Values()[len(batch.Values())-1]
+					pkpos, err := lastRow.GetUint64(batch.PkIndex())
+					if err != nil {
+						logger.WithError(err).Error("failed to convert pk to uint64")
+						return err
+					}
+
 					logger.Debugf("updated last successful PK to %d", pkpos)
 					d.CurrentState.UpdateLastSuccessfulPK(table.String(), pkpos)
 

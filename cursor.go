@@ -68,7 +68,7 @@ type Cursor struct {
 	logger                   *logrus.Entry
 }
 
-func (c *Cursor) Each(f func(*RowBatch, uint64) error) error {
+func (c *Cursor) Each(f func(*RowBatch) error) error {
 	c.lastSuccessfulPrimaryKey = 0
 	c.logger = logrus.WithFields(logrus.Fields{
 		"table": c.Table.String(),
@@ -124,7 +124,7 @@ func (c *Cursor) Each(f func(*RowBatch, uint64) error) error {
 			return err
 		}
 
-		err = f(batch, pkpos)
+		err = f(batch)
 		if err != nil {
 			tx.Rollback()
 			c.logger.WithError(err).Error("failed to call each callback")
@@ -192,12 +192,18 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, pkpos uint64, err error
 		return
 	}
 
-	var pkIndex int
+	var pkIndex int = -1
 	for idx, col := range columns {
 		if col == c.pkColumn.Name {
 			pkIndex = idx
 			break
 		}
+	}
+
+	if pkIndex < 0 {
+		err = fmt.Errorf("pk is not found during iteration with columns: %v", columns)
+		logger.WithError(err).Error("failed to get pk index")
+		return
 	}
 
 	var rowData RowData
@@ -211,11 +217,6 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, pkpos uint64, err error
 		}
 
 		batchData = append(batchData, rowData)
-		pkpos, err = rowData.GetUint64(pkIndex)
-		if err != nil {
-			logger.WithError(err).Error("failed to get uint64 pk value")
-			return
-		}
 	}
 
 	err = rows.Err()
@@ -223,10 +224,15 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, pkpos uint64, err error
 		return
 	}
 
-	batch, err = NewRowBatch(c.Table, batchData)
-	if err != nil {
-		return
+	if len(batchData) > 0 {
+		pkpos, err = batchData[len(batchData)-1].GetUint64(pkIndex)
+		if err != nil {
+			logger.WithError(err).Error("failed to get uint64 pk value")
+			return
+		}
 	}
+
+	batch = NewRowBatch(c.Table, batchData, pkIndex)
 
 	logger.Debugf("found %d rows", batch.Size())
 
