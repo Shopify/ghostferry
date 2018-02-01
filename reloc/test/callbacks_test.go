@@ -2,6 +2,7 @@ package test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 
@@ -73,12 +74,12 @@ func (t *CallbacksTestSuite) TestFailsRunOnPanicError() {
 		w.WriteHeader(http.StatusInternalServerError)
 	})
 
-	t.Ferry.Ferry.ErrorHandler.Fatal("test_error", nil)
+	t.Ferry.Ferry.ErrorHandler.Fatal("test_error", errors.New("test error"))
 
 	t.Require().True(callbackReceived)
 
 	t.Require().NotNil(t.errHandler.LastError)
-	t.Require().Equal("callback returned 500 Internal Server Error", t.errHandler.LastError.Error())
+	t.Require().Equal("test error", t.errHandler.LastError.Error())
 }
 
 func (t *CallbacksTestSuite) TestPostsCallbacks() {
@@ -103,6 +104,7 @@ func (t *CallbacksTestSuite) TestPostsCallbacks() {
 
 		errorData := make(map[string]string)
 		errorData["ErrFrom"] = "test_error"
+		errorData["ErrMessage"] = "test error"
 
 		errorDataBytes, jsonErr := json.MarshalIndent(errorData, "", "  ")
 		t.Require().Nil(jsonErr)
@@ -116,7 +118,7 @@ func (t *CallbacksTestSuite) TestPostsCallbacks() {
 
 	t.AssertTenantCopied()
 
-	t.Ferry.Ferry.ErrorHandler.Fatal("test_error", nil)
+	t.Ferry.Ferry.ErrorHandler.Fatal("test_error", errors.New("test error"))
 	t.Require().True(errorReceived)
 }
 
