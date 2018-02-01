@@ -49,7 +49,11 @@ func (this *CopydbFerry) Start() error {
 	}
 
 	this.ferry.Verifier = &ghostferry.ChecksumTableVerifier{
-		TablesToCheck: this.ferry.Tables.AsSlice(),
+		Tables:           this.ferry.Tables.AsSlice(),
+		SourceDB:         this.ferry.SourceDB,
+		TargetDB:         this.ferry.TargetDB,
+		DatabaseRewrites: this.ferry.Config.DatabaseRewrites,
+		TableRewrites:    this.ferry.Config.TableRewrites,
 	}
 	return nil
 }

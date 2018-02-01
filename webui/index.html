@@ -70,7 +70,7 @@
             </tr>
             <tr>
               <th>Throttling</th>
-              <td>{{.Throttled}}{{if .Throttled}} - until {{.ThrottledUntil}}{{end}}</td>
+              <td>{{.Throttled}}</td>
             </tr>
             <tr>
               <th>Tables Copied</th>
@@ -95,22 +95,24 @@
                 <td>{{.VerificationStarted}}</td>
               </tr>
               {{if .VerificationDone}}
-                {{if not .VerificationErr}}
+                {{if and (not .VerificationErr) .VerificationResult }}
                   <tr>
                     <th>Verified Correct</th>
-                    <td>{{if not .MismatchedTables}}true{{else}}false{{end}}</td>
+                    <td>{{.VerificationResult.DataCorrect}}</td>
                   </tr>
-                  {{if .MismatchedTables}}
+                  {{if .VerificationResult.Message}}
                     <tr>
-                      <th>Mismatched Tables</th>
-                      <td>{{.MismatchedTables}}</td>
+                      <th>Verification Message</th>
+                      <td>{{.VerificationResult.Message}}</td>
                     </tr>
                   {{end}}
                 {{else}}
-                  <tr>
-                    <th>Error During Verification</th>
-                    <td>{{.VerificationErr}}</td>
-                  </tr>
+                  {{if .VerificationErr}}
+                    <tr>
+                      <th>Error During Verification</th>
+                      <td>{{.VerificationErr}}</td>
+                    </tr>
+                  {{end}}
                 {{end}}
               {{end}}
             {{else}}
@@ -139,9 +141,6 @@
             </form>
             <form action="/api/actions/unpause" method="POST">
               <input type="submit" value="Unpause" />
-            </form>
-            <form action="/api/actions/throttle" method="POST">
-              <input type="submit" value="Throttle for 5 min" />
             </form>
 
             {{if .AutomaticCutover}}

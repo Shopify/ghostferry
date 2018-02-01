@@ -127,6 +127,11 @@ func (this *ControlServer) HandleVerify(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	this.F.Verifier.StartVerification(this.F)
+	err := this.F.Verifier.StartInBackground()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }

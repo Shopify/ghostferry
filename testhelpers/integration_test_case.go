@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Shopify/ghostferry"
 	"github.com/sirupsen/logrus"
 )
 
@@ -93,13 +94,13 @@ func (this *IntegrationTestCase) StopStreamingAndWaitForGhostferryFinish() {
 
 func (this *IntegrationTestCase) VerifyData() {
 	if !this.DisableChecksumVerifier {
-		tablesMismatched, err := this.verifyTableChecksum()
+		verificationResult, err := this.verifyTableChecksum()
 		if err != nil {
 			this.T.Fatalf("error while verifying data: %v", err)
 		}
 
-		if len(tablesMismatched) > 0 {
-			this.T.Fatalf("%d tables mismatched: %v", len(tablesMismatched), tablesMismatched)
+		if !verificationResult.DataCorrect {
+			this.T.Fatalf(verificationResult.Message)
 		}
 	}
 
@@ -124,10 +125,14 @@ func (this *IntegrationTestCase) Teardown() {
 	}
 }
 
-func (this *IntegrationTestCase) verifyTableChecksum() ([]string, error) {
-	this.Ferry.Verifier.StartVerification(this.Ferry.Ferry)
+func (this *IntegrationTestCase) verifyTableChecksum() (*ghostferry.VerificationResult, error) {
+	err := this.Ferry.Verifier.StartInBackground()
+	if err != nil {
+		return nil, err
+	}
+
 	this.Ferry.Verifier.Wait()
-	return this.Ferry.Verifier.MismatchedTables()
+	return this.Ferry.Verifier.VerificationResult()
 }
 
 func (this *IntegrationTestCase) callCustomAction(f func(*TestFerry)) {
