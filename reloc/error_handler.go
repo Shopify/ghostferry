@@ -10,31 +10,29 @@ import (
 
 type RelocErrorHandler struct {
 	ghostferry.ErrorHandler
-	PanicCallback HTTPCallback
+	ErrorCallback HTTPCallback
 	Logger        *logrus.Entry
 }
 
 func (this *RelocErrorHandler) Fatal(from string, err error) {
 	client := &http.Client{}
 
-	panicData := make(map[string]string)
-	panicData["ErrFrom"] = from
+	errorData := make(map[string]string)
+	errorData["ErrFrom"] = from
 	if err != nil {
-		panicData["ErrMessage"] = err.Error()
-	} else {
-		panicData["ErrMessage"] = ""
+		errorData["ErrMessage"] = err.Error()
 	}
 
-	panicDataBytes, jsonErr := json.MarshalIndent(panicData, "", "  ")
+	errorDataBytes, jsonErr := json.MarshalIndent(errorData, "", "  ")
 	if jsonErr != nil {
-		this.Logger.WithField("error", jsonErr).Errorf("reloc failed to marshal panic data")
+		this.Logger.WithField("error", jsonErr).Errorf("reloc failed to marshal error data")
 		err = jsonErr
 	} else {
-		this.PanicCallback.Payload = string(panicDataBytes)
+		this.ErrorCallback.Payload = string(errorDataBytes)
 
-		postErr := this.PanicCallback.Post(client)
+		postErr := this.ErrorCallback.Post(client)
 		if postErr != nil {
-			this.Logger.WithField("error", postErr).Errorf("reloc failed to notify panic error")
+			this.Logger.WithField("error", postErr).Errorf("reloc failed to notify error")
 			err = postErr
 		}
 	}

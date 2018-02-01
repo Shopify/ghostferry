@@ -24,7 +24,7 @@ func (t *CallbacksTestSuite) SetupTest() {
 
 	t.Ferry.Ferry.ErrorHandler = &reloc.RelocErrorHandler{
 		ErrorHandler:  &t.errHandler,
-		PanicCallback: t.Config.PanicCallback,
+		ErrorCallback: t.Config.ErrorCallback,
 		Logger:        logrus.WithField("tag", "reloc"),
 	}
 
@@ -68,7 +68,7 @@ func (t *CallbacksTestSuite) TestFailsRunOnLockError() {
 
 func (t *CallbacksTestSuite) TestFailsRunOnPanicError() {
 	callbackReceived := false
-	t.PanicCallback = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	t.ErrorCallback = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		callbackReceived = true
 		w.WriteHeader(http.StatusInternalServerError)
 	})
@@ -96,18 +96,17 @@ func (t *CallbacksTestSuite) TestPostsCallbacks() {
 		t.Require().Equal("test_unlock", resp["Payload"])
 	})
 
-	panicReceived := false
-	t.PanicCallback = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		panicReceived = true
+	errorReceived := false
+	t.ErrorCallback = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		errorReceived = true
 		resp := t.requestMap(r)
 
-		panicData := make(map[string]string)
-		panicData["ErrFrom"] = "test_panic"
-		panicData["ErrMessage"] = ""
+		errorData := make(map[string]string)
+		errorData["ErrFrom"] = "test_error"
 
-		panicDataBytes, jsonErr := json.MarshalIndent(panicData, "", "  ")
+		errorDataBytes, jsonErr := json.MarshalIndent(errorData, "", "  ")
 		t.Require().Nil(jsonErr)
-		t.Require().Equal(string(panicDataBytes), resp["Payload"])
+		t.Require().Equal(string(errorDataBytes), resp["Payload"])
 	})
 
 	t.Ferry.Run()
@@ -117,8 +116,8 @@ func (t *CallbacksTestSuite) TestPostsCallbacks() {
 
 	t.AssertTenantCopied()
 
-	t.Ferry.Ferry.ErrorHandler.Fatal("test_panic", nil)
-	t.Require().True(panicReceived)
+	t.Ferry.Ferry.ErrorHandler.Fatal("test_error", nil)
+	t.Require().True(errorReceived)
 }
 
 func (t *CallbacksTestSuite) requestMap(r *http.Request) map[string]string {

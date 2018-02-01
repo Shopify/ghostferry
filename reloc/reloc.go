@@ -73,7 +73,7 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 		ErrorHandler: &ghostferry.PanicErrorHandler{
 			Ferry: ferry,
 		},
-		PanicCallback: config.PanicCallback,
+		ErrorCallback: config.ErrorCallback,
 		Logger:        logger,
 	}
 

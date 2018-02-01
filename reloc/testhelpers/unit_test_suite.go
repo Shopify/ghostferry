@@ -36,7 +36,7 @@ type RelocUnitTestSuite struct {
 
 	CutoverLock   func(http.ResponseWriter, *http.Request)
 	CutoverUnlock func(http.ResponseWriter, *http.Request)
-	PanicCallback func(http.ResponseWriter, *http.Request)
+	ErrorCallback func(http.ResponseWriter, *http.Request)
 }
 
 func (t *RelocUnitTestSuite) SetupSuite() {
@@ -50,9 +50,9 @@ func (t *RelocUnitTestSuite) SetupSuite() {
 			if t.CutoverLock != nil {
 				t.CutoverLock(w, r)
 			}
-		case "/panic":
-			if t.PanicCallback != nil {
-				t.PanicCallback(w, r)
+		case "/error":
+			if t.ErrorCallback != nil {
+				t.ErrorCallback(w, r)
 			}
 		default:
 			t.Fail("Unexpected callback received")
@@ -136,8 +136,8 @@ func (t *RelocUnitTestSuite) setupRelocFerry() {
 			Payload: "test_unlock",
 		},
 
-		PanicCallback: reloc.HTTPCallback{
-			URI: fmt.Sprintf("%s/panic", t.server.URL),
+		ErrorCallback: reloc.HTTPCallback{
+			URI: fmt.Sprintf("%s/error", t.server.URL),
 		},
 	}
 
