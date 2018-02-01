@@ -26,13 +26,13 @@ type ShardedCopyFilter struct {
 	missingShardingKeyIndexLogged sync.Map
 }
 
-func (f *ShardedCopyFilter) BuildSelect(table *schema.Table, lastPk, batchSize uint64) (sq.SelectBuilder, error) {
+func (f *ShardedCopyFilter) BuildSelect(columns []string, table *schema.Table, lastPk, batchSize uint64) (sq.SelectBuilder, error) {
 	quotedPK := "`" + table.GetPKColumn(0).Name + "`"
 	quotedShardingKey := "`" + f.ShardingKey + "`"
 	quotedTable := ghostferry.QuotedTableName(table)
 
 	if _, exists := f.PrimaryKeyTables[table.Name]; exists {
-		return sq.Select("*").
+		return sq.Select(columns...).
 			From(quotedTable + " USE INDEX (PRIMARY)").
 			Where(sq.Eq{quotedPK: f.ShardingValue}). // Both WHERE conditions are necessary to prevent infinite iteration.
 			Where(sq.Gt{quotedPK: lastPk}), nil      // LIMIT not necessary since we are selecting a single primary key.
@@ -40,7 +40,7 @@ func (f *ShardedCopyFilter) BuildSelect(table *schema.Table, lastPk, batchSize u
 
 	joinTables, exists := f.JoinedTables[table.Name]
 	if !exists {
-		return sq.Select("*").
+		return sq.Select(columns...).
 			From(quotedTable + " " + f.shardingKeyIndexHint(table)).
 			Where(sq.Eq{quotedShardingKey: f.ShardingValue}).
 			Where(sq.Gt{quotedPK: lastPk}).
@@ -63,7 +63,7 @@ func (f *ShardedCopyFilter) BuildSelect(table *schema.Table, lastPk, batchSize u
 
 	condition := fmt.Sprintf("%s IN (SELECT * FROM (%s) AS reloc_join_table)", quotedPK, subquery)
 
-	return sq.Select("*").
+	return sq.Select(columns...).
 		From(quotedTable).
 		Where(sq.Expr(condition, args...)).
 		OrderBy(quotedPK), nil // LIMIT comes from the subquery.

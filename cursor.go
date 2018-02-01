@@ -33,9 +33,10 @@ type CursorConfig struct {
 	DB        *sql.DB
 	Throttler Throttler
 
-	BuildSelect func(*schema.Table, uint64, uint64) (squirrel.SelectBuilder, error)
-	BatchSize   uint64
-	ReadRetries int
+	ColumnsToSelect []string
+	BuildSelect     func([]string, *schema.Table, uint64, uint64) (squirrel.SelectBuilder, error)
+	BatchSize       uint64
+	ReadRetries     int
 }
 
 func (c *CursorConfig) NewCursor(table *schema.Table, maxPk uint64) *Cursor {
@@ -75,6 +76,10 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 		"tag":   "cursor",
 	})
 	c.pkColumn = c.Table.GetPKColumn(0)
+
+	if len(c.ColumnsToSelect) == 0 {
+		c.ColumnsToSelect = []string{"*"}
+	}
 
 	for c.lastSuccessfulPrimaryKey < c.MaxPrimaryKey {
 		var tx SqlPreparerAndRollbacker
@@ -143,13 +148,13 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, pkpos uint64, err error
 	var selectBuilder squirrel.SelectBuilder
 
 	if c.BuildSelect != nil {
-		selectBuilder, err = c.BuildSelect(c.Table, c.lastSuccessfulPrimaryKey, c.BatchSize)
+		selectBuilder, err = c.BuildSelect(c.ColumnsToSelect, c.Table, c.lastSuccessfulPrimaryKey, c.BatchSize)
 		if err != nil {
 			c.logger.WithError(err).Error("failed to apply filter for select")
 			return
 		}
 	} else {
-		selectBuilder = DefaultBuildSelect(c.Table, c.lastSuccessfulPrimaryKey, c.BatchSize)
+		selectBuilder = DefaultBuildSelect(c.ColumnsToSelect, c.Table, c.lastSuccessfulPrimaryKey, c.BatchSize)
 	}
 
 	if c.RowLock {
@@ -251,10 +256,10 @@ func ScanGenericRow(rows *sql.Rows, columnCount int) (RowData, error) {
 	return values, err
 }
 
-func DefaultBuildSelect(table *schema.Table, lastPk, batchSize uint64) squirrel.SelectBuilder {
+func DefaultBuildSelect(columns []string, table *schema.Table, lastPk, batchSize uint64) squirrel.SelectBuilder {
 	quotedPK := quoteField(table.GetPKColumn(0).Name)
 
-	return squirrel.Select("*").
+	return squirrel.Select(columns...).
 		From(QuotedTableName(table)).
 		Where(squirrel.Gt{quotedPK: lastPk}).
 		Limit(batchSize).
