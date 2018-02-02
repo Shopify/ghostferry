@@ -47,10 +47,14 @@ type Ferry struct {
 	TargetDB *sql.DB
 
 	BinlogStreamer *BinlogStreamer
-	DataIterator   *DataIterator
-	ErrorHandler   ErrorHandler
-	Throttler      Throttler
-	Verifier       Verifier
+	BinlogWriter   *BinlogWriter
+
+	DataIterator *DataIterator
+	BatchWriter  *BatchWriter
+
+	ErrorHandler ErrorHandler
+	Throttler    Throttler
+	Verifier     Verifier
 
 	Tables TableSchemaCache
 
@@ -58,28 +62,32 @@ type Ferry struct {
 	DoneTime     time.Time
 	OverallState string
 
-	logger      *logrus.Entry
-	batchWriter *BatchWriter
+	logger *logrus.Entry
 
 	rowCopyCompleteCh chan struct{}
-	binlogEvents      chan DMLEvent
 }
 
-func (f *Ferry) NewDataIterator() (*DataIterator, error) {
+func (f *Ferry) newDataIterator() (*DataIterator, error) {
 	dataIterator := &DataIterator{
-		Db:           f.SourceDB,
-		Config:       f.Config,
+		DB:          f.SourceDB,
+		Concurrency: f.Config.NumberOfTableIterators,
+
 		ErrorHandler: f.ErrorHandler,
-		Throttler:    f.Throttler,
-		Filter:       f.CopyFilter,
+		CursorConfig: &CursorConfig{
+			DB:        f.SourceDB,
+			Throttler: f.Throttler,
+
+			BatchSize:   f.Config.IterateChunksize,
+			ReadRetries: f.Config.MaxIterationReadRetries,
+		},
+	}
+
+	if f.CopyFilter != nil {
+		dataIterator.CursorConfig.BuildSelect = f.CopyFilter.BuildSelect
 	}
 
 	err := dataIterator.Initialize()
-	if err != nil {
-		return nil, err
-	}
-
-	return dataIterator, nil
+	return dataIterator, err
 }
 
 // Initialize all the components of Ghostferry and connect to the Database
@@ -89,7 +97,6 @@ func (f *Ferry) Initialize() (err error) {
 
 	f.logger = logrus.WithField("tag", "ferry")
 	f.rowCopyCompleteCh = make(chan struct{})
-	f.binlogEvents = make(chan DMLEvent, f.BinlogEventBatchSize)
 
 	f.logger.Infof("hello world from %s", VersionString)
 
@@ -166,17 +173,36 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
-	f.DataIterator, err = f.NewDataIterator()
+	f.BinlogWriter = &BinlogWriter{
+		DB:               f.TargetDB,
+		DatabaseRewrites: f.Config.DatabaseRewrites,
+		TableRewrites:    f.Config.TableRewrites,
+
+		BatchSize:    f.Config.BinlogEventBatchSize,
+		WriteRetries: f.Config.MaxWriteRetriesOnTargetDBError,
+
+		ErrorHandler: f.ErrorHandler,
+	}
+
+	err = f.BinlogWriter.Initialize()
 	if err != nil {
 		return err
 	}
 
-	f.batchWriter = &BatchWriter{
+	f.DataIterator, err = f.newDataIterator()
+	if err != nil {
+		return err
+	}
+
+	f.BatchWriter = &BatchWriter{
+		DB: f.TargetDB,
+
 		DatabaseRewrites: f.Config.DatabaseRewrites,
 		TableRewrites:    f.Config.TableRewrites,
-		DB:               f.TargetDB,
+
+		WriteRetries: f.Config.MaxWriteRetriesOnTargetDBError,
 	}
-	f.batchWriter.Initialize()
+	f.BatchWriter.Initialize()
 
 	f.logger.Info("ferry initialized")
 	return nil
@@ -192,8 +218,8 @@ func (f *Ferry) Start() error {
 	// Registering the builtin event listeners in Start allows the consumer
 	// of the library to register event listeners that gets called before
 	// and after the data gets written to the target database.
-	f.BinlogStreamer.AddEventListener(f.bufferBinlogEvents)
-	f.DataIterator.AddBatchListener(f.writeRowBatchToTargetWithRetries)
+	f.BinlogStreamer.AddEventListener(f.BinlogWriter.BufferBinlogEvents)
+	f.DataIterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
 	f.DataIterator.AddDoneListener(f.onFinishedIterations)
 
 	// The starting binlog coordinates must be determined first. If it is
@@ -251,21 +277,20 @@ func (f *Ferry) Run() {
 	coreServicesWg.Add(3)
 
 	go func() {
-		defer func() {
-			close(f.binlogEvents)
-			coreServicesWg.Done()
-		}()
+		defer coreServicesWg.Done()
+
 		f.BinlogStreamer.Run()
+		f.BinlogWriter.Stop()
+	}()
+
+	go func() {
+		defer coreServicesWg.Done()
+		f.BinlogWriter.Run()
 	}()
 
 	go func() {
 		defer coreServicesWg.Done()
 		f.DataIterator.Run()
-	}()
-
-	go func() {
-		defer coreServicesWg.Done()
-		f.flushBinlogEventBuffer()
 	}()
 
 	coreServicesWg.Wait()
@@ -277,27 +302,21 @@ func (f *Ferry) Run() {
 	supportingServicesWg.Wait()
 }
 
-func (f *Ferry) IterateAndCopyTables(tables []*schema.Table) error {
+func (f *Ferry) RunStandaloneDataCopy(tables []*schema.Table) error {
 	if len(tables) == 0 {
 		return nil
 	}
 
-	iterator, err := f.NewDataIterator()
+	dataIterator, err := f.newDataIterator()
 	if err != nil {
 		return err
 	}
 
-	iterator.Tables = tables
+	dataIterator.Tables = tables
+	dataIterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
+	f.logger.WithField("tables", tables).Info("starting standalone table copy")
 
-	iterator.AddBatchListener(f.writeRowBatchToTargetWithRetries)
-	iterator.AddDoneListener(func() error {
-		f.logger.WithField("tables", tables).Info("Finished iterating tables")
-		return nil
-	})
-
-	f.logger.WithField("tables", tables).Info("Iterating tables")
-
-	iterator.Run()
+	dataIterator.Run()
 
 	return nil
 }
@@ -337,89 +356,6 @@ func (f *Ferry) onFinishedIterations() error {
 	f.OverallState = StateCutover
 	// TODO: make it so that this is non-blocking
 	f.rowCopyCompleteCh <- struct{}{}
-	return nil
-}
-
-func (f *Ferry) bufferBinlogEvents(events []DMLEvent) error {
-	for _, event := range events {
-		f.binlogEvents <- event
-	}
-	return nil
-}
-
-func (f *Ferry) flushBinlogEventBuffer() {
-	var batch []DMLEvent
-	for {
-		firstEvent := <-f.binlogEvents
-		if firstEvent == nil {
-			// Channel is closed, no more events to write.
-			break
-		}
-
-		batch = append(batch, firstEvent)
-		wantMoreEvents := true
-
-		for wantMoreEvents && len(batch) < f.BinlogEventBatchSize {
-			select {
-			case event := <-f.binlogEvents:
-				if event != nil {
-					batch = append(batch, event)
-				} else {
-					// Channel is closed, finish writing batch.
-					wantMoreEvents = false
-				}
-			default:
-				wantMoreEvents = false
-			}
-		}
-
-		err := WithRetries(f.MaxWriteRetriesOnTargetDBError, 0, f.logger, "write events to target", func() error {
-			return f.writeBinlogEventsToTarget(batch)
-		})
-		if err != nil {
-			f.ErrorHandler.Fatal("binlog_writer", err)
-			return
-		}
-		batch = batch[0:0]
-	}
-}
-
-func (f *Ferry) writeRowBatchToTargetWithRetries(batch *RowBatch) error {
-	return WithRetries(f.MaxWriteRetriesOnTargetDBError, 0, f.logger, "write batch to target", func() error {
-		return f.batchWriter.Write(batch)
-	})
-}
-
-func (f *Ferry) writeBinlogEventsToTarget(events []DMLEvent) error {
-	queryBuffer := []byte("BEGIN;\n")
-
-	for _, ev := range events {
-		eventDatabaseName := ev.Database()
-		if targetDatabaseName, exists := f.Config.DatabaseRewrites[eventDatabaseName]; exists {
-			eventDatabaseName = targetDatabaseName
-		}
-
-		eventTableName := ev.Table()
-		if targetTableName, exists := f.Config.TableRewrites[eventTableName]; exists {
-			eventTableName = targetTableName
-		}
-
-		sql, err := ev.AsSQLString(&schema.Table{Schema: eventDatabaseName, Name: eventTableName})
-		if err != nil {
-			return fmt.Errorf("generating sql query: %v", err)
-		}
-
-		queryBuffer = append(queryBuffer, sql...)
-		queryBuffer = append(queryBuffer, ";\n"...)
-	}
-
-	queryBuffer = append(queryBuffer, "COMMIT"...)
-
-	query := string(queryBuffer)
-	_, err := f.TargetDB.Exec(query)
-	if err != nil {
-		return fmt.Errorf("exec query (%d bytes): %v", len(query), err)
-	}
 	return nil
 }
 

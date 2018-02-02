@@ -13,10 +13,10 @@ type CopyFilter interface {
 	// allowing for restricting copying to a subset of data. Returning an error
 	// here will cause the query to be retried, until the retry limit is
 	// reached, at which point the ferry will be aborted. BuildSelect is passed
-	// the table being copied, the last primary key value from the previous
-	// batch, and the batch size. Call DefaultBuildSelect to generate the
-	// default query, which may be used as a starting point.
-	BuildSelect(*schema.Table, uint64, uint64) (sq.SelectBuilder, error)
+	// the columns to be selected, table being copied, the last primary key value
+	// from the previous batch, and the batch size. Call DefaultBuildSelect to
+	// generate the default query, which may be used as a starting point.
+	BuildSelect([]string, *schema.Table, uint64, uint64) (sq.SelectBuilder, error)
 
 	// ApplicableEvent is used to filter events for rows that have been
 	// filtered in ConstrainSelect. ApplicableEvent should return true if the

@@ -3,13 +3,9 @@ package ghostferry
 import (
 	"container/ring"
 	"database/sql"
-	"fmt"
-	"reflect"
-	"strconv"
 	"sync"
 	"time"
 
-	sq "github.com/Masterminds/squirrel"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
@@ -143,320 +139,127 @@ func (this *DataIteratorState) EstimatedPKProcessedPerSecond() float64 {
 }
 
 type DataIterator struct {
-	Db           *sql.DB
-	Config       *Config
-	ErrorHandler ErrorHandler
-	Throttler    Throttler
+	DB          *sql.DB
+	Tables      []*schema.Table
+	Concurrency int
 
-	Tables []*schema.Table
-	Filter CopyFilter
+	ErrorHandler ErrorHandler
+	CursorConfig *CursorConfig
 
 	CurrentState *DataIteratorState
 
-	tableCh        chan *schema.Table
 	batchListeners []func(*RowBatch) error
 	doneListeners  []func() error
-
-	logger *logrus.Entry
+	logger         *logrus.Entry
 }
 
-func (this *DataIterator) Initialize() error {
-	this.tableCh = make(chan *schema.Table)
-	this.logger = logrus.WithField("tag", "data_iterator")
-
-	this.CurrentState = newDataIteratorState(this.Config.NumberOfTableIterators)
+func (d *DataIterator) Initialize() error {
+	d.logger = logrus.WithField("tag", "data_iterator")
+	d.CurrentState = newDataIteratorState(d.Concurrency)
 
 	return nil
 }
 
-func (this *DataIterator) Run() {
-	defer func() {
-		this.logger.Info("data iterator done")
-	}()
+func (d *DataIterator) Run() {
+	d.logger.WithField("tablesCount", len(d.Tables)).Info("starting data iterator run")
 
-	this.logger.WithField("tablesCount", len(this.Tables)).Info("starting data iterator run")
-
-	tablesWithData, emptyTables, err := MaxPrimaryKeys(this.Db, this.Tables, this.logger)
+	tablesWithData, emptyTables, err := MaxPrimaryKeys(d.DB, d.Tables, d.logger)
 	if err != nil {
-		this.ErrorHandler.Fatal("data_iterator", err)
+		d.ErrorHandler.Fatal("data_iterator", err)
 		return
 	}
 
 	for _, table := range emptyTables {
-		this.CurrentState.MarkTableAsCompleted(table.String())
+		d.CurrentState.MarkTableAsCompleted(table.String())
 	}
 
 	for table, maxPk := range tablesWithData {
-		this.CurrentState.UpdateTargetPK(table.String(), maxPk)
+		d.CurrentState.UpdateTargetPK(table.String(), maxPk)
 	}
 
+	tablesQueue := make(chan *schema.Table)
 	wg := &sync.WaitGroup{}
-	wg.Add(this.Config.NumberOfTableIterators)
+	wg.Add(d.Concurrency)
 
-	for id := 0; id < this.Config.NumberOfTableIterators; id++ {
-		go this.runTableIterator(uint32(id), wg)
+	for i := 0; i < d.Concurrency; i++ {
+		go func() {
+			defer wg.Done()
+
+			for {
+				table, ok := <-tablesQueue
+				if !ok {
+					break
+				}
+
+				logger := d.logger.WithField("table", table.String())
+
+				cursor := d.CursorConfig.NewCursor(table, d.CurrentState.TargetPrimaryKeys()[table.String()])
+				err := cursor.Each(func(batch *RowBatch) error {
+					metrics.Count("RowEvent", int64(batch.Size()), []MetricTag{
+						MetricTag{"table", table.Name},
+						MetricTag{"source", "table"},
+					}, 1.0)
+
+					for _, listener := range d.batchListeners {
+						err := listener(batch)
+						if err != nil {
+							logger.WithError(err).Error("failed to process row batch with listeners")
+							return err
+						}
+					}
+
+					// The way we save the LastSuccessfulPK is probably incorrect if we
+					// want to ensure that when we crash, we have a "correct" view of
+					// the LastSuccessfulPK.
+					// However, it's uncertain if it is even theoretically possible to
+					// save the "correct" value.
+					// TODO: investigate this if we want to ensure that on error, we have
+					//       the "correct" last successful PK and other values.
+					// TODO: it is also perhaps possible to save the Cursor objects
+					// directly as opposed to saving a state, but that is left to
+					// the future.
+					lastRow := batch.Values()[len(batch.Values())-1]
+					pkpos, err := lastRow.GetUint64(batch.PkIndex())
+					if err != nil {
+						logger.WithError(err).Error("failed to convert pk to uint64")
+						return err
+					}
+
+					logger.Debugf("updated last successful PK to %d", pkpos)
+					d.CurrentState.UpdateLastSuccessfulPK(table.String(), pkpos)
+
+					return nil
+				})
+
+				if err != nil {
+					logger.WithError(err).Error("failed to iterate table")
+					d.ErrorHandler.Fatal("data_iterator", err)
+					return
+				}
+
+				logger.Info("table iteration completed")
+				d.CurrentState.MarkTableAsCompleted(table.String())
+			}
+		}()
 	}
 
 	for table, _ := range tablesWithData {
-		this.tableCh <- table
+		tablesQueue <- table
 	}
 
-	this.logger.Info("done queueing tables to be iterated, closing table channel")
-
-	close(this.tableCh)
+	d.logger.Info("done queueing tables to be iterated, closing table channel")
+	close(tablesQueue)
 
 	wg.Wait()
-
-	for _, listener := range this.doneListeners {
+	for _, listener := range d.doneListeners {
 		listener()
 	}
 }
 
-func (this *DataIterator) AddBatchListener(listener func(*RowBatch) error) {
-	this.batchListeners = append(this.batchListeners, listener)
+func (d *DataIterator) AddBatchListener(listener func(*RowBatch) error) {
+	d.batchListeners = append(d.batchListeners, listener)
 }
 
-func (this *DataIterator) AddDoneListener(listener func() error) {
-	this.doneListeners = append(this.doneListeners, listener)
-}
-
-func (this *DataIterator) runTableIterator(id uint32, doneWg *sync.WaitGroup) {
-	defer func() {
-		this.logger.Debugf("table iterator %d done", id)
-		doneWg.Done()
-	}()
-
-	this.logger.Debugf("starting table iterator instance %d", id)
-
-	for {
-		table, ok := <-this.tableCh
-		if !ok {
-			break
-		}
-
-		err := this.iterateTable(table)
-		if err != nil {
-			this.logger.WithFields(logrus.Fields{
-				"error": err,
-				"id":    id,
-				"table": table.String(),
-			}).Error("failed to iterate table")
-			this.ErrorHandler.Fatal("table_iterator", err)
-			return
-		}
-	}
-}
-
-func (this *DataIterator) iterateTable(table *schema.Table) error {
-	logger := this.logger.WithField("table", table.String())
-	logger.Info("starting to copy table")
-
-	var lastSuccessfulPrimaryKey uint64 = 0
-	maxPrimaryKey := this.CurrentState.TargetPrimaryKeys()[table.String()]
-
-	for lastSuccessfulPrimaryKey < maxPrimaryKey {
-		var tx *sql.Tx
-		var batch *RowBatch
-		var pkpos uint64
-
-		err := WithRetries(this.Config.MaxIterationReadRetries, 0, logger, "fetch rows", func() (err error) {
-			WaitForThrottle(this.Throttler)
-
-			// We need to lock SELECT until we apply the updates (done in the
-			// listeners). We need a transaction that is open all the way until
-			// the update is applied on the target database. This is why we
-			// open the transaction outside of the fetchRowsInBatch method.
-			//
-			// We also need to make sure that the transactions are always rolled
-			// back at the end of this iteration of primary key.
-			tx, err = this.Db.Begin()
-			if err != nil {
-				return err
-			}
-
-			batch, pkpos, err = this.fetchRowsInBatch(tx, table, table.GetPKColumn(0), lastSuccessfulPrimaryKey)
-			if err == nil {
-				return nil
-			}
-
-			tx.Rollback()
-			return err
-		})
-
-		if err != nil {
-			return err
-		}
-
-		if batch.Size() == 0 {
-			tx.Rollback()
-			logger.Info("did not reach max primary key, but the table is completed as there are no more rows")
-			break
-		}
-
-		for _, listener := range this.batchListeners {
-			err = listener(batch)
-			if err != nil {
-				tx.Rollback()
-				logger.WithError(err).Error("failed to process events with listeners")
-				return err
-			}
-		}
-
-		tx.Rollback()
-
-		if pkpos <= lastSuccessfulPrimaryKey {
-			err = fmt.Errorf("new pkpos %d <= lastSuccessfulPk %d", pkpos, lastSuccessfulPrimaryKey)
-			logger.WithError(err).Error("last successful pk position did not advance")
-			return err
-		}
-
-		lastSuccessfulPrimaryKey = pkpos
-		// The way we save the LastSuccessfulPK is probably incorrect if we
-		// want to ensure that when we crash, we have a "correct" view of
-		// the LastSuccessfulPK.
-		// However, it's uncertain if it is even theoretically possible to
-		// save the "correct" value.
-		// TODO: investigate this if we want to ensure that on error, we have
-		//       the "correct" last successful PK and other values.
-		logger.Debugf("updated last successful PK to %d", pkpos)
-		this.CurrentState.UpdateLastSuccessfulPK(table.String(), pkpos)
-	}
-
-	logger.Info("table copy completed")
-	this.CurrentState.MarkTableAsCompleted(table.String())
-	return nil
-}
-
-func DefaultBuildSelect(table *schema.Table, lastPk, batchSize uint64) sq.SelectBuilder {
-	quotedPK := quoteField(table.GetPKColumn(0).Name)
-
-	return sq.Select("*").
-		From(QuotedTableName(table)).
-		Where(sq.Gt{quotedPK: lastPk}).
-		Limit(batchSize).
-		OrderBy(quotedPK)
-}
-
-func (this *DataIterator) fetchRowsInBatch(tx *sql.Tx, table *schema.Table, pkColumn *schema.TableColumn, lastSuccessfulPk uint64) (batch *RowBatch, pkpos uint64, err error) {
-	logger := this.logger.WithFields(logrus.Fields{
-		"table": table.String(),
-	})
-
-	var selectBuilder sq.SelectBuilder
-
-	if this.Filter != nil {
-		if selectBuilder, err = this.Filter.BuildSelect(table, lastSuccessfulPk, this.Config.IterateChunksize); err != nil {
-			logger.WithError(err).Error("failed to apply filter for select")
-			return
-		}
-	} else {
-		selectBuilder = DefaultBuildSelect(table, lastSuccessfulPk, this.Config.IterateChunksize)
-	}
-
-	selectBuilder = selectBuilder.Suffix("FOR UPDATE")
-
-	query, args, err := selectBuilder.ToSql()
-	if err != nil {
-		logger.WithError(err).Error("failed to build chunking sql")
-		return
-	}
-
-	logger = logger.WithFields(logrus.Fields{
-		"sql":  query,
-		"args": args,
-	})
-
-	// This query must be a prepared query. If it is not, querying will use
-	// MySQL's plain text interface, which will scan all values into []uint8
-	// if we give it []interface{}.
-	stmt, err := tx.Prepare(query)
-	if err != nil {
-		logger.WithError(err).Error("failed to prepare query")
-		return
-	}
-
-	rows, err := stmt.Query(args...)
-	if err != nil {
-		logger.WithError(err).Error("failed to query database")
-		return
-	}
-
-	defer rows.Close()
-
-	columns, err := rows.Columns()
-	if err != nil {
-		logger.WithError(err).Error("failed to get columns")
-		return
-	}
-
-	var pkIndex int
-	for idx, c := range columns {
-		if c == pkColumn.Name {
-			pkIndex = idx
-			break
-		}
-	}
-
-	var rowData RowData
-	var batchData []RowData
-
-	for rows.Next() {
-		rowData, err = ScanGenericRow(rows, len(columns))
-		if err != nil {
-			logger.WithError(err).Error("failed to scan row")
-			return
-		}
-
-		batchData = append(batchData, rowData)
-
-		// Since it is possible to have many different types of integers in
-		// MySQL, we try to parse it all into uint64.
-		if valueByteSlice, ok := rowData[pkIndex].([]byte); ok {
-			valueString := string(valueByteSlice)
-			pkpos, err = strconv.ParseUint(valueString, 10, 64)
-			if err != nil {
-				logger.WithError(err).Error("failed to convert string primary key value to uint64")
-				return
-			}
-		} else {
-			signedPkPos := reflect.ValueOf(rowData[pkIndex]).Int()
-			if signedPkPos < 0 {
-				err = fmt.Errorf("primary key %s had value %d in table %s", pkColumn.Name, signedPkPos, QuotedTableName(table))
-				logger.WithError(err).Error("failed to update primary key position")
-				return
-			}
-			pkpos = uint64(signedPkPos)
-		}
-	}
-
-	err = rows.Err()
-	if err != nil {
-		return
-	}
-
-	batch, err = NewRowBatch(table, batchData)
-	if err != nil {
-		return
-	}
-
-	logger.Debugf("found %d rows", batch.Size())
-
-	metrics.Count("RowEvent", int64(batch.Size()), []MetricTag{
-		MetricTag{"table", table.Name},
-		MetricTag{"source", "table"},
-	}, 1.0)
-
-	return
-}
-
-func ScanGenericRow(rows *sql.Rows, columnCount int) (RowData, error) {
-	values := make(RowData, columnCount)
-	valuePtrs := make(RowData, columnCount)
-
-	for i, _ := range values {
-		valuePtrs[i] = &values[i]
-	}
-
-	err := rows.Scan(valuePtrs...)
-	return values, err
+func (d *DataIterator) AddDoneListener(listener func() error) {
+	d.doneListeners = append(d.doneListeners, listener)
 }

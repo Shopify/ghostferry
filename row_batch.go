@@ -7,19 +7,29 @@ import (
 )
 
 type RowBatch struct {
-	values []RowData
+	values  []RowData
+	pkIndex int
 	TableCopy
 }
 
-func NewRowBatch(table *schema.Table, values []RowData) (*RowBatch, error) {
+func NewRowBatch(table *schema.Table, values []RowData, pkIndex int) *RowBatch {
 	return &RowBatch{
 		values:    values,
 		TableCopy: TableCopy{table: *table},
-	}, nil
+		pkIndex:   pkIndex,
+	}
 }
 
 func (e *RowBatch) Values() []RowData {
 	return e.values
+}
+
+func (e *RowBatch) PkIndex() int {
+	return e.pkIndex
+}
+
+func (e *RowBatch) ValuesContainPk() bool {
+	return e.pkIndex >= 0
 }
 
 func (e *RowBatch) Size() int {
