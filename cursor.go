@@ -25,7 +25,7 @@ func (d *SqlDBWithFakeRollback) Rollback() error {
 // sql.DB does not implement Rollback, but can use SqlDBWithFakeRollback
 // to perform a noop.
 type SqlPreparerAndRollbacker interface {
-	Prepare(string) (*sql.Stmt, error)
+  SqlPreparer
 	Rollback() error
 }
 
