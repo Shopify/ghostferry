@@ -32,7 +32,6 @@ func (this *ChecksumTableVerifierTestSuite) SetupTest() {
 		TargetDB: this.Ferry.TargetDB,
 	}
 
-	this.Ferry.Verifier = this.verifier
 	this.SeedSourceDB(5)
 }
 

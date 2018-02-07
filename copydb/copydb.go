@@ -48,7 +48,7 @@ func (this *CopydbFerry) Start() error {
 		return err
 	}
 
-	this.ferry.Verifier = &ghostferry.ChecksumTableVerifier{
+	this.controlServer.Verifier = &ghostferry.ChecksumTableVerifier{
 		Tables:           this.ferry.Tables.AsSlice(),
 		SourceDB:         this.ferry.SourceDB,
 		TargetDB:         this.ferry.TargetDB,

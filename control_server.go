@@ -12,9 +12,10 @@ import (
 )
 
 type ControlServer struct {
-	F       *Ferry
-	Addr    string
-	Basedir string
+	F        *Ferry
+	Verifier Verifier
+	Addr     string
+	Basedir  string
 
 	server    *http.Server
 	logger    *logrus.Entry
@@ -82,7 +83,7 @@ func (this *ControlServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
-	status := FetchStatus(this.F)
+	status := FetchStatus(this.F, this.Verifier)
 
 	err := this.templates.ExecuteTemplate(w, "index.html", status)
 	if err != nil {
@@ -122,12 +123,12 @@ func (this *ControlServer) HandleStop(w http.ResponseWriter, r *http.Request) {
 }
 
 func (this *ControlServer) HandleVerify(w http.ResponseWriter, r *http.Request) {
-	if this.F.Verifier == nil {
+	if this.Verifier == nil {
 		w.WriteHeader(http.StatusNotImplemented)
 		return
 	}
 
-	err := this.F.Verifier.StartInBackground()
+	err := this.Verifier.StartInBackground()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

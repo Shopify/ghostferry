@@ -22,6 +22,7 @@ type IntegrationTestCase struct {
 
 	DataWriter DataWriter
 	Ferry      *TestFerry
+	Verifier   *ghostferry.ChecksumTableVerifier
 
 	wg *sync.WaitGroup
 }
@@ -47,6 +48,12 @@ func (this *IntegrationTestCase) Setup() {
 
 	_, err := this.Ferry.SourceDB.Exec("SET GLOBAL read_only = OFF")
 	PanicIfError(err)
+
+	this.Verifier = &ghostferry.ChecksumTableVerifier{
+		Tables:   this.Ferry.Tables.AsSlice(),
+		SourceDB: this.Ferry.SourceDB,
+		TargetDB: this.Ferry.TargetDB,
+	}
 
 	this.callCustomAction(this.SetupAction)
 }
@@ -126,8 +133,7 @@ func (this *IntegrationTestCase) Teardown() {
 }
 
 func (this *IntegrationTestCase) verifyTableChecksum() (ghostferry.VerificationResult, error) {
-	verifier := this.Ferry.Verifier.(*ghostferry.ChecksumTableVerifier)
-	return verifier.Verify()
+	return this.Verifier.Verify()
 }
 
 func (this *IntegrationTestCase) callCustomAction(f func(*TestFerry)) {

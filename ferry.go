@@ -54,7 +54,6 @@ type Ferry struct {
 
 	ErrorHandler ErrorHandler
 	Throttler    Throttler
-	Verifier     Verifier
 
 	Tables TableSchemaCache
 
