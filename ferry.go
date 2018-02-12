@@ -70,7 +70,7 @@ type Ferry struct {
 func (f *Ferry) newDataIterator() (*DataIterator, error) {
 	dataIterator := &DataIterator{
 		DB:          f.SourceDB,
-		Concurrency: f.Config.NumberOfTableIterators,
+		Concurrency: f.Config.DataIterationConcurrency,
 
 		ErrorHandler: f.ErrorHandler,
 		CursorConfig: &CursorConfig{

@@ -40,7 +40,7 @@ func (this *DataIteratorTestSuite) SetupTest() {
 
 	this.di = &ghostferry.DataIterator{
 		DB:          sourceDb,
-		Concurrency: config.NumberOfTableIterators,
+		Concurrency: config.DataIterationConcurrency,
 
 		ErrorHandler: errorHandler,
 		CursorConfig: &ghostferry.CursorConfig{
