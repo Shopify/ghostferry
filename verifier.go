@@ -60,7 +60,7 @@ type Verifier interface {
 	// If the verification is "done" but experienced an error during the check,
 	// return nil, yourErr.
 	//
-	// If the verification has not been started or is done,
+	// If the verification has not been started or not done,
 	// return nil, nil
 	VerificationResult() (*VerificationResult, error)
 }
