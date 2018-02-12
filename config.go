@@ -137,7 +137,7 @@ type Config struct {
 	BinlogEventBatchSize int
 
 	// Config for DataIterator
-	IterateChunksize        uint64
+	DataIterationBatchSize  uint64
 	MaxIterationReadRetries int
 	NumberOfTableIterators  int
 	AutomaticCutover        bool
@@ -164,8 +164,8 @@ func (c *Config) ValidateConfig() error {
 		c.MaxWriteRetriesOnTargetDBError = 5
 	}
 
-	if c.IterateChunksize == 0 {
-		c.IterateChunksize = 200
+	if c.DataIterationBatchSize == 0 {
+		c.DataIterationBatchSize = 200
 	}
 
 	if c.BinlogEventBatchSize == 0 {

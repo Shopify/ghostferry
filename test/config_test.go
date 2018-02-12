@@ -88,7 +88,7 @@ func (this *ConfigTestSuite) TestDefaultValues() {
 	this.Require().Nil(err)
 
 	this.Require().Equal(5, this.config.MaxWriteRetriesOnTargetDBError)
-	this.Require().Equal(uint64(200), this.config.IterateChunksize)
+	this.Require().Equal(uint64(200), this.config.DataIterationBatchSize)
 	this.Require().Equal(4, this.config.NumberOfTableIterators)
 	this.Require().Equal(5, this.config.MaxIterationReadRetries)
 	this.Require().Equal("0.0.0.0:8000", this.config.ServerBindAddr)

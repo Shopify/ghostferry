@@ -77,7 +77,7 @@ func (f *Ferry) newDataIterator() (*DataIterator, error) {
 			DB:        f.SourceDB,
 			Throttler: f.Throttler,
 
-			BatchSize:   f.Config.IterateChunksize,
+			BatchSize:   f.Config.DataIterationBatchSize,
 			ReadRetries: f.Config.MaxIterationReadRetries,
 		},
 	}
