@@ -195,7 +195,7 @@ func setupIterativeVerifierFromFerry(v *ghostferry.IterativeVerifier, f *ghostfe
 	v.CursorConfig = &ghostferry.CursorConfig{
 		DB:          f.SourceDB,
 		BatchSize:   f.Config.DataIterationBatchSize,
-		ReadRetries: f.Config.MaxIterationReadRetries,
+		ReadRetries: f.Config.MaxReadRetriesOnSourceDBError,
 	}
 
 	v.BinlogStreamer = f.BinlogStreamer

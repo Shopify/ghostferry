@@ -137,10 +137,10 @@ type Config struct {
 	BinlogEventBatchSize int
 
 	// Config for DataIterator
-	DataIterationBatchSize   uint64
-	MaxIterationReadRetries  int
-	DataIterationConcurrency int
-	AutomaticCutover         bool
+	DataIterationBatchSize        uint64
+	MaxReadRetriesOnSourceDBError int
+	DataIterationConcurrency      int
+	AutomaticCutover              bool
 
 	// Config for the ControlServer
 	ServerBindAddr string
@@ -176,8 +176,8 @@ func (c *Config) ValidateConfig() error {
 		c.DataIterationConcurrency = 4
 	}
 
-	if c.MaxIterationReadRetries == 0 {
-		c.MaxIterationReadRetries = 5
+	if c.MaxReadRetriesOnSourceDBError == 0 {
+		c.MaxReadRetriesOnSourceDBError = 5
 	}
 
 	if c.ServerBindAddr == "" {
