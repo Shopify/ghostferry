@@ -99,36 +99,37 @@ func (this *ChecksumTableVerifierTestSuite) TestVerifyWithRewrites() {
 }
 
 func (this *ChecksumTableVerifierTestSuite) AssertVerifierMatched() {
-	this.Require().True(this.verifier.IsStarted())
-	this.Require().True(this.verifier.IsDone())
+	result, err := this.verifier.Result()
+	this.Require().True(result.IsStarted())
+	this.Require().True(result.IsDone())
 
-	result, err := this.verifier.VerificationResult()
 	this.Require().Nil(err)
 	this.Require().True(result.DataCorrect)
 	this.Require().Equal("", result.Message)
 }
 
 func (this *ChecksumTableVerifierTestSuite) AssertVerifierNotMatched() {
-	this.Require().True(this.verifier.IsStarted())
-	this.Require().True(this.verifier.IsDone())
+	result, err := this.verifier.Result()
+	this.Require().True(result.IsStarted())
+	this.Require().True(result.IsDone())
 
-	result, err := this.verifier.VerificationResult()
 	this.Require().Nil(err)
 	this.Require().False(result.DataCorrect)
 	this.Require().NotEmpty(result.Message)
 }
 
 func (this *ChecksumTableVerifierTestSuite) AssertVerifierErrored(msg ...string) {
-	this.Require().True(this.verifier.IsStarted())
-	this.Require().True(this.verifier.IsDone())
+	result, err := this.verifier.Result()
+	this.Require().True(result.IsStarted())
+	this.Require().True(result.IsDone())
 
-	result, err := this.verifier.VerificationResult()
 	this.Require().NotNil(err)
 	if len(msg) == 1 {
 		this.Require().Equal(msg[0], err.Error())
 	}
 
-	this.Require().Nil(result)
+	this.Require().False(result.DataCorrect)
+	this.Require().Empty(result.Message)
 }
 
 func (this *ChecksumTableVerifierTestSuite) copyDataFromSourceToTarget() {

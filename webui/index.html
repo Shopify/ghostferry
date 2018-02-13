@@ -95,7 +95,7 @@
                 <td>{{.VerificationStarted}}</td>
               </tr>
               {{if .VerificationDone}}
-                {{if and (not .VerificationErr) .VerificationResult }}
+                {{if not .VerificationErr }}
                   <tr>
                     <th>Verified Correct</th>
                     <td>{{.VerificationResult.DataCorrect}}</td>
@@ -107,12 +107,10 @@
                     </tr>
                   {{end}}
                 {{else}}
-                  {{if .VerificationErr}}
-                    <tr>
-                      <th>Error During Verification</th>
-                      <td>{{.VerificationErr}}</td>
-                    </tr>
-                  {{end}}
+                  <tr>
+                    <th>Error During Verification</th>
+                    <td>{{.VerificationErr}}</td>
+                  </tr>
                 {{end}}
               {{end}}
             {{else}}

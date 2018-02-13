@@ -125,14 +125,9 @@ func (this *IntegrationTestCase) Teardown() {
 	}
 }
 
-func (this *IntegrationTestCase) verifyTableChecksum() (*ghostferry.VerificationResult, error) {
-	err := this.Ferry.Verifier.StartInBackground()
-	if err != nil {
-		return nil, err
-	}
-
-	this.Ferry.Verifier.Wait()
-	return this.Ferry.Verifier.VerificationResult()
+func (this *IntegrationTestCase) verifyTableChecksum() (ghostferry.VerificationResult, error) {
+	verifier := this.Ferry.Verifier.(*ghostferry.ChecksumTableVerifier)
+	return verifier.Verify()
 }
 
 func (this *IntegrationTestCase) callCustomAction(f func(*TestFerry)) {

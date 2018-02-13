@@ -22,6 +22,21 @@ type VerificationResult struct {
 	Message     string
 }
 
+type VerificationResultAndStatus struct {
+	VerificationResult
+
+	StartTime time.Time
+	DoneTime  time.Time
+}
+
+func (r VerificationResultAndStatus) IsStarted() bool {
+	return !r.StartTime.IsZero()
+}
+
+func (r VerificationResultAndStatus) IsDone() bool {
+	return !r.DoneTime.IsZero()
+}
+
 type Verifier interface {
 	// Start the verifier in the background during the cutover phase.
 	// Traditionally, this is called from within the ControlServer.
@@ -37,32 +52,19 @@ type Verifier interface {
 	// correct or incorrect) OR when it experiences an error.
 	Wait()
 
-	// A call to check if the verifier has been started already. Should
-	// return instantaneously.
-	IsStarted() bool
-
-	// Returns the start time of the verifier if it has been started, 0
-	// otherwise.
-	StartTime() time.Time
-
-	// A call to check if the verifier is done. Should return
-	// instantaneously.
-	IsDone() bool
-
-	// Returns the done time of the verifier if it has been started, 0
-	// otherwise.
-	DoneTime() time.Time
-
+	// Returns the result and the status of the verification.
+	// To check the status, call IsStarted() and IsDone() on
+	// VerificationResultAndStatus.
+	//
 	// If the verification has been completed successfully (without errors) and
-	// the data checks out to be "correct", return &VerificationResult{true, ""},
-	// nil. Otherwise, return &VerificationResult{false, "message"}, nil.
+	// the data checks out to be "correct", the result will be
+	// VerificationResult{true, ""}, with error = nil.
+	// Otherwise, the result will be VerificationResult{false, "message"}, with
+	// error = nil.
 	//
 	// If the verification is "done" but experienced an error during the check,
-	// return nil, yourErr.
-	//
-	// If the verification has not been started or not done,
-	// return nil, nil
-	VerificationResult() (*VerificationResult, error)
+	// the result will be VerificationResult{}, with err = yourErr.
+	Result() (VerificationResultAndStatus, error)
 }
 
 type ChecksumTableVerifier struct {
@@ -72,18 +74,20 @@ type ChecksumTableVerifier struct {
 	SourceDB         *sql.DB
 	TargetDB         *sql.DB
 
-	started   *AtomicBoolean
-	startTime time.Time
-	doneTime  time.Time
+	started *AtomicBoolean
 
-	verificationResult *VerificationResult
-	verificationErr    error
+	verificationResultAndStatus VerificationResultAndStatus
+	verificationErr             error
 
 	logger *logrus.Entry
 	wg     *sync.WaitGroup
 }
 
-func (v *ChecksumTableVerifier) Verify() (*VerificationResult, error) {
+func (v *ChecksumTableVerifier) Verify() (VerificationResult, error) {
+	if v.logger == nil {
+		v.logger = logrus.WithField("tag", "checksum_verifier")
+	}
+
 	for _, table := range v.Tables {
 		sourceTable := QuotedTableName(table)
 
@@ -114,7 +118,7 @@ func (v *ChecksumTableVerifier) Verify() (*VerificationResult, error) {
 		sourceChecksum, err := v.fetchChecksumValueFromRow(sourceRow)
 		if err != nil {
 			logWithTable.WithError(err).Error("failed to checksum table on the source")
-			return nil, err
+			return VerificationResult{}, err
 		}
 
 		query = fmt.Sprintf("CHECKSUM TABLE %s EXTENDED", targetTable)
@@ -122,7 +126,7 @@ func (v *ChecksumTableVerifier) Verify() (*VerificationResult, error) {
 		targetChecksum, err := v.fetchChecksumValueFromRow(targetRow)
 		if err != nil {
 			logWithTable.WithError(err).Error("failed to checksum table on the target")
-			return nil, err
+			return VerificationResult{}, err
 		}
 
 		logFields := logrus.Fields{
@@ -134,11 +138,11 @@ func (v *ChecksumTableVerifier) Verify() (*VerificationResult, error) {
 			logWithTable.WithFields(logFields).Info("tables on source and target verified to match")
 		} else {
 			logWithTable.WithFields(logFields).Error("tables on source and target DOES NOT MATCH")
-			return &VerificationResult{false, fmt.Sprintf("data on table %s (%s) mismatched", sourceTable, targetTable)}, nil
+			return VerificationResult{false, fmt.Sprintf("data on table %s (%s) mismatched", sourceTable, targetTable)}, nil
 		}
 	}
 
-	return &VerificationResult{true, ""}, nil
+	return VerificationResult{true, ""}, nil
 }
 
 func (v *ChecksumTableVerifier) fetchChecksumValueFromRow(row *sql.Row) (int64, error) {
@@ -162,7 +166,7 @@ func (v *ChecksumTableVerifier) StartInBackground() error {
 		return errors.New("must specify source and target db")
 	}
 
-	if v.IsStarted() && !v.IsDone() {
+	if v.started != nil && v.started.Get() && !v.verificationResultAndStatus.IsDone() {
 		return errors.New("verification is on going")
 	}
 
@@ -170,9 +174,10 @@ func (v *ChecksumTableVerifier) StartInBackground() error {
 	v.started.Set(true)
 
 	// Initialize/reset all variables
-	v.startTime = time.Now()
-	v.doneTime = time.Time{}
-	v.verificationResult = nil
+	v.verificationResultAndStatus = VerificationResultAndStatus{
+		StartTime: time.Now(),
+		DoneTime:  time.Time{},
+	}
 	v.verificationErr = nil
 	v.logger = logrus.WithField("tag", "checksum_verifier")
 	v.wg = &sync.WaitGroup{}
@@ -181,12 +186,10 @@ func (v *ChecksumTableVerifier) StartInBackground() error {
 
 	v.wg.Add(1)
 	go func() {
-		defer func() {
-			v.doneTime = time.Now()
-			v.wg.Done()
-		}()
+		defer v.wg.Done()
 
-		v.verificationResult, v.verificationErr = v.Verify()
+		v.verificationResultAndStatus.VerificationResult, v.verificationErr = v.Verify()
+		v.verificationResultAndStatus.DoneTime = time.Now()
 	}()
 
 	return nil
@@ -196,22 +199,6 @@ func (v *ChecksumTableVerifier) Wait() {
 	v.wg.Wait()
 }
 
-func (v *ChecksumTableVerifier) IsStarted() bool {
-	return v.started != nil && v.started.Get()
-}
-
-func (v *ChecksumTableVerifier) StartTime() time.Time {
-	return v.startTime
-}
-
-func (v *ChecksumTableVerifier) IsDone() bool {
-	return !v.doneTime.IsZero()
-}
-
-func (v *ChecksumTableVerifier) DoneTime() time.Time {
-	return v.doneTime
-}
-
-func (v *ChecksumTableVerifier) VerificationResult() (*VerificationResult, error) {
-	return v.verificationResult, v.verificationErr
+func (v *ChecksumTableVerifier) Result() (VerificationResultAndStatus, error) {
+	return v.verificationResultAndStatus, v.verificationErr
 }
