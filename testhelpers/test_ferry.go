@@ -96,7 +96,9 @@ func (this *TestFerry) Start() error {
 	}
 
 	this.Ferry.Verifier = &ghostferry.ChecksumTableVerifier{
-		TablesToCheck: this.Ferry.Tables.AsSlice(),
+		Tables:   this.Ferry.Tables.AsSlice(),
+		SourceDB: this.Ferry.SourceDB,
+		TargetDB: this.Ferry.TargetDB,
 	}
 
 	if this.AfterBatchCopyListener != nil {

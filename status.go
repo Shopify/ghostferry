@@ -48,7 +48,7 @@ type Status struct {
 	VerifierAvailable   bool
 	VerificationStarted bool
 	VerificationDone    bool
-	MismatchedTables    []string
+	VerificationResult  VerificationResult
 	VerificationErr     error
 }
 
@@ -185,12 +185,15 @@ func FetchStatus(f *Ferry) *Status {
 	// Verifier display
 	if f.Verifier != nil {
 		status.VerifierSupport = true
-		status.VerificationStarted = f.Verifier.VerificationStarted()
-		status.VerificationDone = f.Verifier.VerificationDone()
+
+		result, err := f.Verifier.Result()
+		status.VerificationStarted = result.IsStarted()
+		status.VerificationDone = result.IsDone()
 
 		// We can only run the verifier if we're not copying and not verifying
 		status.VerifierAvailable = status.OverallState != StateStarting && status.OverallState != StateCopying && (!status.VerificationStarted || status.VerificationDone)
-		status.MismatchedTables, status.VerificationErr = f.Verifier.MismatchedTables()
+		status.VerificationResult = result.VerificationResult
+		status.VerificationErr = err
 	} else {
 		status.VerifierSupport = false
 		status.VerifierAvailable = false

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -56,4 +57,19 @@ func randomServerId() uint32 {
 	}
 
 	return binary.LittleEndian.Uint32(buf[:])
+}
+
+type AtomicBoolean int32
+
+func (a *AtomicBoolean) Set(b bool) {
+	var v int32 = 0
+	if b {
+		v = 1
+	}
+
+	atomic.StoreInt32((*int32)(a), v)
+}
+
+func (a *AtomicBoolean) Get() bool {
+	return atomic.LoadInt32((*int32)(a)) == int32(1)
 }

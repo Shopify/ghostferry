@@ -14,19 +14,22 @@ import (
 type ChecksumTableVerifierTestSuite struct {
 	*testhelpers.GhostferryUnitTestSuite
 
-	verifier ghostferry.Verifier
+	verifier *ghostferry.ChecksumTableVerifier
 }
 
 func (this *ChecksumTableVerifierTestSuite) SetupTest() {
 	this.GhostferryUnitTestSuite.SetupTest()
 
 	this.verifier = &ghostferry.ChecksumTableVerifier{
-		TablesToCheck: []*schema.Table{
+		Tables: []*schema.Table{
 			&schema.Table{
 				Name:   testhelpers.TestTable1Name,
 				Schema: testhelpers.TestSchemaName,
 			},
 		},
+
+		SourceDB: this.Ferry.SourceDB,
+		TargetDB: this.Ferry.TargetDB,
 	}
 
 	this.Ferry.Verifier = this.verifier
@@ -34,16 +37,18 @@ func (this *ChecksumTableVerifierTestSuite) SetupTest() {
 }
 
 func (this *ChecksumTableVerifierTestSuite) TestVerifyNoMatchWithEmptyTarget() {
-	this.verifier.StartVerification(this.Ferry)
+	err := this.verifier.StartInBackground()
+	this.Require().Nil(err)
 	this.verifier.Wait()
 
-	this.AssertVerifierNotMatched()
+	this.AssertVerifierErrored("cannot find table gftest.test_table_1 during verification")
 }
 
 func (this *ChecksumTableVerifierTestSuite) TestVerifyNoMatchWithDifferentTargetData() {
 	testhelpers.SeedInitialData(this.Ferry.TargetDB, testhelpers.TestSchemaName, testhelpers.TestTable1Name, 1)
 
-	this.verifier.StartVerification(this.Ferry)
+	err := this.verifier.StartInBackground()
+	this.Require().Nil(err)
 	this.verifier.Wait()
 	this.AssertVerifierNotMatched()
 }
@@ -51,16 +56,18 @@ func (this *ChecksumTableVerifierTestSuite) TestVerifyNoMatchWithDifferentTarget
 func (this *ChecksumTableVerifierTestSuite) TestVerifyMatchAndRestartable() {
 	this.copyDataFromSourceToTarget()
 
-	this.verifier.StartVerification(this.Ferry)
+	err := this.verifier.StartInBackground()
+	this.Require().Nil(err)
 	this.verifier.Wait()
 	this.AssertVerifierMatched()
 
-	_, err := this.Ferry.TargetDB.Exec(fmt.Sprintf("DROP DATABASE %s", testhelpers.TestSchemaName))
+	_, err = this.Ferry.TargetDB.Exec(fmt.Sprintf("DROP DATABASE %s", testhelpers.TestSchemaName))
 	this.Require().Nil(err)
 
-	this.verifier.StartVerification(this.Ferry)
+	err = this.verifier.StartInBackground()
+	this.Require().Nil(err)
 	this.verifier.Wait()
-	this.AssertVerifierNotMatched()
+	this.AssertVerifierErrored("cannot find table gftest.test_table_1 during verification")
 
 	this.copyDataFromSourceToTarget()
 	query := fmt.Sprintf(
@@ -72,37 +79,65 @@ func (this *ChecksumTableVerifierTestSuite) TestVerifyMatchAndRestartable() {
 	_, err = this.Ferry.TargetDB.Exec(query, nil, "New Data")
 	this.Require().Nil(err)
 
-	this.verifier.StartVerification(this.Ferry)
+	err = this.verifier.StartInBackground()
+	this.Require().Nil(err)
 	this.verifier.Wait()
 	this.AssertVerifierNotMatched()
 }
 
-func (this *ChecksumTableVerifierTestSuite) AssertVerifierMatched() {
-	this.Require().True(this.verifier.VerificationStarted())
-	this.Require().True(this.verifier.VerificationDone())
+func (this *ChecksumTableVerifierTestSuite) TestVerifyWithRewrites() {
+	this.copyDataFromSourceToTargetTable("table2")
 
-	correct, err := this.verifier.VerifiedCorrect()
-	this.Require().True(correct)
+	this.verifier.TableRewrites = map[string]string{
+		testhelpers.TestTable1Name: "table2",
+	}
+
+	err := this.verifier.StartInBackground()
 	this.Require().Nil(err)
+	this.verifier.Wait()
+	this.AssertVerifierMatched()
+}
 
-	mismatchedTables, _ := this.verifier.MismatchedTables()
-	this.Require().Equal([]string{}, mismatchedTables)
+func (this *ChecksumTableVerifierTestSuite) AssertVerifierMatched() {
+	result, err := this.verifier.Result()
+	this.Require().True(result.IsStarted())
+	this.Require().True(result.IsDone())
+
+	this.Require().Nil(err)
+	this.Require().True(result.DataCorrect)
+	this.Require().Equal("", result.Message)
 }
 
 func (this *ChecksumTableVerifierTestSuite) AssertVerifierNotMatched() {
-	this.Require().True(this.verifier.VerificationStarted())
-	this.Require().True(this.verifier.VerificationDone())
+	result, err := this.verifier.Result()
+	this.Require().True(result.IsStarted())
+	this.Require().True(result.IsDone())
 
-	correct, err := this.verifier.VerifiedCorrect()
-	this.Require().False(correct)
 	this.Require().Nil(err)
+	this.Require().False(result.DataCorrect)
+	this.Require().NotEmpty(result.Message)
+}
 
-	mismatchedTables, _ := this.verifier.MismatchedTables()
-	this.Require().Equal([]string{fmt.Sprintf("%s.%s", testhelpers.TestSchemaName, testhelpers.TestTable1Name)}, mismatchedTables)
+func (this *ChecksumTableVerifierTestSuite) AssertVerifierErrored(msg ...string) {
+	result, err := this.verifier.Result()
+	this.Require().True(result.IsStarted())
+	this.Require().True(result.IsDone())
+
+	this.Require().NotNil(err)
+	if len(msg) == 1 {
+		this.Require().Equal(msg[0], err.Error())
+	}
+
+	this.Require().False(result.DataCorrect)
+	this.Require().Empty(result.Message)
 }
 
 func (this *ChecksumTableVerifierTestSuite) copyDataFromSourceToTarget() {
-	testhelpers.SeedInitialData(this.Ferry.TargetDB, testhelpers.TestSchemaName, testhelpers.TestTable1Name, 0)
+	this.copyDataFromSourceToTargetTable(testhelpers.TestTable1Name)
+}
+
+func (this *ChecksumTableVerifierTestSuite) copyDataFromSourceToTargetTable(tablename string) {
+	testhelpers.SeedInitialData(this.Ferry.TargetDB, testhelpers.TestSchemaName, tablename, 0)
 
 	rows, err := this.Ferry.SourceDB.Query(fmt.Sprintf("SELECT * FROM `%s`.`%s`", testhelpers.TestSchemaName, testhelpers.TestTable1Name))
 	this.Require().Nil(err)
@@ -117,7 +152,7 @@ func (this *ChecksumTableVerifierTestSuite) copyDataFromSourceToTarget() {
 		row, err := ghostferry.ScanGenericRow(rows, len(columns))
 		this.Require().Nil(err)
 
-		sql := fmt.Sprintf("INSERT INTO `%s`.`%s` VALUES "+columnPlaceholders, testhelpers.TestSchemaName, testhelpers.TestTable1Name)
+		sql := fmt.Sprintf("INSERT INTO `%s`.`%s` VALUES "+columnPlaceholders, testhelpers.TestSchemaName, tablename)
 		_, err = this.Ferry.TargetDB.Exec(sql, row...)
 		this.Require().Nil(err)
 	}
