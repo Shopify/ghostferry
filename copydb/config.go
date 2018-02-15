@@ -22,7 +22,7 @@ func (f FilterAndRewriteConfigs) Validate() error {
 }
 
 type Config struct {
-	ghostferry.Config
+	*ghostferry.Config
 
 	Databases FilterAndRewriteConfigs
 	Tables    FilterAndRewriteConfigs
