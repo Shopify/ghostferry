@@ -37,6 +37,10 @@ func (r VerificationResultAndStatus) IsDone() bool {
 	return !r.DoneTime.IsZero()
 }
 
+// The sole purpose of this interface is to make it easier for one to
+// implement their own strategy for verification and hook it up with
+// the ControlServer. If there is no such need, one does not need to
+// implement this interface.
 type Verifier interface {
 	// Start the verifier in the background during the cutover phase.
 	// Traditionally, this is called from within the ControlServer.
@@ -155,7 +159,7 @@ func (v *ChecksumTableVerifier) fetchChecksumValueFromRow(row *sql.Row) (int64, 
 	}
 
 	if !checksum.Valid {
-		return int64(0), errors.New("cannot find table")
+		return int64(0), fmt.Errorf("cannot find table %s during verification", tablename)
 	}
 
 	return checksum.Int64, nil
@@ -190,6 +194,7 @@ func (v *ChecksumTableVerifier) StartInBackground() error {
 
 		v.verificationResultAndStatus.VerificationResult, v.verificationErr = v.Verify()
 		v.verificationResultAndStatus.DoneTime = time.Now()
+		v.started.Set(false)
 	}()
 
 	return nil

@@ -41,7 +41,7 @@ func (this *ChecksumTableVerifierTestSuite) TestVerifyNoMatchWithEmptyTarget() {
 	this.Require().Nil(err)
 	this.verifier.Wait()
 
-	this.AssertVerifierErrored("cannot find table")
+	this.AssertVerifierErrored("cannot find table gftest.test_table_1 during verification")
 }
 
 func (this *ChecksumTableVerifierTestSuite) TestVerifyNoMatchWithDifferentTargetData() {
@@ -67,7 +67,7 @@ func (this *ChecksumTableVerifierTestSuite) TestVerifyMatchAndRestartable() {
 	err = this.verifier.StartInBackground()
 	this.Require().Nil(err)
 	this.verifier.Wait()
-	this.AssertVerifierErrored("cannot find table")
+	this.AssertVerifierErrored("cannot find table gftest.test_table_1 during verification")
 
 	this.copyDataFromSourceToTarget()
 	query := fmt.Sprintf(
@@ -86,7 +86,7 @@ func (this *ChecksumTableVerifierTestSuite) TestVerifyMatchAndRestartable() {
 }
 
 func (this *ChecksumTableVerifierTestSuite) TestVerifyWithRewrites() {
-	this.copyDataFromSourceToSpecificTargetTable("table2")
+	this.copyDataFromSourceToTargetTable("table2")
 
 	this.verifier.TableRewrites = map[string]string{
 		testhelpers.TestTable1Name: "table2",
@@ -133,10 +133,10 @@ func (this *ChecksumTableVerifierTestSuite) AssertVerifierErrored(msg ...string)
 }
 
 func (this *ChecksumTableVerifierTestSuite) copyDataFromSourceToTarget() {
-	this.copyDataFromSourceToSpecificTargetTable(testhelpers.TestTable1Name)
+	this.copyDataFromSourceToTargetTable(testhelpers.TestTable1Name)
 }
 
-func (this *ChecksumTableVerifierTestSuite) copyDataFromSourceToSpecificTargetTable(tablename string) {
+func (this *ChecksumTableVerifierTestSuite) copyDataFromSourceToTargetTable(tablename string) {
 	testhelpers.SeedInitialData(this.Ferry.TargetDB, testhelpers.TestSchemaName, tablename, 0)
 
 	rows, err := this.Ferry.SourceDB.Query(fmt.Sprintf("SELECT * FROM `%s`.`%s`", testhelpers.TestSchemaName, testhelpers.TestTable1Name))
