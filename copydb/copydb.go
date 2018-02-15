@@ -43,17 +43,42 @@ func (this *CopydbFerry) Initialize() error {
 }
 
 func (this *CopydbFerry) Start() error {
-	err := this.Ferry.Start()
+	if this.config.EnableIterativeVerifier {
+		// This is used to run pre-cutover verification for the iterative verifier
+		this.ferry.DataIterator.AddDoneListener(this.onFinishedIterations)
+	}
+
+	err := this.ferry.Start()
 	if err != nil {
 		return err
 	}
 
-	this.controlServer.Verifier = &ghostferry.ChecksumTableVerifier{
-		Tables:           this.Ferry.Tables.AsSlice(),
-		SourceDB:         this.Ferry.SourceDB,
-		TargetDB:         this.Ferry.TargetDB,
-		DatabaseRewrites: this.Ferry.Config.DatabaseRewrites,
-		TableRewrites:    this.Ferry.Config.TableRewrites,
+	if this.config.EnableIterativeVerifier {
+		cursorConfig := &ghostferry.CursorConfig{
+			DB:          this.ferry.SourceDB,
+			BatchSize:   this.config.Config.IterateChunksize,
+			ReadRetries: this.config.Config.MaxIterationReadRetries,
+		}
+
+		this.controlServer.Verifier = &ghostferry.IterativeVerifier{
+			CursorConfig:     cursorConfig,
+			BinlogStreamer:   this.Ferry.BinlogStreamer,
+			Tables:           this.Ferry.Tables.AsSlice(),
+			SourceDB:         this.Ferry.SourceDB,
+			TargetDB:         this.Ferry.TargetDB,
+			Concurrency:      2,
+			DatabaseRewrites: this.Ferry.Config.DatabaseRewrites,
+			TableRewrites:    this.Ferry.Config.TableRewrites,
+		}
+
+	} else {
+		this.controlServer.Verifier = &ghostferry.ChecksumTableVerifier{
+			Tables:           this.Ferry.Tables.AsSlice(),
+			SourceDB:         this.Ferry.SourceDB,
+			TargetDB:         this.Ferry.TargetDB,
+			DatabaseRewrites: this.Ferry.Config.DatabaseRewrites,
+			TableRewrites:    this.Ferry.Config.TableRewrites,
+		}
 	}
 	return nil
 }
@@ -79,6 +104,11 @@ func (this *CopydbFerry) CreateDatabasesAndTables() error {
 	}
 
 	return nil
+}
+
+func (this *CopydbFerry) onFinishedIterations() error {
+	err := this.controlServer.Verifier.(*ghostferry.IterativeVerifier).VerifyBeforeCutover()
+	return err
 }
 
 func (this *CopydbFerry) Run() {

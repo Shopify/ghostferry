@@ -26,6 +26,7 @@ type Config struct {
 
 	Databases FilterAndRewriteConfigs
 	Tables    FilterAndRewriteConfigs
+	EnableIterativeVerifier bool
 }
 
 func (c *Config) InitializeAndValidateConfig() error {
