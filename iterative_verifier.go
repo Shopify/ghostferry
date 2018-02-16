@@ -148,7 +148,7 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	v.BinlogStreamer.AddEventListener(v.binlogEventListener)
 
 	errChan := make(chan error, v.Concurrency)
-	tablesChan := make(chan *schema.Table)
+	tablesChan := make(chan *schema.Table, math.Min(len(v.Tables), 100))
 	wg := &sync.WaitGroup{}
 	wg.Add(v.Concurrency)
 
@@ -206,7 +206,9 @@ func (v *IterativeVerifier) VerifyDuringCutover() (*VerificationResult, error) {
 
 	v.logger.Info("starting verification during cutover")
 	resultChan := make(chan verificationResultAndError, v.Concurrency)
-	reverifyQueue := make(chan reverifyEntryBatch)
+	// TODO: Make the channel buffer size be propotional to the reverifyStore
+	// count, with an appropriate limit of course.
+	reverifyQueue := make(chan reverifyEntryBatch, 2000)
 	wg := &sync.WaitGroup{}
 	wg.Add(v.Concurrency)
 
