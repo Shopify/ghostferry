@@ -81,11 +81,8 @@ type IterativeVerifier struct {
 	Concurrency      int
 
 	reverifyStore ReverifyStore
-	// Need the channel because both binlog streamer and
-	// VerifyBeforeCutover both adds ReverifyEntry into the store to be
-	// reverified.
-	reverifyChan chan ReverifyEntry
-	logger       *logrus.Entry
+	reverifyChan  chan ReverifyEntry
+	logger        *logrus.Entry
 
 	beforeCutoverVerifyDone    bool
 	verifyDuringCutoverStarted AtomicBoolean
