@@ -37,8 +37,7 @@ func TestVerificationFailsDeletedRow(t *testing.T) {
 			err := iterativeVerifier.Initialize()
 			testhelpers.PanicIfError(err)
 
-			err = iterativeVerifier.VerifyBeforeCutover()
-			testhelpers.PanicIfError(err)
+			iterativeVerifier.VerifyBeforeCutover()
 		},
 		BeforeStoppingBinlogStreaming: func(ferry *testhelpers.TestFerry) {
 			ensureTestRowsAreReverified(ferry)
@@ -80,8 +79,7 @@ func TestVerificationFailsUpdatedRow(t *testing.T) {
 			err := iterativeVerifier.Initialize()
 			testhelpers.PanicIfError(err)
 
-			err = iterativeVerifier.VerifyBeforeCutover()
-			testhelpers.PanicIfError(err)
+			iterativeVerifier.VerifyBeforeCutover()
 		},
 		BeforeStoppingBinlogStreaming: func(ferry *testhelpers.TestFerry) {
 			ensureTestRowsAreReverified(ferry)
@@ -126,8 +124,7 @@ func TestIgnoresTables(t *testing.T) {
 			err := iterativeVerifier.Initialize()
 			testhelpers.PanicIfError(err)
 
-			err = iterativeVerifier.VerifyBeforeCutover()
-			testhelpers.PanicIfError(err)
+			iterativeVerifier.VerifyBeforeCutover()
 		},
 		BeforeStoppingBinlogStreaming: func(ferry *testhelpers.TestFerry) {
 			ensureTestRowsAreReverified(ferry)
@@ -168,8 +165,7 @@ func TestVerificationPasses(t *testing.T) {
 			err := iterativeVerifier.Initialize()
 			testhelpers.PanicIfError(err)
 
-			err = iterativeVerifier.VerifyBeforeCutover()
-			testhelpers.PanicIfError(err)
+			iterativeVerifier.VerifyBeforeCutover()
 		},
 		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry) {
 			result, err := iterativeVerifier.VerifyDuringCutover()

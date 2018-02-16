@@ -71,6 +71,7 @@ func (r verificationResultAndError) ErroredOrFailed() bool {
 type IterativeVerifier struct {
 	CursorConfig   *CursorConfig
 	BinlogStreamer *BinlogStreamer
+	ErrorHandler   ErrorHandler
 	SourceDB       *sql.DB
 	TargetDB       *sql.DB
 
@@ -133,7 +134,7 @@ func (v *IterativeVerifier) Initialize() error {
 	return nil
 }
 
-func (v *IterativeVerifier) VerifyBeforeCutover() error {
+func (v *IterativeVerifier) VerifyBeforeCutover() {
 	v.logger.Info("starting pre-cutover verification")
 
 	v.wg = &sync.WaitGroup{}
@@ -144,7 +145,6 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	}()
 	v.BinlogStreamer.AddEventListener(v.binlogEventListener)
 
-	errChan := make(chan error, v.Concurrency)
 	tablesChan := make(chan *schema.Table, len(v.Tables))
 	wg := &sync.WaitGroup{}
 	wg.Add(v.Concurrency)
@@ -160,31 +160,21 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 
 				err := v.verifyTableBeforeCutover(table)
 				if err != nil {
-					v.logger.WithError(err).Error("error occured during to verify table before cutover")
-					errChan <- err
+					v.logger.WithError(err).
+						WithField("table", table.String()).
+						Error("error occured while verifying table before cutover")
+					v.ErrorHandler.Fatal("iterative_verifier", err)
 					return
 				}
 			}
-
-			errChan <- nil
 		}()
 	}
 
 	for _, table := range v.Tables {
 		tablesChan <- table
 	}
-
-	v.logger.Debug("done queueing tables to be iterated, closing table channel")
 	close(tablesChan)
-
-	var err error
-	for i := 0; i < v.Concurrency; i++ {
-		err = <-errChan
-		if err != nil {
-			break
-		}
-	}
-	close(errChan)
+	v.logger.WithField("tag", "iterative_verifier").Debug("done queueing tables to be iterated")
 
 	wg.Wait()
 
@@ -193,8 +183,6 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 
 	v.beforeCutoverVerifyDone = true
 	v.logger.Info("pre-cutover verification complete")
-
-	return err
 }
 
 func (v *IterativeVerifier) VerifyDuringCutover() (*VerificationResult, error) {
@@ -338,12 +326,11 @@ func (v *IterativeVerifier) VerificationResult() (*VerificationResult, error) {
 }
 
 func (v *IterativeVerifier) verifyTableBeforeCutover(table *schema.Table) error {
-	// The cursor will stop iterating when it cannot find anymore rows,
-	// so it will not iterate until MaxUint64.
+	// The cursor will stop iterating when it cannot find anymore rows, so it
+	// will not iterate until MaxUint64.
 	cursor := v.CursorConfig.NewCursorWithoutRowLock(table, math.MaxUint64)
-
-	// It only needs the PKs, not the entire row.
 	cursor.ColumnsToSelect = []string{fmt.Sprintf("`%s`", table.GetPKColumn(0).Name)}
+
 	return cursor.Each(func(batch *RowBatch) error {
 		pks := make([]uint64, 0, batch.Size())
 
