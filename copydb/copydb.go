@@ -13,6 +13,7 @@ type CopydbFerry struct {
 	Ferry         *ghostferry.Ferry
 	controlServer *ghostferry.ControlServer
 	config        *Config
+	verifier      ghostferry.Verifier
 }
 
 func NewFerry(config *Config) *CopydbFerry {
@@ -43,43 +44,50 @@ func (this *CopydbFerry) Initialize() error {
 }
 
 func (this *CopydbFerry) Start() error {
-	if this.config.EnableIterativeVerifier {
-		// This is used to run pre-cutover verification for the iterative verifier
-		this.ferry.DataIterator.AddDoneListener(this.onFinishedIterations)
+	if this.config.VerifierType == VerifierTypeIterative {
+		this.Ferry.DataIterator.AddDoneListener(this.runIterativeVerifierAfterRowCopy)
 	}
 
-	err := this.ferry.Start()
+	err := this.Ferry.Start()
 	if err != nil {
 		return err
 	}
 
-	if this.config.EnableIterativeVerifier {
-		cursorConfig := &ghostferry.CursorConfig{
-			DB:          this.ferry.SourceDB,
-			BatchSize:   this.config.Config.IterateChunksize,
-			ReadRetries: this.config.Config.MaxIterationReadRetries,
-		}
-
-		this.controlServer.Verifier = &ghostferry.IterativeVerifier{
-			CursorConfig:     cursorConfig,
+	if this.config.VerifierType == VerifierTypeIterative {
+		iterativeVerifier := &ghostferry.IterativeVerifier{
+			CursorConfig: &ghostferry.CursorConfig{
+				DB:          this.Ferry.SourceDB,
+				BatchSize:   this.config.IterateChunksize,
+				ReadRetries: this.config.MaxIterationReadRetries,
+			},
 			BinlogStreamer:   this.Ferry.BinlogStreamer,
 			Tables:           this.Ferry.Tables.AsSlice(),
 			SourceDB:         this.Ferry.SourceDB,
 			TargetDB:         this.Ferry.TargetDB,
-			Concurrency:      2,
+			Concurrency:      this.config.NumberOfTableIterators,
 			DatabaseRewrites: this.Ferry.Config.DatabaseRewrites,
 			TableRewrites:    this.Ferry.Config.TableRewrites,
 		}
 
-	} else {
-		this.controlServer.Verifier = &ghostferry.ChecksumTableVerifier{
+		err = iterativeVerifier.Initialize()
+		if err != nil {
+			return err
+		}
+
+		this.verifier = iterativeVerifier
+	} else if this.config.VerifierType == VerifierTypeChecksumTable {
+		this.verifier = &ghostferry.ChecksumTableVerifier{
 			Tables:           this.Ferry.Tables.AsSlice(),
 			SourceDB:         this.Ferry.SourceDB,
 			TargetDB:         this.Ferry.TargetDB,
 			DatabaseRewrites: this.Ferry.Config.DatabaseRewrites,
 			TableRewrites:    this.Ferry.Config.TableRewrites,
 		}
+	} else {
+		this.verifier = nil
 	}
+
+	this.controlServer.Verifier = this.verifier
 	return nil
 }
 
@@ -106,8 +114,8 @@ func (this *CopydbFerry) CreateDatabasesAndTables() error {
 	return nil
 }
 
-func (this *CopydbFerry) onFinishedIterations() error {
-	err := this.controlServer.Verifier.(*ghostferry.IterativeVerifier).VerifyBeforeCutover()
+func (this *CopydbFerry) runIterativeVerifierAfterRowCopy() error {
+	err := this.verifier.(*ghostferry.IterativeVerifier).VerifyBeforeCutover()
 	return err
 }
 

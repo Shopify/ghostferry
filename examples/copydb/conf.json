@@ -10,7 +10,7 @@
     },
     "TLS": {
       "CertPath": "/home/vagrant/.mysql-vending-machine/mysqls/gf.n1/data/server-cert.pem",
-      "ServerName": "MySQL_Server_5.7.18-15_Auto_Generated_Server_Certificate"
+      "ServerName": "MySQL_Server_5.7.20-19_Auto_Generated_Server_Certificate"
     }
   },
 
@@ -31,5 +31,7 @@
 
   "Tables": {
     "Blacklist": ["schema_migrations"]
-  }
+  },
+
+  "VerifierType": "ChecksumTable"
 }
