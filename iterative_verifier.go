@@ -187,6 +187,10 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	close(errChan)
 
 	wg.Wait()
+
+	// TODO: we can reduce the cutover phase (downtime) drastically by eagerly
+	// running re-verification on the ReverifyStore a few times at this point
+
 	v.beforeCutoverVerifyDone = true
 	v.logger.Info("pre-cutover verification complete")
 
