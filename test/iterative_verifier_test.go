@@ -44,7 +44,7 @@ func (t *IterativeVerifierTestSuite) SetupTest() {
 	t.reloadTables()
 }
 
-func (t *IterativeVerifierTestSuite) TeardownTest() {
+func (t *IterativeVerifierTestSuite) TearDownTest() {
 	t.GhostferryUnitTestSuite.TearDownTest()
 }
 
@@ -90,7 +90,7 @@ func (t *IterativeVerifierTestSuite) TestRowsWithSameDataButDifferentPKs() {
 	t.Require().NotEqual(hashes[0], hashes[1])
 }
 
-func (t *IterativeVerifierTestSuite) TestPostitiveAndNegativeZeroFloat() {
+func (t *IterativeVerifierTestSuite) TestPositiveAndNegativeZeroFloat() {
 	_, err := t.db.Exec("ALTER TABLE gftest.test_table_1 MODIFY data float")
 	t.Require().Nil(err)
 	t.reloadTables()

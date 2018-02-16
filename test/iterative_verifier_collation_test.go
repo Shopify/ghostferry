@@ -38,7 +38,7 @@ func (t *IterativeVerifierCollationTestSuite) SetupTest() {
 	t.utf8mb4Data = "𠜎𠜱𠝹𠱓𠱸𠲖𠳏𠳕𠴕𠵼𠵿𠸎𠸏𠹷"
 }
 
-func (t *IterativeVerifierCollationTestSuite) TeardownTest() {
+func (t *IterativeVerifierCollationTestSuite) TearDownTest() {
 	t.IterativeVerifierTestSuite.TearDownTest()
 }
 

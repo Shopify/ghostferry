@@ -26,6 +26,7 @@ func TestHashesSql(t *testing.T) {
 func TestVerificationFailsDeletedRow(t *testing.T) {
 	ferry := testhelpers.NewTestFerry()
 	iterativeVerifier := &ghostferry.IterativeVerifier{}
+	ran := false
 
 	testcase := &testhelpers.IntegrationTestCase{
 		T:           t,
@@ -48,6 +49,7 @@ func TestVerificationFailsDeletedRow(t *testing.T) {
 			assert.Nil(t, err)
 			assert.False(t, result.DataCorrect)
 			assert.Regexp(t, "verification failed.*gftest.table1.*pks: (43,42)|(42,43)", result.Message)
+			ran = true
 		},
 		DataWriter: &testhelpers.MixedActionDataWriter{
 			ProbabilityOfInsert: 1.0 / 3.0,
@@ -61,11 +63,13 @@ func TestVerificationFailsDeletedRow(t *testing.T) {
 	}
 
 	testcase.Run()
+	assert.True(t, ran)
 }
 
 func TestVerificationFailsUpdatedRow(t *testing.T) {
 	ferry := testhelpers.NewTestFerry()
 	iterativeVerifier := &ghostferry.IterativeVerifier{}
+	ran := false
 
 	testcase := &testhelpers.IntegrationTestCase{
 		T:           t,
@@ -88,6 +92,7 @@ func TestVerificationFailsUpdatedRow(t *testing.T) {
 			assert.Nil(t, err)
 			assert.False(t, result.DataCorrect)
 			assert.Regexp(t, "verification failed.*gftest.table1.*pks: (43,42)|(42,43)", result.Message)
+			ran = true
 		},
 		DataWriter: &testhelpers.MixedActionDataWriter{
 			ProbabilityOfInsert: 1.0 / 3.0,
@@ -101,11 +106,13 @@ func TestVerificationFailsUpdatedRow(t *testing.T) {
 	}
 
 	testcase.Run()
+	assert.True(t, ran)
 }
 
 func TestIgnoresTables(t *testing.T) {
 	ferry := testhelpers.NewTestFerry()
 	iterativeVerifier := &ghostferry.IterativeVerifier{}
+	ran := false
 
 	testcase := &testhelpers.IntegrationTestCase{
 		T: t,
@@ -130,6 +137,7 @@ func TestIgnoresTables(t *testing.T) {
 			result, err := iterativeVerifier.VerifyDuringCutover()
 			assert.Nil(t, err)
 			assert.True(t, result.DataCorrect)
+			ran = true
 		},
 		DataWriter: &testhelpers.MixedActionDataWriter{
 			ProbabilityOfInsert: 1.0 / 3.0,
@@ -143,11 +151,13 @@ func TestIgnoresTables(t *testing.T) {
 	}
 
 	testcase.Run()
+	assert.True(t, ran)
 }
 
 func TestVerificationPasses(t *testing.T) {
 	ferry := testhelpers.NewTestFerry()
 	iterativeVerifier := &ghostferry.IterativeVerifier{}
+	ran := false
 
 	testcase := &testhelpers.IntegrationTestCase{
 		T:           t,
@@ -165,6 +175,7 @@ func TestVerificationPasses(t *testing.T) {
 			result, err := iterativeVerifier.VerifyDuringCutover()
 			assert.Nil(t, err)
 			assert.True(t, result.DataCorrect)
+			ran = true
 		},
 		DataWriter: &testhelpers.MixedActionDataWriter{
 			ProbabilityOfInsert: 1.0 / 3.0,
@@ -177,6 +188,7 @@ func TestVerificationPasses(t *testing.T) {
 	}
 
 	testcase.Run()
+	assert.True(t, ran)
 }
 
 func setupIterativeVerifierFromFerry(v *ghostferry.IterativeVerifier, f *ghostferry.Ferry) {

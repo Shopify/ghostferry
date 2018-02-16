@@ -148,7 +148,7 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	v.BinlogStreamer.AddEventListener(v.binlogEventListener)
 
 	errChan := make(chan error, v.Concurrency)
-	tablesChan := make(chan *schema.Table, math.Min(len(v.Tables), 100))
+	tablesChan := make(chan *schema.Table, len(v.Tables))
 	wg := &sync.WaitGroup{}
 	wg.Add(v.Concurrency)
 
@@ -177,7 +177,7 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 		tablesChan <- table
 	}
 
-	v.logger.Info("done queueing tables to be iterated, closing table channel")
+	v.logger.Debug("done queueing tables to be iterated, closing table channel")
 	close(tablesChan)
 
 	var err error
@@ -225,7 +225,7 @@ func (v *IterativeVerifier) VerifyDuringCutover() (*VerificationResult, error) {
 				v.logger.WithFields(logrus.Fields{
 					"table":    reverifyBatch.Table.String(),
 					"len(pks)": len(reverifyBatch.Pks),
-				}).Info("received pk batch to reverify")
+				}).Debug("received pk batch to reverify")
 
 				verificationResult, err := v.verifyPksDuringCutover(reverifyBatch.Table, reverifyBatch.Pks)
 				resultAndErr := verificationResultAndError{verificationResult, err}
@@ -245,7 +245,6 @@ func (v *IterativeVerifier) VerifyDuringCutover() (*VerificationResult, error) {
 	}
 
 	for table, pks := range v.reverifyStore.Pks() {
-		// Overflow?
 		for i := 0; i < len(pks); i += int(v.CursorConfig.BatchSize) {
 			lastIdx := i + int(v.CursorConfig.BatchSize)
 			if lastIdx > len(pks) {
