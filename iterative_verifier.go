@@ -144,49 +144,34 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	}()
 	v.BinlogStreamer.AddEventListener(v.binlogEventListener)
 
-	errChan := make(chan error, v.Concurrency)
-	tablesChan := make(chan *schema.Table, len(v.Tables))
-	wg := &sync.WaitGroup{}
-	wg.Add(v.Concurrency)
+	pool := &WorkerPool{
+		Concurrency: v.Concurrency,
+		LogTag:      "iterative_verifier",
+		Process: func(tableInterface interface{}) (interface{}, error) {
+			table := tableInterface.(*schema.Table)
 
-	for i := 0; i < v.Concurrency; i++ {
-		go func() {
-			defer wg.Done()
-			for {
-				table, ok := <-tablesChan
-				if !ok {
-					break
-				}
-
-				err := v.verifyTableBeforeCutover(table)
-				if err != nil {
-					v.logger.WithError(err).Error("error occured during to verify table before cutover")
-					errChan <- err
-					return
-				}
+			err := v.verifyTableBeforeCutover(table)
+			if err != nil {
+				v.logger.WithError(err).Error("error occured during verify table before cutover")
 			}
-
-			errChan <- nil
-		}()
+			return nil, err
+		},
 	}
 
-	for _, table := range v.Tables {
-		tablesChan <- table
+	tables := make([]interface{}, len(v.Tables))
+	for i, table := range v.Tables {
+		tables[i] = table
 	}
 
-	v.logger.Debug("done queueing tables to be iterated, closing table channel")
-	close(tablesChan)
+	_, errs := pool.Run(tables)
 
+	// Get the first err and return that if not nil
 	var err error
-	for i := 0; i < v.Concurrency; i++ {
-		err = <-errChan
+	for _, err = range errs {
 		if err != nil {
 			break
 		}
 	}
-	close(errChan)
-
-	wg.Wait()
 
 	// TODO: we can reduce the cutover phase (downtime) drastically by eagerly
 	// running re-verification on the ReverifyStore a few times at this point
@@ -205,46 +190,36 @@ func (v *IterativeVerifier) VerifyDuringCutover() (*VerificationResult, error) {
 	close(v.reverifyChan)
 	v.wg.Wait()
 
+	erroredOrFailed := errors.New("reverify errored or failed")
+
 	v.logger.Info("starting verification during cutover")
-	resultChan := make(chan verificationResultAndError, v.Concurrency)
-	// TODO: Make the channel buffer size be propotional to the reverifyStore
-	// count, with an appropriate limit of course.
-	reverifyQueue := make(chan reverifyEntryBatch, 2000)
-	wg := &sync.WaitGroup{}
-	wg.Add(v.Concurrency)
+	pool := &WorkerPool{
+		Concurrency: v.Concurrency,
+		LogTag:      "iterative_verifier",
+		Process: func(reverifyBatchInterface interface{}) (interface{}, error) {
+			reverifyBatch := reverifyBatchInterface.(reverifyEntryBatch)
+			v.logger.WithFields(logrus.Fields{
+				"table":    reverifyBatch.Table.String(),
+				"len(pks)": len(reverifyBatch.Pks),
+			}).Debug("received pk batch to reverify")
 
-	for i := 0; i < v.Concurrency; i++ {
-		go func() {
-			defer wg.Done()
-			v.logger.Info("started reverify consumer")
-			for {
-				reverifyBatch, ok := <-reverifyQueue
-				if !ok {
-					break
+			verificationResult, err := v.verifyPksDuringCutover(reverifyBatch.Table, reverifyBatch.Pks)
+			resultAndErr := verificationResultAndError{verificationResult, err}
+			if resultAndErr.ErroredOrFailed() {
+				if resultAndErr.Error != nil {
+					v.logger.WithError(resultAndErr.Error).Error("error occured in verification during cutover")
+				} else {
+					v.logger.Errorf("failed verification: %s", resultAndErr.Result.Message)
 				}
 
-				v.logger.WithFields(logrus.Fields{
-					"table":    reverifyBatch.Table.String(),
-					"len(pks)": len(reverifyBatch.Pks),
-				}).Debug("received pk batch to reverify")
-
-				verificationResult, err := v.verifyPksDuringCutover(reverifyBatch.Table, reverifyBatch.Pks)
-				resultAndErr := verificationResultAndError{verificationResult, err}
-				if resultAndErr.ErroredOrFailed() {
-					if resultAndErr.Error != nil {
-						v.logger.WithError(resultAndErr.Error).Error("error occured in verification during cutover")
-					} else {
-						v.logger.Errorf("failed verification: %s", resultAndErr.Result.Message)
-					}
-
-					resultChan <- resultAndErr
-				}
+				return resultAndErr, erroredOrFailed
 			}
 
-			resultChan <- verificationResultAndError{&VerificationResult{true, ""}, nil}
-		}()
+			return resultAndErr, nil
+		},
 	}
 
+	allBatches := make([]interface{}, 0)
 	for table, pks := range v.reverifyStore.Pks() {
 		for i := 0; i < len(pks); i += int(v.CursorConfig.BatchSize) {
 			lastIdx := i + int(v.CursorConfig.BatchSize)
@@ -253,17 +228,22 @@ func (v *IterativeVerifier) VerifyDuringCutover() (*VerificationResult, error) {
 			}
 
 			reverifyBatch := reverifyEntryBatch{Pks: pks[i:lastIdx], Table: table}
-			reverifyQueue <- reverifyBatch
+			allBatches = append(allBatches, reverifyBatch)
 		}
 	}
 
-	v.logger.Info("done queueing reverify batches, closing channel")
-	close(reverifyQueue)
+	results, _ := pool.Run(allBatches)
 
 	var result *VerificationResult
 	var err error
 	for i := 0; i < v.Concurrency; i++ {
-		resultAndErr := <-resultChan
+		if results[i] == nil {
+			// This means the worker pool exitted early and another goroutine
+			// must have returned and error.
+			continue
+		}
+
+		resultAndErr := results[i].(verificationResultAndError)
 		result = resultAndErr.Result
 		err = resultAndErr.Error
 
@@ -271,9 +251,7 @@ func (v *IterativeVerifier) VerifyDuringCutover() (*VerificationResult, error) {
 			break
 		}
 	}
-	close(resultChan)
 
-	wg.Wait()
 	v.logger.Info("cutover verification complete")
 
 	return result, err
