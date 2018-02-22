@@ -14,6 +14,7 @@ type IntegrationTestCase struct {
 
 	SetupAction                   func(*TestFerry)
 	AfterStartBinlogStreaming     func(*TestFerry)
+	AfterRowCopyIsComplete        func(*TestFerry)
 	BeforeStoppingBinlogStreaming func(*TestFerry)
 	AfterStoppedBinlogStreaming   func(*TestFerry)
 	CustomVerifyAction            func(*TestFerry)
@@ -78,6 +79,7 @@ func (this *IntegrationTestCase) StartFerryAndDataWriter() {
 
 func (this *IntegrationTestCase) WaitUntilRowCopyIsComplete() {
 	this.Ferry.WaitUntilRowCopyIsComplete()
+	this.callCustomAction(this.AfterRowCopyIsComplete)
 }
 
 func (this *IntegrationTestCase) SetReadonlyOnSourceDbAndStopDataWriter() {
@@ -115,6 +117,13 @@ func (this *IntegrationTestCase) VerifyData() {
 }
 
 func (this *IntegrationTestCase) Teardown() {
+	r := recover()
+	if r != nil {
+		logrus.Errorf("panic detected in integration test: %v", r)
+		logrus.Error("cleaning up now...")
+		logrus.Error("you might see an unrelated panic as we delete the db, if there are background processes operating on the db")
+	}
+
 	for _, dbname := range ApplicableTestDbs {
 		if this.Ferry.SourceDB != nil {
 			_, err := this.Ferry.SourceDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbname))
@@ -129,6 +138,10 @@ func (this *IntegrationTestCase) Teardown() {
 				logrus.WithError(err).Errorf("failed to drop database %s on the target db as a part of the test cleanup", dbname)
 			}
 		}
+	}
+
+	if r != nil {
+		panic(r)
 	}
 }
 

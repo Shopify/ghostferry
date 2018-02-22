@@ -39,6 +39,7 @@ type DMLEvent interface {
 	AsSQLString(target *schema.Table) (string, error)
 	OldValues() RowData
 	NewValues() RowData
+	PK() (uint64, error)
 }
 
 type BinlogInsertEvent struct {
@@ -79,6 +80,10 @@ func (e *BinlogInsertEvent) AsSQLString(target *schema.Table) (string, error) {
 		" VALUES (" + buildStringListForValues(e.newValues) + ")"
 
 	return query, nil
+}
+
+func (e *BinlogInsertEvent) PK() (uint64, error) {
+	return pkFromEventData(&e.table, e.newValues)
 }
 
 type BinlogUpdateEvent struct {
@@ -131,6 +136,10 @@ func (e *BinlogUpdateEvent) AsSQLString(target *schema.Table) (string, error) {
 	return query, nil
 }
 
+func (e *BinlogUpdateEvent) PK() (uint64, error) {
+	return pkFromEventData(&e.table, e.newValues)
+}
+
 type BinlogDeleteEvent struct {
 	oldValues RowData
 	TableCopy
@@ -167,6 +176,10 @@ func (e *BinlogDeleteEvent) AsSQLString(target *schema.Table) (string, error) {
 		" WHERE " + buildStringMapForWhere(columns, e.oldValues)
 
 	return query, nil
+}
+
+func (e *BinlogDeleteEvent) PK() (uint64, error) {
+	return pkFromEventData(&e.table, e.oldValues)
 }
 
 func NewBinlogDMLEvents(table *schema.Table, ev *replication.BinlogEvent) ([]DMLEvent, error) {
@@ -403,4 +416,13 @@ func appendEscapedBuffer(buffer, value []byte) []byte {
 	}
 
 	return append(buffer, '\'')
+}
+
+func pkFromEventData(table *schema.Table, rowData RowData) (uint64, error) {
+	if err := verifyValuesHasTheSameLengthAsColumns(table, rowData); err != nil {
+		return 0, err
+	}
+
+	pkIndex := table.PKColumns[0]
+	return rowData.GetUint64(pkIndex)
 }
