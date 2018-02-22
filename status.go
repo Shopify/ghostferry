@@ -52,7 +52,7 @@ type Status struct {
 	VerificationErr     error
 }
 
-func FetchStatus(f *Ferry) *Status {
+func FetchStatus(f *Ferry, v Verifier) *Status {
 	status := &Status{}
 
 	status.GhostferryVersion = VersionString
@@ -183,10 +183,10 @@ func FetchStatus(f *Ferry) *Status {
 	status.PKsPerSecond = uint64(estimatedPKsPerSecond)
 
 	// Verifier display
-	if f.Verifier != nil {
+	if v != nil {
 		status.VerifierSupport = true
 
-		result, err := f.Verifier.Result()
+		result, err := v.Result()
 		status.VerificationStarted = result.IsStarted()
 		status.VerificationDone = result.IsDone()
 
