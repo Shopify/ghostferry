@@ -60,12 +60,12 @@ func (r ReverifyStore) Pks() map[*schema.Table][]uint64 {
 }
 
 type verificationResultAndError struct {
-	Result *VerificationResult
+	Result VerificationResult
 	Error  error
 }
 
 func (r verificationResultAndError) ErroredOrFailed() bool {
-	return r.Result == nil || !r.Result.DataCorrect
+	return r.Error != nil || !r.Result.DataCorrect
 }
 
 type IterativeVerifier struct {
@@ -89,11 +89,11 @@ type IterativeVerifier struct {
 	wg                         *sync.WaitGroup
 
 	// Variables for verification in the background
-	verificationResult       *VerificationResult
-	verificationErr          error
-	backgroundVerificationWg *sync.WaitGroup
-	backgroundStartTime      time.Time
-	backgroundDoneTime       time.Time
+	verificationResultAndStatus VerificationResultAndStatus
+	verificationErr             error
+	backgroundVerificationWg    *sync.WaitGroup
+	backgroundStartTime         time.Time
+	backgroundDoneTime          time.Time
 }
 
 func (v *IterativeVerifier) SanityCheckParameters() error {
@@ -182,7 +182,7 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	return err
 }
 
-func (v *IterativeVerifier) VerifyDuringCutover() (*VerificationResult, error) {
+func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	// Since no more reverify batch can be sent at this point,
 	// we should ensure nothing can be actually added to the reverifyStore
 	// by spinning down the consumeReverifyChan go routine.
@@ -234,7 +234,7 @@ func (v *IterativeVerifier) VerifyDuringCutover() (*VerificationResult, error) {
 
 	results, _ := pool.Run(allBatches)
 
-	var result *VerificationResult
+	var result VerificationResult
 	var err error
 	for i := 0; i < v.Concurrency; i++ {
 		if results[i] == nil {
@@ -270,22 +270,25 @@ func (v *IterativeVerifier) StartInBackground() error {
 		return errors.New("verification during cutover has already been started")
 	}
 
-	v.verificationResult = nil
+	v.verificationResultAndStatus = VerificationResultAndStatus{
+		StartTime: time.Now(),
+		DoneTime:  time.Time{},
+	}
 	v.verificationErr = nil
 	v.backgroundVerificationWg = &sync.WaitGroup{}
-	v.backgroundStartTime = time.Now()
-	v.backgroundDoneTime = time.Time{}
 
 	v.logger.Info("starting iterative verification in the background")
 
 	v.backgroundVerificationWg.Add(1)
 	go func() {
+		defer v.backgroundVerificationWg.Done()
 		defer func() {
 			v.backgroundDoneTime = time.Now()
 			v.backgroundVerificationWg.Done()
 		}()
 
-		v.verificationResult, v.verificationErr = v.VerifyDuringCutover()
+		v.verificationResultAndStatus.VerificationResult, v.verificationErr = v.VerifyDuringCutover()
+		v.verificationResultAndStatus.DoneTime = time.Now()
 	}()
 
 	return nil
@@ -295,24 +298,8 @@ func (v *IterativeVerifier) Wait() {
 	v.backgroundVerificationWg.Wait()
 }
 
-func (v *IterativeVerifier) IsStarted() bool {
-	return v.verifyDuringCutoverStarted.Get()
-}
-
-func (v *IterativeVerifier) StartTime() time.Time {
-	return v.backgroundStartTime
-}
-
-func (v *IterativeVerifier) IsDone() bool {
-	return !v.backgroundDoneTime.IsZero()
-}
-
-func (v *IterativeVerifier) DoneTime() time.Time {
-	return v.backgroundDoneTime
-}
-
-func (v *IterativeVerifier) VerificationResult() (*VerificationResult, error) {
-	return v.verificationResult, v.verificationErr
+func (v *IterativeVerifier) Result() (VerificationResultAndStatus, error) {
+	return v.verificationResultAndStatus, v.verificationErr
 }
 
 func (v *IterativeVerifier) verifyTableBeforeCutover(table *schema.Table) error {
@@ -355,10 +342,10 @@ func (v *IterativeVerifier) verifyTableBeforeCutover(table *schema.Table) error 
 	})
 }
 
-func (v *IterativeVerifier) verifyPksDuringCutover(table *schema.Table, pks []uint64) (*VerificationResult, error) {
+func (v *IterativeVerifier) verifyPksDuringCutover(table *schema.Table, pks []uint64) (VerificationResult, error) {
 	mismatchedPks, err := v.compareFingerprints(pks, table)
 	if err != nil {
-		return nil, err
+		return VerificationResult{}, err
 	}
 
 	if len(mismatchedPks) > 0 {
@@ -367,13 +354,13 @@ func (v *IterativeVerifier) verifyPksDuringCutover(table *schema.Table, pks []ui
 			pkStrings[idx] = strconv.FormatUint(pk, 10)
 		}
 
-		return &VerificationResult{
+		return VerificationResult{
 			DataCorrect: false,
 			Message:     fmt.Sprintf("verification failed on table: %s for pks: %s", table.String(), strings.Join(pkStrings, ",")),
 		}, nil
 	}
 
-	return &VerificationResult{true, ""}, nil
+	return VerificationResult{true, ""}, nil
 }
 
 func (v *IterativeVerifier) consumeReverifyChan() {
