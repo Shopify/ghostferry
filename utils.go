@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
-	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -76,78 +75,52 @@ func (a *AtomicBoolean) Get() bool {
 	return atomic.LoadInt32((*int32)(a)) == int32(1)
 }
 
-// A worker pool that exits immediately if an error occurs
 type WorkerPool struct {
 	Concurrency int
-	Process     func(interface{}) (interface{}, error)
-	LogTag      string
+	Process     func(int) (interface{}, error)
 }
 
-func (c *WorkerPool) Run(allwork []interface{}) ([]interface{}, []error) {
-	if c.LogTag == "" {
-		c.LogTag = "worker_pool"
-	}
-
-	logger := logrus.WithField("tag", c.LogTag)
-	results := make([]interface{}, c.Concurrency)
-	errArray := make([]error, c.Concurrency)
-	queue := make(chan interface{})
-
-	incomplete := errors.New("incomplete")
-	for j := 0; j < c.Concurrency; j++ {
-		errArray[j] = incomplete
-	}
+// Returns a list of results of the size same as the concurrency number.
+// Returns the first error that occurs during the run. Also as soon as
+// a single worker errors, all workers terminates.
+func (p *WorkerPool) Run(n int) ([]interface{}, error) {
+	results := make([]interface{}, p.Concurrency)
+	errCh := make(chan error, p.Concurrency)
+	workQueue := make(chan int)
 
 	wg := &sync.WaitGroup{}
-	wg.Add(c.Concurrency)
-	for j := 0; j < c.Concurrency; j++ {
+	wg.Add(p.Concurrency)
+
+	for j := 0; j < p.Concurrency; j++ {
 		go func(j int) {
 			defer wg.Done()
-			localLog := logger.WithField("worker_idx", j)
 
-			for {
-				work, open := <-queue
-				if !open {
-					localLog.Info("queue closed, exiting...")
-					break
-				}
-
-				result, err := c.Process(work)
+			for workIndex := range workQueue {
+				result, err := p.Process(workIndex)
 				results[j] = result
 				if err != nil {
-					localLog.WithError(err).Errorf("error during processing of %v", work)
-					errArray[j] = err
+					errCh <- err
 					return
 				}
 			}
 
-			errArray[j] = nil
+			errCh <- nil
 		}(j)
 	}
 
+	var err error = nil
 	i := 0
 loop:
-	for i < len(allwork) {
+	for i < n {
 		select {
-		case queue <- allwork[i]:
-			logger.Debugf("queued work number %d", i)
+		case workQueue <- i:
 			i++
-		case <-time.After(500 * time.Millisecond):
-			logger.Debugf("can't queue for 500ms, checking of errors")
-		}
-
-		for j := 0; j < c.Concurrency; j++ {
-			err := errArray[j]
-			if err != nil && err != incomplete {
-				// Only need a debug print because .Error is called within the
-				// processing goroutine.
-				logger.WithError(err).Debug("error detected, stopping additional processing")
-				break loop
-			}
+		case err = <-errCh:
+			break loop
 		}
 	}
-	close(queue)
-	wg.Wait()
 
-	return results, errArray
+	close(workQueue)
+	wg.Wait()
+	return results, err
 }
