@@ -10,14 +10,14 @@ import (
 )
 
 type CopydbFerry struct {
-	ferry         *ghostferry.Ferry
+	Ferry         *ghostferry.Ferry
 	controlServer *ghostferry.ControlServer
 	config        *Config
 }
 
 func NewFerry(config *Config) *CopydbFerry {
 	ferry := &ghostferry.Ferry{
-		Config: &config.Config,
+		Config: config.Config,
 	}
 
 	controlServer := &ghostferry.ControlServer{
@@ -27,14 +27,14 @@ func NewFerry(config *Config) *CopydbFerry {
 	}
 
 	return &CopydbFerry{
-		ferry:         ferry,
+		Ferry:         ferry,
 		controlServer: controlServer,
 		config:        config,
 	}
 }
 
 func (this *CopydbFerry) Initialize() error {
-	err := this.ferry.Initialize()
+	err := this.Ferry.Initialize()
 	if err != nil {
 		return err
 	}
@@ -43,17 +43,17 @@ func (this *CopydbFerry) Initialize() error {
 }
 
 func (this *CopydbFerry) Start() error {
-	err := this.ferry.Start()
+	err := this.Ferry.Start()
 	if err != nil {
 		return err
 	}
 
 	this.controlServer.Verifier = &ghostferry.ChecksumTableVerifier{
-		Tables:           this.ferry.Tables.AsSlice(),
-		SourceDB:         this.ferry.SourceDB,
-		TargetDB:         this.ferry.TargetDB,
-		DatabaseRewrites: this.ferry.Config.DatabaseRewrites,
-		TableRewrites:    this.ferry.Config.TableRewrites,
+		Tables:           this.Ferry.Tables.AsSlice(),
+		SourceDB:         this.Ferry.SourceDB,
+		TargetDB:         this.Ferry.TargetDB,
+		DatabaseRewrites: this.Ferry.Config.DatabaseRewrites,
+		TableRewrites:    this.Ferry.Config.TableRewrites,
 	}
 	return nil
 }
@@ -61,7 +61,8 @@ func (this *CopydbFerry) Start() error {
 func (this *CopydbFerry) CreateDatabasesAndTables() error {
 	// We need to create the same table/schemas on the target database
 	// as the ones we are copying.
-	for tableName := range this.ferry.Tables {
+	logrus.Info("creating databases and tables on target")
+	for tableName := range this.Ferry.Tables {
 		t := strings.Split(tableName, ".")
 
 		err := this.createDatabaseIfExistsOnTarget(t[0])
@@ -89,22 +90,22 @@ func (this *CopydbFerry) Run() {
 	copyWG.Add(1)
 	go func() {
 		defer copyWG.Done()
-		this.ferry.Run()
+		this.Ferry.Run()
 	}()
 
 	// If AutomaticCutover == false, it will pause below the following line
-	this.ferry.WaitUntilRowCopyIsComplete()
+	this.Ferry.WaitUntilRowCopyIsComplete()
 
 	// This waits until we're pretty close in the binlog before making the
 	// source readonly. This is to avoid excessive downtime caused by the
 	// binlog streamer catching up.
-	this.ferry.WaitUntilBinlogStreamerCatchesUp()
+	this.Ferry.WaitUntilBinlogStreamerCatchesUp()
 
 	// This is when the source database should be set as read only, whether it
 	// is done in application level or the database level.
 	// Must ensure that all transactions are flushed to the binlog before
 	// proceeding.
-	this.ferry.FlushBinlogAndStopStreaming()
+	this.Ferry.FlushBinlogAndStopStreaming()
 
 	// After waiting for the binlog streamer to stop, the source and the target
 	// should be identical.
@@ -117,16 +118,24 @@ func (this *CopydbFerry) Run() {
 	serverWG.Wait()
 }
 
+func (this *CopydbFerry) ShutdownControlServer() error {
+	return this.controlServer.Shutdown()
+}
+
 func (this *CopydbFerry) createDatabaseIfExistsOnTarget(database string) error {
+	if targetDbName, exists := this.Ferry.DatabaseRewrites[database]; exists {
+		database = targetDbName
+	}
+
 	createDatabaseQuery := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`", database)
-	_, err := this.ferry.TargetDB.Exec(createDatabaseQuery)
+	_, err := this.Ferry.TargetDB.Exec(createDatabaseQuery)
 	return err
 }
 
 func (this *CopydbFerry) createTableOnTarget(database, table string) error {
 	var tableNameAgain, createTableQuery string
 
-	r := this.ferry.SourceDB.QueryRow(fmt.Sprintf("SHOW CREATE TABLE `%s`.`%s`", database, table))
+	r := this.Ferry.SourceDB.QueryRow(fmt.Sprintf("SHOW CREATE TABLE `%s`.`%s`", database, table))
 	err := r.Scan(&tableNameAgain, &createTableQuery)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
@@ -137,9 +146,17 @@ func (this *CopydbFerry) createTableOnTarget(database, table string) error {
 		return err
 	}
 
+	if targetDbName, exists := this.Ferry.DatabaseRewrites[database]; exists {
+		database = targetDbName
+	}
+
+	if targetTableName, exists := this.Ferry.TableRewrites[tableNameAgain]; exists {
+		tableNameAgain = targetTableName
+	}
+
 	createTableQueryReplaced := strings.Replace(
 		createTableQuery,
-		fmt.Sprintf("CREATE TABLE `%s`", tableNameAgain),
+		fmt.Sprintf("CREATE TABLE `%s`", table),
 		fmt.Sprintf("CREATE TABLE `%s`.`%s`", database, tableNameAgain),
 		1,
 	)
@@ -148,6 +165,6 @@ func (this *CopydbFerry) createTableOnTarget(database, table string) error {
 		return fmt.Errorf("no effect on replacing the create table <table> with create table <db>.<table> query on query: %s", createTableQuery)
 	}
 
-	_, err = this.ferry.TargetDB.Exec(createTableQueryReplaced)
+	_, err = this.Ferry.TargetDB.Exec(createTableQueryReplaced)
 	return err
 }
