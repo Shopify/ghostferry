@@ -48,7 +48,7 @@ func main() {
 
 	// Default values for configurations
 	config := &copydb.Config{
-		Config: ghostferry.Config{
+		Config: &ghostferry.Config{
 			Source: ghostferry.DatabaseConfig{
 				Port: 3306,
 				User: "ghostferry",
