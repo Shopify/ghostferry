@@ -238,8 +238,8 @@ func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	var err error
 	for i := 0; i < v.Concurrency; i++ {
 		if results[i] == nil {
-			// This means the worker pool exitted early and another goroutine
-			// must have returned and error.
+			// This means the worker pool exited early and another goroutine
+			// must have returned an error.
 			continue
 		}
 
