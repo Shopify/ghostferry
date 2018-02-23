@@ -73,16 +73,18 @@ type Eq map[string]interface{}
 
 func (eq Eq) toSql(useNotOpr bool) (sql string, args []interface{}, err error) {
 	var (
-		exprs    []string
-		equalOpr string = "="
-		inOpr    string = "IN"
-		nullOpr  string = "IS"
+		exprs       []string
+		equalOpr    = "="
+		inOpr       = "IN"
+		nullOpr     = "IS"
+		inEmptyExpr = "(1=0)" // Portable FALSE
 	)
 
 	if useNotOpr {
 		equalOpr = "<>"
 		inOpr = "NOT IN"
 		nullOpr = "IS NOT"
+		inEmptyExpr = "(1=1)" // Portable TRUE
 	}
 
 	for key, val := range eq {
@@ -101,7 +103,7 @@ func (eq Eq) toSql(useNotOpr bool) (sql string, args []interface{}, err error) {
 			if isListType(val) {
 				valVal := reflect.ValueOf(val)
 				if valVal.Len() == 0 {
-					expr = fmt.Sprintf("%s %s (NULL)", key, inOpr)
+					expr = inEmptyExpr
 					if args == nil {
 						args = []interface{}{}
 					}
@@ -215,7 +217,10 @@ func (gtOrEq GtOrEq) ToSql() (sql string, args []interface{}, err error) {
 
 type conj []Sqlizer
 
-func (c conj) join(sep string) (sql string, args []interface{}, err error) {
+func (c conj) join(sep, defaultExpr string) (sql string, args []interface{}, err error) {
+	if len(c) == 0 {
+		return defaultExpr, []interface{}{}, nil
+	}
 	var sqlParts []string
 	for _, sqlizer := range c {
 		partSql, partArgs, err := sqlizer.ToSql()
@@ -236,13 +241,13 @@ func (c conj) join(sep string) (sql string, args []interface{}, err error) {
 type And conj
 
 func (a And) ToSql() (string, []interface{}, error) {
-	return conj(a).join(" AND ")
+	return conj(a).join(" AND ", "(1=1)")
 }
 
 type Or conj
 
 func (o Or) ToSql() (string, []interface{}, error) {
-	return conj(o).join(" OR ")
+	return conj(o).join(" OR ", "(1=0)")
 }
 
 func isListType(val interface{}) bool {

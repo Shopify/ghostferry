@@ -1,20 +1,23 @@
 package canal
 
 import (
+	"fmt"
 	"regexp"
 	"time"
-	"fmt"
 
 	"github.com/juju/errors"
-	"github.com/ngaut/log"
+	"github.com/satori/go.uuid"
 	"github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/replication"
 	"github.com/siddontang/go-mysql/schema"
-	"github.com/satori/go.uuid"
+	log "github.com/sirupsen/logrus"
 )
 
 var (
-	expAlterTable = regexp.MustCompile("(?i)^ALTER\\sTABLE\\s.*?`{0,1}(.*?)`{0,1}\\.{0,1}`{0,1}([^`\\.]+?)`{0,1}\\s.*")
+	expCreateTable  = regexp.MustCompile("(?i)^CREATE\\sTABLE(\\sIF\\sNOT\\sEXISTS)?\\s`{0,1}(.*?)`{0,1}\\.{0,1}`{0,1}([^`\\.]+?)`{0,1}\\s.*")
+	expAlterTable  = regexp.MustCompile("(?i)^ALTER\\sTABLE\\s.*?`{0,1}(.*?)`{0,1}\\.{0,1}`{0,1}([^`\\.]+?)`{0,1}\\s.*")
+	expRenameTable = regexp.MustCompile("(?i)^RENAME\\sTABLE\\s.*?`{0,1}(.*?)`{0,1}\\.{0,1}`{0,1}([^`\\.]+?)`{0,1}\\s{1,}TO\\s.*?")
+	expDropTable   = regexp.MustCompile("(?i)^DROP\\sTABLE(\\sIF\\sEXISTS){0,1}\\s`{0,1}(.*?)`{0,1}\\.{0,1}`{0,1}([^`\\.]+?)`{0,1}($|\\s)")
 )
 
 func (c *Canal) startSyncer() (*replication.BinlogStreamer, error) {
@@ -38,17 +41,21 @@ func (c *Canal) startSyncer() (*replication.BinlogStreamer, error) {
 }
 
 func (c *Canal) runSyncBinlog() error {
-
-	s, err := c.startSyncer(); if err != nil {
+	s, err := c.startSyncer()
+	if err != nil {
 		return err
 	}
 
+	savePos := false
+	force := false
 	for {
 		ev, err := s.GetEvent(c.ctx)
 
 		if err != nil {
 			return errors.Trace(err)
 		}
+		savePos = false
+		force = false
 		pos := c.master.Position()
 
 		curPos := pos.Pos
@@ -64,27 +71,34 @@ func (c *Canal) runSyncBinlog() error {
 			pos.Name = string(e.NextLogName)
 			pos.Pos = uint32(e.Position)
 			log.Infof("rotate binlog to %s", pos)
-
+			savePos = true
+			force = true
 			if err = c.eventHandler.OnRotate(e); err != nil {
 				return errors.Trace(err)
 			}
 		case *replication.RowsEvent:
 			// we only focus row based event
 			err = c.handleRowsEvent(ev)
-			if err != nil && errors.Cause(err) != schema.ErrTableNotExist {
-				// We can ignore table not exist error
-				log.Errorf("handle rows event at (%s, %d) error %v", pos.Name, curPos, err)
-				return errors.Trace(err)
+			if err != nil {
+				e := errors.Cause(err)
+				// if error is not ErrExcludedTable or ErrTableNotExist or ErrMissingTableMeta, stop canal
+				if e != ErrExcludedTable &&
+					e != schema.ErrTableNotExist &&
+					e != schema.ErrMissingTableMeta {
+					log.Errorf("handle rows event at (%s, %d) error %v", pos.Name, curPos, err)
+					return errors.Trace(err)
+				}
 			}
 			continue
 		case *replication.XIDEvent:
+			savePos = true
 			// try to save the position later
 			if err := c.eventHandler.OnXID(pos); err != nil {
 				return errors.Trace(err)
 			}
 		case *replication.MariadbGTIDEvent:
 			// try to save the GTID later
-			gtid := e.GTID
+			gtid := &e.GTID
 			c.master.UpdateGTID(gtid)
 			if err := c.eventHandler.OnGTID(gtid); err != nil {
 				return errors.Trace(err)
@@ -100,25 +114,47 @@ func (c *Canal) runSyncBinlog() error {
 				return errors.Trace(err)
 			}
 		case *replication.QueryEvent:
-			// handle alert table query
-			if mb := expAlterTable.FindSubmatch(e.Query); mb != nil {
-				if len(mb[1]) == 0 {
-					mb[1] = e.Schema
+			var (
+				mb [][]byte
+				schema []byte
+				table []byte
+			)
+			regexps := []regexp.Regexp{*expCreateTable, *expAlterTable, *expRenameTable, *expDropTable}
+			for _, reg := range regexps {
+				mb = reg.FindSubmatch(e.Query)
+				if len(mb) != 0 {
+					break
 				}
-				c.ClearTableCache(mb[1], mb[2])
-				log.Infof("table structure changed, clear table cache: %s.%s\n", mb[1], mb[2])
-				if err = c.eventHandler.OnDDL(pos, e); err != nil {
-					return errors.Trace(err)
-				}
-			} else {
-				// skip others
+			}
+			mbLen := len(mb)
+			if mbLen == 0 {
 				continue
 			}
+
+			// the first last is table name, the second last is database name(if exists)
+			if len(mb[mbLen-2]) == 0 {
+				schema = e.Schema
+			} else {
+				schema = mb[mbLen-2]
+			}
+			table = mb[mbLen-1]
+
+			savePos = true
+			force = true
+			c.ClearTableCache(schema, table)
+			log.Infof("table structure changed, clear table cache: %s.%s\n", schema, table)
+			if err = c.eventHandler.OnDDL(pos, e); err != nil {
+				return errors.Trace(err)
+			}
+
 		default:
 			continue
 		}
 
-		c.master.Update(pos)
+		if savePos {
+			c.master.Update(pos)
+			c.eventHandler.OnPosSynced(pos, force)
+		}
 	}
 
 	return nil
@@ -133,7 +169,7 @@ func (c *Canal) handleRowsEvent(e *replication.BinlogEvent) error {
 
 	t, err := c.GetTable(schema, table)
 	if err != nil {
-		return errors.Trace(err)
+		return err
 	}
 	var action string
 	switch e.Header.EventType {

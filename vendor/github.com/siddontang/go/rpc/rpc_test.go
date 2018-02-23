@@ -79,7 +79,9 @@ func TestRpc2(t *testing.T) {
 	c := newTestClient()
 
 	var r func(ids []int) ([]int, error)
-	c.MakeRpc("rpc2", &r)
+	if err := c.MakeRpc("rpc2", &r); err != nil {
+		t.Fatal(err)
+	}
 
 	a, e := r(nil)
 	if e == nil {

@@ -5,10 +5,10 @@ import (
 	"time"
 
 	"github.com/juju/errors"
-	"github.com/ngaut/log"
 	"github.com/siddontang/go-mysql/dump"
 	"github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/schema"
+	log "github.com/sirupsen/logrus"
 )
 
 type dumpParseHandler struct {
@@ -30,6 +30,12 @@ func (h *dumpParseHandler) Data(db string, table string, values []string) error 
 
 	tableInfo, err := h.c.GetTable(db, table)
 	if err != nil {
+		e := errors.Cause(err)
+		if e == ErrExcludedTable ||
+			e == schema.ErrTableNotExist ||
+			e == schema.ErrMissingTableMeta {
+			return nil
+		}
 		log.Errorf("get %s.%s information err: %v", db, table, err)
 		return errors.Trace(err)
 	}
@@ -126,6 +132,8 @@ func (c *Canal) tryDump() error {
 	log.Infof("dump MySQL and parse OK, use %0.2f seconds, start binlog replication at (%s, %d)",
 		time.Now().Sub(start).Seconds(), h.name, h.pos)
 
-	c.master.Update(mysql.Position{h.name, uint32(h.pos)})
+	pos = mysql.Position{h.name, uint32(h.pos)}
+	c.master.Update(pos)
+	c.eventHandler.OnPosSynced(pos, true)
 	return nil
 }

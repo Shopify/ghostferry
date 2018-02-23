@@ -30,6 +30,9 @@ type DumpConfig struct {
 	// Set true to skip --master-data if we have no privilege to do
 	// 'FLUSH TABLES WITH READ LOCK'
 	SkipMasterData bool `toml:"skip_master_data"`
+
+	// Set to change the default max_allowed_packet size
+	MaxAllowedPacketMB int `toml:"max_allowed_packet_mb"`
 }
 
 type Config struct {
@@ -37,11 +40,26 @@ type Config struct {
 	User     string `toml:"user"`
 	Password string `toml:"password"`
 
-	Charset  string `toml:"charset"`
-	ServerID uint32 `toml:"server_id"`
-	Flavor   string `toml:"flavor"`
+	Charset         string        `toml:"charset"`
+	ServerID        uint32        `toml:"server_id"`
+	Flavor          string        `toml:"flavor"`
+	HeartbeatPeriod time.Duration `toml:"heartbeat_period"`
+	ReadTimeout     time.Duration `toml:"read_timeout"`
+
+	// IncludeTableRegex or ExcludeTableRegex should contain database name
+	// Only a table which matches IncludeTableRegex and dismatches ExcludeTableRegex will be processed
+	// eg, IncludeTableRegex : [".*\\.canal"], ExcludeTableRegex : ["mysql\\..*"]
+	//     this will include all database's 'canal' table, except database 'mysql'
+	// Default IncludeTableRegex and ExcludeTableRegex are empty, this will include all tables
+	IncludeTableRegex []string `toml:include_table_regex`
+	ExcludeTableRegex []string `toml:exclude_table_regex`
+
+	// discard row event without table meta
+	DiscardNoMetaRowEvent bool `toml:"discard_no_meta_row_event"`
 
 	Dump DumpConfig `toml:"dump"`
+
+	UseDecimal bool `toml:"use_decimal"`
 }
 
 func NewConfigWithFile(name string) (*Config, error) {
