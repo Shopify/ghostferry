@@ -50,17 +50,17 @@ func (this *IntegrationTestCase) Setup() {
 	_, err := this.Ferry.SourceDB.Exec("SET GLOBAL read_only = OFF")
 	PanicIfError(err)
 
-	this.Verifier = &ghostferry.ChecksumTableVerifier{
-		Tables:   this.Ferry.Tables.AsSlice(),
-		SourceDB: this.Ferry.SourceDB,
-		TargetDB: this.Ferry.TargetDB,
-	}
-
 	this.callCustomAction(this.SetupAction)
 }
 
 func (this *IntegrationTestCase) StartFerryAndDataWriter() {
 	PanicIfError(this.Ferry.Start())
+
+	this.Verifier = &ghostferry.ChecksumTableVerifier{
+		Tables:   this.Ferry.Tables.AsSlice(),
+		SourceDB: this.Ferry.SourceDB,
+		TargetDB: this.Ferry.TargetDB,
+	}
 
 	this.callCustomAction(this.AfterStartBinlogStreaming)
 
@@ -103,6 +103,11 @@ func (this *IntegrationTestCase) StopStreamingAndWaitForGhostferryFinish() {
 
 func (this *IntegrationTestCase) VerifyData() {
 	if !this.DisableChecksumVerifier {
+
+		if len(this.Verifier.Tables) == 0 {
+			this.T.Fatalf("the integration test verifier is instructed to verify no tables, this doesn't seem correct")
+		}
+
 		verificationResult, err := this.verifyTableChecksum()
 		if err != nil {
 			this.T.Fatalf("error while verifying data: %v", err)
