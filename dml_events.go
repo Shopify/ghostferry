@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/siddontang/go-mysql/replication"
 	"github.com/siddontang/go-mysql/schema"
 )
@@ -345,6 +347,8 @@ func appendEscapedValue(buffer []byte, value interface{}) []byte {
 		return strconv.AppendFloat(buffer, v, 'g', -1, 64)
 	case float32:
 		return strconv.AppendFloat(buffer, float64(v), 'g', -1, 64)
+	case decimal.Decimal:
+		return appendEscapedString(buffer, v.String())
 	default:
 		panic(fmt.Sprintf("unsupported type %t", value))
 	}

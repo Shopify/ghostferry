@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/siddontang/go-mysql/canal"
 	"github.com/siddontang/go-mysql/mysql"
@@ -30,6 +31,9 @@ var ignoreTables = flag.String("ignore_tables", "", "ignore tables, must be data
 var startName = flag.String("bin_name", "", "start sync from binlog name")
 var startPos = flag.Uint("bin_pos", 0, "start sync from binlog position of")
 
+var heartbeatPeriod = flag.Duration("heartbeat", 60*time.Second, "master heartbeat period")
+var readTimeout = flag.Duration("read_timeout", 90*time.Second, "connection read timeout")
+
 func main() {
 	flag.Parse()
 
@@ -39,6 +43,8 @@ func main() {
 	cfg.Password = *password
 	cfg.Flavor = *flavor
 
+	cfg.ReadTimeout = *readTimeout
+	cfg.HeartbeatPeriod = *heartbeatPeriod
 	cfg.ServerID = uint32(*serverID)
 	cfg.Dump.ExecutionPath = *mysqldump
 	cfg.Dump.DiscardErr = false
@@ -69,15 +75,16 @@ func main() {
 	c.SetEventHandler(&handler{})
 
 	startPos := mysql.Position{
-		*startName,
-		uint32(*startPos),
+		Name: *startName,
+		Pos:  uint32(*startPos),
 	}
 
-	err = c.StartFrom(startPos)
-	if err != nil {
-		fmt.Printf("start canal err %V", err)
-		os.Exit(1)
-	}
+	go func() {
+		err = c.RunFrom(startPos)
+		if err != nil {
+			fmt.Printf("start canal err %v", err)
+		}
+	}()
 
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc,

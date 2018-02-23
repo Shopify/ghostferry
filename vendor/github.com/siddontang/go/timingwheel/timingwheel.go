@@ -51,9 +51,14 @@ func (w *TimingWheel) After(timeout time.Duration) <-chan struct{} {
 		panic("timeout too much, over maxtimeout")
 	}
 
+	index := int(timeout / w.interval)
+	if 0 < index {
+		index--
+	}
+
 	w.Lock()
 
-	index := (w.pos + int(timeout/w.interval)) % len(w.cs)
+	index = (w.pos + index) % len(w.cs)
 
 	b := w.cs[index]
 

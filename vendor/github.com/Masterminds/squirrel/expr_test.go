@@ -2,8 +2,9 @@ package squirrel
 
 import (
 	"database/sql"
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestEqToSql(t *testing.T) {
@@ -59,7 +60,19 @@ func TestEqInEmptyToSql(t *testing.T) {
 	sql, args, err := b.ToSql()
 	assert.NoError(t, err)
 
-	expectedSql := "id IN (NULL)"
+	expectedSql := "(1=0)"
+	assert.Equal(t, expectedSql, sql)
+
+	expectedArgs := []interface{}{}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestNotEqInEmptyToSql(t *testing.T) {
+	b := NotEq{"id": []int{}}
+	sql, args, err := b.ToSql()
+	assert.NoError(t, err)
+
+	expectedSql := "(1=1)"
 	assert.Equal(t, expectedSql, sql)
 
 	expectedArgs := []interface{}{}
@@ -182,4 +195,26 @@ func TestNullTypeInt64(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, []interface{}{int64(10)}, args)
 	assert.Equal(t, "user_id = ?", sql)
+}
+
+func TestEmptyAndToSql(t *testing.T) {
+	sql, args, err := And{}.ToSql()
+	assert.NoError(t, err)
+
+	expectedSql := "(1=1)"
+	assert.Equal(t, expectedSql, sql)
+
+	expectedArgs := []interface{}{}
+	assert.Equal(t, expectedArgs, args)
+}
+
+func TestEmptyOrToSql(t *testing.T) {
+	sql, args, err := Or{}.ToSql()
+	assert.NoError(t, err)
+
+	expectedSql := "(1=0)"
+	assert.Equal(t, expectedSql, sql)
+
+	expectedArgs := []interface{}{}
+	assert.Equal(t, expectedArgs, args)
 }

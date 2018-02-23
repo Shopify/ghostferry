@@ -1,8 +1,8 @@
 hash: 81495bf76f8f780c5eced1cb458261102dea583dac8a9f37ff351008178c3708
-updated: 2017-10-30T12:57:51.945331881-04:00
+updated: 2018-02-22T23:22:13.99768-05:00
 imports:
 - name: github.com/davecgh/go-spew
-  version: 6d212800a42e8ab5c146b8ace3490ee17e5225f9
+  version: 8991bc29aa16c548c550c7ff78260e27b9ab7c73
   subpackages:
   - spew
 - name: github.com/go-sql-driver/mysql
@@ -10,33 +10,31 @@ imports:
 - name: github.com/gorilla/context
   version: 08b5f424b9271eedf6f9f0ce86cb9396ed337a42
 - name: github.com/gorilla/mux
-  version: 24fca303ac6da784b9e8269f724ddeb0b2eea5e7
+  version: 53c1911da2b537f792e7cafcb446b05ffe33b996
 - name: github.com/juju/errors
-  version: 6f54ff6318409d31ff16261533ce2c8381a4fd5d
+  version: c7d06af17c68cd34c835053720b21f6549d9b0ee
 - name: github.com/lann/builder
-  version: f22ce00fd9394014049dad11c244859432bd6820
+  version: 1b87b36280d04fe7882d1512bf038ea2967ad534
 - name: github.com/lann/ps
   version: 62de8c46ede02a7675c4c79c84883eb164cb71e3
 - name: github.com/Masterminds/squirrel
-  version: 3c07e090bf7ba1ae79ff08462c323e25196e164b
-- name: github.com/ngaut/log
-  version: cec23d3e10b016363780d894a0eb732a12c06e02
+  version: 2a85d1d526545de922a487d4841e61d6ee690c35
 - name: github.com/pmezard/go-difflib
-  version: d8ed2627bdf02c080bf22230dbb337003b7aba2d
+  version: 792786c7400a136282c1664665ae0a8db921c6c2
   subpackages:
   - difflib
 - name: github.com/satori/go.uuid
-  version: 879c5887cd475cd7864858769793b2ceb0d44feb
+  version: f58768cc1a7a7e77a3bd49e98cdd21419399b6a3
 - name: github.com/Shopify/go-dogstatsd
   version: 76f9377ffde254a7e012e7d422e8b8f9748571aa
+- name: github.com/shopspring/decimal
+  version: 9ca7f51822d222ae4e246f070f9aad863599bd1a
 - name: github.com/siddontang/go
-  version: 354e14e6c093c661abb29fd28403b3c19cff5514
+  version: cb568a3e5cc06256f91a2da5a87455f717eb33f4
   subpackages:
   - hack
-  - ioutil2
-  - sync2
 - name: github.com/siddontang/go-mysql
-  version: db4a35b4c57123da6b1c2cb239b33f06dac3bbee
+  version: f77cd2a3cb46c6ceba6c3439cf5b937f6a314569
   subpackages:
   - client
   - driver
@@ -45,23 +43,19 @@ imports:
   - replication
   - schema
 - name: github.com/sirupsen/logrus
-  version: f006c2ac4710855cf0f916dd6b77acf6b048dc6e
+  version: d682213848ed68c0a260ca37d6dd5ace8423f5ba
 - name: github.com/stretchr/testify
-  version: 69483b4bd14f5845b5a1e55bca19e954e827f1d0
+  version: 12b6f73e6084dad08a7c6e575284b177ecafbc71
   subpackages:
   - assert
   - require
   - suite
 - name: golang.org/x/crypto
-  version: 2509b142fb2b797aa7587dad548f113b2c0f20ce
+  version: 49796115aa4b964c318aad4f3084fdb41e9aa067
   subpackages:
   - ssh/terminal
-- name: golang.org/x/net
-  version: 6acef71eb69611914f7a30939ea9f6e194c78172
-  subpackages:
-  - context
 - name: golang.org/x/sys
-  version: f1e7f7a8ac17a049db88e72899c00f1f841a676f
+  version: c1138c84af3a9927aee1a1b8b7ce06c9b7ea52bc
   subpackages:
   - unix
   - windows
