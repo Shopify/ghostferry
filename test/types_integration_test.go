@@ -69,13 +69,12 @@ func setupMultiTypeTable(f *testhelpers.TestFerry) {
 	testhelpers.PanicIfError(tx.Commit())
 }
 
-func setupFixedpPointDecimalTypeTable(f *testhelpers.TestFerry) {
+func setupFixedPointDecimalTypeTable(f *testhelpers.TestFerry) {
 	testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 0)
 	testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
 
-	query := "ALTER TABLE %s.%s " +
+	query := "ALTER TABLE gftest.table1 " +
 		"ADD decimal_col DECIMAL(18, 14)"
-	query = fmt.Sprintf(query, "gftest", "table1")
 
 	_, err := f.SourceDB.Exec(query)
 	testhelpers.PanicIfError(err)
@@ -106,7 +105,7 @@ func TestCopyDataWithFixedPointDecimalTypes(t *testing.T) {
 	logrus.SetLevel(logrus.DebugLevel)
 	testcase := &testhelpers.IntegrationTestCase{
 		T:           t,
-		SetupAction: setupFixedpPointDecimalTypeTable,
+		SetupAction: setupFixedPointDecimalTypeTable,
 		DataWriter:  nil,
 		AfterRowCopyIsComplete: func(f *testhelpers.TestFerry) {
 			_, err := f.SourceDB.Exec("INSERT INTO gftest.table1 (id, decimal_col) values (null,-96.78850375986021)")
