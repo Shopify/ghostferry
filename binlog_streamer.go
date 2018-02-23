@@ -61,14 +61,14 @@ func (s *BinlogStreamer) createBinlogSyncer() error {
 		}
 	}
 
-	syncerConfig := &replication.BinlogSyncerConfig{
+	syncerConfig := replication.BinlogSyncerConfig{
 		ServerID:  s.Config.MyServerId,
 		Host:      s.Config.Source.Host,
 		Port:      s.Config.Source.Port,
 		User:      s.Config.Source.User,
 		Password:  s.Config.Source.Pass,
 		TLSConfig: tlsConfig,
-		LogLevel:  "warn",
+		UseDecimal: true,
 	}
 
 	s.binlogSyncer = replication.NewBinlogSyncer(syncerConfig)
