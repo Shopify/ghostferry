@@ -21,14 +21,31 @@ func (f FilterAndRewriteConfigs) Validate() error {
 	return nil
 }
 
+const (
+	VerifierTypeChecksumTable  = "ChecksumTable"
+	VerifierTypeIterative      = "Iterative"
+	VerifierTypeNoVerification = "NoVerification"
+)
+
+var validVerifierTypes map[string]struct{} = map[string]struct{}{
+	VerifierTypeChecksumTable:  struct{}{},
+	VerifierTypeIterative:      struct{}{},
+	VerifierTypeNoVerification: struct{}{},
+}
+
 type Config struct {
 	*ghostferry.Config
 
-	Databases FilterAndRewriteConfigs
-	Tables    FilterAndRewriteConfigs
+	Databases    FilterAndRewriteConfigs
+	Tables       FilterAndRewriteConfigs
+	VerifierType string
 }
 
 func (c *Config) InitializeAndValidateConfig() error {
+	if _, valid := validVerifierTypes[c.VerifierType]; !valid {
+		return fmt.Errorf("'%s' is not a valid VerifierType", c.VerifierType)
+	}
+
 	if err := c.Databases.Validate(); err != nil {
 		return err
 	}

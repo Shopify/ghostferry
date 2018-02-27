@@ -142,6 +142,8 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 		defer v.wg.Done()
 		v.consumeReverifyChan()
 	}()
+
+	v.logger.Debug("attaching binlog event listener")
 	v.BinlogStreamer.AddEventListener(v.binlogEventListener)
 
 	pool := &WorkerPool{

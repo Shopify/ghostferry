@@ -39,6 +39,8 @@ func (t *CopydbTestSuite) SetupTest() {
 				testTableName: renamedTableName,
 			},
 		},
+
+		VerifierType: copydb.VerifierTypeChecksumTable,
 	}
 
 	// TODO: remove this hack
