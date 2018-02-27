@@ -88,8 +88,8 @@ func (this *RowBatchTestSuite) TestRowBatchMetadata() {
 	}
 	batch := ghostferry.NewRowBatch(this.sourceTable, vals, 0)
 
-	this.Require().Equal("test_schema", batch.Database())
-	this.Require().Equal("test_table", batch.Table())
+	this.Require().Equal("test_schema", batch.TableSchema().Schema)
+	this.Require().Equal("test_table", batch.TableSchema().Name)
 	this.Require().Equal(true, batch.ValuesContainPk())
 	this.Require().Equal(0, batch.PkIndex())
 	this.Require().Equal(1000, batch.Values()[0][batch.PkIndex()])

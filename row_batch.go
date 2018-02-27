@@ -9,14 +9,14 @@ import (
 type RowBatch struct {
 	values  []RowData
 	pkIndex int
-	TableCopy
+	table   schema.Table // retain a copy in case of schema change support
 }
 
 func NewRowBatch(table *schema.Table, values []RowData, pkIndex int) *RowBatch {
 	return &RowBatch{
-		values:    values,
-		TableCopy: TableCopy{table: *table},
-		pkIndex:   pkIndex,
+		values:  values,
+		pkIndex: pkIndex,
+		table:   *table,
 	}
 }
 
@@ -34,6 +34,10 @@ func (e *RowBatch) ValuesContainPk() bool {
 
 func (e *RowBatch) Size() int {
 	return len(e.values)
+}
+
+func (e *RowBatch) TableSchema() *schema.Table {
+	return &e.table
 }
 
 func (e *RowBatch) AsSQLQuery(target *schema.Table) (string, []interface{}, error) {
