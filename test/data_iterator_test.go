@@ -49,7 +49,7 @@ func (this *DataIteratorTestSuite) SetupTest() {
 
 			BuildSelect: nil,
 			BatchSize:   config.DataIterationBatchSize,
-			ReadRetries: config.MaxReadRetriesOnSourceDBError,
+			ReadRetries: config.DBReadRetries,
 		},
 
 		Tables: tables.AsSlice(),

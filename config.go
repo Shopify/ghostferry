@@ -148,7 +148,7 @@ type Config struct {
 	// the target database.
 	//
 	// Optional: defaults to 5.
-	MaxWriteRetriesOnTargetDBError int
+	DBWriteRetries int
 
 	// Filter out the databases/tables when detecting the source databases
 	// and tables.
@@ -192,7 +192,7 @@ type Config struct {
 	// database.
 	//
 	// Optional: defaults to 5
-	MaxReadRetriesOnSourceDBError int
+	DBReadRetries int
 
 	// This specify the number of concurrent goroutines, each iterating over
 	// a single table.
@@ -226,8 +226,8 @@ func (c *Config) ValidateConfig() error {
 		return fmt.Errorf("Table filter function must be provided")
 	}
 
-	if c.MaxWriteRetriesOnTargetDBError == 0 {
-		c.MaxWriteRetriesOnTargetDBError = 5
+	if c.DBWriteRetries == 0 {
+		c.DBWriteRetries = 5
 	}
 
 	if c.DataIterationBatchSize == 0 {
@@ -242,8 +242,8 @@ func (c *Config) ValidateConfig() error {
 		c.DataIterationConcurrency = 4
 	}
 
-	if c.MaxReadRetriesOnSourceDBError == 0 {
-		c.MaxReadRetriesOnSourceDBError = 5
+	if c.DBReadRetries == 0 {
+		c.DBReadRetries = 5
 	}
 
 	if c.ServerBindAddr == "" {

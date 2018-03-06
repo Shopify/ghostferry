@@ -78,7 +78,7 @@ func (f *Ferry) newDataIterator() (*DataIterator, error) {
 			Throttler: f.Throttler,
 
 			BatchSize:   f.Config.DataIterationBatchSize,
-			ReadRetries: f.Config.MaxReadRetriesOnSourceDBError,
+			ReadRetries: f.Config.DBReadRetries,
 		},
 	}
 
@@ -179,7 +179,7 @@ func (f *Ferry) Initialize() (err error) {
 		TableRewrites:    f.Config.TableRewrites,
 
 		BatchSize:    f.Config.BinlogEventBatchSize,
-		WriteRetries: f.Config.MaxWriteRetriesOnTargetDBError,
+		WriteRetries: f.Config.DBWriteRetries,
 
 		ErrorHandler: f.ErrorHandler,
 	}
@@ -200,7 +200,7 @@ func (f *Ferry) Initialize() (err error) {
 		DatabaseRewrites: f.Config.DatabaseRewrites,
 		TableRewrites:    f.Config.TableRewrites,
 
-		WriteRetries: f.Config.MaxWriteRetriesOnTargetDBError,
+		WriteRetries: f.Config.DBWriteRetries,
 	}
 	f.BatchWriter.Initialize()
 
