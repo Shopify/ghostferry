@@ -148,32 +148,18 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 
 	pool := &WorkerPool{
 		Concurrency: v.Concurrency,
-		LogTag:      "iterative_verifier",
-		Process: func(tableInterface interface{}) (interface{}, error) {
-			table := tableInterface.(*schema.Table)
+		Process: func(tableIndex int) (interface{}, error) {
+			table := v.Tables[tableIndex]
 
 			err := v.verifyTableBeforeCutover(table)
 			if err != nil {
-				v.logger.WithError(err).Error("error occured during verify table before cutover")
+				v.logger.WithError(err).WithField("table", table.String()).Error("error occured during verify table before cutover")
 			}
 			return nil, err
 		},
 	}
 
-	tables := make([]interface{}, len(v.Tables))
-	for i, table := range v.Tables {
-		tables[i] = table
-	}
-
-	_, errs := pool.Run(tables)
-
-	// Get the first err and return that if not nil
-	var err error
-	for _, err = range errs {
-		if err != nil {
-			break
-		}
-	}
+	_, err := pool.Run(len(v.Tables))
 
 	// TODO: we can reduce the cutover phase (downtime) drastically by eagerly
 	// running re-verification on the ReverifyStore a few times at this point
@@ -194,12 +180,25 @@ func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {
 
 	erroredOrFailed := errors.New("reverify errored or failed")
 
+	allBatches := make([]reverifyEntryBatch, 0)
+	for table, pks := range v.reverifyStore.Pks() {
+		for i := 0; i < len(pks); i += int(v.CursorConfig.BatchSize) {
+			lastIdx := i + int(v.CursorConfig.BatchSize)
+			if lastIdx > len(pks) {
+				lastIdx = len(pks)
+			}
+
+			reverifyBatch := reverifyEntryBatch{Pks: pks[i:lastIdx], Table: table}
+			allBatches = append(allBatches, reverifyBatch)
+		}
+	}
+
 	v.logger.Info("starting verification during cutover")
 	pool := &WorkerPool{
 		Concurrency: v.Concurrency,
-		LogTag:      "iterative_verifier",
-		Process: func(reverifyBatchInterface interface{}) (interface{}, error) {
-			reverifyBatch := reverifyBatchInterface.(reverifyEntryBatch)
+		Process: func(reverifyBatchIndex int) (interface{}, error) {
+			reverifyBatch := allBatches[reverifyBatchIndex]
+
 			v.logger.WithFields(logrus.Fields{
 				"table":    reverifyBatch.Table.String(),
 				"len(pks)": len(reverifyBatch.Pks),
@@ -221,20 +220,7 @@ func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {
 		},
 	}
 
-	allBatches := make([]interface{}, 0)
-	for table, pks := range v.reverifyStore.Pks() {
-		for i := 0; i < len(pks); i += int(v.CursorConfig.BatchSize) {
-			lastIdx := i + int(v.CursorConfig.BatchSize)
-			if lastIdx > len(pks) {
-				lastIdx = len(pks)
-			}
-
-			reverifyBatch := reverifyEntryBatch{Pks: pks[i:lastIdx], Table: table}
-			allBatches = append(allBatches, reverifyBatch)
-		}
-	}
-
-	results, _ := pool.Run(allBatches)
+	results, _ := pool.Run(len(allBatches))
 
 	var result VerificationResult
 	var err error
