@@ -44,9 +44,28 @@ type DMLEvent interface {
 	PK() (uint64, error)
 }
 
+// The base of DMLEvent to provide the necessary methods.
+// This desires a copy of the struct in case we want to deal with schema
+// changes in the future.
+type DMLEventBase struct {
+	table schema.Table
+}
+
+func (e *DMLEventBase) Database() string {
+	return e.table.Schema
+}
+
+func (e *DMLEventBase) Table() string {
+	return e.table.Name
+}
+
+func (e *DMLEventBase) TableSchema() *schema.Table {
+	return &e.table
+}
+
 type BinlogInsertEvent struct {
 	newValues RowData
-	TableCopy
+	*DMLEventBase
 }
 
 func NewBinlogInsertEvents(table *schema.Table, rowsEvent *replication.RowsEvent) ([]DMLEvent, error) {
@@ -54,8 +73,8 @@ func NewBinlogInsertEvents(table *schema.Table, rowsEvent *replication.RowsEvent
 
 	for i, row := range rowsEvent.Rows {
 		insertEvents[i] = &BinlogInsertEvent{
-			newValues: row,
-			TableCopy: TableCopy{table: *table},
+			newValues:    row,
+			DMLEventBase: &DMLEventBase{table: *table},
 		}
 	}
 
@@ -91,7 +110,7 @@ func (e *BinlogInsertEvent) PK() (uint64, error) {
 type BinlogUpdateEvent struct {
 	oldValues RowData
 	newValues RowData
-	TableCopy
+	*DMLEventBase
 }
 
 func NewBinlogUpdateEvents(table *schema.Table, rowsEvent *replication.RowsEvent) ([]DMLEvent, error) {
@@ -108,9 +127,9 @@ func NewBinlogUpdateEvents(table *schema.Table, rowsEvent *replication.RowsEvent
 		}
 
 		updateEvents[i/2] = &BinlogUpdateEvent{
-			oldValues: row,
-			newValues: rowsEvent.Rows[i+1],
-			TableCopy: TableCopy{table: *table},
+			oldValues:    row,
+			newValues:    rowsEvent.Rows[i+1],
+			DMLEventBase: &DMLEventBase{table: *table},
 		}
 	}
 
@@ -144,7 +163,7 @@ func (e *BinlogUpdateEvent) PK() (uint64, error) {
 
 type BinlogDeleteEvent struct {
 	oldValues RowData
-	TableCopy
+	*DMLEventBase
 }
 
 func (e *BinlogDeleteEvent) OldValues() RowData {
@@ -160,8 +179,8 @@ func NewBinlogDeleteEvents(table *schema.Table, rowsEvent *replication.RowsEvent
 
 	for i, row := range rowsEvent.Rows {
 		deleteEvents[i] = &BinlogDeleteEvent{
-			oldValues: row,
-			TableCopy: TableCopy{table: *table},
+			oldValues:    row,
+			DMLEventBase: &DMLEventBase{table: *table},
 		}
 	}
 

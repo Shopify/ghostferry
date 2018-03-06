@@ -33,12 +33,12 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 			return nil
 		}
 
-		db := batch.Database()
+		db := batch.TableSchema().Schema
 		if targetDbName, exists := w.DatabaseRewrites[db]; exists {
 			db = targetDbName
 		}
 
-		table := batch.Table()
+		table := batch.TableSchema().Name
 		if targetTableName, exists := w.TableRewrites[table]; exists {
 			table = targetTableName
 		}
