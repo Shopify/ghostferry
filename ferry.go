@@ -69,15 +69,15 @@ type Ferry struct {
 func (f *Ferry) newDataIterator() (*DataIterator, error) {
 	dataIterator := &DataIterator{
 		DB:          f.SourceDB,
-		Concurrency: f.Config.NumberOfTableIterators,
+		Concurrency: f.Config.DataIterationConcurrency,
 
 		ErrorHandler: f.ErrorHandler,
 		CursorConfig: &CursorConfig{
 			DB:        f.SourceDB,
 			Throttler: f.Throttler,
 
-			BatchSize:   f.Config.IterateChunksize,
-			ReadRetries: f.Config.MaxIterationReadRetries,
+			BatchSize:   f.Config.DataIterationBatchSize,
+			ReadRetries: f.Config.DBReadRetries,
 		},
 	}
 
@@ -178,7 +178,7 @@ func (f *Ferry) Initialize() (err error) {
 		TableRewrites:    f.Config.TableRewrites,
 
 		BatchSize:    f.Config.BinlogEventBatchSize,
-		WriteRetries: f.Config.MaxWriteRetriesOnTargetDBError,
+		WriteRetries: f.Config.DBWriteRetries,
 
 		ErrorHandler: f.ErrorHandler,
 	}
@@ -199,7 +199,7 @@ func (f *Ferry) Initialize() (err error) {
 		DatabaseRewrites: f.Config.DatabaseRewrites,
 		TableRewrites:    f.Config.TableRewrites,
 
-		WriteRetries: f.Config.MaxWriteRetriesOnTargetDBError,
+		WriteRetries: f.Config.DBWriteRetries,
 	}
 	f.BatchWriter.Initialize()
 

@@ -36,11 +36,11 @@ func (this *DataIteratorTestSuite) SetupTest() {
 	tables, err := ghostferry.LoadTables(sourceDb, tableFilter)
 	this.Require().Nil(err)
 
-	config.IterateChunksize = 2
+	config.DataIterationBatchSize = 2
 
 	this.di = &ghostferry.DataIterator{
 		DB:          sourceDb,
-		Concurrency: config.NumberOfTableIterators,
+		Concurrency: config.DataIterationConcurrency,
 
 		ErrorHandler: errorHandler,
 		CursorConfig: &ghostferry.CursorConfig{
@@ -48,8 +48,8 @@ func (this *DataIteratorTestSuite) SetupTest() {
 			Throttler: throttler,
 
 			BuildSelect: nil,
-			BatchSize:   config.IterateChunksize,
-			ReadRetries: config.MaxIterationReadRetries,
+			BatchSize:   config.DataIterationBatchSize,
+			ReadRetries: config.DBReadRetries,
 		},
 
 		Tables: tables.AsSlice(),

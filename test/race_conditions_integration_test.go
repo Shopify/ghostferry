@@ -99,7 +99,7 @@ func TestOnlyDeleteRowWithMaxPrimaryKey(t *testing.T) {
 		Ferry: testhelpers.NewTestFerry(),
 	}
 
-	testcase.Ferry.IterateChunksize = 1
+	testcase.Ferry.DataIterationBatchSize = 1
 
 	lastRowDeleted := false
 	testcase.Ferry.BeforeBatchCopyListener = func(batch *ghostferry.RowBatch) error {

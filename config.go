@@ -120,27 +120,93 @@ func (c *DatabaseConfig) assertParamSet(param, value string) error {
 }
 
 type Config struct {
+	// Source database connection configuration
+	//
+	// Required
 	Source DatabaseConfig
+
+	// Target database connection configuration
+	//
+	// Required
 	Target DatabaseConfig
 
+	// Map database name on the source database (key of the map) to a
+	// different name on the target database (value of the associated key).
+	// This allows one to move data and change the database name in the
+	// process.
+	//
+	// Optional: defaults to empty map/no rewrites
 	DatabaseRewrites map[string]string
-	TableRewrites    map[string]string
 
-	// Config for Ferry
-	MaxWriteRetriesOnTargetDBError int
+	// Map the table name on the source dataabase to a different name on
+	// the target database. See DatabaseRewrite.
+	//
+	// Optional: defaults to empty map/no rewrites
+	TableRewrites map[string]string
 
+	// The maximum number of retries for writes if the writes failed on
+	// the target database.
+	//
+	// Optional: defaults to 5.
+	DBWriteRetries int
+
+	// Filter out the databases/tables when detecting the source databases
+	// and tables.
+	//
+	// Required
 	TableFilter TableFilter
-	CopyFilter  CopyFilter
 
-	// Config for BinlogStreamer
-	MyServerId           uint32
+	// Filter out unwanted data/events from being copied.
+	//
+	// Optional: defaults to nil/no filter.
+	CopyFilter CopyFilter
+
+	// The server id used by Ghostferry to connect to MySQL as a replication
+	// slave. This id must be unique on the MySQL server. If 0 is specified,
+	// a random id will be generated upon connecting to the MySQL server.
+	//
+	// Optional: defaults to an automatically generated one
+	MyServerId uint32
+
+	// The maximum number of binlog events to write at once. Note this is a
+	// maximum: if there are not a lot of binlog events, they will be written
+	// one at a time such the binlog streamer lag is as low as possible. This
+	// batch size will only be hit if there is a log of binlog at the same time.
+	//
+	// Optional: defaults to 100
 	BinlogEventBatchSize int
 
-	// Config for DataIterator
-	IterateChunksize        uint64
-	MaxIterationReadRetries int
-	NumberOfTableIterators  int
-	AutomaticCutover        bool
+	// The batch size used to iterate the data during data copy. This batch size
+	// is always used: if this is specified to be 100, 100 rows will be copied
+	// per iteration.
+	//
+	// With the current implementation of Ghostferry, we need to lock the rows
+	// we select. This means, the larger this number is, the longer we need to
+	// hold this lock. On the flip side, the smaller this number is, the slower
+	// the copy will likely be.
+	//
+	// Optional: defaults to 200
+	DataIterationBatchSize uint64
+
+	// The maximum number of retries for reads if the reads fail on the source
+	// database.
+	//
+	// Optional: defaults to 5
+	DBReadRetries int
+
+	// This specify the number of concurrent goroutines, each iterating over
+	// a single table.
+	//
+	// At this point in time, parallelize iteration within a single table. This
+	// may be possible to add to the future.
+	//
+	// Optional: defaults to 4
+	DataIterationConcurrency int
+
+	// This specifies if Ghostferry will pause before cutover or not.
+	//
+	// Optional: defaults to false
+	AutomaticCutover bool
 
 	// Config for the ControlServer
 	ServerBindAddr string
@@ -160,24 +226,24 @@ func (c *Config) ValidateConfig() error {
 		return fmt.Errorf("Table filter function must be provided")
 	}
 
-	if c.MaxWriteRetriesOnTargetDBError == 0 {
-		c.MaxWriteRetriesOnTargetDBError = 5
+	if c.DBWriteRetries == 0 {
+		c.DBWriteRetries = 5
 	}
 
-	if c.IterateChunksize == 0 {
-		c.IterateChunksize = 200
+	if c.DataIterationBatchSize == 0 {
+		c.DataIterationBatchSize = 200
 	}
 
 	if c.BinlogEventBatchSize == 0 {
 		c.BinlogEventBatchSize = 100
 	}
 
-	if c.NumberOfTableIterators == 0 {
-		c.NumberOfTableIterators = 4
+	if c.DataIterationConcurrency == 0 {
+		c.DataIterationConcurrency = 4
 	}
 
-	if c.MaxIterationReadRetries == 0 {
-		c.MaxIterationReadRetries = 5
+	if c.DBReadRetries == 0 {
+		c.DBReadRetries = 5
 	}
 
 	if c.ServerBindAddr == "" {

@@ -26,8 +26,8 @@ func (t *IterativeVerifierTestSuite) SetupTest() {
 	t.verifier = &ghostferry.IterativeVerifier{
 		CursorConfig: &ghostferry.CursorConfig{
 			DB:          t.Ferry.SourceDB,
-			BatchSize:   t.Ferry.Config.IterateChunksize,
-			ReadRetries: t.Ferry.Config.MaxIterationReadRetries,
+			BatchSize:   t.Ferry.Config.DataIterationBatchSize,
+			ReadRetries: t.Ferry.Config.DBReadRetries,
 		},
 		BinlogStreamer: t.Ferry.BinlogStreamer,
 		SourceDB:       t.Ferry.SourceDB,

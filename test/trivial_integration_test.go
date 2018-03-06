@@ -74,7 +74,7 @@ func TestCopyDataWithDeleteLoad(t *testing.T) {
 func TestCopyDataWithLargePrimaryKeyValues(t *testing.T) {
 	ferry := testhelpers.NewTestFerry()
 
-	ferry.Config.IterateChunksize = 10
+	ferry.Config.DataIterationBatchSize = 10
 
 	testcase := &testhelpers.IntegrationTestCase{
 		T:           t,

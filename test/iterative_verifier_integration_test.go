@@ -194,8 +194,8 @@ func TestVerificationPasses(t *testing.T) {
 func setupIterativeVerifierFromFerry(v *ghostferry.IterativeVerifier, f *ghostferry.Ferry) {
 	v.CursorConfig = &ghostferry.CursorConfig{
 		DB:          f.SourceDB,
-		BatchSize:   f.Config.IterateChunksize,
-		ReadRetries: f.Config.MaxIterationReadRetries,
+		BatchSize:   f.Config.DataIterationBatchSize,
+		ReadRetries: f.Config.DBReadRetries,
 	}
 
 	v.BinlogStreamer = f.BinlogStreamer
