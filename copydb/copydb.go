@@ -57,14 +57,14 @@ func (this *CopydbFerry) Start() error {
 		iterativeVerifier := &ghostferry.IterativeVerifier{
 			CursorConfig: &ghostferry.CursorConfig{
 				DB:          this.Ferry.SourceDB,
-				BatchSize:   this.config.IterateChunksize,
-				ReadRetries: this.config.MaxIterationReadRetries,
+				BatchSize:   this.config.DataIterationBatchSize,
+				ReadRetries: this.config.DBReadRetries,
 			},
 			BinlogStreamer:   this.Ferry.BinlogStreamer,
 			Tables:           this.Ferry.Tables.AsSlice(),
 			SourceDB:         this.Ferry.SourceDB,
 			TargetDB:         this.Ferry.TargetDB,
-			Concurrency:      this.config.NumberOfTableIterators,
+			Concurrency:      this.config.DataIterationConcurrency,
 			DatabaseRewrites: this.Ferry.Config.DatabaseRewrites,
 			TableRewrites:    this.Ferry.Config.TableRewrites,
 		}
