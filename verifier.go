@@ -111,26 +111,40 @@ func (v *ChecksumTableVerifier) Verify() (VerificationResult, error) {
 
 		targetTable := QuotedTableNameFromString(targetDbName, targetTableName)
 
-		query := fmt.Sprintf("CHECKSUM TABLE %s EXTENDED", sourceTable)
 		logWithTable := v.logger.WithFields(logrus.Fields{
 			"sourceTable": sourceTable,
 			"targetTable": targetTable,
 		})
 		logWithTable.Info("checking table")
 
-		sourceRow := v.SourceDB.QueryRow(query)
-		sourceChecksum, err := v.fetchChecksumValueFromRow(sourceRow)
-		if err != nil {
-			logWithTable.WithError(err).Error("failed to checksum table on the source")
-			return VerificationResult{}, err
+		wg := sync.WaitGroup{}
+		var sourceChecksum, targetChecksum int64
+		var sourceErr, targetErr error
+
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			query := fmt.Sprintf("CHECKSUM TABLE %s EXTENDED", sourceTable)
+			sourceRow := v.SourceDB.QueryRow(query)
+			sourceChecksum, sourceErr = v.fetchChecksumValueFromRow(sourceRow)
+		}()
+
+		go func() {
+			defer wg.Done()
+			query := fmt.Sprintf("CHECKSUM TABLE %s EXTENDED", targetTable)
+			targetRow := v.TargetDB.QueryRow(query)
+			targetChecksum, targetErr = v.fetchChecksumValueFromRow(targetRow)
+		}()
+		wg.Wait()
+
+		if sourceErr != nil {
+			logWithTable.WithError(sourceErr).Error("failed to checksum table on the source")
+			return VerificationResult{}, sourceErr
 		}
 
-		query = fmt.Sprintf("CHECKSUM TABLE %s EXTENDED", targetTable)
-		targetRow := v.TargetDB.QueryRow(query)
-		targetChecksum, err := v.fetchChecksumValueFromRow(targetRow)
-		if err != nil {
-			logWithTable.WithError(err).Error("failed to checksum table on the target")
-			return VerificationResult{}, err
+		if targetErr != nil {
+			logWithTable.WithError(targetErr).Error("failed to checksum table on the target")
+			return VerificationResult{}, targetErr
 		}
 
 		logFields := logrus.Fields{
