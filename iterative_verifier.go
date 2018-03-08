@@ -41,7 +41,7 @@ type ReverifyEntry struct {
 
 type ReverifyStore struct {
 	MapStore           map[TableIdentifier]map[uint64]struct{}
-	SortedStore        []ReverifyBatch
+	BatchStore         []ReverifyBatch
 	RowCount           uint64
 	EmitLogPerRowCount uint64
 }
@@ -67,23 +67,24 @@ func (r *ReverifyStore) Add(entry ReverifyEntry) {
 			logrus.WithFields(logrus.Fields{
 				"tag":  "reverify_store",
 				"rows": r.RowCount,
-			}).Debug("added row to reverify store checkpoint")
+			}).Debug("added rows will be reverified")
 		}
 	}
 }
 
 func (r ReverifyStore) FreezeAndBatchByTable(batchsize int) []ReverifyBatch {
 	if r.MapStore == nil {
-		return r.SortedStore
+		return r.BatchStore
 	}
 
-	r.SortedStore = make([]ReverifyBatch, 0)
+	r.BatchStore = make([]ReverifyBatch, 0)
 	for tableId, pkSet := range r.MapStore {
 		pkBatch := make([]uint64, 0, batchsize)
 		for pk, _ := range pkSet {
 			pkBatch = append(pkBatch, pk)
+			delete(pkSet, pk)
 			if len(pkBatch) >= batchsize {
-				r.SortedStore = append(r.SortedStore, ReverifyBatch{
+				r.BatchStore = append(r.BatchStore, ReverifyBatch{
 					Pks:   pkBatch,
 					Table: tableId,
 				})
@@ -92,7 +93,7 @@ func (r ReverifyStore) FreezeAndBatchByTable(batchsize int) []ReverifyBatch {
 		}
 
 		if len(pkBatch) > 0 {
-			r.SortedStore = append(r.SortedStore, ReverifyBatch{
+			r.BatchStore = append(r.BatchStore, ReverifyBatch{
 				Pks:   pkBatch,
 				Table: tableId,
 			})
@@ -103,7 +104,7 @@ func (r ReverifyStore) FreezeAndBatchByTable(batchsize int) []ReverifyBatch {
 	}
 
 	r.MapStore = nil
-	return r.SortedStore
+	return r.BatchStore
 }
 
 type verificationResultAndError struct {
