@@ -61,6 +61,7 @@ func (this *CopydbFerry) Start() error {
 				ReadRetries: this.config.DBReadRetries,
 			},
 			BinlogStreamer:   this.Ferry.BinlogStreamer,
+			TableSchemaCache: this.Ferry.Tables,
 			Tables:           this.Ferry.Tables.AsSlice(),
 			SourceDB:         this.Ferry.SourceDB,
 			TargetDB:         this.Ferry.TargetDB,

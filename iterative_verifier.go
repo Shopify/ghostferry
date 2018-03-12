@@ -16,47 +16,95 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// A comparable and lightweight type that stores the schema and table name.
+type TableIdentifier struct {
+	SchemaName string
+	TableName  string
+}
+
+func NewTableIdentifierFromSchemaTable(table *schema.Table) TableIdentifier {
+	return TableIdentifier{
+		SchemaName: table.Schema,
+		TableName:  table.Name,
+	}
+}
+
+type ReverifyBatch struct {
+	Pks   []uint64
+	Table TableIdentifier
+}
+
 type ReverifyEntry struct {
 	Pk    uint64
 	Table *schema.Table
 }
 
-type reverifyEntryBatch struct {
-	Pks   []uint64
-	Table *schema.Table
+type ReverifyStore struct {
+	MapStore           map[TableIdentifier]map[uint64]struct{}
+	BatchStore         []ReverifyBatch
+	RowCount           uint64
+	EmitLogPerRowCount uint64
 }
 
-type ReverifyStore map[string]map[ReverifyEntry]struct{}
-
-func (r ReverifyStore) Add(entry ReverifyEntry) {
-	table := entry.Table.String()
-
-	if _, exists := r[table]; !exists {
-		r[table] = make(map[ReverifyEntry]struct{})
+func NewReverifyStore() *ReverifyStore {
+	return &ReverifyStore{
+		MapStore:           make(map[TableIdentifier]map[uint64]struct{}),
+		RowCount:           uint64(0),
+		EmitLogPerRowCount: uint64(10000),
 	}
-
-	r[table][entry] = struct{}{}
 }
 
-func (r ReverifyStore) Pks() map[*schema.Table][]uint64 {
-	res := make(map[*schema.Table][]uint64)
-
-	for _, entriesMap := range r {
-		entries := make([]ReverifyEntry, 0, len(entriesMap))
-		for entry, _ := range entriesMap {
-			entries = append(entries, entry)
-		}
-
-		table := entries[0].Table
-		pks := make([]uint64, len(entries))
-		for idx, entry := range entries {
-			pks[idx] = entry.Pk
-		}
-
-		res[table] = pks
+func (r *ReverifyStore) Add(entry ReverifyEntry) {
+	tableId := NewTableIdentifierFromSchemaTable(entry.Table)
+	if _, exists := r.MapStore[tableId]; !exists {
+		r.MapStore[tableId] = make(map[uint64]struct{})
 	}
 
-	return res
+	if _, exists := r.MapStore[tableId][entry.Pk]; !exists {
+		r.MapStore[tableId][entry.Pk] = struct{}{}
+		r.RowCount++
+		if r.RowCount%r.EmitLogPerRowCount == 0 {
+			logrus.WithFields(logrus.Fields{
+				"tag":  "reverify_store",
+				"rows": r.RowCount,
+			}).Debug("added rows will be reverified")
+		}
+	}
+}
+
+func (r ReverifyStore) FreezeAndBatchByTable(batchsize int) []ReverifyBatch {
+	if r.MapStore == nil {
+		return r.BatchStore
+	}
+
+	r.BatchStore = make([]ReverifyBatch, 0)
+	for tableId, pkSet := range r.MapStore {
+		pkBatch := make([]uint64, 0, batchsize)
+		for pk, _ := range pkSet {
+			pkBatch = append(pkBatch, pk)
+			delete(pkSet, pk)
+			if len(pkBatch) >= batchsize {
+				r.BatchStore = append(r.BatchStore, ReverifyBatch{
+					Pks:   pkBatch,
+					Table: tableId,
+				})
+				pkBatch = make([]uint64, 0, batchsize)
+			}
+		}
+
+		if len(pkBatch) > 0 {
+			r.BatchStore = append(r.BatchStore, ReverifyBatch{
+				Pks:   pkBatch,
+				Table: tableId,
+			})
+		}
+
+		// Save memory by deleting the map store
+		delete(r.MapStore, tableId)
+	}
+
+	r.MapStore = nil
+	return r.BatchStore
 }
 
 type verificationResultAndError struct {
@@ -69,10 +117,11 @@ func (r verificationResultAndError) ErroredOrFailed() bool {
 }
 
 type IterativeVerifier struct {
-	CursorConfig   *CursorConfig
-	BinlogStreamer *BinlogStreamer
-	SourceDB       *sql.DB
-	TargetDB       *sql.DB
+	CursorConfig     *CursorConfig
+	BinlogStreamer   *BinlogStreamer
+	TableSchemaCache TableSchemaCache
+	SourceDB         *sql.DB
+	TargetDB         *sql.DB
 
 	Tables           []*schema.Table
 	IgnoredTables    []string
@@ -80,7 +129,7 @@ type IterativeVerifier struct {
 	TableRewrites    map[string]string
 	Concurrency      int
 
-	reverifyStore ReverifyStore
+	reverifyStore *ReverifyStore
 	reverifyChan  chan ReverifyEntry
 	logger        *logrus.Entry
 
@@ -117,6 +166,10 @@ func (v *IterativeVerifier) SanityCheckParameters() error {
 		return fmt.Errorf("iterative verifier concurrency must be greater than 0, not %d", v.Concurrency)
 	}
 
+	if v.TableSchemaCache == nil {
+		return fmt.Errorf("iterative verifier must be given the table schema cache")
+	}
+
 	return nil
 }
 
@@ -128,7 +181,7 @@ func (v *IterativeVerifier) Initialize() error {
 		return err
 	}
 
-	v.reverifyStore = make(ReverifyStore)
+	v.reverifyStore = NewReverifyStore()
 	v.reverifyChan = make(chan ReverifyEntry)
 	return nil
 }
@@ -180,31 +233,21 @@ func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {
 
 	erroredOrFailed := errors.New("reverify errored or failed")
 
-	allBatches := make([]reverifyEntryBatch, 0)
-	for table, pks := range v.reverifyStore.Pks() {
-		for i := 0; i < len(pks); i += int(v.CursorConfig.BatchSize) {
-			lastIdx := i + int(v.CursorConfig.BatchSize)
-			if lastIdx > len(pks) {
-				lastIdx = len(pks)
-			}
-
-			reverifyBatch := reverifyEntryBatch{Pks: pks[i:lastIdx], Table: table}
-			allBatches = append(allBatches, reverifyBatch)
-		}
-	}
+	allBatches := v.reverifyStore.FreezeAndBatchByTable(int(v.CursorConfig.BatchSize))
 
 	v.logger.Info("starting verification during cutover")
 	pool := &WorkerPool{
 		Concurrency: v.Concurrency,
 		Process: func(reverifyBatchIndex int) (interface{}, error) {
 			reverifyBatch := allBatches[reverifyBatchIndex]
+			table := v.TableSchemaCache.Get(reverifyBatch.Table.SchemaName, reverifyBatch.Table.TableName)
 
 			v.logger.WithFields(logrus.Fields{
-				"table":    reverifyBatch.Table.String(),
+				"table":    table.String(),
 				"len(pks)": len(reverifyBatch.Pks),
 			}).Debug("received pk batch to reverify")
 
-			verificationResult, err := v.verifyPksDuringCutover(reverifyBatch.Table, reverifyBatch.Pks)
+			verificationResult, err := v.verifyPksDuringCutover(table, reverifyBatch.Pks)
 			resultAndErr := verificationResultAndError{verificationResult, err}
 			if resultAndErr.ErroredOrFailed() {
 				if resultAndErr.Error != nil {

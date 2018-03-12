@@ -3,6 +3,7 @@ package test
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 	"testing"
 
 	"github.com/Shopify/ghostferry"
@@ -33,15 +34,14 @@ func (t *IterativeVerifierTestSuite) SetupTest() {
 		SourceDB:       t.Ferry.SourceDB,
 		TargetDB:       t.Ferry.TargetDB,
 
-		Tables:      t.Ferry.Tables.AsSlice(),
 		Concurrency: 1,
 	}
 
-	err := t.verifier.Initialize()
-	testhelpers.PanicIfError(err)
-
 	t.db = t.Ferry.SourceDB
 	t.reloadTables()
+
+	err := t.verifier.Initialize()
+	testhelpers.PanicIfError(err)
 }
 
 func (t *IterativeVerifierTestSuite) TearDownTest() {
@@ -184,11 +184,102 @@ func (t *IterativeVerifierTestSuite) reloadTables() {
 	tables, err := ghostferry.LoadTables(t.db, tableFilter)
 	t.Require().Nil(err)
 
+	t.Ferry.Tables = tables
+	t.verifier.Tables = tables.AsSlice()
+	t.verifier.TableSchemaCache = tables
+
 	t.table = tables.Get(testhelpers.TestSchemaName, testhelpers.TestTable1Name)
 	t.Require().NotNil(t.table)
+}
+
+type ReverifyStoreTestSuite struct {
+	suite.Suite
+
+	store *ghostferry.ReverifyStore
+}
+
+func (t *ReverifyStoreTestSuite) SetupTest() {
+	t.store = ghostferry.NewReverifyStore()
+}
+
+func (t *ReverifyStoreTestSuite) TestAddEntryIntoReverifyStoreWillDeduplicate() {
+	pk1 := uint64(100)
+	pk2 := uint64(101)
+	// different references to schema.Table shouldn't cause an issue.
+	t.store.Add(ghostferry.ReverifyEntry{Pk: pk1, Table: &schema.Table{Schema: "gftest", Name: "table1"}})
+	t.store.Add(ghostferry.ReverifyEntry{Pk: pk1, Table: &schema.Table{Schema: "gftest", Name: "table1"}})
+	t.store.Add(ghostferry.ReverifyEntry{Pk: pk1, Table: &schema.Table{Schema: "gftest", Name: "table1"}})
+	t.store.Add(ghostferry.ReverifyEntry{Pk: pk2, Table: &schema.Table{Schema: "gftest", Name: "table1"}})
+	t.store.Add(ghostferry.ReverifyEntry{Pk: pk2, Table: &schema.Table{Schema: "gftest", Name: "table1"}})
+
+	t.Require().Equal(uint64(2), t.store.RowCount)
+	t.Require().Equal(1, len(t.store.MapStore))
+	t.Require().Equal(
+		map[uint64]struct{}{
+			pk1: struct{}{},
+			pk2: struct{}{},
+		},
+		t.store.MapStore[ghostferry.TableIdentifier{"gftest", "table1"}],
+	)
+}
+
+func (t *ReverifyStoreTestSuite) TestFreezeAndBatchByTableWillCreateReverifyBatchesAndDeleteMapStore() {
+	expectedTable1Pks := make([]uint64, 0, 55)
+	for i := uint64(100); i < 155; i++ {
+		t.store.Add(ghostferry.ReverifyEntry{Pk: i, Table: &schema.Table{Schema: "gftest", Name: "table1"}})
+		expectedTable1Pks = append(expectedTable1Pks, i)
+	}
+
+	expectedTable2Pks := make([]uint64, 0, 45)
+	for i := uint64(200); i < 245; i++ {
+		t.store.Add(ghostferry.ReverifyEntry{Pk: i, Table: &schema.Table{Schema: "gftest", Name: "table2"}})
+		expectedTable2Pks = append(expectedTable2Pks, i)
+	}
+
+	batches := t.store.FreezeAndBatchByTable(10)
+	t.Require().Equal(11, len(batches))
+	table1Batches := make([]ghostferry.ReverifyBatch, 0)
+	table2Batches := make([]ghostferry.ReverifyBatch, 0)
+
+	for _, batch := range batches {
+		switch batch.Table.TableName {
+		case "table1":
+			table1Batches = append(table1Batches, batch)
+		case "table2":
+			table2Batches = append(table2Batches, batch)
+		}
+	}
+
+	t.Require().Equal(6, len(table1Batches))
+	t.Require().Equal(5, len(table2Batches))
+
+	actualTable1Pks := make([]uint64, 0)
+	for _, batch := range table1Batches {
+		for _, pk := range batch.Pks {
+			actualTable1Pks = append(actualTable1Pks, pk)
+		}
+	}
+
+	sort.Slice(actualTable1Pks, func(i, j int) bool { return actualTable1Pks[i] < actualTable1Pks[j] })
+	t.Require().Equal(expectedTable1Pks, actualTable1Pks)
+
+	actualTable2Pks := make([]uint64, 0)
+	for _, batch := range table2Batches {
+		for _, pk := range batch.Pks {
+			actualTable2Pks = append(actualTable2Pks, pk)
+		}
+	}
+
+	sort.Slice(actualTable2Pks, func(i, j int) bool { return actualTable2Pks[i] < actualTable2Pks[j] })
+	t.Require().Equal(expectedTable2Pks, actualTable2Pks)
 }
 
 func TestIterativeVerifierTestSuite(t *testing.T) {
 	testhelpers.SetupTest()
 	suite.Run(t, &IterativeVerifierTestSuite{GhostferryUnitTestSuite: &testhelpers.GhostferryUnitTestSuite{}})
+}
+
+func TestReverifyStoreTestSuite(t *testing.T) {
+	testhelpers.SetupTest()
+	suite.Run(t, &ReverifyStoreTestSuite{})
 }
