@@ -39,8 +39,7 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *schema.Table, l
 		//
 		// It is necessary to use two WHERE conditions on quotedPK so the second batch will be empty.
 		// No LIMIT clause is necessary since at most one row is present.
-		return sq.
-			sq.Select(columns...).
+		return sq.Select(columns...).
 			From(quotedTable + " USE INDEX (PRIMARY)").
 			Where(sq.Eq{quotedPK: f.ShardingValue}).
 			Where(sq.Gt{quotedPK: lastPk}), nil
@@ -67,8 +66,7 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *schema.Table, l
 			" WHERE " + quotedShardingKey + " = ? AND " + quotedPK + " > ?" +
 			" ORDER BY " + quotedPK + " LIMIT " + strconv.Itoa(int(batchSize))
 
-		return sq.
-			Select(columns...).
+		return sq.Select(columns...).
 			From(quotedTable).
 			Join("("+selectPrimaryKeys+") AS `batch` USING("+quotedPK+")", f.ShardingValue, lastPk), nil
 	}
