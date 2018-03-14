@@ -25,7 +25,7 @@ func (d *SqlDBWithFakeRollback) Rollback() error {
 // sql.DB does not implement Rollback, but can use SqlDBWithFakeRollback
 // to perform a noop.
 type SqlPreparerAndRollbacker interface {
-  SqlPreparer
+	SqlPreparer
 	Rollback() error
 }
 
@@ -118,7 +118,7 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 
 		if batch.Size() == 0 {
 			tx.Rollback()
-			c.logger.Info("did not reach max primary key, but the table is complete as there are no more rows")
+			c.logger.Debug("did not reach max primary key, but the table is complete as there are no more rows")
 			break
 		}
 
