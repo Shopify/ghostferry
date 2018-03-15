@@ -178,12 +178,12 @@ func (r *RelocFerry) Run() {
 	metrics.Measure("VerifyCutover", nil, 1.0, func() {
 		verificationResult, err = r.verifier.VerifyDuringCutover()
 	})
-	if !verificationResult.DataCorrect {
+	if err != nil {
+		r.logger.WithField("error", err).Errorf("verification encountered an error, aborting run")
+		r.Ferry.ErrorHandler.Fatal("reloc", err)
+	} else if !verificationResult.DataCorrect {
 		err = fmt.Errorf("verifier detected data discrepancy: %s", verificationResult.Message)
 		r.logger.WithField("error", err).Errorf("verification failed, aborting run")
-		r.Ferry.ErrorHandler.Fatal("reloc", err)
-	} else if err != nil {
-		r.logger.WithField("error", err).Errorf("verification encountered an error, aborting run")
 		r.Ferry.ErrorHandler.Fatal("reloc", err)
 	}
 

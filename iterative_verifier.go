@@ -234,6 +234,9 @@ func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	erroredOrFailed := errors.New("reverify errored or failed")
 
 	allBatches := v.reverifyStore.FreezeAndBatchByTable(int(v.CursorConfig.BatchSize))
+	if len(allBatches) == 0 {
+		return VerificationResult{true, ""}, nil
+	}
 
 	v.logger.Info("starting verification during cutover")
 	pool := &WorkerPool{
