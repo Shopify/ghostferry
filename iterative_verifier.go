@@ -204,6 +204,10 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 		Process: func(tableIndex int) (interface{}, error) {
 			table := v.Tables[tableIndex]
 
+			if v.tableIsIgnored(table) {
+				return nil, nil
+			}
+
 			err := v.verifyTableBeforeCutover(table)
 			if err != nil {
 				v.logger.WithError(err).WithField("table", table.String()).Error("error occured during verify table before cutover")
