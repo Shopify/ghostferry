@@ -25,7 +25,7 @@ func (d *SqlDBWithFakeRollback) Rollback() error {
 // sql.DB does not implement Rollback, but can use SqlDBWithFakeRollback
 // to perform a noop.
 type SqlPreparerAndRollbacker interface {
-  SqlPreparer
+	SqlPreparer
 	Rollback() error
 }
 
@@ -39,18 +39,20 @@ type CursorConfig struct {
 	ReadRetries     int
 }
 
+// returns a new Cursor with an embedded copy of itself
 func (c *CursorConfig) NewCursor(table *schema.Table, maxPk uint64) *Cursor {
 	return &Cursor{
-		CursorConfig:  c,
+		CursorConfig:  *c,
 		Table:         table,
 		MaxPrimaryKey: maxPk,
 		RowLock:       true,
 	}
 }
 
+// returns a new Cursor with an embedded copy of itself
 func (c *CursorConfig) NewCursorWithoutRowLock(table *schema.Table, maxPk uint64) *Cursor {
 	return &Cursor{
-		CursorConfig:  c,
+		CursorConfig:  *c,
 		Table:         table,
 		MaxPrimaryKey: maxPk,
 		RowLock:       false,
@@ -58,7 +60,7 @@ func (c *CursorConfig) NewCursorWithoutRowLock(table *schema.Table, maxPk uint64
 }
 
 type Cursor struct {
-	*CursorConfig
+	CursorConfig
 
 	Table         *schema.Table
 	MaxPrimaryKey uint64
