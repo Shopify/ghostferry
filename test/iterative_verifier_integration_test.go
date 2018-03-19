@@ -133,7 +133,7 @@ func TestIgnoresTables(t *testing.T) {
 			ensureTestRowsAreReverified(ferry)
 		},
 		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry) {
-			modifyTestRowsInSource(ferry)
+			modifyAllRows(ferry)
 			result, err := iterativeVerifier.VerifyDuringCutover()
 			assert.Nil(t, err)
 			assert.True(t, result.DataCorrect)
@@ -228,6 +228,11 @@ func modifyTestRowsInSource(ferry *testhelpers.TestFerry) {
 	testhelpers.PanicIfError(err)
 
 	_, err = ferry.Ferry.SourceDB.Exec("UPDATE gftest.table1 SET data=\"FAIL\" WHERE id = \"43\"")
+	testhelpers.PanicIfError(err)
+}
+
+func modifyAllRows(ferry *testhelpers.TestFerry) {
+	_, err := ferry.Ferry.TargetDB.Exec("UPDATE gftest.table1 SET data=\"FAIL\"")
 	testhelpers.PanicIfError(err)
 }
 
