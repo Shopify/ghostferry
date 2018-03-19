@@ -48,6 +48,16 @@ func (t *IterativeVerifierTestSuite) TearDownTest() {
 	t.GhostferryUnitTestSuite.TearDownTest()
 }
 
+func (t *IterativeVerifierTestSuite) TestNothingToVerify() {
+	err := t.verifier.VerifyBeforeCutover()
+	t.Require().Nil(err)
+
+	result, err := t.verifier.VerifyDuringCutover()
+	t.Require().Nil(err)
+	t.Require().True(result.DataCorrect)
+	t.Require().Equal("", result.Message)
+}
+
 func (t *IterativeVerifierTestSuite) TestChangingDataChangesHash() {
 	t.InsertRow(42, "foo")
 	old := t.GetHashes([]uint64{42})[0]
