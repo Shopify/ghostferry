@@ -237,7 +237,7 @@ func (d *DataIterator) Run() {
 					return
 				}
 
-				logger.Info("table iteration completed")
+				logger.Debug("table iteration completed")
 				d.CurrentState.MarkTableAsCompleted(table.String())
 			}
 		}()

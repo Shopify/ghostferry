@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -29,6 +30,8 @@ type Metrics struct {
 	Prefix      string
 	DefaultTags []MetricTag
 	Sink        chan interface{}
+
+	wg sync.WaitGroup
 }
 
 func SetGlobalMetrics(prefix string, sink chan interface{}) *Metrics {
@@ -91,6 +94,19 @@ func (m *Metrics) Measure(key string, tags []MetricTag, sampleRate float64, f fu
 	start := time.Now()
 	f()
 	m.Timer(key, time.Since(start), m.mergeWithDefaultTags(tags), sampleRate)
+}
+
+func (m *Metrics) AddConsumer() {
+	m.wg.Add(1)
+}
+
+func (m *Metrics) DoneConsumer() {
+	m.wg.Done()
+}
+
+func (m *Metrics) StopAndFlush() {
+	close(m.Sink)
+	m.wg.Wait()
 }
 
 func (m *Metrics) sendMetric(metric interface{}) {

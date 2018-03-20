@@ -15,10 +15,14 @@ type Config struct {
 	StatsDAddress string
 	CutoverLock   HTTPCallback
 	CutoverUnlock HTTPCallback
+	ErrorCallback HTTPCallback
 
-	JoinedTables     map[string][]JoinTable
-	IgnoredTables    []string
-	PrimaryKeyTables []string
+	JoinedTables              map[string][]JoinTable
+	IgnoredTables             []string
+	IgnoredVerificationTables []string
+	PrimaryKeyTables          []string
+
+	VerifierIterationConcurrency int
 
 	Throttle *ghostferry.LagThrottlerConfig
 }

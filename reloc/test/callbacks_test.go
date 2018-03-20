@@ -2,12 +2,15 @@ package test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"testing"
 
+	"github.com/Shopify/ghostferry/reloc"
 	rtesthelpers "github.com/Shopify/ghostferry/reloc/testhelpers"
 	"github.com/Shopify/ghostferry/testhelpers"
 
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -20,7 +23,11 @@ type CallbacksTestSuite struct {
 func (t *CallbacksTestSuite) SetupTest() {
 	t.RelocUnitTestSuite.SetupTest()
 
-	t.Ferry.Ferry.ErrorHandler = &t.errHandler
+	t.Ferry.Ferry.ErrorHandler = &reloc.RelocErrorHandler{
+		ErrorHandler:  &t.errHandler,
+		ErrorCallback: t.Config.ErrorCallback,
+		Logger:        logrus.WithField("tag", "reloc"),
+	}
 
 	err := t.Ferry.Start()
 	t.Require().Nil(err)
@@ -60,6 +67,21 @@ func (t *CallbacksTestSuite) TestFailsRunOnLockError() {
 	t.Require().Equal("callback returned 500 Internal Server Error", t.errHandler.LastError.Error())
 }
 
+func (t *CallbacksTestSuite) TestFailsRunOnPanicError() {
+	callbackReceived := false
+	t.ErrorCallback = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callbackReceived = true
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	t.Ferry.Ferry.ErrorHandler.Fatal("test_error", errors.New("test error"))
+
+	t.Require().True(callbackReceived)
+
+	t.Require().NotNil(t.errHandler.LastError)
+	t.Require().Equal("test error", t.errHandler.LastError.Error())
+}
+
 func (t *CallbacksTestSuite) TestPostsCallbacks() {
 	lockReceived := false
 	t.CutoverLock = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -75,12 +97,29 @@ func (t *CallbacksTestSuite) TestPostsCallbacks() {
 		t.Require().Equal("test_unlock", resp["Payload"])
 	})
 
+	errorReceived := false
+	t.ErrorCallback = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		errorReceived = true
+		resp := t.requestMap(r)
+
+		errorData := make(map[string]string)
+		errorData["ErrFrom"] = "test_error"
+		errorData["ErrMessage"] = "test error"
+
+		errorDataBytes, jsonErr := json.MarshalIndent(errorData, "", "  ")
+		t.Require().Nil(jsonErr)
+		t.Require().Equal(string(errorDataBytes), resp["Payload"])
+	})
+
 	t.Ferry.Run()
 
 	t.Require().True(lockReceived)
 	t.Require().True(unlockReceived)
 
 	t.AssertTenantCopied()
+
+	t.Ferry.Ferry.ErrorHandler.Fatal("test_error", errors.New("test error"))
+	t.Require().True(errorReceived)
 }
 
 func (t *CallbacksTestSuite) requestMap(r *http.Request) map[string]string {

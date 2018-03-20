@@ -13,9 +13,10 @@ import (
 )
 
 type RelocFerry struct {
-	Ferry  *ghostferry.Ferry
-	config *Config
-	logger *logrus.Entry
+	Ferry    *ghostferry.Ferry
+	verifier *ghostferry.IterativeVerifier
+	config   *Config
+	logger   *logrus.Entry
 }
 
 func NewFerry(config *Config) (*RelocFerry, error) {
@@ -61,13 +62,25 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 		}
 	}
 
-	return &RelocFerry{
-		Ferry: &ghostferry.Ferry{
-			Config:    config.Config,
-			Throttler: throttler,
+	ferry := &ghostferry.Ferry{
+		Config:    config.Config,
+		Throttler: throttler,
+	}
+
+	logger := logrus.WithField("tag", "reloc")
+
+	ferry.ErrorHandler = &RelocErrorHandler{
+		ErrorHandler: &ghostferry.PanicErrorHandler{
+			Ferry: ferry,
 		},
+		ErrorCallback: config.ErrorCallback,
+		Logger:        logger,
+	}
+
+	return &RelocFerry{
+		Ferry:  ferry,
 		config: config,
-		logger: logrus.WithField("tag", "reloc"),
+		logger: logger,
 	}, nil
 }
 
@@ -76,7 +89,40 @@ func (r *RelocFerry) Initialize() error {
 }
 
 func (r *RelocFerry) Start() error {
-	return r.Ferry.Start()
+	err := r.Ferry.Start()
+	if err != nil {
+		return err
+	}
+
+	verifierConcurrency := r.config.VerifierIterationConcurrency
+	if verifierConcurrency == 0 {
+		verifierConcurrency = r.config.DataIterationConcurrency
+	}
+
+	r.verifier = &ghostferry.IterativeVerifier{
+		CursorConfig: &ghostferry.CursorConfig{
+			DB:          r.Ferry.SourceDB,
+			BatchSize:   r.config.DataIterationBatchSize,
+			ReadRetries: r.config.DBReadRetries,
+			BuildSelect: r.config.CopyFilter.BuildSelect,
+		},
+
+		BinlogStreamer: r.Ferry.BinlogStreamer,
+
+		TableSchemaCache: r.Ferry.Tables,
+		Tables:           r.Ferry.Tables.AsSlice(),
+
+		SourceDB: r.Ferry.SourceDB,
+		TargetDB: r.Ferry.TargetDB,
+
+		DatabaseRewrites: r.config.DatabaseRewrites,
+		TableRewrites:    r.config.TableRewrites,
+
+		IgnoredTables: r.config.IgnoredVerificationTables,
+		Concurrency:   verifierConcurrency,
+	}
+
+	return r.verifier.Initialize()
 }
 
 func (r *RelocFerry) Run() {
@@ -88,6 +134,14 @@ func (r *RelocFerry) Run() {
 	}()
 
 	r.Ferry.WaitUntilRowCopyIsComplete()
+
+	metrics.Measure("VerifyBeforeCutover", nil, 1.0, func() {
+		err := r.verifier.VerifyBeforeCutover()
+		if err != nil {
+			r.logger.WithField("error", err).Errorf("pre-cutover verification encountered an error, aborting run")
+			r.Ferry.ErrorHandler.Fatal("reloc", err)
+		}
+	})
 
 	ghostferry.WaitForThrottle(r.Ferry.Throttler)
 
@@ -117,6 +171,19 @@ func (r *RelocFerry) Run() {
 	})
 	if err != nil {
 		r.logger.WithField("error", err).Errorf("failed to delta-copy joined tables after locking")
+		r.Ferry.ErrorHandler.Fatal("reloc", err)
+	}
+
+	var verificationResult ghostferry.VerificationResult
+	metrics.Measure("VerifyCutover", nil, 1.0, func() {
+		verificationResult, err = r.verifier.VerifyDuringCutover()
+	})
+	if err != nil {
+		r.logger.WithField("error", err).Errorf("verification encountered an error, aborting run")
+		r.Ferry.ErrorHandler.Fatal("reloc", err)
+	} else if !verificationResult.DataCorrect {
+		err = fmt.Errorf("verifier detected data discrepancy: %s", verificationResult.Message)
+		r.logger.WithField("error", err).Errorf("verification failed, aborting run")
 		r.Ferry.ErrorHandler.Fatal("reloc", err)
 	}
 

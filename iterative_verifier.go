@@ -204,6 +204,10 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 		Process: func(tableIndex int) (interface{}, error) {
 			table := v.Tables[tableIndex]
 
+			if v.tableIsIgnored(table) {
+				return nil, nil
+			}
+
 			err := v.verifyTableBeforeCutover(table)
 			if err != nil {
 				v.logger.WithError(err).WithField("table", table.String()).Error("error occured during verify table before cutover")
@@ -234,6 +238,9 @@ func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	erroredOrFailed := errors.New("reverify errored or failed")
 
 	allBatches := v.reverifyStore.FreezeAndBatchByTable(int(v.CursorConfig.BatchSize))
+	if len(allBatches) == 0 {
+		return VerificationResult{true, ""}, nil
+	}
 
 	v.logger.Info("starting verification during cutover")
 	pool := &WorkerPool{

@@ -62,6 +62,8 @@ func main() {
 	}
 
 	ferry.Run()
+
+	reloc.StopAndFlushMetrics()
 }
 
 func errorAndExit(msg string) {
