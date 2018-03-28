@@ -249,6 +249,11 @@ func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {
 			reverifyBatch := allBatches[reverifyBatchIndex]
 			table := v.TableSchemaCache.Get(reverifyBatch.Table.SchemaName, reverifyBatch.Table.TableName)
 
+			metrics.Count("RowEvent", int64(len(reverifyBatch.Pks)), []MetricTag{
+				MetricTag{"table", reverifyBatch.Table.TableName},
+				MetricTag{"source", "iterative_verifier_during_cutover"},
+			}, 1.0)
+
 			v.logger.WithFields(logrus.Fields{
 				"table":    table.String(),
 				"len(pks)": len(reverifyBatch.Pks),
@@ -348,6 +353,11 @@ func (v *IterativeVerifier) verifyTableBeforeCutover(table *schema.Table) error 
 	// It only needs the PKs, not the entire row.
 	cursor.ColumnsToSelect = []string{fmt.Sprintf("`%s`", table.GetPKColumn(0).Name)}
 	return cursor.Each(func(batch *RowBatch) error {
+		metrics.Count("RowEvent", int64(batch.Size()), []MetricTag{
+			MetricTag{"table", table.Name},
+			MetricTag{"source", "iterative_verifier_before_cutover"},
+		}, 1.0)
+
 		pks := make([]uint64, 0, batch.Size())
 
 		for _, rowData := range batch.Values() {
