@@ -12,6 +12,7 @@ type BinlogWriter struct {
 	DB               *sql.DB
 	DatabaseRewrites map[string]string
 	TableRewrites    map[string]string
+	Throttler        Throttler
 
 	BatchSize    int
 	WriteRetries int
@@ -78,6 +79,8 @@ func (b *BinlogWriter) BufferBinlogEvents(events []DMLEvent) error {
 }
 
 func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
+	WaitForThrottle(b.Throttler)
+
 	queryBuffer := []byte("BEGIN;\n")
 
 	for _, ev := range events {

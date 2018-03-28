@@ -18,7 +18,6 @@ type BinlogStreamer struct {
 	Db           *sql.DB
 	Config       *Config
 	ErrorHandler ErrorHandler
-	Throttler    Throttler
 	Filter       CopyFilter
 
 	TableSchema TableSchemaCache
@@ -62,12 +61,12 @@ func (s *BinlogStreamer) createBinlogSyncer() error {
 	}
 
 	syncerConfig := replication.BinlogSyncerConfig{
-		ServerID:  s.Config.MyServerId,
-		Host:      s.Config.Source.Host,
-		Port:      s.Config.Source.Port,
-		User:      s.Config.Source.User,
-		Password:  s.Config.Source.Pass,
-		TLSConfig: tlsConfig,
+		ServerID:   s.Config.MyServerId,
+		Host:       s.Config.Source.Host,
+		Port:       s.Config.Source.Port,
+		User:       s.Config.Source.User,
+		Password:   s.Config.Source.Pass,
+		TLSConfig:  tlsConfig,
 		UseDecimal: true,
 	}
 
@@ -111,8 +110,6 @@ func (s *BinlogStreamer) Run() {
 	s.logger.Info("starting binlog streamer")
 
 	for !s.stopRequested || (s.stopRequested && s.lastStreamedBinlogPosition.Compare(s.targetBinlogPosition) < 0) {
-		WaitForThrottle(s.Throttler)
-
 		var ev *replication.BinlogEvent
 		var timedOut bool
 

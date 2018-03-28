@@ -35,7 +35,6 @@ func (this *FerryTestSuite) SetupTest() {
 		Db:           sourceDb,
 		Config:       testFerry.Config,
 		ErrorHandler: testFerry.ErrorHandler,
-		Throttler:    testFerry.Throttler,
 		Filter:       testFerry.CopyFilter,
 	}
 
