@@ -250,7 +250,7 @@ func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {
 			table := v.TableSchemaCache.Get(reverifyBatch.Table.SchemaName, reverifyBatch.Table.TableName)
 
 			metrics.Count("RowEvent", int64(len(reverifyBatch.Pks)), []MetricTag{
-				MetricTag{"table", reverifyBatch.Table.TableName},
+				MetricTag{"table", table.Name},
 				MetricTag{"source", "iterative_verifier_during_cutover"},
 			}, 1.0)
 
