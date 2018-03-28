@@ -164,7 +164,6 @@ func (f *Ferry) Initialize() (err error) {
 		Db:           f.SourceDB,
 		Config:       f.Config,
 		ErrorHandler: f.ErrorHandler,
-		Throttler:    f.Throttler,
 		Filter:       f.CopyFilter,
 	}
 	err = f.BinlogStreamer.Initialize()
@@ -176,6 +175,7 @@ func (f *Ferry) Initialize() (err error) {
 		DB:               f.TargetDB,
 		DatabaseRewrites: f.Config.DatabaseRewrites,
 		TableRewrites:    f.Config.TableRewrites,
+		Throttler:        f.Throttler,
 
 		BatchSize:    f.Config.BinlogEventBatchSize,
 		WriteRetries: f.Config.DBWriteRetries,
