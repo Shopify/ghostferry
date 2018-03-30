@@ -48,12 +48,18 @@ type ReverifyStore struct {
 }
 
 func NewReverifyStore() *ReverifyStore {
-	return &ReverifyStore{
-		MapStore:           make(map[TableIdentifier]map[uint64]struct{}),
+	r := &ReverifyStore{
 		mapStoreMutex:      &sync.Mutex{},
 		RowCount:           uint64(0),
 		EmitLogPerRowCount: uint64(10000),
 	}
+
+	r.newMapStore()
+	return r
+}
+
+func (r *ReverifyStore) newMapStore() {
+	r.MapStore = make(map[TableIdentifier]map[uint64]struct{})
 }
 
 func (r *ReverifyStore) Add(entry ReverifyEntry) {
@@ -106,6 +112,7 @@ func (r ReverifyStore) FlushAndBatchByTable(batchsize int) []ReverifyBatch {
 		delete(r.MapStore, tableId)
 	}
 
+	r.newMapStore()
 	return r.BatchStore
 }
 
@@ -198,8 +205,14 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	v.logger.Debug("verifying all tables")
 	err := v.verifyAllTablesBeforeCutover()
 
-	// TODO: we can reduce the cutover phase (downtime) drastically by eagerly
-	// running re-verification on the ReverifyStore a few times at this point
+	if err == nil {
+		// This reverification is to reduce the size of the set of rows
+		// that need to be reverified during cutover. Failures during
+		// reverification at this point could have been caused by still
+		// ongoing writes and we therefore just re-add those rows to the
+		// store rather than failing the move prematurely.
+		_, err = v.reverify()
+	}
 
 	v.logger.Info("pre-cutover verification complete")
 	v.beforeCutoverVerifyDone = true
@@ -351,9 +364,16 @@ func (v *IterativeVerifier) reverify() (VerificationResult, error) {
 			reverifyBatch := allBatches[reverifyBatchIndex]
 			table := v.TableSchemaCache.Get(reverifyBatch.Table.SchemaName, reverifyBatch.Table.TableName)
 
+			var tag string
+			if v.beforeCutoverVerifyDone {
+				tag = "iterative_verifier_during_cutover"
+			} else {
+				tag = "iterative_verifier_before_cutover"
+			}
+
 			metrics.Count("RowEvent", int64(len(reverifyBatch.Pks)), []MetricTag{
 				MetricTag{"table", table.Name},
-				MetricTag{"source", "iterative_verifier_reverification"},
+				MetricTag{"source", tag},
 			}, 1.0)
 
 			v.logger.WithFields(logrus.Fields{
@@ -361,8 +381,20 @@ func (v *IterativeVerifier) reverify() (VerificationResult, error) {
 				"len(pks)": len(reverifyBatch.Pks),
 			}).Debug("received pk batch to reverify")
 
-			verificationResult, err := v.reverifyPks(table, reverifyBatch.Pks)
+			verificationResult, mismatchedPks, err := v.reverifyPks(table, reverifyBatch.Pks)
 			resultAndErr := verificationResultAndError{verificationResult, err}
+
+			// If we haven't entered the cutover phase yet, then reverification failures
+			// could have been caused by ongoing writes. We will just re-add the rows for
+			// the cutover verification and ignore the failure at this point here.
+			if err != nil && !v.beforeCutoverVerifyDone {
+				for _, pk := range mismatchedPks {
+					v.reverifyChan <- ReverifyEntry{Pk: pk, Table: table}
+				}
+
+				resultAndErr.Result = VerificationResult{true, ""}
+			}
+
 			if resultAndErr.ErroredOrFailed() {
 				if resultAndErr.Error != nil {
 					v.logger.WithError(resultAndErr.Error).Error("error occured in reverification")
@@ -400,25 +432,25 @@ func (v *IterativeVerifier) reverify() (VerificationResult, error) {
 	return result, err
 }
 
-func (v *IterativeVerifier) reverifyPks(table *schema.Table, pks []uint64) (VerificationResult, error) {
+func (v *IterativeVerifier) reverifyPks(table *schema.Table, pks []uint64) (VerificationResult, []uint64, error) {
 	mismatchedPks, err := v.compareFingerprints(pks, table)
 	if err != nil {
-		return VerificationResult{}, err
+		return VerificationResult{}, mismatchedPks, err
 	}
 
-	if len(mismatchedPks) > 0 {
-		pkStrings := make([]string, len(mismatchedPks))
-		for idx, pk := range mismatchedPks {
-			pkStrings[idx] = strconv.FormatUint(pk, 10)
-		}
-
-		return VerificationResult{
-			DataCorrect: false,
-			Message:     fmt.Sprintf("verification failed on table: %s for pks: %s", table.String(), strings.Join(pkStrings, ",")),
-		}, nil
+	if len(mismatchedPks) == 0 {
+		return VerificationResult{true, ""}, mismatchedPks, nil
 	}
 
-	return VerificationResult{true, ""}, nil
+	pkStrings := make([]string, len(mismatchedPks))
+	for idx, pk := range mismatchedPks {
+		pkStrings[idx] = strconv.FormatUint(pk, 10)
+	}
+
+	return VerificationResult{
+		DataCorrect: false,
+		Message:     fmt.Sprintf("verification failed on table: %s for pks: %s", table.String(), strings.Join(pkStrings, ",")),
+	}, mismatchedPks, nil
 }
 
 func (v *IterativeVerifier) consumeReverifyChan() {
