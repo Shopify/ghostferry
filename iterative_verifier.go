@@ -139,12 +139,10 @@ type IterativeVerifier struct {
 	Concurrency      int
 
 	reverifyStore *ReverifyStore
-	reverifyChan  chan ReverifyEntry
 	logger        *logrus.Entry
 
 	beforeCutoverVerifyDone    bool
 	verifyDuringCutoverStarted AtomicBoolean
-	wg                         *sync.WaitGroup
 
 	// Variables for verification in the background
 	verificationResultAndStatus VerificationResultAndStatus
@@ -191,13 +189,11 @@ func (v *IterativeVerifier) Initialize() error {
 	}
 
 	v.reverifyStore = NewReverifyStore()
-	v.reverifyChan = make(chan ReverifyEntry)
 	return nil
 }
 
 func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	v.logger.Info("starting pre-cutover verification")
-	v.consumeReverifyChan()
 
 	v.logger.Debug("attaching binlog event listener")
 	v.BinlogStreamer.AddEventListener(v.binlogEventListener)
@@ -221,14 +217,8 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 }
 
 func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {
-	// Since no more reverify batch can be sent at this point,
-	// we should ensure nothing can be actually added to the reverifyStore
-	// by spinning down the consumeReverifyChan go routine.
-	v.verifyDuringCutoverStarted.Set(true)
-	close(v.reverifyChan)
-	v.wg.Wait()
-
 	v.logger.Info("starting verification during cutover")
+	v.verifyDuringCutoverStarted.Set(true)
 	result, err := v.reverify()
 	v.logger.Info("cutover verification complete")
 
@@ -340,7 +330,7 @@ func (v *IterativeVerifier) verifyTableBeforeCutover(table *schema.Table) error 
 			}).Info("mismatched rows will be re-verified")
 
 			for _, pk := range mismatchedPks {
-				v.reverifyChan <- ReverifyEntry{Pk: pk, Table: batch.TableSchema()}
+				v.reverifyStore.Add(ReverifyEntry{Pk: pk, Table: batch.TableSchema()})
 			}
 		}
 
@@ -389,7 +379,7 @@ func (v *IterativeVerifier) reverify() (VerificationResult, error) {
 			// the cutover verification and ignore the failure at this point here.
 			if err != nil && !v.beforeCutoverVerifyDone {
 				for _, pk := range mismatchedPks {
-					v.reverifyChan <- ReverifyEntry{Pk: pk, Table: table}
+					v.reverifyStore.Add(ReverifyEntry{Pk: pk, Table: table})
 				}
 
 				resultAndErr.Result = VerificationResult{true, ""}
@@ -453,24 +443,6 @@ func (v *IterativeVerifier) reverifyPks(table *schema.Table, pks []uint64) (Veri
 	}, mismatchedPks, nil
 }
 
-func (v *IterativeVerifier) consumeReverifyChan() {
-	v.wg = &sync.WaitGroup{}
-	v.wg.Add(1)
-
-	go func() {
-		defer v.wg.Done()
-
-		for {
-			entry, open := <-v.reverifyChan
-			if !open {
-				return
-			}
-
-			v.reverifyStore.Add(entry)
-		}
-	}()
-}
-
 func (v *IterativeVerifier) binlogEventListener(evs []DMLEvent) error {
 	if v.verifyDuringCutoverStarted.Get() {
 		return fmt.Errorf("cutover has started but received binlog event!")
@@ -486,7 +458,7 @@ func (v *IterativeVerifier) binlogEventListener(evs []DMLEvent) error {
 			return err
 		}
 
-		v.reverifyChan <- ReverifyEntry{Pk: pk, Table: ev.TableSchema()}
+		v.reverifyStore.Add(ReverifyEntry{Pk: pk, Table: ev.TableSchema()})
 	}
 
 	return nil
