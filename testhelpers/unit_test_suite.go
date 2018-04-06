@@ -49,6 +49,10 @@ func (this *GhostferryUnitTestSuite) SetupTest() {
 	this.resetDbs()
 }
 
+func (this *GhostferryUnitTestSuite) SeedTargetDB(numberOfRows int) {
+	SeedInitialData(this.Ferry.TargetDB, TestSchemaName, TestTable1Name, numberOfRows)
+}
+
 func (this *GhostferryUnitTestSuite) SeedSourceDB(numberOfRows int) {
 	SeedInitialData(this.Ferry.SourceDB, TestSchemaName, TestTable1Name, numberOfRows)
 }
