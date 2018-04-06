@@ -377,7 +377,7 @@ func (v *IterativeVerifier) reverify() (VerificationResult, error) {
 			// If we haven't entered the cutover phase yet, then reverification failures
 			// could have been caused by ongoing writes. We will just re-add the rows for
 			// the cutover verification and ignore the failure at this point here.
-			if err != nil && !v.beforeCutoverVerifyDone {
+			if err == nil && !v.beforeCutoverVerifyDone {
 				for _, pk := range mismatchedPks {
 					v.reverifyStore.Add(ReverifyEntry{Pk: pk, Table: table})
 				}
