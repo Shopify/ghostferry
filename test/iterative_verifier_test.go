@@ -233,7 +233,7 @@ func (t *ReverifyStoreTestSuite) TestAddEntryIntoReverifyStoreWillDeduplicate() 
 	)
 }
 
-func (t *ReverifyStoreTestSuite) TestFreezeAndBatchByTableWillCreateReverifyBatchesAndDeleteMapStore() {
+func (t *ReverifyStoreTestSuite) TestFlushAndBatchByTableWillCreateReverifyBatchesAndClearTheMapStore() {
 	expectedTable1Pks := make([]uint64, 0, 55)
 	for i := uint64(100); i < 155; i++ {
 		t.store.Add(ghostferry.ReverifyEntry{Pk: i, Table: &schema.Table{Schema: "gftest", Name: "table1"}})
@@ -246,7 +246,7 @@ func (t *ReverifyStoreTestSuite) TestFreezeAndBatchByTableWillCreateReverifyBatc
 		expectedTable2Pks = append(expectedTable2Pks, i)
 	}
 
-	batches := t.store.FreezeAndBatchByTable(10)
+	batches := t.store.FlushAndBatchByTable(10)
 	t.Require().Equal(11, len(batches))
 	table1Batches := make([]ghostferry.ReverifyBatch, 0)
 	table2Batches := make([]ghostferry.ReverifyBatch, 0)
@@ -282,6 +282,8 @@ func (t *ReverifyStoreTestSuite) TestFreezeAndBatchByTableWillCreateReverifyBatc
 
 	sort.Slice(actualTable2Pks, func(i, j int) bool { return actualTable2Pks[i] < actualTable2Pks[j] })
 	t.Require().Equal(expectedTable2Pks, actualTable2Pks)
+
+	t.Require().Equal(0, len(t.store.MapStore))
 }
 
 func TestIterativeVerifierTestSuite(t *testing.T) {

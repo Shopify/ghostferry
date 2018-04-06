@@ -41,20 +41,31 @@ type ReverifyEntry struct {
 
 type ReverifyStore struct {
 	MapStore           map[TableIdentifier]map[uint64]struct{}
+	mapStoreMutex      *sync.Mutex
 	BatchStore         []ReverifyBatch
 	RowCount           uint64
 	EmitLogPerRowCount uint64
 }
 
 func NewReverifyStore() *ReverifyStore {
-	return &ReverifyStore{
-		MapStore:           make(map[TableIdentifier]map[uint64]struct{}),
+	r := &ReverifyStore{
+		mapStoreMutex:      &sync.Mutex{},
 		RowCount:           uint64(0),
 		EmitLogPerRowCount: uint64(10000),
 	}
+
+	r.newMapStore()
+	return r
+}
+
+func (r *ReverifyStore) newMapStore() {
+	r.MapStore = make(map[TableIdentifier]map[uint64]struct{})
 }
 
 func (r *ReverifyStore) Add(entry ReverifyEntry) {
+	r.mapStoreMutex.Lock()
+	defer r.mapStoreMutex.Unlock()
+
 	tableId := NewTableIdentifierFromSchemaTable(entry.Table)
 	if _, exists := r.MapStore[tableId]; !exists {
 		r.MapStore[tableId] = make(map[uint64]struct{})
@@ -72,10 +83,9 @@ func (r *ReverifyStore) Add(entry ReverifyEntry) {
 	}
 }
 
-func (r ReverifyStore) FreezeAndBatchByTable(batchsize int) []ReverifyBatch {
-	if r.MapStore == nil {
-		return r.BatchStore
-	}
+func (r ReverifyStore) FlushAndBatchByTable(batchsize int) []ReverifyBatch {
+	r.mapStoreMutex.Lock()
+	defer r.mapStoreMutex.Unlock()
 
 	r.BatchStore = make([]ReverifyBatch, 0)
 	for tableId, pkSet := range r.MapStore {
@@ -99,11 +109,10 @@ func (r ReverifyStore) FreezeAndBatchByTable(batchsize int) []ReverifyBatch {
 			})
 		}
 
-		// Save memory by deleting the map store
 		delete(r.MapStore, tableId)
 	}
 
-	r.MapStore = nil
+	r.newMapStore()
 	return r.BatchStore
 }
 
@@ -130,12 +139,10 @@ type IterativeVerifier struct {
 	Concurrency      int
 
 	reverifyStore *ReverifyStore
-	reverifyChan  chan ReverifyEntry
 	logger        *logrus.Entry
 
 	beforeCutoverVerifyDone    bool
 	verifyDuringCutoverStarted AtomicBoolean
-	wg                         *sync.WaitGroup
 
 	// Variables for verification in the background
 	verificationResultAndStatus VerificationResultAndStatus
@@ -182,119 +189,37 @@ func (v *IterativeVerifier) Initialize() error {
 	}
 
 	v.reverifyStore = NewReverifyStore()
-	v.reverifyChan = make(chan ReverifyEntry)
 	return nil
 }
 
 func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	v.logger.Info("starting pre-cutover verification")
 
-	v.wg = &sync.WaitGroup{}
-	v.wg.Add(1)
-	go func() {
-		defer v.wg.Done()
-		v.consumeReverifyChan()
-	}()
-
 	v.logger.Debug("attaching binlog event listener")
 	v.BinlogStreamer.AddEventListener(v.binlogEventListener)
 
-	pool := &WorkerPool{
-		Concurrency: v.Concurrency,
-		Process: func(tableIndex int) (interface{}, error) {
-			table := v.Tables[tableIndex]
+	v.logger.Debug("verifying all tables")
+	err := v.verifyAllTablesBeforeCutover()
 
-			if v.tableIsIgnored(table) {
-				return nil, nil
-			}
-
-			err := v.verifyTableBeforeCutover(table)
-			if err != nil {
-				v.logger.WithError(err).WithField("table", table.String()).Error("error occured during verify table before cutover")
-			}
-			return nil, err
-		},
+	if err == nil {
+		// This reverification is to reduce the size of the set of rows
+		// that need to be reverified during cutover. Failures during
+		// reverification at this point could have been caused by still
+		// ongoing writes and we therefore just re-add those rows to the
+		// store rather than failing the move prematurely.
+		_, err = v.reverify()
 	}
 
-	_, err := pool.Run(len(v.Tables))
-
-	// TODO: we can reduce the cutover phase (downtime) drastically by eagerly
-	// running re-verification on the ReverifyStore a few times at this point
-
-	v.beforeCutoverVerifyDone = true
 	v.logger.Info("pre-cutover verification complete")
+	v.beforeCutoverVerifyDone = true
 
 	return err
 }
 
 func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {
-	// Since no more reverify batch can be sent at this point,
-	// we should ensure nothing can be actually added to the reverifyStore
-	// by spinning down the consumeReverifyChan go routine.
-	v.verifyDuringCutoverStarted.Set(true)
-	close(v.reverifyChan)
-	v.wg.Wait()
-
-	erroredOrFailed := errors.New("reverify errored or failed")
-
-	allBatches := v.reverifyStore.FreezeAndBatchByTable(int(v.CursorConfig.BatchSize))
-	if len(allBatches) == 0 {
-		return VerificationResult{true, ""}, nil
-	}
-
 	v.logger.Info("starting verification during cutover")
-	pool := &WorkerPool{
-		Concurrency: v.Concurrency,
-		Process: func(reverifyBatchIndex int) (interface{}, error) {
-			reverifyBatch := allBatches[reverifyBatchIndex]
-			table := v.TableSchemaCache.Get(reverifyBatch.Table.SchemaName, reverifyBatch.Table.TableName)
-
-			metrics.Count("RowEvent", int64(len(reverifyBatch.Pks)), []MetricTag{
-				MetricTag{"table", table.Name},
-				MetricTag{"source", "iterative_verifier_during_cutover"},
-			}, 1.0)
-
-			v.logger.WithFields(logrus.Fields{
-				"table":    table.String(),
-				"len(pks)": len(reverifyBatch.Pks),
-			}).Debug("received pk batch to reverify")
-
-			verificationResult, err := v.verifyPksDuringCutover(table, reverifyBatch.Pks)
-			resultAndErr := verificationResultAndError{verificationResult, err}
-			if resultAndErr.ErroredOrFailed() {
-				if resultAndErr.Error != nil {
-					v.logger.WithError(resultAndErr.Error).Error("error occured in verification during cutover")
-				} else {
-					v.logger.Errorf("failed verification: %s", resultAndErr.Result.Message)
-				}
-
-				return resultAndErr, erroredOrFailed
-			}
-
-			return resultAndErr, nil
-		},
-	}
-
-	results, _ := pool.Run(len(allBatches))
-
-	var result VerificationResult
-	var err error
-	for i := 0; i < v.Concurrency; i++ {
-		if results[i] == nil {
-			// This means the worker pool exited early and another goroutine
-			// must have returned an error.
-			continue
-		}
-
-		resultAndErr := results[i].(verificationResultAndError)
-		result = resultAndErr.Result
-		err = resultAndErr.Error
-
-		if resultAndErr.ErroredOrFailed() {
-			break
-		}
-	}
-
+	v.verifyDuringCutoverStarted.Set(true)
+	result, err := v.reverify()
 	v.logger.Info("cutover verification complete")
 
 	return result, err
@@ -345,6 +270,29 @@ func (v *IterativeVerifier) Result() (VerificationResultAndStatus, error) {
 	return v.verificationResultAndStatus, v.verificationErr
 }
 
+func (v *IterativeVerifier) verifyAllTablesBeforeCutover() error {
+	pool := &WorkerPool{
+		Concurrency: v.Concurrency,
+		Process: func(tableIndex int) (interface{}, error) {
+			table := v.Tables[tableIndex]
+
+			if v.tableIsIgnored(table) {
+				return nil, nil
+			}
+
+			err := v.verifyTableBeforeCutover(table)
+			if err != nil {
+				v.logger.WithError(err).WithField("table", table.String()).Error("error occured during table verification")
+			}
+			return nil, err
+		},
+	}
+
+	_, err := pool.Run(len(v.Tables))
+
+	return err
+}
+
 func (v *IterativeVerifier) verifyTableBeforeCutover(table *schema.Table) error {
 	// The cursor will stop iterating when it cannot find anymore rows,
 	// so it will not iterate until MaxUint64.
@@ -382,7 +330,7 @@ func (v *IterativeVerifier) verifyTableBeforeCutover(table *schema.Table) error 
 			}).Info("mismatched rows will be re-verified")
 
 			for _, pk := range mismatchedPks {
-				v.reverifyChan <- ReverifyEntry{Pk: pk, Table: batch.TableSchema()}
+				v.reverifyStore.Add(ReverifyEntry{Pk: pk, Table: batch.TableSchema()})
 			}
 		}
 
@@ -390,36 +338,109 @@ func (v *IterativeVerifier) verifyTableBeforeCutover(table *schema.Table) error 
 	})
 }
 
-func (v *IterativeVerifier) verifyPksDuringCutover(table *schema.Table, pks []uint64) (VerificationResult, error) {
-	mismatchedPks, err := v.compareFingerprints(pks, table)
-	if err != nil {
-		return VerificationResult{}, err
+func (v *IterativeVerifier) reverify() (VerificationResult, error) {
+	allBatches := v.reverifyStore.FlushAndBatchByTable(int(v.CursorConfig.BatchSize))
+	v.logger.WithField("batches", len(allBatches)).Debug("reverifying")
+
+	if len(allBatches) == 0 {
+		return VerificationResult{true, ""}, nil
 	}
 
-	if len(mismatchedPks) > 0 {
-		pkStrings := make([]string, len(mismatchedPks))
-		for idx, pk := range mismatchedPks {
-			pkStrings[idx] = strconv.FormatUint(pk, 10)
+	erroredOrFailed := errors.New("reverify errored or failed")
+
+	pool := &WorkerPool{
+		Concurrency: v.Concurrency,
+		Process: func(reverifyBatchIndex int) (interface{}, error) {
+			reverifyBatch := allBatches[reverifyBatchIndex]
+			table := v.TableSchemaCache.Get(reverifyBatch.Table.SchemaName, reverifyBatch.Table.TableName)
+
+			var tag string
+			if v.beforeCutoverVerifyDone {
+				tag = "iterative_verifier_during_cutover"
+			} else {
+				tag = "iterative_verifier_before_cutover"
+			}
+
+			metrics.Count("RowEvent", int64(len(reverifyBatch.Pks)), []MetricTag{
+				MetricTag{"table", table.Name},
+				MetricTag{"source", tag},
+			}, 1.0)
+
+			v.logger.WithFields(logrus.Fields{
+				"table":    table.String(),
+				"len(pks)": len(reverifyBatch.Pks),
+			}).Debug("received pk batch to reverify")
+
+			verificationResult, mismatchedPks, err := v.reverifyPks(table, reverifyBatch.Pks)
+			resultAndErr := verificationResultAndError{verificationResult, err}
+
+			// If we haven't entered the cutover phase yet, then reverification failures
+			// could have been caused by ongoing writes. We will just re-add the rows for
+			// the cutover verification and ignore the failure at this point here.
+			if err != nil && !v.beforeCutoverVerifyDone {
+				for _, pk := range mismatchedPks {
+					v.reverifyStore.Add(ReverifyEntry{Pk: pk, Table: table})
+				}
+
+				resultAndErr.Result = VerificationResult{true, ""}
+			}
+
+			if resultAndErr.ErroredOrFailed() {
+				if resultAndErr.Error != nil {
+					v.logger.WithError(resultAndErr.Error).Error("error occured in reverification")
+				} else {
+					v.logger.Errorf("failed reverification: %s", resultAndErr.Result.Message)
+				}
+
+				return resultAndErr, erroredOrFailed
+			}
+
+			return resultAndErr, nil
+		},
+	}
+
+	results, _ := pool.Run(len(allBatches))
+
+	var result VerificationResult
+	var err error
+	for i := 0; i < v.Concurrency; i++ {
+		if results[i] == nil {
+			// This means the worker pool exited early and another goroutine
+			// must have returned an error.
+			continue
 		}
 
-		return VerificationResult{
-			DataCorrect: false,
-			Message:     fmt.Sprintf("verification failed on table: %s for pks: %s", table.String(), strings.Join(pkStrings, ",")),
-		}, nil
+		resultAndErr := results[i].(verificationResultAndError)
+		result = resultAndErr.Result
+		err = resultAndErr.Error
+
+		if resultAndErr.ErroredOrFailed() {
+			break
+		}
 	}
 
-	return VerificationResult{true, ""}, nil
+	return result, err
 }
 
-func (v *IterativeVerifier) consumeReverifyChan() {
-	for {
-		entry, open := <-v.reverifyChan
-		if !open {
-			return
-		}
-
-		v.reverifyStore.Add(entry)
+func (v *IterativeVerifier) reverifyPks(table *schema.Table, pks []uint64) (VerificationResult, []uint64, error) {
+	mismatchedPks, err := v.compareFingerprints(pks, table)
+	if err != nil {
+		return VerificationResult{}, mismatchedPks, err
 	}
+
+	if len(mismatchedPks) == 0 {
+		return VerificationResult{true, ""}, mismatchedPks, nil
+	}
+
+	pkStrings := make([]string, len(mismatchedPks))
+	for idx, pk := range mismatchedPks {
+		pkStrings[idx] = strconv.FormatUint(pk, 10)
+	}
+
+	return VerificationResult{
+		DataCorrect: false,
+		Message:     fmt.Sprintf("verification failed on table: %s for pks: %s", table.String(), strings.Join(pkStrings, ",")),
+	}, mismatchedPks, nil
 }
 
 func (v *IterativeVerifier) binlogEventListener(evs []DMLEvent) error {
@@ -437,7 +458,7 @@ func (v *IterativeVerifier) binlogEventListener(evs []DMLEvent) error {
 			return err
 		}
 
-		v.reverifyChan <- ReverifyEntry{Pk: pk, Table: ev.TableSchema()}
+		v.reverifyStore.Add(ReverifyEntry{Pk: pk, Table: ev.TableSchema()})
 	}
 
 	return nil
