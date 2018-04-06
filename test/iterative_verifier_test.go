@@ -23,6 +23,7 @@ type IterativeVerifierTestSuite struct {
 func (t *IterativeVerifierTestSuite) SetupTest() {
 	t.GhostferryUnitTestSuite.SetupTest()
 	t.SeedSourceDB(0)
+	t.SeedTargetDB(0)
 
 	t.verifier = &ghostferry.IterativeVerifier{
 		CursorConfig: &ghostferry.CursorConfig{
@@ -51,6 +52,34 @@ func (t *IterativeVerifierTestSuite) TearDownTest() {
 func (t *IterativeVerifierTestSuite) TestNothingToVerify() {
 	err := t.verifier.VerifyBeforeCutover()
 	t.Require().Nil(err)
+
+	result, err := t.verifier.VerifyDuringCutover()
+	t.Require().Nil(err)
+	t.Require().True(result.DataCorrect)
+	t.Require().Equal("", result.Message)
+}
+
+func (t *IterativeVerifierTestSuite) TestBeforeCutoverFailuresFailAgainDuringCutover() {
+	t.InsertRowInDb(42, "foo", t.Ferry.SourceDB)
+	t.InsertRowInDb(42, "bar", t.Ferry.TargetDB)
+
+	err := t.verifier.VerifyBeforeCutover()
+	t.Require().Nil(err)
+
+	result, err := t.verifier.VerifyDuringCutover()
+	t.Require().Nil(err)
+	t.Require().False(result.DataCorrect)
+	t.Require().Equal("verification failed on table: gftest.test_table_1 for pks: 42", result.Message)
+}
+
+func (t *IterativeVerifierTestSuite) TestBeforeCutoverFailuresPassDuringCutover() {
+	t.InsertRowInDb(42, "foo", t.Ferry.SourceDB)
+	t.InsertRowInDb(42, "bar", t.Ferry.TargetDB)
+
+	err := t.verifier.VerifyBeforeCutover()
+	t.Require().Nil(err)
+
+	t.UpdateRowInDb(42, "foo", t.Ferry.TargetDB)
 
 	result, err := t.verifier.VerifyDuringCutover()
 	t.Require().Nil(err)
@@ -153,12 +182,20 @@ func (t *IterativeVerifierTestSuite) TestNULLValues() {
 }
 
 func (t *IterativeVerifierTestSuite) InsertRow(id int, data string) {
-	_, err := t.db.Exec(fmt.Sprintf("INSERT INTO %s.%s VALUES (%d,\"%s\")", testhelpers.TestSchemaName, testhelpers.TestTable1Name, id, data))
+	t.InsertRowInDb(id, data, t.db)
+}
+
+func (t *IterativeVerifierTestSuite) InsertRowInDb(id int, data string, db *sql.DB) {
+	_, err := db.Exec(fmt.Sprintf("INSERT INTO %s.%s VALUES (%d,\"%s\")", testhelpers.TestSchemaName, testhelpers.TestTable1Name, id, data))
 	t.Require().Nil(err)
 }
 
 func (t *IterativeVerifierTestSuite) UpdateRow(id int, data string) {
-	_, err := t.db.Exec(fmt.Sprintf("UPDATE %s.%s SET data=\"%s\" WHERE id=%d", testhelpers.TestSchemaName, testhelpers.TestTable1Name, data, id))
+	t.UpdateRowInDb(id, data, t.db)
+}
+
+func (t *IterativeVerifierTestSuite) UpdateRowInDb(id int, data string, db *sql.DB) {
+	_, err := db.Exec(fmt.Sprintf("UPDATE %s.%s SET data=\"%s\" WHERE id=%d", testhelpers.TestSchemaName, testhelpers.TestTable1Name, data, id))
 	t.Require().Nil(err)
 }
 
