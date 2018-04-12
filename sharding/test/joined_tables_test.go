@@ -6,19 +6,19 @@ import (
 	"testing"
 	"time"
 
-	rtesthelpers "github.com/Shopify/ghostferry/reloc/testhelpers"
+	rtesthelpers "github.com/Shopify/ghostferry/sharding/testhelpers"
 	"github.com/Shopify/ghostferry/testhelpers"
 	"github.com/stretchr/testify/suite"
 )
 
 type JoinedTablesTestSuite struct {
-	*rtesthelpers.RelocUnitTestSuite
+	*rtesthelpers.ShardingUnitTestSuite
 
 	DataWriter testhelpers.DataWriter
 }
 
 func (t *JoinedTablesTestSuite) SetupTest() {
-	t.RelocUnitTestSuite.SetupTest()
+	t.ShardingUnitTestSuite.SetupTest()
 
 	t.DataWriter = &testhelpers.MixedActionDataWriter{
 		ProbabilityOfInsert: 1.0,
@@ -45,7 +45,7 @@ func (t *JoinedTablesTestSuite) SetupTest() {
 }
 
 func (t *JoinedTablesTestSuite) TearDownTest() {
-	t.RelocUnitTestSuite.TearDownTest()
+	t.ShardingUnitTestSuite.TearDownTest()
 }
 
 func (t *JoinedTablesTestSuite) TestJoinedTablesWithDataWriter() {
@@ -87,5 +87,5 @@ func (t *JoinedTablesTestSuite) TestJoinedTablesWithDataWriter() {
 }
 
 func TestJoinedTablesTestSuite(t *testing.T) {
-	suite.Run(t, &JoinedTablesTestSuite{RelocUnitTestSuite: &rtesthelpers.RelocUnitTestSuite{}})
+	suite.Run(t, &JoinedTablesTestSuite{ShardingUnitTestSuite: &rtesthelpers.ShardingUnitTestSuite{}})
 }

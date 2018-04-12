@@ -1,4 +1,4 @@
-package reloc
+package sharding
 
 import (
 	"bytes"
@@ -34,7 +34,7 @@ func postCallback(client *http.Client, uri string, body interface{}) error {
 	}
 
 	logger := logrus.WithFields(logrus.Fields{
-		"tag": "reloc-http",
+		"tag": "sharding-http",
 		"uri": uri,
 	})
 

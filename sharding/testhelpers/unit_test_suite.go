@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 
 	"github.com/Shopify/ghostferry"
-	"github.com/Shopify/ghostferry/reloc"
+	"github.com/Shopify/ghostferry/sharding"
 	"github.com/Shopify/ghostferry/testhelpers"
 
 	"github.com/stretchr/testify/suite"
@@ -25,21 +25,21 @@ const (
 	shardingValue   = 2
 )
 
-type RelocUnitTestSuite struct {
+type ShardingUnitTestSuite struct {
 	suite.Suite
 	server      *httptest.Server
 	metricsSink chan interface{}
 	metrics     *ghostferry.Metrics
 
-	Ferry  *reloc.RelocFerry
-	Config *reloc.Config
+	Ferry  *sharding.ShardingFerry
+	Config *sharding.Config
 
 	CutoverLock   func(http.ResponseWriter, *http.Request)
 	CutoverUnlock func(http.ResponseWriter, *http.Request)
 	ErrorCallback func(http.ResponseWriter, *http.Request)
 }
 
-func (t *RelocUnitTestSuite) SetupSuite() {
+func (t *ShardingUnitTestSuite) SetupSuite() {
 	t.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/unlock":
@@ -60,15 +60,15 @@ func (t *RelocUnitTestSuite) SetupSuite() {
 	}))
 }
 
-func (t *RelocUnitTestSuite) TearDownSuite() {
+func (t *ShardingUnitTestSuite) TearDownSuite() {
 	t.server.Close()
 }
 
-func (t *RelocUnitTestSuite) SetupTest() {
+func (t *ShardingUnitTestSuite) SetupTest() {
 	t.metricsSink = make(chan interface{}, 1024)
-	reloc.SetGlobalMetrics("reloc_test", t.metricsSink)
+	sharding.SetGlobalMetrics("sharding_test", t.metricsSink)
 
-	t.setupRelocFerry()
+	t.setupShardingFerry()
 	t.dropTestDbs()
 
 	testhelpers.SeedInitialData(t.Ferry.Ferry.SourceDB, sourceDbName, testTable, 1000)
@@ -93,11 +93,11 @@ func (t *RelocUnitTestSuite) SetupTest() {
 	testhelpers.SeedInitialData(t.Ferry.Ferry.TargetDB, targetDbName, primaryKeyTable, 0)
 }
 
-func (t *RelocUnitTestSuite) TearDownTest() {
+func (t *ShardingUnitTestSuite) TearDownTest() {
 	t.dropTestDbs()
 }
 
-func (t *RelocUnitTestSuite) AssertTenantCopied() {
+func (t *ShardingUnitTestSuite) AssertTenantCopied() {
 	testhelpers.AssertTwoQueriesHaveEqualResult(
 		t.T(),
 		t.Ferry.Ferry,
@@ -106,10 +106,10 @@ func (t *RelocUnitTestSuite) AssertTenantCopied() {
 	)
 }
 
-func (t *RelocUnitTestSuite) setupRelocFerry() {
+func (t *ShardingUnitTestSuite) setupShardingFerry() {
 	ghostferryConfig := testhelpers.NewTestConfig()
 
-	t.Config = &reloc.Config{
+	t.Config = &sharding.Config{
 		Config: ghostferryConfig,
 
 		ShardingKey:   shardingKey,
@@ -118,38 +118,38 @@ func (t *RelocUnitTestSuite) setupRelocFerry() {
 		SourceDB: sourceDbName,
 		TargetDB: targetDbName,
 
-		JoinedTables: map[string][]reloc.JoinTable{
-			joinedTableName: []reloc.JoinTable{
+		JoinedTables: map[string][]sharding.JoinTable{
+			joinedTableName: []sharding.JoinTable{
 				{TableName: joinTableName, JoinColumn: joiningKey},
 			},
 		},
 
 		PrimaryKeyTables: []string{primaryKeyTable},
 
-		CutoverLock: reloc.HTTPCallback{
+		CutoverLock: sharding.HTTPCallback{
 			URI:     fmt.Sprintf("%s/lock", t.server.URL),
 			Payload: "test_lock",
 		},
 
-		CutoverUnlock: reloc.HTTPCallback{
+		CutoverUnlock: sharding.HTTPCallback{
 			URI:     fmt.Sprintf("%s/unlock", t.server.URL),
 			Payload: "test_unlock",
 		},
 
-		ErrorCallback: reloc.HTTPCallback{
+		ErrorCallback: sharding.HTTPCallback{
 			URI: fmt.Sprintf("%s/error", t.server.URL),
 		},
 	}
 
 	var err error
-	t.Ferry, err = reloc.NewFerry(t.Config)
+	t.Ferry, err = sharding.NewFerry(t.Config)
 	t.Require().Nil(err)
 
 	err = t.Ferry.Initialize()
 	t.Require().Nil(err)
 }
 
-func (t *RelocUnitTestSuite) dropTestDbs() {
+func (t *ShardingUnitTestSuite) dropTestDbs() {
 	_, err := t.Ferry.Ferry.SourceDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", sourceDbName))
 	t.Require().Nil(err)
 

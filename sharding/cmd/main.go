@@ -8,14 +8,14 @@ import (
 	"os"
 
 	"github.com/Shopify/ghostferry"
-	"github.com/Shopify/ghostferry/reloc"
+	"github.com/Shopify/ghostferry/sharding"
 )
 
 var configPath string
 var printVersion bool
 
 func usage() {
-	fmt.Printf("reloc built with ghostferry %s\n", ghostferry.VersionString)
+	fmt.Printf("ghostferry-sharding built with ghostferry %s\n", ghostferry.VersionString)
 	fmt.Println()
 	fmt.Printf("Usage: %s < conf.json \n", os.Args[0])
 	fmt.Printf("    or %s -config-path conf.json \n", os.Args[0])
@@ -38,15 +38,15 @@ func main() {
 
 	config := parseConfig()
 
-	fmt.Printf("reloc built with ghostferry %s\n", ghostferry.VersionString)
+	fmt.Printf("ghostferry-sharding built with ghostferry %s\n", ghostferry.VersionString)
 	fmt.Printf("will move tenant %s=%d\n", config.ShardingKey, config.ShardingValue)
 
-	err := reloc.InitializeMetrics("reloc", config)
+	err := sharding.InitializeMetrics("sharding", config)
 	if err != nil {
 		errorAndExit(fmt.Sprintf("failed to initialize metrics: %v", err))
 	}
 
-	ferry, err := reloc.NewFerry(config)
+	ferry, err := sharding.NewFerry(config)
 	if err != nil {
 		errorAndExit(fmt.Sprintf("failed to create ferry: %v", err))
 	}
@@ -63,7 +63,7 @@ func main() {
 
 	ferry.Run()
 
-	reloc.StopAndFlushMetrics()
+	sharding.StopAndFlushMetrics()
 }
 
 func errorAndExit(msg string) {
@@ -71,8 +71,8 @@ func errorAndExit(msg string) {
 	os.Exit(1)
 }
 
-func parseConfig() *reloc.Config {
-	config := &reloc.Config{
+func parseConfig() *sharding.Config {
+	config := &sharding.Config{
 		Config: &ghostferry.Config{AutomaticCutover: true},
 
 		ShardingValue: -1,

@@ -1,4 +1,4 @@
-package reloc
+package sharding
 
 import (
 	"github.com/Shopify/ghostferry"

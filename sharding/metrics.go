@@ -1,4 +1,4 @@
-package reloc
+package sharding
 
 import (
 	"fmt"
@@ -74,6 +74,6 @@ func tagsToStrings(tags []ghostferry.MetricTag) []string {
 
 func handleErr(err error, metric interface{}) {
 	if err != nil {
-		fmt.Println("reloc could not emit statsd metric ", metric)
+		fmt.Println("ghostferry-sharding could not emit statsd metric ", metric)
 	}
 }
