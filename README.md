@@ -15,38 +15,15 @@ database from one machine to another.
 Overview of How it Works
 ------------------------
 
-Ghostferry has a bunch of components that enables it to copy data.
+An overview of Ghostferry's high-level design is expressed in the TLA+
+specification, under the `tlaplus` directory. It maybe good to consult with
+that as it has a concise definition. However, the specification might not be
+entirely correct as proofs remain elusive.
 
-### BinlogStreamer ###
+On a high-level, Ghostferry is broken into several components, enabling it to
+copy data. This is detailed in docs/source/technicaloverview.rst.
 
-The `BinlogStreamer` streams the binlog of the source database. A filter can be
-given to it to filter for only certain binlog events that are received.
-
-### DataIterator ###
-
-The DataIterator iterates through tables on the source database. It does so by
-reading the primary key from the smallest entry to the maximum entry in
-batches. A custom `WHERE` can be given to only select some entries from the
-database for copying.
-
-### Ferry (Overall Coordinator) ###
-
-`Ferry` coordinates the overall run of Ghostferry. It starts and manages the
-BinlogStreamer and the DataIterator. 
-
-It also stores the current position of the run in a local database so it can
-be resumed upon a restart. 
-
-Ferry serves as a proxy to DataIterator and BinlogStreamer as one should not
-directly invoke the DataIterator and BinlogStreamer.
-
-### ControlServer ###
-
-The ControlerServer exposes the progress of the copy and exposes methods to
-throttle/pause/resume/stop the data copying and binlog streaming process. This
-provides the controls necessary for a human operator to manually throttle the
-copying operation. Additionally, it provides the control interface for stopping
-the binlog streaming process after the final cut over steps are performed.
+A more detailed documentation is coming soon.
 
 Development Setup
 -----------------
@@ -55,7 +32,7 @@ Install:
 
 - Have Docker installed
 - Clone the repo
-- `dev up`
+- `docker-compose up -d mysql-1 mysql-2`
 
 Run tests:
 
