@@ -3,24 +3,24 @@ package test
 import (
 	"testing"
 
-	rth "github.com/Shopify/ghostferry/reloc/testhelpers"
+	rth "github.com/Shopify/ghostferry/sharding/testhelpers"
 	"github.com/Shopify/ghostferry/testhelpers"
 	"github.com/stretchr/testify/suite"
 )
 
 type PrimaryKeyTableTestSuite struct {
-	*rth.RelocUnitTestSuite
+	*rth.ShardingUnitTestSuite
 }
 
 func (t *PrimaryKeyTableTestSuite) SetupTest() {
-	t.RelocUnitTestSuite.SetupTest()
+	t.ShardingUnitTestSuite.SetupTest()
 
 	err := t.Ferry.Start()
 	t.Require().Nil(err)
 }
 
 func (t *PrimaryKeyTableTestSuite) TearDownTest() {
-	t.RelocUnitTestSuite.TearDownTest()
+	t.ShardingUnitTestSuite.TearDownTest()
 }
 
 func (t *PrimaryKeyTableTestSuite) TestPrimaryKeyTableWithDataWriter() {
@@ -37,5 +37,5 @@ func (t *PrimaryKeyTableTestSuite) TestPrimaryKeyTableWithDataWriter() {
 }
 
 func TestPrimaryKeyTableTestSuite(t *testing.T) {
-	suite.Run(t, &PrimaryKeyTableTestSuite{RelocUnitTestSuite: &rth.RelocUnitTestSuite{}})
+	suite.Run(t, &PrimaryKeyTableTestSuite{ShardingUnitTestSuite: &rth.ShardingUnitTestSuite{}})
 }

@@ -1,4 +1,4 @@
-package reloc
+package sharding
 
 import (
 	"fmt"
@@ -12,14 +12,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type RelocFerry struct {
+type ShardingFerry struct {
 	Ferry    *ghostferry.Ferry
 	verifier *ghostferry.IterativeVerifier
 	config   *Config
 	logger   *logrus.Entry
 }
 
-func NewFerry(config *Config) (*RelocFerry, error) {
+func NewFerry(config *Config) (*ShardingFerry, error) {
 	var err error
 
 	config.DatabaseRewrites = map[string]string{config.SourceDB: config.TargetDB}
@@ -67,9 +67,9 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 		Throttler: throttler,
 	}
 
-	logger := logrus.WithField("tag", "reloc")
+	logger := logrus.WithField("tag", "sharding")
 
-	ferry.ErrorHandler = &RelocErrorHandler{
+	ferry.ErrorHandler = &ShardingErrorHandler{
 		ErrorHandler: &ghostferry.PanicErrorHandler{
 			Ferry: ferry,
 		},
@@ -77,18 +77,18 @@ func NewFerry(config *Config) (*RelocFerry, error) {
 		Logger:        logger,
 	}
 
-	return &RelocFerry{
+	return &ShardingFerry{
 		Ferry:  ferry,
 		config: config,
 		logger: logger,
 	}, nil
 }
 
-func (r *RelocFerry) Initialize() error {
+func (r *ShardingFerry) Initialize() error {
 	return r.Ferry.Initialize()
 }
 
-func (r *RelocFerry) Start() error {
+func (r *ShardingFerry) Start() error {
 	err := r.Ferry.Start()
 	if err != nil {
 		return err
@@ -125,7 +125,7 @@ func (r *RelocFerry) Start() error {
 	return r.verifier.Initialize()
 }
 
-func (r *RelocFerry) Run() {
+func (r *ShardingFerry) Run() {
 	copyWG := &sync.WaitGroup{}
 	copyWG.Add(1)
 	go func() {
@@ -139,7 +139,7 @@ func (r *RelocFerry) Run() {
 		err := r.verifier.VerifyBeforeCutover()
 		if err != nil {
 			r.logger.WithField("error", err).Errorf("pre-cutover verification encountered an error, aborting run")
-			r.Ferry.ErrorHandler.Fatal("reloc", err)
+			r.Ferry.ErrorHandler.Fatal("sharding", err)
 		}
 	})
 
@@ -158,7 +158,7 @@ func (r *RelocFerry) Run() {
 	})
 	if err != nil {
 		r.logger.WithField("error", err).Errorf("locking failed, aborting run")
-		r.Ferry.ErrorHandler.Fatal("reloc", err)
+		r.Ferry.ErrorHandler.Fatal("sharding", err)
 	}
 
 	r.Ferry.Throttler.SetDisabled(true)
@@ -171,7 +171,7 @@ func (r *RelocFerry) Run() {
 	})
 	if err != nil {
 		r.logger.WithField("error", err).Errorf("failed to delta-copy joined tables after locking")
-		r.Ferry.ErrorHandler.Fatal("reloc", err)
+		r.Ferry.ErrorHandler.Fatal("sharding", err)
 	}
 
 	var verificationResult ghostferry.VerificationResult
@@ -194,13 +194,13 @@ func (r *RelocFerry) Run() {
 	})
 	if err != nil {
 		r.logger.WithField("error", err).Errorf("unlocking failed, aborting run")
-		r.Ferry.ErrorHandler.Fatal("reloc", err)
+		r.Ferry.ErrorHandler.Fatal("sharding", err)
 	}
 
 	metrics.Timer("CutoverTime", time.Since(cutoverStart), nil, 1.0)
 }
 
-func (r *RelocFerry) deltaCopyJoinedTables() error {
+func (r *ShardingFerry) deltaCopyJoinedTables() error {
 	tables := []*schema.Table{}
 
 	for _, table := range r.Ferry.Tables {

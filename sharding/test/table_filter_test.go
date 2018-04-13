@@ -4,13 +4,13 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/Shopify/ghostferry/reloc"
+	"github.com/Shopify/ghostferry/sharding"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestShardedTableFilterSelectsSingleDatabase(t *testing.T) {
-	filter := &reloc.ShardedTableFilter{SourceShard: "shard_42", ShardingKey: "tenant_id"}
+	filter := &sharding.ShardedTableFilter{SourceShard: "shard_42", ShardingKey: "tenant_id"}
 	applicable, err := filter.ApplicableDatabases([]string{"shard_41", "shard_42", "shard_43"})
 	assert.Nil(t, err)
 	assert.Equal(t, []string{"shard_42"}, applicable)
@@ -21,7 +21,7 @@ func TestShardedTableFilterSelectsSingleDatabase(t *testing.T) {
 }
 
 func TestShardedTableFilterRejectsIgnoredTables(t *testing.T) {
-	filter := &reloc.ShardedTableFilter{
+	filter := &sharding.ShardedTableFilter{
 		SourceShard: "shard_42",
 		ShardingKey: "tenant_id",
 		IgnoredTables: []*regexp.Regexp{
@@ -53,7 +53,7 @@ func TestShardedTableFilterRejectsIgnoredTables(t *testing.T) {
 }
 
 func TestShardedTableFilterSelectsTablesWithShardingKey(t *testing.T) {
-	filter := &reloc.ShardedTableFilter{SourceShard: "shard_42", ShardingKey: "tenant_id"}
+	filter := &sharding.ShardedTableFilter{SourceShard: "shard_42", ShardingKey: "tenant_id"}
 
 	tables := []*schema.Table{
 		{Schema: "shard_42", Name: "table1", Columns: []schema.TableColumn{{Name: "id"}}},
@@ -68,10 +68,10 @@ func TestShardedTableFilterSelectsTablesWithShardingKey(t *testing.T) {
 }
 
 func TestShardedTableFilterSelectsJoinedTables(t *testing.T) {
-	filter := &reloc.ShardedTableFilter{
+	filter := &sharding.ShardedTableFilter{
 		SourceShard:  "shard_42",
 		ShardingKey:  "tenant_id",
-		JoinedTables: map[string][]reloc.JoinTable{"table2": nil},
+		JoinedTables: map[string][]sharding.JoinTable{"table2": nil},
 	}
 
 	tables := []*schema.Table{

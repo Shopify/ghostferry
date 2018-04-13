@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/Shopify/ghostferry/reloc"
-	rtesthelpers "github.com/Shopify/ghostferry/reloc/testhelpers"
+	"github.com/Shopify/ghostferry/sharding"
+	rtesthelpers "github.com/Shopify/ghostferry/sharding/testhelpers"
 	"github.com/Shopify/ghostferry/testhelpers"
 
 	"github.com/sirupsen/logrus"
@@ -15,18 +15,18 @@ import (
 )
 
 type CallbacksTestSuite struct {
-	*rtesthelpers.RelocUnitTestSuite
+	*rtesthelpers.ShardingUnitTestSuite
 
 	errHandler testhelpers.ErrorHandler
 }
 
 func (t *CallbacksTestSuite) SetupTest() {
-	t.RelocUnitTestSuite.SetupTest()
+	t.ShardingUnitTestSuite.SetupTest()
 
-	t.Ferry.Ferry.ErrorHandler = &reloc.RelocErrorHandler{
+	t.Ferry.Ferry.ErrorHandler = &sharding.ShardingErrorHandler{
 		ErrorHandler:  &t.errHandler,
 		ErrorCallback: t.Config.ErrorCallback,
-		Logger:        logrus.WithField("tag", "reloc"),
+		Logger:        logrus.WithField("tag", "sharding"),
 	}
 
 	err := t.Ferry.Start()
@@ -34,7 +34,7 @@ func (t *CallbacksTestSuite) SetupTest() {
 }
 
 func (t *CallbacksTestSuite) TearDownTest() {
-	t.RelocUnitTestSuite.TearDownTest()
+	t.ShardingUnitTestSuite.TearDownTest()
 }
 
 func (t *CallbacksTestSuite) TestFailsRunOnUnlockError() {
@@ -134,5 +134,5 @@ func (t *CallbacksTestSuite) requestMap(r *http.Request) map[string]string {
 }
 
 func TestCallbacksTestSuite(t *testing.T) {
-	suite.Run(t, &CallbacksTestSuite{RelocUnitTestSuite: &rtesthelpers.RelocUnitTestSuite{}})
+	suite.Run(t, &CallbacksTestSuite{ShardingUnitTestSuite: &rtesthelpers.ShardingUnitTestSuite{}})
 }

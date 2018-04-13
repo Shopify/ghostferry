@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/Shopify/ghostferry"
-	"github.com/Shopify/ghostferry/reloc"
+	"github.com/Shopify/ghostferry/sharding"
 
 	"github.com/siddontang/go-mysql/replication"
 	"github.com/siddontang/go-mysql/schema"
@@ -20,7 +20,7 @@ type CopyFilterTestSuite struct {
 
 	normalTable, joinedTable, pkTable *schema.Table
 
-	filter *reloc.ShardedCopyFilter
+	filter *sharding.ShardedCopyFilter
 }
 
 func (t *CopyFilterTestSuite) SetupTest() {
@@ -54,12 +54,12 @@ func (t *CopyFilterTestSuite) SetupTest() {
 		PKColumns: []int{0},
 	}
 
-	t.filter = &reloc.ShardedCopyFilter{
+	t.filter = &sharding.ShardedCopyFilter{
 		ShardingKey:   "tenant_id",
 		ShardingValue: t.shardingValue,
 
-		JoinedTables: map[string][]reloc.JoinTable{
-			"joinedtable": []reloc.JoinTable{
+		JoinedTables: map[string][]sharding.JoinTable{
+			"joinedtable": []sharding.JoinTable{
 				{TableName: "join1", JoinColumn: "joined_pk1"},
 				{TableName: "join2", JoinColumn: "joined_pk2"},
 			},
@@ -108,7 +108,7 @@ func (t *CopyFilterTestSuite) TestSelectsJoinedTables() {
 
 	sql, args, err := selectBuilder.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`joinedtable` WHERE `joined_pk` IN (SELECT * FROM (SELECT `joined_pk1` AS reloc_join_alias FROM `shard_1`.`join1` WHERE `tenant_id` = ? AND `joined_pk1` > ? UNION DISTINCT SELECT `joined_pk2` AS reloc_join_alias FROM `shard_1`.`join2` WHERE `tenant_id` = ? AND `joined_pk2` > ? ORDER BY reloc_join_alias LIMIT 1024) AS reloc_join_table) ORDER BY `joined_pk`", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`joinedtable` WHERE `joined_pk` IN (SELECT * FROM (SELECT `joined_pk1` AS sharding_join_alias FROM `shard_1`.`join1` WHERE `tenant_id` = ? AND `joined_pk1` > ? UNION DISTINCT SELECT `joined_pk2` AS sharding_join_alias FROM `shard_1`.`join2` WHERE `tenant_id` = ? AND `joined_pk2` > ? ORDER BY sharding_join_alias LIMIT 1024) AS sharding_join_table) ORDER BY `joined_pk`", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.pkCursor, t.shardingValue, t.pkCursor}, args)
 }
 

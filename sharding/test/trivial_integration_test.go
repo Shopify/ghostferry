@@ -5,7 +5,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/Shopify/ghostferry/reloc"
+	"github.com/Shopify/ghostferry/sharding"
 	"github.com/Shopify/ghostferry/testhelpers"
 	"github.com/stretchr/testify/assert"
 )
@@ -21,12 +21,12 @@ func setupSingleTableDatabase(f *testhelpers.TestFerry) {
 func selectiveFerry(shardingValue interface{}) *testhelpers.TestFerry {
 	ferry := testhelpers.NewTestFerry()
 
-	ferry.Config.CopyFilter = &reloc.ShardedCopyFilter{
+	ferry.Config.CopyFilter = &sharding.ShardedCopyFilter{
 		ShardingKey:   "tenant_id",
 		ShardingValue: shardingValue,
 	}
 
-	ferry.Config.TableFilter = &reloc.ShardedTableFilter{
+	ferry.Config.TableFilter = &sharding.ShardedTableFilter{
 		ShardingKey: "tenant_id",
 		SourceShard: "gftest",
 	}

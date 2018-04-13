@@ -1,4 +1,4 @@
-package reloc
+package sharding
 
 import (
 	"encoding/json"
@@ -8,13 +8,13 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type RelocErrorHandler struct {
+type ShardingErrorHandler struct {
 	ghostferry.ErrorHandler
 	ErrorCallback HTTPCallback
 	Logger        *logrus.Entry
 }
 
-func (this *RelocErrorHandler) Fatal(from string, err error) {
+func (this *ShardingErrorHandler) Fatal(from string, err error) {
 	client := &http.Client{}
 
 	errorData := make(map[string]string)
@@ -23,13 +23,13 @@ func (this *RelocErrorHandler) Fatal(from string, err error) {
 
 	errorDataBytes, jsonErr := json.MarshalIndent(errorData, "", "  ")
 	if jsonErr != nil {
-		this.Logger.WithField("error", jsonErr).Errorf("reloc failed to marshal error data")
+		this.Logger.WithField("error", jsonErr).Errorf("ghostferry-sharding failed to marshal error data")
 	} else {
 		this.ErrorCallback.Payload = string(errorDataBytes)
 
 		postErr := this.ErrorCallback.Post(client)
 		if postErr != nil {
-			this.Logger.WithField("error", postErr).Errorf("reloc failed to notify error")
+			this.Logger.WithField("error", postErr).Errorf("ghostferry-sharding failed to notify error")
 		}
 	}
 

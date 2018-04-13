@@ -1,4 +1,4 @@
-package reloc
+package sharding
 
 import (
 	"fmt"
@@ -101,16 +101,16 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *schema.Table, l
 	var args []interface{}
 
 	for _, joinTable := range joinTables {
-		pattern := "SELECT `%s` AS reloc_join_alias FROM `%s`.`%s` WHERE `%s` = ? AND `%s` > ?"
+		pattern := "SELECT `%s` AS sharding_join_alias FROM `%s`.`%s` WHERE `%s` = ? AND `%s` > ?"
 		sql := fmt.Sprintf(pattern, joinTable.JoinColumn, table.Schema, joinTable.TableName, f.ShardingKey, joinTable.JoinColumn)
 		clauses = append(clauses, sql)
 		args = append(args, f.ShardingValue, lastPk)
 	}
 
 	subquery := strings.Join(clauses, " UNION DISTINCT ")
-	subquery += " ORDER BY reloc_join_alias LIMIT " + strconv.FormatUint(batchSize, 10)
+	subquery += " ORDER BY sharding_join_alias LIMIT " + strconv.FormatUint(batchSize, 10)
 
-	condition := fmt.Sprintf("%s IN (SELECT * FROM (%s) AS reloc_join_table)", quotedPK, subquery)
+	condition := fmt.Sprintf("%s IN (SELECT * FROM (%s) AS sharding_join_table)", quotedPK, subquery)
 
 	return sq.Select(columns...).
 		From(quotedTable).
@@ -123,7 +123,7 @@ func (f *ShardedCopyFilter) shardingKeyIndexHint(table *schema.Table) string {
 		return "USE INDEX (`" + indexName + "`)"
 	} else {
 		if _, logged := f.missingShardingKeyIndexLogged.Load(table.Name); !logged {
-			log.WithFields(log.Fields{"tag": "reloc", "table": table.Name}).Warnf("missing suitable index")
+			log.WithFields(log.Fields{"tag": "sharding", "table": table.Name}).Warnf("missing suitable index")
 			metrics.Count("MissingShardingKeyIndex", 1, []ghostferry.MetricTag{{"table", table.Name}}, 1.0)
 			f.missingShardingKeyIndexLogged.Store(table.Name, true)
 		}

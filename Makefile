@@ -16,7 +16,7 @@ SHARE_DIR       := usr/share/ghostferry
 BIN_DIR         := usr/bin
 
 # Targets
-PROJECTS        := copydb reloc
+PROJECTS        := copydb sharding
 PROJECT_DEBS    := $(foreach name,$(PROJECTS),$(name)-deb)
 
 # Target specific variable, set proj to have a valid value.
@@ -28,7 +28,7 @@ DEB_TARGET       = $(BUILD_DIR)/$(PROJECT_BIN)_$(VERSION_STR).deb
 .PHONY: test clean reset-deb-dir $(PROJECTS) $(PROJECT_DEBS)
 .DEFAULT_GOAL := test
 
-$(PROJECTS): $(GOBIN) $(SOURCES) 
+$(PROJECTS): $(GOBIN) $(SOURCES)
 	$(eval proj := $@)
 	go build -i -ldflags "$(LDFLAGS)" -o $(BIN_TARGET) $(PROJECT_PKG)
 
@@ -36,8 +36,10 @@ $(PROJECT_DEBS): LDFLAGS += -X github.com/Shopify/ghostferry.WebUiBasedir=/$(SHA
 $(PROJECT_DEBS): reset-deb-dir
 	$(eval proj := $(subst -deb,,$@))
 	sed -e "s/{version}/$(VERSION_STR)/" $(proj)/debian/control > $(DEB_PREFIX)/DEBIAN/control
+	cp $(proj)/debian/copyright $(DEB_PREFIX)/DEBIAN/copyright
 	go build -ldflags "$(LDFLAGS)" -o $(DEB_PREFIX)/$(BIN_DIR)/$(PROJECT_BIN) $(PROJECT_PKG)
 	cp -ar webui $(DEB_PREFIX)/$(SHARE_DIR)
+	if [ -d $(proj)/debian/files ]; then cp -ar $(proj)/debian/files/* $(DEB_PREFIX)/; fi
 	dpkg-deb -b $(DEB_PREFIX) $(DEB_TARGET)
 
 $(GOBIN):
