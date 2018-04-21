@@ -18,12 +18,12 @@ func setupSingleTableDatabase(f *testhelpers.TestFerry) {
 	testhelpers.AddTenantID(f.TargetDB, "gftest", "table1", 3)
 }
 
-func selectiveFerry(shardingValue interface{}) *testhelpers.TestFerry {
+func selectiveFerry(tenantId interface{}) *testhelpers.TestFerry {
 	ferry := testhelpers.NewTestFerry()
 
 	ferry.Config.CopyFilter = &sharding.ShardedCopyFilter{
 		ShardingKey:   "tenant_id",
-		ShardingValue: shardingValue,
+		ShardingValue: tenantId,
 	}
 
 	ferry.Config.TableFilter = &sharding.ShardedTableFilter{

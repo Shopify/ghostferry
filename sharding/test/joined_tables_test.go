@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	rtesthelpers "github.com/Shopify/ghostferry/sharding/testhelpers"
+	sth "github.com/Shopify/ghostferry/sharding/testhelpers"
 	"github.com/Shopify/ghostferry/testhelpers"
 	"github.com/stretchr/testify/suite"
 )
 
 type JoinedTablesTestSuite struct {
-	*rtesthelpers.ShardingUnitTestSuite
+	*sth.ShardingUnitTestSuite
 
 	DataWriter testhelpers.DataWriter
 }
@@ -52,11 +52,10 @@ func (t *JoinedTablesTestSuite) TestJoinedTablesWithDataWriter() {
 	t.CutoverLock = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := t.Ferry.Ferry.SourceDB.Exec("SET GLOBAL read_only = ON")
 		t.Require().Nil(err)
-		time.Sleep(2 * time.Second)
 
 		t.DataWriter.Stop()
 		t.DataWriter.Wait()
-		time.Sleep(5 * time.Second)
+		time.Sleep(1 * time.Second)
 	})
 
 	go t.DataWriter.Run()
@@ -87,5 +86,5 @@ func (t *JoinedTablesTestSuite) TestJoinedTablesWithDataWriter() {
 }
 
 func TestJoinedTablesTestSuite(t *testing.T) {
-	suite.Run(t, &JoinedTablesTestSuite{ShardingUnitTestSuite: &rtesthelpers.ShardingUnitTestSuite{}})
+	suite.Run(t, &JoinedTablesTestSuite{ShardingUnitTestSuite: &sth.ShardingUnitTestSuite{}})
 }
