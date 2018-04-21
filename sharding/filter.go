@@ -218,7 +218,7 @@ func (s *ShardedTableFilter) ApplicableTables(tables []*schema.Table) (applicabl
 
 		if _, exists := s.PrimaryKeyTables[table.Name]; exists {
 			if len(table.PKColumns) != 1 {
-				return nil, fmt.Errorf("Multiple PK columns are not supported with the PrimaryKeyTables tables option")
+				return nil, fmt.Errorf("Multiple PK columns are not supported with the PrimaryKeyTables option")
 			}
 			applicable = append(applicable, table)
 		}

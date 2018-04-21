@@ -192,6 +192,26 @@ func (v *IterativeVerifier) Initialize() error {
 	return nil
 }
 
+func (v *IterativeVerifier) VerifyOnce() (VerificationResult, error) {
+	v.logger.Info("starting one-off verification of all tables")
+
+	err := v.iterateAllTables(func(pk uint64, tableSchema *schema.Table) error {
+		return VerificationResult{
+			DataCorrect: false,
+			Message:     fmt.Sprintf("verification failed on table: %s for pk: %d", tableSchema.String(), pk),
+		}
+	})
+
+	v.logger.Info("one-off verification complete")
+
+	switch e := err.(type) {
+	case VerificationResult:
+		return e, nil
+	default:
+		return VerificationResult{true, ""}, e
+	}
+}
+
 func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	v.logger.Info("starting pre-cutover verification")
 
@@ -199,7 +219,10 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	v.BinlogStreamer.AddEventListener(v.binlogEventListener)
 
 	v.logger.Debug("verifying all tables")
-	err := v.verifyAllTablesBeforeCutover()
+	err := v.iterateAllTables(func(pk uint64, tableSchema *schema.Table) error {
+		v.reverifyStore.Add(ReverifyEntry{Pk: pk, Table: tableSchema})
+		return nil
+	})
 
 	if err == nil {
 		// This reverification is to reduce the size of the set of rows
@@ -207,7 +230,7 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 		// reverification at this point could have been caused by still
 		// ongoing writes and we therefore just re-add those rows to the
 		// store rather than failing the move prematurely.
-		_, err = v.reverify()
+		_, err = v.verifyStore()
 	}
 
 	v.logger.Info("pre-cutover verification complete")
@@ -219,7 +242,7 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	v.logger.Info("starting verification during cutover")
 	v.verifyDuringCutoverStarted.Set(true)
-	result, err := v.reverify()
+	result, err := v.verifyStore()
 	v.logger.Info("cutover verification complete")
 
 	return result, err
@@ -270,7 +293,7 @@ func (v *IterativeVerifier) Result() (VerificationResultAndStatus, error) {
 	return v.verificationResultAndStatus, v.verificationErr
 }
 
-func (v *IterativeVerifier) verifyAllTablesBeforeCutover() error {
+func (v *IterativeVerifier) iterateAllTables(mismatchedPkFunc func(uint64, *schema.Table) error) error {
 	pool := &WorkerPool{
 		Concurrency: v.Concurrency,
 		Process: func(tableIndex int) (interface{}, error) {
@@ -280,7 +303,7 @@ func (v *IterativeVerifier) verifyAllTablesBeforeCutover() error {
 				return nil, nil
 			}
 
-			err := v.verifyTableBeforeCutover(table)
+			err := v.iterateTableFingerprints(table, mismatchedPkFunc)
 			if err != nil {
 				v.logger.WithError(err).WithField("table", table.String()).Error("error occured during table verification")
 			}
@@ -293,7 +316,7 @@ func (v *IterativeVerifier) verifyAllTablesBeforeCutover() error {
 	return err
 }
 
-func (v *IterativeVerifier) verifyTableBeforeCutover(table *schema.Table) error {
+func (v *IterativeVerifier) iterateTableFingerprints(table *schema.Table, mismatchedPkFunc func(uint64, *schema.Table) error) error {
 	// The cursor will stop iterating when it cannot find anymore rows,
 	// so it will not iterate until MaxUint64.
 	cursor := v.CursorConfig.NewCursorWithoutRowLock(table, math.MaxUint64)
@@ -327,10 +350,13 @@ func (v *IterativeVerifier) verifyTableBeforeCutover(table *schema.Table) error 
 			v.logger.WithFields(logrus.Fields{
 				"table":          batch.TableSchema().String(),
 				"mismatched_pks": mismatchedPks,
-			}).Info("mismatched rows will be re-verified")
+			}).Info("found mismatched rows")
 
 			for _, pk := range mismatchedPks {
-				v.reverifyStore.Add(ReverifyEntry{Pk: pk, Table: batch.TableSchema()})
+				err := mismatchedPkFunc(pk, batch.TableSchema())
+				if err != nil {
+					return err
+				}
 			}
 		}
 
@@ -338,7 +364,7 @@ func (v *IterativeVerifier) verifyTableBeforeCutover(table *schema.Table) error 
 	})
 }
 
-func (v *IterativeVerifier) reverify() (VerificationResult, error) {
+func (v *IterativeVerifier) verifyStore() (VerificationResult, error) {
 	allBatches := v.reverifyStore.FlushAndBatchByTable(int(v.CursorConfig.BatchSize))
 	v.logger.WithField("batches", len(allBatches)).Debug("reverifying")
 
@@ -346,7 +372,7 @@ func (v *IterativeVerifier) reverify() (VerificationResult, error) {
 		return VerificationResult{true, ""}, nil
 	}
 
-	erroredOrFailed := errors.New("reverify errored or failed")
+	erroredOrFailed := errors.New("verification of store errored or failed")
 
 	pool := &WorkerPool{
 		Concurrency: v.Concurrency,
