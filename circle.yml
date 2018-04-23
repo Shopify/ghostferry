@@ -22,6 +22,7 @@ deployment:
       - ln -sr "$(pwd)" "$USERGOPATH/src/github.com/$CIRCLE_PROJECT_USERNAME/$CIRCLE_PROJECT_REPONAME"
       - make sharding-deb GOPATH="$USERGOPATH"
       - package_cloud push --url https://packages.shopify.io shopify/ghostferry/ubuntu/xenial build/ghostferry-sharding_*.deb
+      - package_cloud push --url https://packages.shopify.io shopify/ghostferry/ubuntu/trusty build/ghostferry-sharding_*.deb
   copydb-stable:
     branch: /.*-stable/
     commands:
