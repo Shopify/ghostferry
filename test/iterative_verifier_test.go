@@ -59,6 +59,28 @@ func (t *IterativeVerifierTestSuite) TestNothingToVerify() {
 	t.Require().Equal("", result.Message)
 }
 
+func (t *IterativeVerifierTestSuite) TestVerifyOnceFails() {
+	t.InsertRowInDb(42, "foo", t.Ferry.SourceDB)
+	t.InsertRowInDb(42, "bar", t.Ferry.TargetDB)
+
+	result, err := t.verifier.VerifyOnce()
+	t.Require().NotNil(result)
+	t.Require().Nil(err)
+	t.Require().False(result.DataCorrect)
+	t.Require().Equal("verification failed on table: gftest.test_table_1 for pk: 42", result.Message)
+}
+
+func (t *IterativeVerifierTestSuite) TestVerifyOncePass() {
+	t.InsertRowInDb(42, "foo", t.Ferry.SourceDB)
+	t.InsertRowInDb(42, "foo", t.Ferry.TargetDB)
+
+	result, err := t.verifier.VerifyOnce()
+	t.Require().NotNil(result)
+	t.Require().Nil(err)
+	t.Require().True(result.DataCorrect)
+	t.Require().Equal("", result.Message)
+}
+
 func (t *IterativeVerifierTestSuite) TestBeforeCutoverFailuresFailAgainDuringCutover() {
 	t.InsertRowInDb(42, "foo", t.Ferry.SourceDB)
 	t.InsertRowInDb(42, "bar", t.Ferry.TargetDB)

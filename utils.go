@@ -115,12 +115,27 @@ loop:
 		select {
 		case workQueue <- i:
 			i++
-		case err = <-errCh:
-			break loop
+		case err = <-errCh: // abort pool if an error was discovered
+			if err != nil {
+				break loop
+			}
+		default:
+			time.Sleep(500 * time.Millisecond)
 		}
 	}
 
 	close(workQueue)
 	wg.Wait()
+	close(errCh)
+
+	if err != nil {
+		return results, err
+	}
+
+	for e := range errCh {
+		if e != nil {
+			err = e
+		}
+	}
 	return results, err
 }
