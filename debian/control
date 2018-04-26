@@ -1,0 +1,22 @@
+Source: ghostferry
+Section: database
+Priority: optional
+Maintainer: Shuhao Wu <shuhao@shuhaowu.com>
+Build-Depends: debhelper (>= 9),
+               dh-golang,
+               golang-go
+Standards-Version: 3.9.7
+Vcs-Git: git://github.com/Shopify/ghostferry.git
+Vcs-Browser: https://github.com/Shopify/ghostferry
+
+Package: ghostferry-copydb
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Migrate MySQL data from one server to another
+ without downtime via ghostferry.
+
+Package: ghostferry-sharding
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Migrate MySQL sharded data from one server to
+ another without downtime using the ghostferry library.

@@ -3,7 +3,7 @@ VERSION         := 1.1.0
 DATETIME        := $(shell date -u +%Y%m%d%H%M%S)
 DIRTY_TREE      := $(shell git diff-index --quiet HEAD -- || echo '+dirty')
 COMMIT          := $(addsuffix $(DIRTY_TREE),$(shell git rev-parse --short HEAD))
-VERSION_STR     := $(VERSION)+$(DATETIME)+$(COMMIT)
+VERSION_STR     ?= $(VERSION)+$(DATETIME)+$(COMMIT)
 
 # Flags
 LDFLAGS         += -X github.com/Shopify/ghostferry.VersionString=$(VERSION_STR)

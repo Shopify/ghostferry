@@ -1,0 +1,34 @@
+#!/usr/bin/make -f
+
+export DH_OPTIONS
+export DH_GOPKG                := github.com/Shopify/ghostferry
+export GO15VENDOREXPERIMENT    := 1
+export DH_GOLANG_INSTALL_EXTRA := webui Makefile
+export DH_GOLANG_EXCLUDES      := test/ testhelpers/
+
+
+BUILD_DIR := $(abspath obj-$(DEB_HOST_GNU_TYPE))
+
+export GOPATH  := $(BUILD_DIR)
+export LDFLAGS :=
+export VERSION_STR := $(shell dpkg-parsechangelog | grep "Version:" | cut -d " " -f 2)
+
+
+%:
+	dh $@ --buildsystem=golang --with=golang
+
+override_dh_auto_build:
+	cd $(BUILD_DIR)/src/$(DH_GOPKG) && \
+		LDFLAGS="-X github.com/Shopify/ghostferry.WebUiBasedir=/usr/share/ghostferry" make copydb
+	cd $(BUILD_DIR)/src/$(DH_GOPKG) && \
+		make sharding
+
+override_dh_auto_test:
+	# Not feasible to do this here as it requires two mysql instances.
+
+override_dh_auto_install:
+	dh_auto_install
+	mkdir -p $(CURDIR)/debian/ghostferry-copydb/usr/bin
+	mkdir -p $(CURDIR)/debian/ghostferry-sharding/usr/bin
+	install -D -m0755 $(BUILD_DIR)/bin/ghostferry-copydb $(CURDIR)/debian/ghostferry-copydb/usr/bin/ghostferry-copydb
+	install -D -m0755 $(BUILD_DIR)/bin/ghostferry-sharding $(CURDIR)/debian/ghostferry-sharding/usr/bin/ghostferry-sharding
