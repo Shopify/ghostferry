@@ -6,11 +6,22 @@ import (
 	"github.com/Shopify/ghostferry"
 )
 
-// With nothing specified, it assumes that everything is applicable.
+// Whitelist and blacklisting things to copy.
+// Also allows to rename things during the copy process.
+//
+// If this is empty for a filter, it means to not filter for anything and thus
+// whitelist everything.
 type FilterAndRewriteConfigs struct {
+	// Whitelisted databases/tables. Mutually exclusive with Blacklist.
 	Whitelist []string
+
+	// Blacklisted databases/tables. Mutually exclusive with Whitelist.
 	Blacklist []string
-	Rewrites  map[string]string
+
+	// Allows database/tables to be renamed from source to the target, where they
+	// key of this struct is the name on the source database and the value of the
+	// struct is on the target database.
+	Rewrites map[string]string
 }
 
 func (f FilterAndRewriteConfigs) Validate() error {
@@ -36,8 +47,16 @@ var validVerifierTypes map[string]struct{} = map[string]struct{}{
 type Config struct {
 	*ghostferry.Config
 
-	Databases    FilterAndRewriteConfigs
-	Tables       FilterAndRewriteConfigs
+	// Filter configuration for databases to copy
+	Databases FilterAndRewriteConfigs
+
+	// Filter configuration for tables to copy
+	Tables FilterAndRewriteConfigs
+
+	// The verifier to use during the run. Valid choices are:
+	// ChecksumTable
+	// Iterative
+	// NoVerification
 	VerifierType string
 }
 

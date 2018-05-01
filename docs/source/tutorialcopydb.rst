@@ -150,7 +150,7 @@ Note that in the example above, the Collation and charsets are set. If you
 setup your own mysql instances, you might need to change these values.  We are
 also using the ``Whitelist`` and ``Blacklist`` to ensure that we only copy
 ``abc.table1`` from the source to the target. For more information about this
-configuration file, see :ref:`copydbconfig`.
+configuration file, see :ref:`copydbinprod`.
 
 Lastly, we have enabled verification to be available to use during the run.
 Specifically, we enabled the ChecksumTable verifier as the amount of data
