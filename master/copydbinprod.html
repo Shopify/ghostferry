@@ -1,0 +1,241 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Running ghostferry-copydb in Production &#8212; Ghostferry 1.0.0 documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript" src="_static/documentation_options.js"></script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Verifiers" href="verifiers.html" />
+    <link rel="prev" title="Tutorial for ghostferry-copydb" href="tutorialcopydb.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="running-ghostferry-copydb-in-production">
+<span id="copydbinprod"></span><h1>Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in Production<a class="headerlink" href="#running-ghostferry-copydb-in-production" title="Permalink to this headline">¶</a></h1>
+<p>Assuming you have gone through <a class="reference internal" href="tutorialcopydb.html#tutorialcopydb"><span class="std std-ref">Tutorial for ghostferry-copydb</span></a>, you probably want to run
+<code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in production. The general workflow is relatively
+similar, with some differences. You should keep the tutorial as a starting
+point for your own playbook as most steps will largely be the same.</p>
+<div class="section" id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this headline">¶</a></h2>
+<p>Before you start, you need to know if you can even use Ghostferry. Some points
+to consider about this are:</p>
+<ul class="simple">
+<li>Ghostferry on its own does not enable 0 downtime moves. The downtime for the
+app will be minimal compared to other methods but still non-zero.<ul>
+<li>Figure out how much downtime you are willing to tolerate. Using Ghostferry,
+one can realistically achieve downtime on the order of seconds.</li>
+</ul>
+</li>
+<li>The source database must be running with <a class="reference external" href="https://dev.mysql.com/doc/refman/5.7/en/replication-options-binary-log.html#sysvar_binlog_row_image">FULL image</a> <a class="reference external" href="https://dev.mysql.com/doc/refman/5.6/en/replication-options-binary-log.html#sysvar_binlog_format">ROW based replication</a>.<ul>
+<li>Without this, it is not possible to run Ghostferry safely.</li>
+</ul>
+</li>
+<li>Tables to be copied have integer primary keys.<ul>
+<li>An issue exists to fix this limitation here:
+<a class="reference external" href="https://github.com/Shopify/ghostferry/issues/2">https://github.com/Shopify/ghostferry/issues/2</a>.</li>
+<li>As a work around, you can use mysqldump during the cutover stage to migrate
+those tables.</li>
+</ul>
+</li>
+<li>There are no foreign key constraints in your tables.<ul>
+<li>You should remove these constraints before running Ghostferry.</li>
+</ul>
+</li>
+<li><code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> can only copy a whole table at a time.<ul>
+<li>If you need copy a subset, use ghostferry as a library to build your own
+application.</li>
+</ul>
+</li>
+<li>Ghostferry should only be run on the master database where writes occur.
+Otherwise there may be a race condition cause some binlog entries to be
+missed.<ul>
+<li>There may be a way to fix this in the future.</li>
+</ul>
+</li>
+</ul>
+</div>
+<div class="section" id="testing-ghostferry-with-production-data">
+<h2>Testing Ghostferry with Production Data<a class="headerlink" href="#testing-ghostferry-with-production-data" title="Permalink to this headline">¶</a></h2>
+<p>You can run Ghostferry without running the cutover to test the entire flow
+without actually moving your database. This allows you to verify that the move
+will indeed work with your setup. Additionally, the target location where you
+performed this test move can be used by a staging version of your app to verify
+that the target MySQL will not cause trouble for your app, especially if the
+target MySQL has different version/configurations.</p>
+<p>If you want to test the entire flow including the cutover, you can as well with
+some additional setup:</p>
+<ol class="arabic simple">
+<li>Setup a slave of the source database. Use this slave as the source database.</li>
+<li>Use Ghostferry to copy the data from the slave to some target.</li>
+<li>Stop replication on the source slave. This is the equivalent to setting the
+database to read only.</li>
+<li>Perform the cutover as normal. Can even run verification with this.</li>
+</ol>
+</div>
+<div class="section" id="to-verify-or-not-to-verify">
+<h2>To Verify Or Not To Verify<a class="headerlink" href="#to-verify-or-not-to-verify" title="Permalink to this headline">¶</a></h2>
+<p>Ghostferry has two built-in verifier. They are designed to give you certainty
+that the data of the source and the target are identical after a move and
+nothing was corrupted/missed. They are designed to be used during the cutover
+process, when write to the source database has stopped and writes to the target
+has not yet started. During their run, both the source and target must kept
+read only and thus incur downtime for your dataset. The two different verifiers
+have different downtime characteristics. See the <a class="reference internal" href="verifiers.html#verifiers"><span class="std std-ref">Verifiers</span></a> page for more
+details on what they are and how to choose a verifier. This means you have to
+decide if you want to verify or not.</p>
+<p>In order to know how much downtime you will incur during the verification
+process, you can test it with the slave based staging move described in
+<a class="reference internal" href="#testing-ghostferry-with-production-data">Testing Ghostferry with Production Data</a>. During the cutover stages, run
+verification as normal and measure the time taken.</p>
+<p>Since the ultimate objective of the verifier is to verify that Ghostferry did
+not make a mistake while copying the data and give you a peace of mind, if you
+were able to successfully perform the staging verification, you would know that
+the system already works with your setup and data. At this point it may no
+longer be necessary to run a verification during the production move as the
+chance of a row that has changed between the staging run and the actual run
+causing an issue is slim.</p>
+<p>It is also possible to run a verification after a move and possibly address any
+issues after the fact:</p>
+<ol class="arabic simple">
+<li>Setup a slave of the source database.</li>
+<li>Setup a slave of the target database.</li>
+<li>Run ghostferry as normal between the master source and target database.</li>
+<li>During the cutover, also stop replication to the slaves setup in step 1 and
+2.</li>
+<li>Manually checksum table on the slaves.</li>
+</ol>
+</div>
+<div class="section" id="dealing-with-errors-and-restarting-runs">
+<h2>Dealing with Errors and Restarting Runs<a class="headerlink" href="#dealing-with-errors-and-restarting-runs" title="Permalink to this headline">¶</a></h2>
+<p>It is possible for Ghostferry to encounter an error and exit. In these
+scenarios, the target will be left alone and Ghostferry will stop
+selecting/tailing data from the source database. For the time being, there are
+no support for resuming a run from a previously saved coordinate. See
+<a class="reference external" href="https://github.com/Shopify/ghostferry/issues/17">https://github.com/Shopify/ghostferry/issues/17</a>.</p>
+<p>Starting another Ghostferry run is perfectly fine. For copydb specifically, you
+need to drop the databases created by copydb on the target as it will try to
+recreate it.</p>
+</div>
+<div class="section" id="configuration-for-ghostferry-copydb">
+<h2>Configuration for <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code><a class="headerlink" href="#configuration-for-ghostferry-copydb" title="Permalink to this headline">¶</a></h2>
+<p>The configuration for <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> is a JSON file. The schema it is
+based on the <a class="reference external" href="https://godoc.org/github.com/Shopify/ghostferry#Config">Config struct of ghostferry</a>, with some
+differences:</p>
+<ul class="simple">
+<li>You cannot specify <code class="docutils literal notranslate"><span class="pre">TableFilter</span></code> and <code class="docutils literal notranslate"><span class="pre">CopyFilter</span></code>.</li>
+<li>If you are using the debian package, you don’t need to specify
+<code class="docutils literal notranslate"><span class="pre">WebBasedir</span></code> as it is compiled into the binary.</li>
+</ul>
+<p>It also allows you specify some options according to fields defined by the
+<a class="reference external" href="https://godoc.org/github.com/Shopify/ghostferry/copydb#Config">Config struct of copydb</a>. This allows
+you to filter the databases/tables to copy as well as specify the type of
+verifier.</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Ghostferry</a></h1>
+
+
+
+<p class="blurb"> The swiss army knife of live data migrations</p>
+
+
+
+
+<p>
+<iframe src="https://ghbtns.com/github-btn.html?user=Shopify&repo=ghostferry&type=star&count=true&size=large&v=2"
+  allowtransparency="true" frameborder="0" scrolling="0" width="200px" height="35px"></iframe>
+</p>
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction to Ghostferry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="technicaloverview.html">Technical Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorialcopydb.html">Tutorial for ghostferry-copydb</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in Production</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#testing-ghostferry-with-production-data">Testing Ghostferry with Production Data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#to-verify-or-not-to-verify">To Verify Or Not To Verify</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#dealing-with-errors-and-restarting-runs">Dealing with Errors and Restarting Runs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#configuration-for-ghostferry-copydb">Configuration for <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="verifiers.html">Verifiers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="howtousecustom.html">Using Ghostferry in Custom Applications</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="tutorialcopydb.html" title="previous chapter">Tutorial for ghostferry-copydb</a></li>
+      <li>Next: <a href="verifiers.html" title="next chapter">Verifiers</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    </div>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2017, Shopify.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.7.4</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.10</a>
+      
+      |
+      <a href="_sources/copydbinprod.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

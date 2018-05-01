@@ -1,0 +1,218 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Verifiers &#8212; Ghostferry 1.0.0 documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript" src="_static/documentation_options.js"></script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Using Ghostferry in Custom Applications" href="howtousecustom.html" />
+    <link rel="prev" title="Running ghostferry-copydb in Production" href="copydbinprod.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="verifiers">
+<span id="id1"></span><h1>Verifiers<a class="headerlink" href="#verifiers" title="Permalink to this headline">¶</a></h1>
+<p>Verifiers in Ghostferry is designed to ensure that Ghostferry did not
+corrupt/miss data. There are two different verifiers: the
+<code class="docutils literal notranslate"><span class="pre">ChecksumTableVerifier</span></code> and the <code class="docutils literal notranslate"><span class="pre">IterativeVerifier</span></code>. A comparison of them
+are given below:</p>
+<table border="1" class="docutils">
+<colgroup>
+<col width="31%" />
+<col width="31%" />
+<col width="39%" />
+</colgroup>
+<tbody valign="top">
+<tr class="row-odd"><td>&#160;</td>
+<td>ChecksumTableVerifier</td>
+<td>IterativeVerifier</td>
+</tr>
+<tr class="row-even"><td>Mechanism</td>
+<td><code class="docutils literal notranslate"><span class="pre">CHECKSUM</span> <span class="pre">TABLE</span></code></td>
+<td>Verify row before cutover;
+Reverify changed rows during
+cutover.</td>
+</tr>
+<tr class="row-odd"><td>Impacts on Cutover Time</td>
+<td>Linear w.r.t data size</td>
+<td>Linear w.r.t. change rate
+<a class="footnote-reference" href="#id4" id="id2">[1]</a></td>
+</tr>
+<tr class="row-even"><td>Impacts on Copy Time
+<a class="footnote-reference" href="#id5" id="id3">[2]</a></td>
+<td>None</td>
+<td>Linear w.r.t data size</td>
+</tr>
+<tr class="row-odd"><td>Memory Usage</td>
+<td>Minimal</td>
+<td>Linear w.r.t rows changed</td>
+</tr>
+<tr class="row-even"><td>Partial table copy</td>
+<td>Not supported</td>
+<td>Supported</td>
+</tr>
+<tr class="row-odd"><td>Worst Case Scenario</td>
+<td>Large databases causes
+unacceptable downtime</td>
+<td>Verification is slower than
+the change rate of the DB;</td>
+</tr>
+</tbody>
+</table>
+<table class="docutils footnote" frame="void" id="id4" rules="none">
+<colgroup><col class="label" /><col /></colgroup>
+<tbody valign="top">
+<tr><td class="label"><a class="fn-backref" href="#id2">[1]</a></td><td>Additional improvements could be made to reduce this as long as
+Ghostferry is faster than the rate of change. See
+<a class="reference external" href="https://github.com/Shopify/ghostferry/issues/13">https://github.com/Shopify/ghostferry/issues/13</a>.</td></tr>
+</tbody>
+</table>
+<table class="docutils footnote" frame="void" id="id5" rules="none">
+<colgroup><col class="label" /><col /></colgroup>
+<tbody valign="top">
+<tr><td class="label"><a class="fn-backref" href="#id3">[2]</a></td><td>Increase in copy time does not increase downtime. Downtime occurs only
+in cutover.</td></tr>
+</tbody>
+</table>
+<p>If you want verification, you should try with the <code class="docutils literal notranslate"><span class="pre">ChecksumTableVerifier</span></code>
+first if you’re copying whole tables at a time. If that takes too long, you can
+try using the <code class="docutils literal notranslate"><span class="pre">IterativeVerifier</span></code>. Alternatively, you can verify in a staging
+run and not verify during the production run (see <a class="reference internal" href="copydbinprod.html#copydbinprod"><span class="std std-ref">Running ghostferry-copydb in Production</span></a>).</p>
+<div class="section" id="iterativeverifier">
+<h2>IterativeVerifier<a class="headerlink" href="#iterativeverifier" title="Permalink to this headline">¶</a></h2>
+<p>IterativeVerifier verifies the source and target in a couple of steps:</p>
+<ol class="arabic simple">
+<li>After the data copy, it first compares the hashes of each applicable rows
+of the source and the target together to make sure they are the same. This
+is known as the initial verification.<ol class="loweralpha">
+<li>If they are the same: the verification for that row is complete.</li>
+<li>If they are not the same: add it into a reverify queue.</li>
+</ol>
+</li>
+<li>For any rows changed during the initial verification process, add it into
+the reverify queue.</li>
+<li>(Optionally, not fully implemented) After the initial verification, verify
+the rows’ hashes in the reverification queue again. <a class="footnote-reference" href="#id7" id="id6">[3]</a></li>
+<li>During the cutover stage, verify all rows’ hashes in the reverify queue.<ol class="loweralpha">
+<li>If they are the same: the verification for that row is complete.</li>
+<li>If they are not the same: the verification fails.</li>
+</ol>
+</li>
+<li>If no verification failure occurs, the source and the target are identical.
+If verification failure does occur (4b), then the source and target are not
+identical.</li>
+</ol>
+<table class="docutils footnote" frame="void" id="id7" rules="none">
+<colgroup><col class="label" /><col /></colgroup>
+<tbody valign="top">
+<tr><td class="label"><a class="fn-backref" href="#id6">[3]</a></td><td>This can be done a number of times to reduce the number of entries in
+the reverify queue and thus the downtime. Although this is not currently
+implemented. See <a class="reference external" href="https://github.com/Shopify/ghostferry/issues/13">https://github.com/Shopify/ghostferry/issues/13</a>.</td></tr>
+</tbody>
+</table>
+<p>A proof of concept TLA+ verification of this algorithm is done in
+<a class="reference external" href="https://github.com/Shopify/ghostferry/tree/iterative-verifier-tla">https://github.com/Shopify/ghostferry/tree/iterative-verifier-tla</a>.</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Ghostferry</a></h1>
+
+
+
+<p class="blurb"> The swiss army knife of live data migrations</p>
+
+
+
+
+<p>
+<iframe src="https://ghbtns.com/github-btn.html?user=Shopify&repo=ghostferry&type=star&count=true&size=large&v=2"
+  allowtransparency="true" frameborder="0" scrolling="0" width="200px" height="35px"></iframe>
+</p>
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction to Ghostferry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="technicaloverview.html">Technical Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorialcopydb.html">Tutorial for ghostferry-copydb</a></li>
+<li class="toctree-l1"><a class="reference internal" href="copydbinprod.html">Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in Production</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Verifiers</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#iterativeverifier">IterativeVerifier</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="howtousecustom.html">Using Ghostferry in Custom Applications</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="copydbinprod.html" title="previous chapter">Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in Production</a></li>
+      <li>Next: <a href="howtousecustom.html" title="next chapter">Using Ghostferry in Custom Applications</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    </div>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2017, Shopify.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.7.4</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.10</a>
+      
+      |
+      <a href="_sources/verifiers.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

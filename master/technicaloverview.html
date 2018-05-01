@@ -1,0 +1,213 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Technical Overview &#8212; Ghostferry 1.0.0 documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript" src="_static/documentation_options.js"></script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Tutorial for ghostferry-copydb" href="tutorialcopydb.html" />
+    <link rel="prev" title="Introduction to Ghostferry" href="introduction.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="technical-overview">
+<span id="technicaloverview"></span><h1>Technical Overview<a class="headerlink" href="#technical-overview" title="Permalink to this headline">¶</a></h1>
+<p>Ghostferry is a Go library to move data from one MySQL instance to another
+while the source (and possibly the target) the databases are online. In order
+to do this, Ghostferry must be able to copy the data from a source database to
+a target database while keeping track of all changes in the source database to
+apply it to the target database. This is implemented by SELECTing from the
+source database and INSERTing them into the target (copy) and applying the
+binlog changes from the source on the target (change synchronization).</p>
+<p>This setup has the advantage of working with essentially any configuration of
+MySQL. It also provides a seamless process as it is all contain in a single
+package, as opposed to split between multiple applications
+(mysqldump/xtrabackup and mysql replication).</p>
+<p>It is important to note that Ghostferry is simple a part of the puzzle of a
+live database migration. For data integrity reasons, Ghostferry mandates that
+you stop writes to the dataset you are copying a stage of execution known as
+cutover. During the same stage of execution, you’ll also likely need to repoint
+your database from the source to the target.</p>
+<p>To gain a better understanding of the overall process, let’s take a look how
+Ghostferry works:</p>
+<ol class="arabic simple">
+<li>Ghostferry begins to pull binlog events from the source database, applying
+the entries that are applicable to the target. This continues in the
+background.</li>
+<li>Ghostferry SELECTs data from the source database and INSERTs them to the
+target database.</li>
+<li>Ghostferry finishes copying all data from the source and target database.
+The binlog apply operation of (1) continues in the background.</li>
+<li>Ghostferry waits until the binlog apply is roughly caught up to the latest
+available position on the source database.</li>
+<li>Outside of Ghostferry: you should no more writes to to the source database
+via either a read_only flag (for whole database) or some sort of application
+level lock (for partial database).</li>
+<li>Instruct Ghostferry to enter the cutover phase. This essentially tells
+Ghostferry to stop tailing binlog after catching up to the latest master
+position. Once Ghostferry does this, it terminates. This step can be done
+via the web ui or via a method call.</li>
+<li>Outside of Ghostferry: you should change the application that uses the
+source database to use the target database. You should also enable writes on
+the target database if it was previously read only somehow.</li>
+</ol>
+<p>This process has some downtime between step 5 and step 7. The window of
+downtime is proportional to how fast these steps can be done. In most cases
+this should be on the order of seconds to minutes.</p>
+<div class="section" id="architecture">
+<h2>Architecture<a class="headerlink" href="#architecture" title="Permalink to this headline">¶</a></h2>
+<p>Ghostferry has three levels of public APIs that you can use: the Ferry level,
+the DataIterator/BinlogStreamer level, and the Cursor level. Most of the time
+you only need to call methods on the Ferry. The other two levels only come in
+handy when you want to implement an alternative Ferry and alternative
+verifiers.</p>
+<p>There are several auxiliary components to the system: the throttlers, the
+verifiers, the control server. These components are optional to Ghostferry
+runs.</p>
+<p>The overall, simplified architecture of Ghostferry can be summarized with the
+figure below. It shows the basic flow of all the background tasks, along with
+how each task is spawned (starting from <code class="docutils literal notranslate"><span class="pre">Ferry.Run</span></code>). Yellow boxes indicates
+at which the data is inserted into the target database. Arrows pointing towards
+outside of an encapsulating box indicate the task will exit.  The red arrows
+with “Error action” indicates an error has occurred and the error is sent to
+the <code class="docutils literal notranslate"><span class="pre">ErrorHandler</span></code>, at which the ErrorHandler flow takes over.</p>
+<img alt="_images/ghostferry-architecture.png" class="align-center" src="_images/ghostferry-architecture.png" />
+<p>You can see an example of an application built with Ghostferry in the
+<code class="docutils literal notranslate"><span class="pre">copydb</span></code> package.</p>
+</div>
+<div class="section" id="limitations">
+<h2>Limitations<a class="headerlink" href="#limitations" title="Permalink to this headline">¶</a></h2>
+<ul class="simple">
+<li>Right now, Ghostferry can only be used on tables with auto incrementing,
+numeric, and unique primary keys.<ul>
+<li>An error will be emitted during the beginning of the run if such a primary
+key is not detected.</li>
+<li>In the near future, we will extend support to arbitrary primary key types.</li>
+<li>To work around this restrictions, you can use mysqldump to dump and restore
+the table during the cutover.</li>
+</ul>
+</li>
+<li>Ghostferry can only be used on a source database with FULL RBR.<ul>
+<li>An error will be emitted during the beginning of the run if FULL RBR is
+not turned on the source database.</li>
+<li>Without FULL RBR, the integrity of the data cannot be guaranteed.</li>
+</ul>
+</li>
+<li>Ghostferry does not support tables with foreign key constraints.<ul>
+<li>For tables with foreign key constraints, the constraints should be removed
+before performing the data migration.</li>
+</ul>
+</li>
+</ul>
+</div>
+<div class="section" id="algorithm-correctness">
+<h2>Algorithm Correctness<a class="headerlink" href="#algorithm-correctness" title="Permalink to this headline">¶</a></h2>
+<p>The overall algorithm of Ghostferry is specified in a TLA+ specification and
+validated via TLC. The algorithm can be see in the <code class="docutils literal notranslate"><span class="pre">tlaplus</span></code> directory in the
+source tree.</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Ghostferry</a></h1>
+
+
+
+<p class="blurb"> The swiss army knife of live data migrations</p>
+
+
+
+
+<p>
+<iframe src="https://ghbtns.com/github-btn.html?user=Shopify&repo=ghostferry&type=star&count=true&size=large&v=2"
+  allowtransparency="true" frameborder="0" scrolling="0" width="200px" height="35px"></iframe>
+</p>
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction to Ghostferry</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Technical Overview</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#architecture">Architecture</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#limitations">Limitations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#algorithm-correctness">Algorithm Correctness</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="tutorialcopydb.html">Tutorial for ghostferry-copydb</a></li>
+<li class="toctree-l1"><a class="reference internal" href="copydbinprod.html">Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in Production</a></li>
+<li class="toctree-l1"><a class="reference internal" href="verifiers.html">Verifiers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="howtousecustom.html">Using Ghostferry in Custom Applications</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="introduction.html" title="previous chapter">Introduction to Ghostferry</a></li>
+      <li>Next: <a href="tutorialcopydb.html" title="next chapter">Tutorial for ghostferry-copydb</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    </div>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2017, Shopify.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.7.4</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.10</a>
+      
+      |
+      <a href="_sources/technicaloverview.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

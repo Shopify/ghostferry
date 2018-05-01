@@ -1,0 +1,164 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Welcome to Ghostferry’s documentation! &#8212; Ghostferry 1.0.0 documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript" src="_static/documentation_options.js"></script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Introduction to Ghostferry" href="introduction.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="welcome-to-ghostferry-s-documentation">
+<h1>Welcome to Ghostferry’s documentation!<a class="headerlink" href="#welcome-to-ghostferry-s-documentation" title="Permalink to this headline">¶</a></h1>
+<div class="toctree-wrapper compound">
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction to Ghostferry</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="introduction.html#why-do-i-need-this">Why do I need this?</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="technicaloverview.html">Technical Overview</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="technicaloverview.html#architecture">Architecture</a></li>
+<li class="toctree-l2"><a class="reference internal" href="technicaloverview.html#limitations">Limitations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="technicaloverview.html#algorithm-correctness">Algorithm Correctness</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="tutorialcopydb.html">Tutorial for ghostferry-copydb</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tutorialcopydb.html#setup-and-seed-mysql">Setup and Seed MySQL</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorialcopydb.html#mirrors-production-create-ghostferry-users">(Mirrors Production) Create Ghostferry Users</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorialcopydb.html#mirrors-production-install-ghostferry-copydb">(Mirrors Production) Install ghostferry-copydb</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorialcopydb.html#mirrors-production-setup-ghostferry-run-configuration">(Mirrors Production) Setup Ghostferry Run Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorialcopydb.html#mirrors-production-validate-ghostferry-configuration">(Mirrors Production) Validate Ghostferry Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorialcopydb.html#mirrors-production-starting-ghostferry-run">(Mirrors Production) Starting Ghostferry Run</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorialcopydb.html#mirrors-production-monitoring-ghostferry-run-via-web-ui">(Mirrors Production) Monitoring Ghostferry Run via Web UI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorialcopydb.html#mirrors-production-perform-cutover">(Mirrors Production) Perform Cutover</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorialcopydb.html#mirrors-production-verify-source-and-target-data-are-identical">(Mirrors Production) Verify Source and Target Data are Identical</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tutorialcopydb.html#finishing-ghostferry-run-and-next-steps">Finishing Ghostferry Run and Next Steps</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="copydbinprod.html">Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in Production</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="copydbinprod.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="copydbinprod.html#testing-ghostferry-with-production-data">Testing Ghostferry with Production Data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="copydbinprod.html#to-verify-or-not-to-verify">To Verify Or Not To Verify</a></li>
+<li class="toctree-l2"><a class="reference internal" href="copydbinprod.html#dealing-with-errors-and-restarting-runs">Dealing with Errors and Restarting Runs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="copydbinprod.html#configuration-for-ghostferry-copydb">Configuration for <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code></a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="verifiers.html">Verifiers</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="verifiers.html#iterativeverifier">IterativeVerifier</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="howtousecustom.html">Using Ghostferry in Custom Applications</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="howtousecustom.html#consuming-ghostferry-metrics">Consuming Ghostferry Metrics</a></li>
+</ul>
+</li>
+</ul>
+</div>
+</div>
+<div class="section" id="indices-and-tables">
+<h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Permalink to this headline">¶</a></h1>
+<ul class="simple">
+<li><a class="reference internal" href="genindex.html"><span class="std std-ref">Index</span></a></li>
+<li><a class="reference internal" href="py-modindex.html"><span class="std std-ref">Module Index</span></a></li>
+<li><a class="reference internal" href="search.html"><span class="std std-ref">Search Page</span></a></li>
+</ul>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="#">Ghostferry</a></h1>
+
+
+
+<p class="blurb"> The swiss army knife of live data migrations</p>
+
+
+
+
+<p>
+<iframe src="https://ghbtns.com/github-btn.html?user=Shopify&repo=ghostferry&type=star&count=true&size=large&v=2"
+  allowtransparency="true" frameborder="0" scrolling="0" width="200px" height="35px"></iframe>
+</p>
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction to Ghostferry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="technicaloverview.html">Technical Overview</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tutorialcopydb.html">Tutorial for ghostferry-copydb</a></li>
+<li class="toctree-l1"><a class="reference internal" href="copydbinprod.html">Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in Production</a></li>
+<li class="toctree-l1"><a class="reference internal" href="verifiers.html">Verifiers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="howtousecustom.html">Using Ghostferry in Custom Applications</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="#">Documentation overview</a><ul>
+      <li>Next: <a href="introduction.html" title="next chapter">Introduction to Ghostferry</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    </div>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2017, Shopify.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.7.4</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.10</a>
+      
+      |
+      <a href="_sources/index.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>

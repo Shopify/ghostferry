@@ -1,0 +1,371 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Tutorial for ghostferry-copydb &#8212; Ghostferry 1.0.0 documentation</title>
+    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <script type="text/javascript" src="_static/documentation_options.js"></script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Running ghostferry-copydb in Production" href="copydbinprod.html" />
+    <link rel="prev" title="Technical Overview" href="technicaloverview.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <div class="section" id="tutorial-for-ghostferry-copydb">
+<span id="tutorialcopydb"></span><h1>Tutorial for ghostferry-copydb<a class="headerlink" href="#tutorial-for-ghostferry-copydb" title="Permalink to this headline">¶</a></h1>
+<p>This tutorial aims to provide you with a first look on how to operate
+ghostferry-copydb to copy data from one database to another so you can have
+some experiencing actually running Ghostferry. A production run of a data
+migration will be largely similar, although you will have to consider how to
+appropriately perform the cutover operations with respect to the applications
+accessing the database. Recommendations on how to run copydb in production can
+be found in <a class="reference internal" href="copydbinprod.html#copydbinprod"><span class="std std-ref">Running ghostferry-copydb in Production</span></a>.</p>
+<div class="section" id="setup-and-seed-mysql">
+<h2>Setup and Seed MySQL<a class="headerlink" href="#setup-and-seed-mysql" title="Permalink to this headline">¶</a></h2>
+<p>In this tutorial, we will be using two test databases that we setup locally and
+we will not consider the application. With git, clone the Ghostferry repository
+and create the test mysql instances:</p>
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$</span> git clone https://github.com/Shopify/ghostferry.git
+<span class="gp">$</span> <span class="nb">cd</span> ghostferry
+<span class="gp">$</span> docker-compose up -d mysql-1 mysql-2
+</pre></div>
+</div>
+<p>Users witout docker-compose can either install it on their machine or manually
+setup two localhost mysql instances available at port 29291 and 29292 with FULL
+image row based replication.</p>
+<p>Confirm that you can access both mysql instances with the mysql console:</p>
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">#</span> mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29291</span>
+<span class="gp">#</span> mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29292</span>
+</pre></div>
+</div>
+<p>We will be moving data from the 29291 server to the 29292 server. To do this,
+we must first create some test data on the 29291 server to be copied over:</p>
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">#</span> <span class="nb">echo</span> <span class="s2">&quot;CREATE DATABASE abc&quot;</span> &gt;&gt; /tmp/n1create.sql
+<span class="gp">#</span> <span class="nb">echo</span> <span class="s2">&quot;CREATE TABLE abc.table1 (id bigint(20) AUTO_INCREMENT, data varchar(16), primary key(id))&quot;</span> &gt;&gt; /tmp/n1create.sql
+<span class="gp">#</span> <span class="nb">echo</span> <span class="s2">&quot;CREATE TABLE abc.table2 (id bigint(20) AUTO_INCREMENT, data TEXT, primary key(id))&quot;</span> &gt;&gt; /tmp/n1create.sql
+<span class="gp">#</span> <span class="k">for</span> i in <span class="sb">`</span>seq <span class="m">1</span> <span class="m">350</span><span class="sb">`</span><span class="p">;</span> <span class="k">do</span>
+<span class="go">    echo &quot;INSERT INTO abc.table1 (id, data) VALUES (${i}, &#39;$(cat /dev/urandom | tr -cd &#39;a-z0-9&#39; | head -c 16)&#39;);&quot; &gt;&gt; /tmp/n1create.sql</span>
+<span class="go">    echo &quot;INSERT INTO abc.table2 (id, data) VALUES (${i}, &#39;$(cat /dev/urandom | tr -cd &#39;a-z0-9&#39; | head -c 16)&#39;);&quot; &gt;&gt; /tmp/n1create.sql</span>
+<span class="go">  done</span>
+<span class="gp">#</span> mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29291</span> &lt; /tmp/n1create.sql
+<span class="gp">#</span> rm /tmp/n1create.sql
+</pre></div>
+</div>
+<p>This created two tables under the database <code class="docutils literal notranslate"><span class="pre">abc</span></code>. We will be moving
+<code class="docutils literal notranslate"><span class="pre">table1</span></code> to 29292 while not copying 29291.</p>
+</div>
+<div class="section" id="mirrors-production-create-ghostferry-users">
+<h2>(Mirrors Production) Create Ghostferry Users<a class="headerlink" href="#mirrors-production-create-ghostferry-users" title="Permalink to this headline">¶</a></h2>
+<p>We then need to create an user with the appropriate permissions for Ghostferry
+to connect with to perform the move with on both server. For this move, we
+neglect SSL connections to mysql and thus do not require SSL for the user. In
+production, you may want to enable that.</p>
+<p>On the source server, the minimum permissions required are:</p>
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="go">mysql&gt; CREATE USER &#39;ghostferry&#39;@&#39;%&#39; IDENTIFIED BY &#39;ghostferry&#39;;</span>
+<span class="go">mysql&gt; GRANT SELECT, REPLICATION SLAVE, REPLICATION CLIENT ON `abc`.* TO &#39;ghostferry&#39;@&#39;%&#39;;</span>
+</pre></div>
+</div>
+<p>The above example grants the permission to only the <code class="docutils literal notranslate"><span class="pre">abc</span></code> database. You can
+grant it to more or all databases in your production environment as needed.</p>
+<p>On the target server, the minimum permissions required are:</p>
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="go">mysql&gt; CREATE USER &#39;ghostferry&#39;@&#39;%&#39; IDENTIFIED BY &#39;ghostferry&#39;;</span>
+<span class="go">mysql&gt; GRANT INSERT, UPDATE, DELETE, CREATE, SELECT ON *.* TO &#39;ghostferry&#39;@&#39;%&#39;;</span>
+</pre></div>
+</div>
+<p>We grant permission to all databases because we assume that the <code class="docutils literal notranslate"><span class="pre">abc</span></code>
+database does not exist on the target and Ghostferry will create it
+automatically.</p>
+</div>
+<div class="section" id="mirrors-production-install-ghostferry-copydb">
+<h2>(Mirrors Production) Install ghostferry-copydb<a class="headerlink" href="#mirrors-production-install-ghostferry-copydb" title="Permalink to this headline">¶</a></h2>
+<p>We then need to obtain the ghostferry-copydb binary on the server on which we
+want to execute Ghostferry on. Note that all the data moved will go through
+this server over its network so make sure the production server is
+appropriately picked. For the present tutorial, Ghostferry will simply live on
+the same machine.</p>
+<p>To download the latest binaries, you currently have to compile copydb with
+Go 1.9 via <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">copydb</span></code> after cloning the repository.</p>
+<p>For testing purposes, you can also use <a class="reference external" href="https://launchpad.net/~shuhao/+archive/ubuntu/ghostferry-unofficial">this unofficial PPA</a> (see
+<a class="reference external" href="https://github.com/Shopify/ghostferry/pull/15">this PR</a> as well) to obtain a
+version of ghostferry-copydb. Note the unofficial PPA for ghsotferry-copydb is
+not supported and you should not use it in production.</p>
+</div>
+<div class="section" id="mirrors-production-setup-ghostferry-run-configuration">
+<h2>(Mirrors Production) Setup Ghostferry Run Configuration<a class="headerlink" href="#mirrors-production-setup-ghostferry-run-configuration" title="Permalink to this headline">¶</a></h2>
+<p>We will need to provide ghostferry-copydb with a configuration file such that
+it knows how to connect to the databases and what to copy. This is a json file
+which should look like the following:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+  <span class="nt">&quot;Source&quot;</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nt">&quot;Host&quot;</span><span class="p">:</span> <span class="s2">&quot;127.0.0.1&quot;</span><span class="p">,</span>
+    <span class="nt">&quot;Port&quot;</span><span class="p">:</span> <span class="mi">29291</span><span class="p">,</span>
+    <span class="nt">&quot;User&quot;</span><span class="p">:</span> <span class="s2">&quot;ghostferry&quot;</span><span class="p">,</span>
+    <span class="nt">&quot;Pass&quot;</span><span class="p">:</span> <span class="s2">&quot;ghostferry&quot;</span><span class="p">,</span>
+    <span class="nt">&quot;Collation&quot;</span><span class="p">:</span> <span class="s2">&quot;utf8mb4_unicode_ci&quot;</span><span class="p">,</span>
+    <span class="nt">&quot;Params&quot;</span><span class="p">:</span> <span class="p">{</span>
+      <span class="nt">&quot;charset&quot;</span><span class="p">:</span> <span class="s2">&quot;utf8mb4&quot;</span>
+    <span class="p">}</span>
+  <span class="p">},</span>
+
+  <span class="nt">&quot;Target&quot;</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nt">&quot;Host&quot;</span><span class="p">:</span> <span class="s2">&quot;127.0.0.1&quot;</span><span class="p">,</span>
+    <span class="nt">&quot;Port&quot;</span><span class="p">:</span> <span class="mi">29292</span><span class="p">,</span>
+    <span class="nt">&quot;User&quot;</span><span class="p">:</span> <span class="s2">&quot;ghostferry&quot;</span><span class="p">,</span>
+    <span class="nt">&quot;Pass&quot;</span><span class="p">:</span> <span class="s2">&quot;ghostferry&quot;</span><span class="p">,</span>
+    <span class="nt">&quot;Collation&quot;</span><span class="p">:</span> <span class="s2">&quot;utf8mb4_unicode_ci&quot;</span><span class="p">,</span>
+    <span class="nt">&quot;Params&quot;</span><span class="p">:</span> <span class="p">{</span>
+      <span class="nt">&quot;charset&quot;</span><span class="p">:</span> <span class="s2">&quot;utf8mb4&quot;</span>
+    <span class="p">}</span>
+  <span class="p">},</span>
+
+  <span class="nt">&quot;Databases&quot;</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nt">&quot;Whitelist&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;abc&quot;</span><span class="p">]</span>
+  <span class="p">},</span>
+
+  <span class="nt">&quot;Tables&quot;</span><span class="p">:</span> <span class="p">{</span>
+    <span class="nt">&quot;Blacklist&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;table2&quot;</span><span class="p">]</span>
+  <span class="p">},</span>
+
+  <span class="nt">&quot;VerifierType&quot;</span><span class="p">:</span> <span class="s2">&quot;ChecksumTable&quot;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Save this file to a file called <code class="docutils literal notranslate"><span class="pre">examplerun.json</span></code>.</p>
+<p>Note that in the example above, the Collation and charsets are set. If you
+setup your own mysql instances, you might need to change these values.  We are
+also using the <code class="docutils literal notranslate"><span class="pre">Whitelist</span></code> and <code class="docutils literal notranslate"><span class="pre">Blacklist</span></code> to ensure that we only copy
+<code class="docutils literal notranslate"><span class="pre">abc.table1</span></code> from the source to the target. For more information about this
+configuration file, see <a class="reference internal" href="copydbinprod.html#copydbinprod"><span class="std std-ref">Running ghostferry-copydb in Production</span></a>.</p>
+<p>Lastly, we have enabled verification to be available to use during the run.
+Specifically, we enabled the ChecksumTable verifier as the amount of data
+copied will be small. For more information about the verifiers, see
+<a class="reference internal" href="verifiers.html#verifiers"><span class="std std-ref">Verifiers</span></a>.</p>
+</div>
+<div class="section" id="mirrors-production-validate-ghostferry-configuration">
+<h2>(Mirrors Production) Validate Ghostferry Configuration<a class="headerlink" href="#mirrors-production-validate-ghostferry-configuration" title="Permalink to this headline">¶</a></h2>
+<p>Before actually running Ghostferry, it is good practise to validate the
+configuration you specified. ghostferry-copydb has a dryrun flag that will try
+to use the configuration you have to connect to the database. It will also scan
+the tables according to the black/whitelist specified and print it out in the
+debug logs:</p>
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$</span> ghostferry-copydb -dryrun -verbose examplerun.json
+</pre></div>
+</div>
+<p>The verbose flag gives slightly more debug information in case there are any
+issues. In this case, there should not be any issues as we setup the database
+according to the tutorial and the output should be something like this
+(simplified for readibility in the tutorial):</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>[...]
+INFO[0000] connecting to the source database             dsn=&quot;ghostferry:&lt;masked&gt;@[...]&quot; tag=ferry
+INFO[0000] connecting to the target database             dsn=&quot;ghostferry:&lt;masked&gt;@[...]&quot; tag=ferry
+[...]
+INFO[0000] found binlog position, starting synchronization  file=[...] pos=[...] tag=binlog_streamer
+[...]
+DEBU[0000] loading tables from database                  database=abc tag=table_schema_cache
+DEBU[0000] fetching table schema                         database=abc table=table1 tag=table_schema_cache
+DEBU[0000] fetching table schema                         database=abc table=table2 tag=table_schema_cache
+DEBU[0000] caching table schema                          database=abc table=table1 tag=table_schema_cache
+INFO[0000] table schemas cached                          tables=&quot;[abc.table1]&quot; tag=table_schema_cache
+exiting due to dryrun
+</pre></div>
+</div>
+<p>Note the last INFO line shows which tables will be moved as we cache their
+schemas in the memory. If there is a table you want to move and it does not
+show up there, it means the whitelist/blacklist configuration is incorrect.</p>
+</div>
+<div class="section" id="mirrors-production-starting-ghostferry-run">
+<h2>(Mirrors Production) Starting Ghostferry Run<a class="headerlink" href="#mirrors-production-starting-ghostferry-run" title="Permalink to this headline">¶</a></h2>
+<p>To start the ghostferry run, simply perform the same command as before except
+without the dryrun flag. You can also turn off the verbose flag, although it
+may be good practise to leave it on and redirect stdout to a file so the move
+can be audited at a later time. We will do this here for good practise:</p>
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$</span> ghostferry-copydb -verbose examplerun.json <span class="m">2</span><span class="p">&amp;</span>&gt;examplerun.log
+</pre></div>
+</div>
+<p>To confirm that Ghostferry indeed copies changes to the source table, we can
+manually insert a row into <code class="docutils literal notranslate"><span class="pre">abc.table1</span></code> during the run</p>
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">#</span> mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29291</span>
+<span class="go">mysql&gt; INSERT INTO abc.table1 (id, data) VALUES (351, &quot;helloworld&quot;);</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="mirrors-production-monitoring-ghostferry-run-via-web-ui">
+<h2>(Mirrors Production) Monitoring Ghostferry Run via Web UI<a class="headerlink" href="#mirrors-production-monitoring-ghostferry-run-via-web-ui" title="Permalink to this headline">¶</a></h2>
+<p>Once the run starts, a built-in webserver is started at port 8000 by default.
+This can be changed in the configuration json. Simply browse to
+<a class="reference external" href="http://localhost:8000">http://localhost:8000</a> to view this server and in there you should find controls
+to:</p>
+<ul class="simple">
+<li>Pause/Unpause: allows you to pause/unpause the data copy and binlog streaming
+process.</li>
+<li>Allow automatic cutover: You should only press this button after you set the
+source database to read only. In its current implementation, it will simply
+allow ghostferry-copydb to finish all its processes in a correct manner,
+assuming that there are no more writes to the source database and all pending
+writes have been flushed to the binlog. In a future implementation, we may
+allow external scripts (configured via the json configuration) to be
+automatically executed with the push of this button so you can perform
+operations you need to perform during cutover.</li>
+<li>Run Verification: This button is only available during the Wait-For-Cutover
+and Done phase of the move. It will run the ChecksumTable verifier we
+specified earlier ensure the data are identical on the source and target. You
+should only run this while the source is read only and when the target is not
+yet written to.</li>
+</ul>
+<p>The page will refresh itself every 60 seconds.</p>
+<p>For this tutorial, the run should be very short so thus you might miss most of
+the copying states. Take a look around and refresh a couple times to get
+familiar with the UI.</p>
+</div>
+<div class="section" id="mirrors-production-perform-cutover">
+<h2>(Mirrors Production) Perform Cutover<a class="headerlink" href="#mirrors-production-perform-cutover" title="Permalink to this headline">¶</a></h2>
+<p>In the default configuration, cutover is triggered manually. During cutover,
+you must stop writes to the data on the source database. For the purpose of
+this tutorial, we will set the source database to read only. Even though we
+have no applications writing to the source in this case, let’s do it anyway so
+we get into the habit of thinking of this step:</p>
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">#</span> mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29291</span>
+<span class="go">mysql&gt; FLUSH TABLES WITH READ LOCK; -- Ensure all writes are done</span>
+<span class="go">mysql&gt; SET GLOBAL read_only = ON;   -- Sets the database to read only</span>
+<span class="go">mysql&gt; FLUSH LOGS;                  -- Ensure all writes are record in binlog</span>
+</pre></div>
+</div>
+<p>The last step <code class="docutils literal notranslate"><span class="pre">FLUSH</span> <span class="pre">LOGS</span></code> is not necessarily required if you run your mysql
+server with <code class="docutils literal notranslate"><span class="pre">sync_binlog=1</span></code>.</p>
+<p>We can then go back to the web ui and click the Allow Automatic Cutover button.
+In a second or two the ghostferry binlog streaming process should stop. Refresh
+the page until you see the state to be DONE.</p>
+</div>
+<div class="section" id="mirrors-production-verify-source-and-target-data-are-identical">
+<h2>(Mirrors Production) Verify Source and Target Data are Identical<a class="headerlink" href="#mirrors-production-verify-source-and-target-data-are-identical" title="Permalink to this headline">¶</a></h2>
+<p>At this point, the data on the source and target should be identical. To
+confirm this is the case, click the Run Verification button in the web ui to
+perform the verification in the background. Refresh the page a couple of times
+until it tells you the verification was successful.</p>
+<p>Additionally, since we manually inserted a row earlier, we should be able to
+find it via:</p>
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">#</span> mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29291</span>
+<span class="go">mysql&gt; SELECT * FROM abc.table1 WHERE id = 351;</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="finishing-ghostferry-run-and-next-steps">
+<h2>Finishing Ghostferry Run and Next Steps<a class="headerlink" href="#finishing-ghostferry-run-and-next-steps" title="Permalink to this headline">¶</a></h2>
+<p>At this point, the data on the source and target are verified identical and
+Ghostferry will no longer propagate data from 29291 to 29292. In a production
+situation, you can now notify all applications using the source database to use
+the target database.</p>
+<p>The control server UI will stay up indefinitely, to stop it, simply press
+CTRL+C to interrupt the ghostferry-copydb process.</p>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="index.html">Ghostferry</a></h1>
+
+
+
+<p class="blurb"> The swiss army knife of live data migrations</p>
+
+
+
+
+<p>
+<iframe src="https://ghbtns.com/github-btn.html?user=Shopify&repo=ghostferry&type=star&count=true&size=large&v=2"
+  allowtransparency="true" frameborder="0" scrolling="0" width="200px" height="35px"></iframe>
+</p>
+
+
+
+
+
+<h3>Navigation</h3>
+<p class="caption"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction to Ghostferry</a></li>
+<li class="toctree-l1"><a class="reference internal" href="technicaloverview.html">Technical Overview</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Tutorial for ghostferry-copydb</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#setup-and-seed-mysql">Setup and Seed MySQL</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#mirrors-production-create-ghostferry-users">(Mirrors Production) Create Ghostferry Users</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#mirrors-production-install-ghostferry-copydb">(Mirrors Production) Install ghostferry-copydb</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#mirrors-production-setup-ghostferry-run-configuration">(Mirrors Production) Setup Ghostferry Run Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#mirrors-production-validate-ghostferry-configuration">(Mirrors Production) Validate Ghostferry Configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#mirrors-production-starting-ghostferry-run">(Mirrors Production) Starting Ghostferry Run</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#mirrors-production-monitoring-ghostferry-run-via-web-ui">(Mirrors Production) Monitoring Ghostferry Run via Web UI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#mirrors-production-perform-cutover">(Mirrors Production) Perform Cutover</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#mirrors-production-verify-source-and-target-data-are-identical">(Mirrors Production) Verify Source and Target Data are Identical</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#finishing-ghostferry-run-and-next-steps">Finishing Ghostferry Run and Next Steps</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="copydbinprod.html">Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in Production</a></li>
+<li class="toctree-l1"><a class="reference internal" href="verifiers.html">Verifiers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="howtousecustom.html">Using Ghostferry in Custom Applications</a></li>
+</ul>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="index.html">Documentation overview</a><ul>
+      <li>Previous: <a href="technicaloverview.html" title="previous chapter">Technical Overview</a></li>
+      <li>Next: <a href="copydbinprod.html" title="next chapter">Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in Production</a></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3>Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    </div>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2017, Shopify.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.7.4</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.10</a>
+      
+      |
+      <a href="_sources/tutorialcopydb.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
