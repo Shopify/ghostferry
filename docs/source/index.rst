@@ -12,8 +12,10 @@ Welcome to Ghostferry's documentation!
 
    introduction
    technicaloverview
-   howtouse
-   development
+   tutorialcopydb
+   copydbinprod
+   verifiers
+   howtousecustom
 
 
 Indices and tables

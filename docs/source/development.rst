@@ -1,5 +1,0 @@
-.. _development:
-
-======================
-Ghostferry Development
-======================
