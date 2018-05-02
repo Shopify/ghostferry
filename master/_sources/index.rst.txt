@@ -17,6 +17,11 @@ Welcome to Ghostferry's documentation!
    verifiers
    howtousecustom
 
+API Documentation
+=================
+
+See: `<https://godoc.org/github.com/Shopify/ghostferry>`_.
+
 
 Indices and tables
 ==================

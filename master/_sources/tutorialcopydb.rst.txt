@@ -258,10 +258,12 @@ we get into the habit of thinking of this step:
   # mysql --protocol=tcp -u root -P 29291
   mysql> FLUSH TABLES WITH READ LOCK; -- Ensure all writes are done
   mysql> SET GLOBAL read_only = ON;   -- Sets the database to read only
-  mysql> FLUSH LOGS;                  -- Ensure all writes are record in binlog
+  mysql> FLUSH BINARY LOGS            -- Ensure all writes are record in binlog
 
-The last step ``FLUSH LOGS`` is not necessarily required if you run your mysql
-server with ``sync_binlog=1``.
+The last step ``FLUSH BINARY LOGS`` is not necessarily required if you run your
+mysql server with ``sync_binlog=1``. If you're running Ghostferry from a source
+that is a replica, you need another tool to guarantee this property. See
+`<https://github.com/Shopify/ghostferry/issues/19>`_.
 
 We can then go back to the web ui and click the Allow Automatic Cutover button.
 In a second or two the ghostferry binlog streaming process should stop. Refresh
