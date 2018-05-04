@@ -15,6 +15,11 @@ dependencies:
     - gem install package_cloud
 
 deployment:
+  documentation:
+    branch: master
+    tag: /v.*/
+    command:
+      - ./scripts/ci-deploy-gh-pages.sh
   production:
     branch: /master|staging-.*/
     commands:
