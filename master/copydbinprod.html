@@ -6,7 +6,7 @@
   <head>
     <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-    <title>Running ghostferry-copydb in Production &#8212; Ghostferry 1.0.0 documentation</title>
+    <title>Running ghostferry-copydb in production &#8212; Ghostferry 1.0.0 documentation</title>
     <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
     <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
     <script type="text/javascript" src="_static/documentation_options.js"></script>
@@ -32,7 +32,7 @@
           <div class="body" role="main">
             
   <div class="section" id="running-ghostferry-copydb-in-production">
-<span id="copydbinprod"></span><h1>Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in Production<a class="headerlink" href="#running-ghostferry-copydb-in-production" title="Permalink to this headline">¶</a></h1>
+<span id="copydbinprod"></span><h1>Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in production<a class="headerlink" href="#running-ghostferry-copydb-in-production" title="Permalink to this headline">¶</a></h1>
 <p>Assuming you have gone through <a class="reference internal" href="tutorialcopydb.html#tutorialcopydb"><span class="std std-ref">Tutorial for ghostferry-copydb</span></a>, you probably want to run
 <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in production. The general workflow is relatively
 similar, with some differences. You should keep the tutorial as a starting
@@ -45,11 +45,12 @@ to consider about this are:</p>
 <li>Ghostferry on its own does not enable 0 downtime moves. The downtime for the
 app will be minimal compared to other methods but still non-zero.<ul>
 <li>Figure out how much downtime you are willing to tolerate. Using Ghostferry,
-one can realistically achieve downtime on the order of seconds.</li>
+one can realistically achieve downtime in the order of seconds.</li>
 </ul>
 </li>
 <li>The source database must be running with <a class="reference external" href="https://dev.mysql.com/doc/refman/5.7/en/replication-options-binary-log.html#sysvar_binlog_row_image">FULL image</a> <a class="reference external" href="https://dev.mysql.com/doc/refman/5.6/en/replication-options-binary-log.html#sysvar_binlog_format">ROW based replication</a>.<ul>
-<li>Without this, it is not possible to run Ghostferry safely.</li>
+<li>Without this, it is not possible to run Ghostferry safely and Ghostferry
+will error out if it detects <code class="docutils literal notranslate"><span class="pre">binlog_row_image</span></code> is not set to <code class="docutils literal notranslate"><span class="pre">FULL</span></code>.</li>
 </ul>
 </li>
 <li>Tables to be copied have integer primary keys.<ul>
@@ -64,13 +65,13 @@ those tables.</li>
 </ul>
 </li>
 <li><code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> can only copy a whole table at a time.<ul>
-<li>If you need copy a subset, use ghostferry as a library to build your own
+<li>If you need to copy a subset, use ghostferry as a library to build your own
 application.</li>
 </ul>
 </li>
-<li>Ghostferry should only be run on the master database where writes occur.
-Otherwise there may be a race condition cause some binlog entries to be
-missed.<ul>
+<li>In cases of a multi-node replication setup, Ghostferry should only be run on
+the master database where writes occur. Otherwise there may be a race
+condition causing some binlog entries to be missed.<ul>
 <li>There may be a way to fix this in the future.</li>
 </ul>
 </li>
@@ -96,21 +97,21 @@ database to read only.</li>
 </div>
 <div class="section" id="to-verify-or-not-to-verify">
 <h2>To Verify Or Not To Verify<a class="headerlink" href="#to-verify-or-not-to-verify" title="Permalink to this headline">¶</a></h2>
-<p>Ghostferry has two built-in verifier. They are designed to give you certainty
+<p>Ghostferry has two built-in verifiers. They are designed to give you certainty
 that the data of the source and the target are identical after a move and
 nothing was corrupted/missed. They are designed to be used during the cutover
-process, when write to the source database has stopped and writes to the target
-has not yet started. During their run, both the source and target must kept
-read only and thus incur downtime for your dataset. The two different verifiers
-have different downtime characteristics. See the <a class="reference internal" href="verifiers.html#verifiers"><span class="std std-ref">Verifiers</span></a> page for more
-details on what they are and how to choose a verifier. This means you have to
-decide if you want to verify or not.</p>
+process, when writes to the source database has stopped and writes to the
+target have not yet started. During the run, both the source and target must
+be kept read only and thus incur downtime for your dataset. The two different
+verifiers have different downtime characteristics. See the <a class="reference internal" href="verifiers.html#verifiers"><span class="std std-ref">Verifiers</span></a>
+page for more details on what they are and how to choose a verifier. This means
+you have to decide if you want to verify or not.</p>
 <p>In order to know how much downtime you will incur during the verification
 process, you can test it with the slave based staging move described in
 <a class="reference internal" href="#testing-ghostferry-with-production-data">Testing Ghostferry with Production Data</a>. During the cutover stages, run
 verification as normal and measure the time taken.</p>
 <p>Since the ultimate objective of the verifier is to verify that Ghostferry did
-not make a mistake while copying the data and give you a peace of mind, if you
+not make a mistake while copying the data and give you peace of mind, if you
 were able to successfully perform the staging verification, you would know that
 the system already works with your setup and data. At this point it may no
 longer be necessary to run a verification during the production move as the
@@ -124,14 +125,15 @@ issues after the fact:</p>
 <li>Run ghostferry as normal between the master source and target database.</li>
 <li>During the cutover, also stop replication to the slaves setup in step 1 and
 2.</li>
-<li>Manually checksum table on the slaves.</li>
+<li>Manually compare the table on the slaves using something like <code class="docutils literal notranslate"><span class="pre">CHECKSUM</span>
+<span class="pre">TABLE</span></code>.</li>
 </ol>
 </div>
 <div class="section" id="dealing-with-errors-and-restarting-runs">
 <h2>Dealing with Errors and Restarting Runs<a class="headerlink" href="#dealing-with-errors-and-restarting-runs" title="Permalink to this headline">¶</a></h2>
 <p>It is possible for Ghostferry to encounter an error and exit. In these
 scenarios, the target will be left alone and Ghostferry will stop
-selecting/tailing data from the source database. For the time being, there are
+selecting/tailing data from the source database. For the time being, there is
 no support for resuming a run from a previously saved coordinate. See
 <a class="reference external" href="https://github.com/Shopify/ghostferry/issues/17">https://github.com/Shopify/ghostferry/issues/17</a>.</p>
 <p>Starting another Ghostferry run is perfectly fine. For copydb specifically, you
@@ -185,7 +187,7 @@ verifier.</p>
 <li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction to Ghostferry</a></li>
 <li class="toctree-l1"><a class="reference internal" href="technicaloverview.html">Technical Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorialcopydb.html">Tutorial for ghostferry-copydb</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in Production</a><ul>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in production</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#testing-ghostferry-with-production-data">Testing Ghostferry with Production Data</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#to-verify-or-not-to-verify">To Verify Or Not To Verify</a></li>

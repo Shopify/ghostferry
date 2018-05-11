@@ -6,7 +6,7 @@ Tutorial for ghostferry-copydb
 
 This tutorial aims to provide you with a first look on how to operate
 ghostferry-copydb to copy data from one database to another so you can have
-some experiencing actually running Ghostferry. A production run of a data
+some experience with actually running Ghostferry. A production run of a data
 migration will be largely similar, although you will have to consider how to
 appropriately perform the cutover operations with respect to the applications
 accessing the database. Recommendations on how to run copydb in production can
@@ -17,7 +17,7 @@ Setup and Seed MySQL
 
 In this tutorial, we will be using two test databases that we setup locally and
 we will not consider the application. With git, clone the Ghostferry repository
-and create the test mysql instances:
+and create the test MySQL instances:
 
 .. code-block:: shell-session
 
@@ -25,11 +25,11 @@ and create the test mysql instances:
   $ cd ghostferry
   $ docker-compose up -d mysql-1 mysql-2
 
-Users witout docker-compose can either install it on their machine or manually
-setup two localhost mysql instances available at port 29291 and 29292 with FULL
+Users without docker-compose can either install it on their machine or manually
+setup two localhost MySQL instances available at port 29291 and 29292 with FULL
 image row based replication.
 
-Confirm that you can access both mysql instances with the mysql console:
+Confirm that you can access both MySQL instances with the MySQL console:
 
 .. code-block:: shell-session
 
@@ -59,7 +59,7 @@ This created two tables under the database ``abc``. We will be moving
 
 We then need to create an user with the appropriate permissions for Ghostferry
 to connect with to perform the move with on both server. For this move, we
-neglect SSL connections to mysql and thus do not require SSL for the user. In
+neglect SSL connections to MySQL and thus do not require SSL for the user. In
 production, you may want to enable that.
 
 On the source server, the minimum permissions required are:
@@ -147,7 +147,7 @@ which should look like the following:
 Save this file to a file called ``examplerun.json``.
 
 Note that in the example above, the Collation and charsets are set. If you
-setup your own mysql instances, you might need to change these values.  We are
+setup your own MySQL instances, you might need to change these values.  We are
 also using the ``Whitelist`` and ``Blacklist`` to ensure that we only copy
 ``abc.table1`` from the source to the target. For more information about this
 configuration file, see :ref:`copydbinprod`.
@@ -261,7 +261,7 @@ we get into the habit of thinking of this step:
   mysql> FLUSH BINARY LOGS            -- Ensure all writes are record in binlog
 
 The last step ``FLUSH BINARY LOGS`` is not necessarily required if you run your
-mysql server with ``sync_binlog=1``. If you're running Ghostferry from a source
+MySQL server with ``sync_binlog=1``. If you're running Ghostferry from a source
 that is a replica, you need another tool to guarantee this property. See
 `<https://github.com/Shopify/ghostferry/issues/19>`_.
 

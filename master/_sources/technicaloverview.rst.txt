@@ -5,23 +5,24 @@ Technical Overview
 ==================
 
 Ghostferry is a Go library to move data from one MySQL instance to another
-while the source (and possibly the target) the databases are online. In order
-to do this, Ghostferry must be able to copy the data from a source database to
-a target database while keeping track of all changes in the source database to
-apply it to the target database. This is implemented by SELECTing from the
+while the source (and possibly the target) databases are online. In order to do
+this, Ghostferry must be able to copy the data from a source database to a
+target database while keeping track of all changes in the source database to
+apply them to the target database. This is implemented by SELECTing from the
 source database and INSERTing them into the target (copy) and applying the
 binlog changes from the source on the target (change synchronization).
 
 This setup has the advantage of working with essentially any configuration of
-MySQL. It also provides a seamless process as it is all contain in a single
+MySQL. It also provides a seamless process as it is all contained in a single
 package, as opposed to split between multiple applications
-(mysqldump/xtrabackup and mysql replication).
+(mysqldump/xtrabackup and MySQL replication).
 
-It is important to note that Ghostferry is simple a part of the puzzle of a
+It is important to note that Ghostferry is simply a part of the puzzle of a
 live database migration. For data integrity reasons, Ghostferry mandates that
-you stop writes to the dataset you are copying a stage of execution known as
-cutover. During the same stage of execution, you'll also likely need to repoint
-your database from the source to the target.
+you stop writes to the dataset you are copying at a stage of execution called
+cutover. During the same stage of execution, you'll also likely need to
+instruct any applications accessing the source database to access the target
+database instead.
 
 To gain a better understanding of the overall process, let's take a look how
 Ghostferry works:
@@ -33,15 +34,17 @@ Ghostferry works:
    target database.
 3. Ghostferry finishes copying all data from the source and target database.
    The binlog apply operation of (1) continues in the background.
-4. Ghostferry waits until the binlog apply is roughly caught up to the latest
-   available position on the source database.
-5. Outside of Ghostferry: you should no more writes to to the source database
-   via either a read_only flag (for whole database) or some sort of application
-   level lock (for partial database).
+4. Ghostferry waits until the binlog apply is close to caught up to the latest
+   available position on the source database. This is done so we don't initiate
+   the cutover process when there is a large backlog of binlog entries to be
+   applied to the target, thereby reducing the downtime required.
+5. Outside of Ghostferry: you should allow no more writes to to the source
+   database via either a read_only flag (for whole database copies) or some
+   sort of application level lock (for partial database copies).
 6. Instruct Ghostferry to enter the cutover phase. This essentially tells
-   Ghostferry to stop tailing binlog after catching up to the latest master
+   Ghostferry to stop tailing the binlog after catching up to the latest master
    position. Once Ghostferry does this, it terminates. This step can be done
-   via the web ui or via a method call.
+   via the web UI or via a method call.
 7. Outside of Ghostferry: you should change the application that uses the
    source database to use the target database. You should also enable writes on
    the target database if it was previously read only somehow.

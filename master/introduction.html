@@ -40,9 +40,9 @@ and replaying the binlog while the data is being copied by a separate process.</
 is because Ghostferry has the capability to selectively filter data to copy.
 The filtering could be arbitrarily complex and thus cannot be easily expressed
 in some configuration file.</p>
-<p>That said, there is a generic tool known as <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> that will
-copy whole schemas from one MySQL to another with only the basic database/table
-name filtering.</p>
+<p>That said, there is a generic tool called <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> that will copy
+tables and the data contained in them from one MySQL to another with only the
+basic database/table name filtering.</p>
 <p>Ghostferry is inspired by Github’s <a class="reference external" href="https://github.com/github/gh-ost">gh-ost</a>.
 However, instead of copying data from and to the same database, Ghostferry
 copies data from one database to another.</p>
@@ -58,10 +58,10 @@ database as a service.</p>
 <p>The traditional process can only move a single table at minimum. Ghostferry
 allows you to use the filtering capability to move rows subject to a custom
 constraint.</p>
-<p>Additionally, traditional tools present itself as a complicated process that
-requires a lot of manual intervention from a reasonably experienced database
-administrator. Ghostferry provides a single binary solution that can be
-operated by most with out in depth knowledge of MySQL.</p>
+<p>Additionally, traditional tools present themselves as a complicated process
+that require a lot of manual intervention from a reasonably experienced
+database administrator. Ghostferry provides a single binary solution that can
+be operated by most without in depth knowledge of MySQL.</p>
 </div>
 </div>
 
@@ -98,7 +98,7 @@ operated by most with out in depth knowledge of MySQL.</p>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="technicaloverview.html">Technical Overview</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tutorialcopydb.html">Tutorial for ghostferry-copydb</a></li>
-<li class="toctree-l1"><a class="reference internal" href="copydbinprod.html">Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in Production</a></li>
+<li class="toctree-l1"><a class="reference internal" href="copydbinprod.html">Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in production</a></li>
 <li class="toctree-l1"><a class="reference internal" href="verifiers.html">Verifiers</a></li>
 <li class="toctree-l1"><a class="reference internal" href="howtousecustom.html">Using Ghostferry in Custom Applications</a></li>
 </ul>

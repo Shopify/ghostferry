@@ -1,7 +1,7 @@
 .. _copydbinprod:
 
 ===========================================
-Running ``ghostferry-copydb`` in Production
+Running ``ghostferry-copydb`` in production
 ===========================================
 
 Assuming you have gone through :ref:`tutorialcopydb`, you probably want to run
@@ -19,11 +19,12 @@ to consider about this are:
   app will be minimal compared to other methods but still non-zero.
 
   - Figure out how much downtime you are willing to tolerate. Using Ghostferry,
-    one can realistically achieve downtime on the order of seconds.
+    one can realistically achieve downtime in the order of seconds.
 
 - The source database must be running with `FULL image`_ `ROW based replication`_.
 
-  - Without this, it is not possible to run Ghostferry safely.
+  - Without this, it is not possible to run Ghostferry safely and Ghostferry
+    will error out if it detects ``binlog_row_image`` is not set to ``FULL``.
 
 - Tables to be copied have integer primary keys.
 
@@ -38,12 +39,12 @@ to consider about this are:
 
 - ``ghostferry-copydb`` can only copy a whole table at a time.
 
-  - If you need copy a subset, use ghostferry as a library to build your own
+  - If you need to copy a subset, use ghostferry as a library to build your own
     application.
 
-- Ghostferry should only be run on the master database where writes occur.
-  Otherwise there may be a race condition cause some binlog entries to be
-  missed.
+- In cases of a multi-node replication setup, Ghostferry should only be run on
+  the master database where writes occur. Otherwise there may be a race
+  condition causing some binlog entries to be missed.
 
   - There may be a way to fix this in the future.
 
@@ -72,15 +73,15 @@ some additional setup:
 To Verify Or Not To Verify
 --------------------------
 
-Ghostferry has two built-in verifier. They are designed to give you certainty
+Ghostferry has two built-in verifiers. They are designed to give you certainty
 that the data of the source and the target are identical after a move and
 nothing was corrupted/missed. They are designed to be used during the cutover
-process, when write to the source database has stopped and writes to the target
-has not yet started. During their run, both the source and target must kept
-read only and thus incur downtime for your dataset. The two different verifiers
-have different downtime characteristics. See the :ref:`verifiers` page for more
-details on what they are and how to choose a verifier. This means you have to
-decide if you want to verify or not.
+process, when writes to the source database has stopped and writes to the
+target have not yet started. During the run, both the source and target must
+be kept read only and thus incur downtime for your dataset. The two different
+verifiers have different downtime characteristics. See the :ref:`verifiers`
+page for more details on what they are and how to choose a verifier. This means
+you have to decide if you want to verify or not.
 
 In order to know how much downtime you will incur during the verification
 process, you can test it with the slave based staging move described in
@@ -88,7 +89,7 @@ process, you can test it with the slave based staging move described in
 verification as normal and measure the time taken.
 
 Since the ultimate objective of the verifier is to verify that Ghostferry did
-not make a mistake while copying the data and give you a peace of mind, if you
+not make a mistake while copying the data and give you peace of mind, if you
 were able to successfully perform the staging verification, you would know that
 the system already works with your setup and data. At this point it may no
 longer be necessary to run a verification during the production move as the
@@ -103,14 +104,15 @@ issues after the fact:
 3. Run ghostferry as normal between the master source and target database.
 4. During the cutover, also stop replication to the slaves setup in step 1 and
    2.
-5. Manually checksum table on the slaves.
+5. Manually compare the table on the slaves using something like ``CHECKSUM
+   TABLE``.
 
 Dealing with Errors and Restarting Runs
 ---------------------------------------
 
 It is possible for Ghostferry to encounter an error and exit. In these
 scenarios, the target will be left alone and Ghostferry will stop
-selecting/tailing data from the source database. For the time being, there are
+selecting/tailing data from the source database. For the time being, there is
 no support for resuming a run from a previously saved coordinate. See
 `<https://github.com/Shopify/ghostferry/issues/17>`_.
 

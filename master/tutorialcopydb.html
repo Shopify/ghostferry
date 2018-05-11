@@ -15,7 +15,7 @@
     <script type="text/javascript" src="_static/doctools.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Running ghostferry-copydb in Production" href="copydbinprod.html" />
+    <link rel="next" title="Running ghostferry-copydb in production" href="copydbinprod.html" />
     <link rel="prev" title="Technical Overview" href="technicaloverview.html" />
    
   <link rel="stylesheet" href="_static/custom.css" type="text/css" />
@@ -35,25 +35,25 @@
 <span id="tutorialcopydb"></span><h1>Tutorial for ghostferry-copydb<a class="headerlink" href="#tutorial-for-ghostferry-copydb" title="Permalink to this headline">¶</a></h1>
 <p>This tutorial aims to provide you with a first look on how to operate
 ghostferry-copydb to copy data from one database to another so you can have
-some experiencing actually running Ghostferry. A production run of a data
+some experience with actually running Ghostferry. A production run of a data
 migration will be largely similar, although you will have to consider how to
 appropriately perform the cutover operations with respect to the applications
 accessing the database. Recommendations on how to run copydb in production can
-be found in <a class="reference internal" href="copydbinprod.html#copydbinprod"><span class="std std-ref">Running ghostferry-copydb in Production</span></a>.</p>
+be found in <a class="reference internal" href="copydbinprod.html#copydbinprod"><span class="std std-ref">Running ghostferry-copydb in production</span></a>.</p>
 <div class="section" id="setup-and-seed-mysql">
 <h2>Setup and Seed MySQL<a class="headerlink" href="#setup-and-seed-mysql" title="Permalink to this headline">¶</a></h2>
 <p>In this tutorial, we will be using two test databases that we setup locally and
 we will not consider the application. With git, clone the Ghostferry repository
-and create the test mysql instances:</p>
+and create the test MySQL instances:</p>
 <div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$</span> git clone https://github.com/Shopify/ghostferry.git
 <span class="gp">$</span> <span class="nb">cd</span> ghostferry
 <span class="gp">$</span> docker-compose up -d mysql-1 mysql-2
 </pre></div>
 </div>
-<p>Users witout docker-compose can either install it on their machine or manually
-setup two localhost mysql instances available at port 29291 and 29292 with FULL
+<p>Users without docker-compose can either install it on their machine or manually
+setup two localhost MySQL instances available at port 29291 and 29292 with FULL
 image row based replication.</p>
-<p>Confirm that you can access both mysql instances with the mysql console:</p>
+<p>Confirm that you can access both MySQL instances with the MySQL console:</p>
 <div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">#</span> mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29291</span>
 <span class="gp">#</span> mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29292</span>
 </pre></div>
@@ -78,7 +78,7 @@ we must first create some test data on the 29291 server to be copied over:</p>
 <h2>(Mirrors Production) Create Ghostferry Users<a class="headerlink" href="#mirrors-production-create-ghostferry-users" title="Permalink to this headline">¶</a></h2>
 <p>We then need to create an user with the appropriate permissions for Ghostferry
 to connect with to perform the move with on both server. For this move, we
-neglect SSL connections to mysql and thus do not require SSL for the user. In
+neglect SSL connections to MySQL and thus do not require SSL for the user. In
 production, you may want to enable that.</p>
 <p>On the source server, the minimum permissions required are:</p>
 <div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="go">mysql&gt; CREATE USER &#39;ghostferry&#39;@&#39;%&#39; IDENTIFIED BY &#39;ghostferry&#39;;</span>
@@ -152,10 +152,10 @@ which should look like the following:</p>
 </div>
 <p>Save this file to a file called <code class="docutils literal notranslate"><span class="pre">examplerun.json</span></code>.</p>
 <p>Note that in the example above, the Collation and charsets are set. If you
-setup your own mysql instances, you might need to change these values.  We are
+setup your own MySQL instances, you might need to change these values.  We are
 also using the <code class="docutils literal notranslate"><span class="pre">Whitelist</span></code> and <code class="docutils literal notranslate"><span class="pre">Blacklist</span></code> to ensure that we only copy
 <code class="docutils literal notranslate"><span class="pre">abc.table1</span></code> from the source to the target. For more information about this
-configuration file, see <a class="reference internal" href="copydbinprod.html#copydbinprod"><span class="std std-ref">Running ghostferry-copydb in Production</span></a>.</p>
+configuration file, see <a class="reference internal" href="copydbinprod.html#copydbinprod"><span class="std std-ref">Running ghostferry-copydb in production</span></a>.</p>
 <p>Lastly, we have enabled verification to be available to use during the run.
 Specifically, we enabled the ChecksumTable verifier as the amount of data
 copied will be small. For more information about the verifiers, see
@@ -251,7 +251,7 @@ we get into the habit of thinking of this step:</p>
 </pre></div>
 </div>
 <p>The last step <code class="docutils literal notranslate"><span class="pre">FLUSH</span> <span class="pre">BINARY</span> <span class="pre">LOGS</span></code> is not necessarily required if you run your
-mysql server with <code class="docutils literal notranslate"><span class="pre">sync_binlog=1</span></code>. If you’re running Ghostferry from a source
+MySQL server with <code class="docutils literal notranslate"><span class="pre">sync_binlog=1</span></code>. If you’re running Ghostferry from a source
 that is a replica, you need another tool to guarantee this property. See
 <a class="reference external" href="https://github.com/Shopify/ghostferry/issues/19">https://github.com/Shopify/ghostferry/issues/19</a>.</p>
 <p>We can then go back to the web ui and click the Allow Automatic Cutover button.
@@ -324,7 +324,7 @@ CTRL+C to interrupt the ghostferry-copydb process.</p>
 <li class="toctree-l2"><a class="reference internal" href="#finishing-ghostferry-run-and-next-steps">Finishing Ghostferry Run and Next Steps</a></li>
 </ul>
 </li>
-<li class="toctree-l1"><a class="reference internal" href="copydbinprod.html">Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in Production</a></li>
+<li class="toctree-l1"><a class="reference internal" href="copydbinprod.html">Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in production</a></li>
 <li class="toctree-l1"><a class="reference internal" href="verifiers.html">Verifiers</a></li>
 <li class="toctree-l1"><a class="reference internal" href="howtousecustom.html">Using Ghostferry in Custom Applications</a></li>
 </ul>
@@ -334,7 +334,7 @@ CTRL+C to interrupt the ghostferry-copydb process.</p>
 <ul>
   <li><a href="index.html">Documentation overview</a><ul>
       <li>Previous: <a href="technicaloverview.html" title="previous chapter">Technical Overview</a></li>
-      <li>Next: <a href="copydbinprod.html" title="next chapter">Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in Production</a></li>
+      <li>Next: <a href="copydbinprod.html" title="next chapter">Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in production</a></li>
   </ul></li>
 </ul>
 </div>
