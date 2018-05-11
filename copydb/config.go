@@ -6,21 +6,23 @@ import (
 	"github.com/Shopify/ghostferry"
 )
 
-// Whitelist and blacklisting things to copy.
-// Also allows to rename things during the copy process.
+// Whitelisting and blacklisting databases/tables to copy.
+// Also allows to rename databases/tables during the copy process.
 //
 // If this is empty for a filter, it means to not filter for anything and thus
 // whitelist everything.
 type FilterAndRewriteConfigs struct {
-	// Whitelisted databases/tables. Mutually exclusive with Blacklist.
+	// Whitelisted databases/tables. Mutually exclusive with Blacklist as it will
+	// result in an error.
 	Whitelist []string
 
-	// Blacklisted databases/tables. Mutually exclusive with Whitelist.
+	// Blacklisted databases/tables. Mutually exclusive with Whitelist as it will
+	// result in an error.
 	Blacklist []string
 
-	// Allows database/tables to be renamed from source to the target, where they
-	// key of this struct is the name on the source database and the value of the
-	// struct is on the target database.
+	// Allows database/tables to be renamed from source to the target, where the
+	// key of this map is the database/table names on the source database and the
+	// value of the map is on the database/table names target database.
 	Rewrites map[string]string
 }
 

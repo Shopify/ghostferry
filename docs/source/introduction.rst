@@ -13,9 +13,9 @@ is because Ghostferry has the capability to selectively filter data to copy.
 The filtering could be arbitrarily complex and thus cannot be easily expressed
 in some configuration file.
 
-That said, there is a generic tool known as ``ghostferry-copydb`` that will
-copy whole schemas from one MySQL to another with only the basic database/table
-name filtering.
+That said, there is a generic tool called ``ghostferry-copydb`` that will copy
+tables and the data contained in them from one MySQL to another with only the
+basic database/table name filtering.
 
 Ghostferry is inspired by Github's `gh-ost <https://github.com/github/gh-ost>`_.
 However, instead of copying data from and to the same database, Ghostferry
@@ -36,7 +36,7 @@ The traditional process can only move a single table at minimum. Ghostferry
 allows you to use the filtering capability to move rows subject to a custom
 constraint.
 
-Additionally, traditional tools present itself as a complicated process that
-requires a lot of manual intervention from a reasonably experienced database
-administrator. Ghostferry provides a single binary solution that can be
-operated by most with out in depth knowledge of MySQL.
+Additionally, traditional tools present themselves as a complicated process
+that require a lot of manual intervention from a reasonably experienced
+database administrator. Ghostferry provides a single binary solution that can
+be operated by most without in depth knowledge of MySQL.
