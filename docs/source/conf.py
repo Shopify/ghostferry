@@ -90,6 +90,10 @@ html_theme = 'alabaster'
 #
 html_theme_options = {
     "show_related": True,
+    "github_user": "Shopify",
+    "github_repo": "ghostferry",
+    "github_type": "star",
+    "description": " The swiss army knife of live data migrations",
 }
 
 # Add any paths that contain custom static files (such as style sheets) here,

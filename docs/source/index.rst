@@ -12,8 +12,15 @@ Welcome to Ghostferry's documentation!
 
    introduction
    technicaloverview
-   howtouse
-   development
+   tutorialcopydb
+   copydbinprod
+   verifiers
+   howtousecustom
+
+API Documentation
+=================
+
+See: `<https://godoc.org/github.com/Shopify/ghostferry>`_.
 
 
 Indices and tables

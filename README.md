@@ -12,8 +12,10 @@ There is an example application called ghostferry-copydb included (under the
 `copydb` directory) that demonstrates this library by copying an entire
 database from one machine to another.
 
-Talk to us on IRC at [irc.freenode.net
-#ghostferry](https://webchat.freenode.net/?channels=#ghostferry).
+Talk to us on IRC at [irc.freenode.net #ghostferry](https://webchat.freenode.net/?channels=#ghostferry).
+
+- Documentations: https://shopify.github.io/ghostferry
+- Code documentations: https://godoc.org/github.com/Shopify/ghostferry
 
 Overview of How it Works
 ------------------------

@@ -1,14 +1,13 @@
-.. _howtouse:
+.. _howtousecustom:
 
-=====================
-How to use Ghostferry
-=====================
+=======================================
+Using Ghostferry in Custom Applications
+=======================================
 
+TODO. For the time being, see the ghostferry-copydb project.
 
-
-============================
 Consuming Ghostferry Metrics
-============================
+----------------------------
 
 Ghostferry provides optional metrics to your application.
 
