@@ -193,7 +193,9 @@ func (d *DataIterator) Run() {
 
 				logger := d.logger.WithField("table", table.String())
 
-				cursor := d.CursorConfig.NewCursor(table, d.CurrentState.TargetPrimaryKeys()[table.String()])
+				// TODO: switch the state tracker to use the PK class
+				targetPK := d.CurrentState.TargetPrimaryKeys()[table.String()]
+				cursor := d.CursorConfig.NewCursor(table, PK{Value: targetPK})
 				err := cursor.Each(func(batch *RowBatch) error {
 					metrics.Count("RowEvent", int64(batch.Size()), []MetricTag{
 						MetricTag{"table", table.Name},

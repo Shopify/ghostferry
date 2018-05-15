@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -317,12 +316,12 @@ func (v *IterativeVerifier) iterateAllTables(mismatchedPkFunc func(uint64, *sche
 }
 
 func (v *IterativeVerifier) iterateTableFingerprints(table *schema.Table, mismatchedPkFunc func(uint64, *schema.Table) error) error {
-	// The cursor will stop iterating when it cannot find anymore rows,
-	// so it will not iterate until MaxUint64.
-	cursor := v.CursorConfig.NewCursorWithoutRowLock(table, math.MaxUint64)
+	// The cursor will stop iterating when it cannot find anymore rows
+	pkColumn := table.GetPKColumn(0)
+	cursor := v.CursorConfig.NewCursorWithoutRowLock(table, MaxPK(pkColumn))
 
 	// It only needs the PKs, not the entire row.
-	cursor.ColumnsToSelect = []string{fmt.Sprintf("`%s`", table.GetPKColumn(0).Name)}
+	cursor.ColumnsToSelect = []string{fmt.Sprintf("`%s`", pkColumn.Name)}
 	return cursor.Each(func(batch *RowBatch) error {
 		metrics.Count("RowEvent", int64(batch.Size()), []MetricTag{
 			MetricTag{"table", table.Name},

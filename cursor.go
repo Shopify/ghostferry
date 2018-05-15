@@ -40,7 +40,7 @@ type CursorConfig struct {
 }
 
 // returns a new Cursor with an embedded copy of itself
-func (c *CursorConfig) NewCursor(table *schema.Table, maxPk uint64) *Cursor {
+func (c *CursorConfig) NewCursor(table *schema.Table, maxPk PK) *Cursor {
 	return &Cursor{
 		CursorConfig:  *c,
 		Table:         table,
@@ -50,7 +50,7 @@ func (c *CursorConfig) NewCursor(table *schema.Table, maxPk uint64) *Cursor {
 }
 
 // returns a new Cursor with an embedded copy of itself
-func (c *CursorConfig) NewCursorWithoutRowLock(table *schema.Table, maxPk uint64) *Cursor {
+func (c *CursorConfig) NewCursorWithoutRowLock(table *schema.Table, maxPk PK) *Cursor {
 	return &Cursor{
 		CursorConfig:  *c,
 		Table:         table,
@@ -63,30 +63,31 @@ type Cursor struct {
 	CursorConfig
 
 	Table         *schema.Table
-	MaxPrimaryKey uint64
+	MaxPrimaryKey PK
 	RowLock       bool
 
 	pkColumn                 *schema.TableColumn
-	lastSuccessfulPrimaryKey uint64
+	lastSuccessfulPrimaryKey PK
 	logger                   *logrus.Entry
 }
 
 func (c *Cursor) Each(f func(*RowBatch) error) error {
-	c.lastSuccessfulPrimaryKey = 0
 	c.logger = logrus.WithFields(logrus.Fields{
 		"table": c.Table.String(),
 		"tag":   "cursor",
 	})
 	c.pkColumn = c.Table.GetPKColumn(0)
 
+	c.lastSuccessfulPrimaryKey = MinPK(c.pkColumn)
+
 	if len(c.ColumnsToSelect) == 0 {
 		c.ColumnsToSelect = []string{"*"}
 	}
 
-	for c.lastSuccessfulPrimaryKey < c.MaxPrimaryKey {
+	for c.lastSuccessfulPrimaryKey.Compare(c.MaxPrimaryKey) == -1 {
 		var tx SqlPreparerAndRollbacker
 		var batch *RowBatch
-		var pkpos uint64
+		var pkpos PK
 
 		err := WithRetries(c.ReadRetries, 0, c.logger, "fetch rows", func() (err error) {
 			if c.Throttler != nil {
@@ -124,9 +125,9 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 			break
 		}
 
-		if pkpos <= c.lastSuccessfulPrimaryKey {
+		if pkpos.Compare(c.lastSuccessfulPrimaryKey) <= 0 {
 			tx.Rollback()
-			err = fmt.Errorf("new pkpos %d <= lastSuccessfulPk %d", pkpos, c.lastSuccessfulPrimaryKey)
+			err = fmt.Errorf("new pkpos %d <= lastSuccessfulPk %d", pkpos.Value, c.lastSuccessfulPrimaryKey)
 			c.logger.WithError(err).Errorf("last successful pk position did not advance")
 			return err
 		}
@@ -146,17 +147,19 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 	return nil
 }
 
-func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, pkpos uint64, err error) {
+func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, pkpos PK, err error) {
 	var selectBuilder squirrel.SelectBuilder
 
+	// TODO: later on we can change it so BuildSelect takes the PK struct
+	lastSuccessfulIntPk := c.lastSuccessfulPrimaryKey.Value.(uint64)
 	if c.BuildSelect != nil {
-		selectBuilder, err = c.BuildSelect(c.ColumnsToSelect, c.Table, c.lastSuccessfulPrimaryKey, c.BatchSize)
+		selectBuilder, err = c.BuildSelect(c.ColumnsToSelect, c.Table, lastSuccessfulIntPk, c.BatchSize)
 		if err != nil {
 			c.logger.WithError(err).Error("failed to apply filter for select")
 			return
 		}
 	} else {
-		selectBuilder = DefaultBuildSelect(c.ColumnsToSelect, c.Table, c.lastSuccessfulPrimaryKey, c.BatchSize)
+		selectBuilder = DefaultBuildSelect(c.ColumnsToSelect, c.Table, lastSuccessfulIntPk, c.BatchSize)
 	}
 
 	if c.RowLock {
@@ -232,11 +235,13 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, pkpos uint64, err error
 	}
 
 	if len(batchData) > 0 {
-		pkpos, err = batchData[len(batchData)-1].GetUint64(pkIndex)
+		var pkIntPos uint64
+		pkIntPos, err = batchData[len(batchData)-1].GetUint64(pkIndex)
 		if err != nil {
 			logger.WithError(err).Error("failed to get uint64 pk value")
 			return
 		}
+		pkpos = PK{Value: pkIntPos}
 	}
 
 	batch = NewRowBatch(c.Table, batchData, pkIndex)
