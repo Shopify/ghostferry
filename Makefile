@@ -28,7 +28,7 @@ DEB_TARGET       = $(BUILD_DIR)/$(PROJECT_BIN)_$(VERSION_STR).deb
 .PHONY: test clean reset-deb-dir $(PROJECTS) $(PROJECT_DEBS)
 .DEFAULT_GOAL := test
 
-$(PROJECTS): $(GOBIN) $(SOURCES)
+$(PROJECTS): $(GOBIN)
 	$(eval proj := $@)
 	go build -i -ldflags "$(LDFLAGS)" -o $(BIN_TARGET) $(PROJECT_PKG)
 
@@ -47,7 +47,7 @@ $(GOBIN):
 
 test:
 	@go version
-	go test `glide nv` -p 1 $(TESTFLAGS)
+	go test ./test ./copydb/test ./sharding/test -p 1 -v
 
 clean:
 	rm -rf build
