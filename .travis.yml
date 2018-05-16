@@ -1,0 +1,51 @@
+---
+sudo: required
+language: go
+go:
+  - "1.10.2"
+
+go_import_path: github.com/Shopify/ghostferry
+
+services:
+  - docker
+
+env:
+  - DOCKER_COMPOSE_VERSION=1.21.2 RELEASE_BRANCH=master
+
+install:
+  # Installing Docker Compose
+  - sudo rm /usr/local/bin/docker-compose
+  - curl -L https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-`uname -s`-`uname -m` > docker-compose
+  - chmod +x docker-compose
+  - sudo mv docker-compose /usr/local/bin
+
+  # Installing and Starting MySQL
+  - .travisci/start-mysql.sh
+
+script:
+  - make test
+
+before_deploy:
+  # before_deploy runs once per provider on travis. We only need it to run
+  # once.
+  # https://github.com/travis-ci/travis-ci/issues/2570
+  - "[ \"$BEFORE_DEPLOY_RUN\" = '1' ] || .travisci/build-docs.sh"
+  - "[ \"$BEFORE_DEPLOY_RUN\" = '1' ] || .travisci/build-debs.sh"
+  - export BEFORE_DEPLOY_RUN=1
+
+deploy:
+  - provider: pages
+    skip-cleanup: true
+    github-token: "$GITHUB_TOKEN"
+    keep-history: true
+    local-dir: docs/build/ghostferry-pages
+    on:
+      branch: master
+      tags: true
+  - provider: releases
+    skip-cleanup: true
+    api_key: "$GITHUB_TOKEN"
+    file_glob: true
+    file: build/ghostferry-*.deb
+    on:
+      tags: true
