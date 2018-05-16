@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -xe
+
 sudo apt-get install python3-pip
 sudo pip3 install sphinx
 cd docs

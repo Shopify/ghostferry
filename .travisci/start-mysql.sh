@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -xe
+
 docker-compose up -d mysql-1 mysql-2
 
 # We need a way to check if the mysql servers have booted or not before running
