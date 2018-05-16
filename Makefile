@@ -2,7 +2,7 @@
 VERSION         := 1.1.0
 DATETIME        := $(shell date -u +%Y%m%d%H%M%S)
 
-ifndef $(IGNORE_DIRTY_TREE)
+ifndef IGNORE_DIRTY_TREE
 DIRTY_TREE      := $(shell git diff-index --quiet HEAD -- || echo '+dirty')
 endif
 

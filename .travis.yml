@@ -40,10 +40,12 @@ deploy:
     keep-history: true
     local-dir: docs/build/ghostferry-pages
     on:
-      branch: travis
+      branch: master
+      tags: true
   - provider: releases
     skip-cleanup: true
     api_key: "$GITHUB_TOKEN"
-    file_glob: build/ghostferry-*.deb
+    file_glob: true
+    file: build/ghostferry-*.deb
     on:
-      branch: travis
+      tags: true
