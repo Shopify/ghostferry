@@ -48,7 +48,7 @@ func TestVerificationFailsDeletedRow(t *testing.T) {
 			result, err := iterativeVerifier.VerifyDuringCutover()
 			assert.Nil(t, err)
 			assert.False(t, result.DataCorrect)
-			assert.Regexp(t, "verification failed.*gftest.table1.*pks: (43,42)|(42,43)", result.Message)
+			assert.Regexp(t, "verification failed.*gftest.table1.*pks: (43)|(42)|(43,42)|(42,43)", result.Message)
 			ran = true
 		},
 		DataWriter: &testhelpers.MixedActionDataWriter{
@@ -91,7 +91,7 @@ func TestVerificationFailsUpdatedRow(t *testing.T) {
 			result, err := iterativeVerifier.VerifyDuringCutover()
 			assert.Nil(t, err)
 			assert.False(t, result.DataCorrect)
-			assert.Regexp(t, "verification failed.*gftest.table1.*pks: (43,42)|(42,43)", result.Message)
+			assert.Regexp(t, "verification failed.*gftest.table1.*pks: (42)|(43)|(43,42)|(42,43)", result.Message)
 			ran = true
 		},
 		DataWriter: &testhelpers.MixedActionDataWriter{

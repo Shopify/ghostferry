@@ -24,16 +24,10 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 
 	config.DatabaseRewrites = map[string]string{config.SourceDB: config.TargetDB}
 
-	primaryKeyTables := map[string]struct{}{}
-	for _, name := range config.PrimaryKeyTables {
-		primaryKeyTables[name] = struct{}{}
-	}
-
 	config.CopyFilter = &ShardedCopyFilter{
-		ShardingKey:      config.ShardingKey,
-		ShardingValue:    config.ShardingValue,
-		JoinedTables:     config.JoinedTables,
-		PrimaryKeyTables: primaryKeyTables,
+		ShardingKey:   config.ShardingKey,
+		ShardingValue: config.ShardingValue,
+		JoinedTables:  config.JoinedTables,
 	}
 
 	ignored, err := compileRegexps(config.IgnoredTables)
@@ -42,11 +36,10 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 	}
 
 	config.TableFilter = &ShardedTableFilter{
-		ShardingKey:      config.ShardingKey,
-		SourceShard:      config.SourceDB,
-		JoinedTables:     config.JoinedTables,
-		IgnoredTables:    ignored,
-		PrimaryKeyTables: primaryKeyTables,
+		ShardingKey:   config.ShardingKey,
+		SourceShard:   config.SourceDB,
+		JoinedTables:  config.JoinedTables,
+		IgnoredTables: ignored,
 	}
 
 	if err := config.ValidateConfig(); err != nil {
@@ -88,18 +81,13 @@ func (r *ShardingFerry) Initialize() error {
 	return r.Ferry.Initialize()
 }
 
-func (r *ShardingFerry) Start() error {
-	err := r.Ferry.Start()
-	if err != nil {
-		return err
-	}
-
+func (r *ShardingFerry) newIterativeVerifier() *ghostferry.IterativeVerifier {
 	verifierConcurrency := r.config.VerifierIterationConcurrency
 	if verifierConcurrency == 0 {
 		verifierConcurrency = r.config.DataIterationConcurrency
 	}
 
-	r.verifier = &ghostferry.IterativeVerifier{
+	return &ghostferry.IterativeVerifier{
 		CursorConfig: &ghostferry.CursorConfig{
 			DB:          r.Ferry.SourceDB,
 			BatchSize:   r.config.DataIterationBatchSize,
@@ -121,7 +109,15 @@ func (r *ShardingFerry) Start() error {
 		IgnoredTables: r.config.IgnoredVerificationTables,
 		Concurrency:   verifierConcurrency,
 	}
+}
 
+func (r *ShardingFerry) Start() error {
+	err := r.Ferry.Start()
+	if err != nil {
+		return err
+	}
+
+	r.verifier = r.newIterativeVerifier()
 	return r.verifier.Initialize()
 }
 
@@ -187,6 +183,14 @@ func (r *ShardingFerry) Run() {
 		r.Ferry.ErrorHandler.Fatal("iterative_verifier", err)
 	}
 
+	metrics.Measure("CopyPrimaryKeyTables", nil, 1.0, func() {
+		err = r.copyPrimaryKeyTables()
+	})
+	if err != nil {
+		r.logger.WithField("error", err).Errorf("copying primary key table failed")
+		r.Ferry.ErrorHandler.Fatal("sharding", err)
+	}
+
 	r.Ferry.Throttler.SetDisabled(false)
 
 	metrics.Measure("CutoverUnlock", nil, 1.0, func() {
@@ -210,6 +214,62 @@ func (r *ShardingFerry) deltaCopyJoinedTables() error {
 	}
 
 	return r.Ferry.RunStandaloneDataCopy(tables)
+}
+
+func (r *ShardingFerry) copyPrimaryKeyTables() error {
+	if len(r.config.PrimaryKeyTables) == 0 {
+		return nil
+	}
+
+	pkTables := map[string]struct{}{}
+	for _, name := range r.config.PrimaryKeyTables {
+		pkTables[name] = struct{}{}
+	}
+
+	r.config.TableFilter.(*ShardedTableFilter).PrimaryKeyTables = pkTables
+	r.config.CopyFilter.(*ShardedCopyFilter).PrimaryKeyTables = pkTables
+
+	sourceDbTables, err := ghostferry.LoadTables(r.Ferry.SourceDB, r.config.TableFilter)
+	if err != nil {
+		return err
+	}
+
+	tables := []*schema.Table{}
+	for _, table := range sourceDbTables.AsSlice() {
+		if _, exists := pkTables[table.Name]; exists {
+			if len(table.PKColumns) != 1 {
+				return fmt.Errorf("Multiple PK columns are not supported with the PrimaryKeyTables option")
+			}
+			tables = append(tables, table)
+		}
+	}
+
+	if len(tables) == 0 {
+		return fmt.Errorf("expected primary key tables could not be found")
+	}
+
+	err = r.Ferry.RunStandaloneDataCopy(tables)
+	if err != nil {
+		return err
+	}
+
+	verifier := r.newIterativeVerifier()
+	verifier.TableSchemaCache = sourceDbTables
+	verifier.Tables = tables
+
+	err = verifier.Initialize()
+	if err != nil {
+		return err
+	}
+
+	verificationResult, err := verifier.VerifyOnce()
+	if err != nil {
+		return err
+	} else if !verificationResult.DataCorrect {
+		return fmt.Errorf("primary key tables verifier detected data discrepancy: %s", verificationResult.Message)
+	}
+
+	return nil
 }
 
 func compileRegexps(exps []string) ([]*regexp.Regexp, error) {

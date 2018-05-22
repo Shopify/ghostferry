@@ -22,6 +22,10 @@ type VerificationResult struct {
 	Message     string
 }
 
+func (e VerificationResult) Error() string {
+	return e.Message
+}
+
 type VerificationResultAndStatus struct {
 	VerificationResult
 

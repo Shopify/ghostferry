@@ -17,7 +17,7 @@ const (
 	sourceDbName    = "gftest1"
 	targetDbName    = "gftest2"
 	testTable       = "table1"
-	primaryKeyTable = "single_row_table"
+	primaryKeyTable = "tenants_table"
 	joinedTableName = "joined_table"
 	joinTableName   = "join_table"
 	joiningKey      = "join_id"
