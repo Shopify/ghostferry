@@ -67,7 +67,8 @@ On the source server, the minimum permissions required are:
 .. code-block:: shell-session
 
   mysql> CREATE USER 'ghostferry'@'%' IDENTIFIED BY 'ghostferry';
-  mysql> GRANT SELECT, REPLICATION SLAVE, REPLICATION CLIENT ON `abc`.* TO 'ghostferry'@'%';
+  mysql> GRANT SELECT ON `abc`.* TO 'ghostferry'@'%';
+  mysql> GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'ghostferry'@'%';
 
 The above example grants the permission to only the ``abc`` database. You can
 grant it to more or all databases in your production environment as needed.
@@ -282,7 +283,7 @@ find it via:
 
 .. code-block:: shell-session
 
-  # mysql --protocol=tcp -u root -P 29291
+  # mysql --protocol=tcp -u root -P 29292
   mysql> SELECT * FROM abc.table1 WHERE id = 351;
 
 Finishing Ghostferry Run and Next Steps
@@ -295,4 +296,3 @@ the target database.
 
 The control server UI will stay up indefinitely, to stop it, simply press
 CTRL+C to interrupt the ghostferry-copydb process.
-

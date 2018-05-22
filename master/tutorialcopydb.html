@@ -82,7 +82,8 @@ neglect SSL connections to MySQL and thus do not require SSL for the user. In
 production, you may want to enable that.</p>
 <p>On the source server, the minimum permissions required are:</p>
 <div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="go">mysql&gt; CREATE USER &#39;ghostferry&#39;@&#39;%&#39; IDENTIFIED BY &#39;ghostferry&#39;;</span>
-<span class="go">mysql&gt; GRANT SELECT, REPLICATION SLAVE, REPLICATION CLIENT ON `abc`.* TO &#39;ghostferry&#39;@&#39;%&#39;;</span>
+<span class="go">mysql&gt; GRANT SELECT ON `abc`.* TO &#39;ghostferry&#39;@&#39;%&#39;;</span>
+<span class="go">mysql&gt; GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO &#39;ghostferry&#39;@&#39;%&#39;;</span>
 </pre></div>
 </div>
 <p>The above example grants the permission to only the <code class="docutils literal notranslate"><span class="pre">abc</span></code> database. You can
@@ -266,7 +267,7 @@ perform the verification in the background. Refresh the page a couple of times
 until it tells you the verification was successful.</p>
 <p>Additionally, since we manually inserted a row earlier, we should be able to
 find it via:</p>
-<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">#</span> mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29291</span>
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">#</span> mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29292</span>
 <span class="go">mysql&gt; SELECT * FROM abc.table1 WHERE id = 351;</span>
 </pre></div>
 </div>
