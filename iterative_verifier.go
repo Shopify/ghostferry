@@ -519,7 +519,7 @@ func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Tabl
 	go func() {
 		defer wg.Done()
 		sourceErr = WithRetries(5, 0, v.logger, "get fingerprints from source db", func() (err error) {
-			sourceHashes, err = v.GetHashes(v.SourceDB, table.Schema, table.Name, table.GetPKColumn(0).Name, table.Columns, pks)
+			sourceHashes, err = GetHashes(v.SourceDB, table.Schema, table.Name, table.GetPKColumn(0).Name, table.Columns, pks)
 			return
 		})
 	}()
@@ -529,7 +529,7 @@ func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Tabl
 	go func() {
 		defer wg.Done()
 		targetErr = WithRetries(5, 0, v.logger, "get fingerprints from target db", func() (err error) {
-			targetHashes, err = v.GetHashes(v.TargetDB, targetDb, targetTable, table.GetPKColumn(0).Name, table.Columns, pks)
+			targetHashes, err = GetHashes(v.TargetDB, targetDb, targetTable, table.GetPKColumn(0).Name, table.Columns, pks)
 			return
 		})
 	}()
@@ -569,7 +569,7 @@ func compareHashes(source, target map[uint64][]byte) []uint64 {
 	return mismatches
 }
 
-func (v *IterativeVerifier) GetHashes(db *sql.DB, schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64) (map[uint64][]byte, error) {
+func GetHashes(db *sql.DB, schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64) (map[uint64][]byte, error) {
 	sql, args, err := GetMd5HashesSql(schema, table, pkColumn, columns, pks)
 	if err != nil {
 		return nil, err
