@@ -259,7 +259,7 @@ func loadColumnsForTable(table *schema.Table, valuesToVerify ...RowData) ([]stri
 func quotedColumnNames(table *schema.Table) []string {
 	cols := make([]string, len(table.Columns))
 	for i, column := range table.Columns {
-		cols[i] = quoteField(column.Name)
+		cols[i] = QuoteField(column.Name)
 	}
 	return cols
 }

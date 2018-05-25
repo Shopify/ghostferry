@@ -134,9 +134,11 @@ type IterativeVerifier struct {
 
 	Tables           []*schema.Table
 	IgnoredTables    []string
+	IgnoredColumns   map[string][]string
 	DatabaseRewrites map[string]string
 	TableRewrites    map[string]string
 	Concurrency      int
+	GetHashesFunc    func(db *sql.DB, schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64) (map[uint64][]byte, error)
 
 	reverifyStore *ReverifyStore
 	logger        *logrus.Entry
@@ -182,6 +184,10 @@ func (v *IterativeVerifier) SanityCheckParameters() error {
 
 func (v *IterativeVerifier) Initialize() error {
 	v.logger = logrus.WithField("tag", "iterative_verifier")
+
+	if v.GetHashesFunc == nil {
+		v.GetHashesFunc = GetRowMd5Digest
+	}
 
 	if err := v.SanityCheckParameters(); err != nil {
 		v.logger.WithError(err).Error("iterative verifier parameter sanity check failed")
@@ -500,6 +506,28 @@ func (v *IterativeVerifier) tableIsIgnored(table *schema.Table) bool {
 	return false
 }
 
+func (v *IterativeVerifier) eligibleTableColumns(table *schema.Table, columns []schema.TableColumn) []schema.TableColumn {
+	ignoredColumns, exists := v.IgnoredColumns[table.String()]
+	if !exists {
+		return columns
+	}
+
+	result := make([]schema.TableColumn, 0, len(columns))
+	for _, column := range columns {
+		isIgnored := false
+		for _, ignoredColumn := range ignoredColumns {
+			if column.Name == ignoredColumn {
+				isIgnored = true
+			}
+		}
+
+		if !isIgnored {
+			result = append(result, column)
+		}
+	}
+	return result
+}
+
 func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Table) ([]uint64, error) {
 	targetDb := table.Schema
 	if targetDbName, exists := v.DatabaseRewrites[targetDb]; exists {
@@ -519,7 +547,8 @@ func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Tabl
 	go func() {
 		defer wg.Done()
 		sourceErr = WithRetries(5, 0, v.logger, "get fingerprints from source db", func() (err error) {
-			sourceHashes, err = GetHashes(v.SourceDB, table.Schema, table.Name, table.GetPKColumn(0).Name, table.Columns, pks)
+			tableColumns := v.eligibleTableColumns(table, table.Columns)
+			sourceHashes, err = v.GetHashesFunc(v.SourceDB, table.Schema, table.Name, table.GetPKColumn(0).Name, tableColumns, pks)
 			return
 		})
 	}()
@@ -529,7 +558,8 @@ func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Tabl
 	go func() {
 		defer wg.Done()
 		targetErr = WithRetries(5, 0, v.logger, "get fingerprints from target db", func() (err error) {
-			targetHashes, err = GetHashes(v.TargetDB, targetDb, targetTable, table.GetPKColumn(0).Name, table.Columns, pks)
+			tableColumns := v.eligibleTableColumns(table, table.Columns)
+			targetHashes, err = v.GetHashesFunc(v.TargetDB, targetDb, targetTable, table.GetPKColumn(0).Name, tableColumns, pks)
 			return
 		})
 	}()
@@ -569,7 +599,7 @@ func compareHashes(source, target map[uint64][]byte) []uint64 {
 	return mismatches
 }
 
-func GetHashes(db *sql.DB, schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64) (map[uint64][]byte, error) {
+func GetRowMd5Digest(db *sql.DB, schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64) (map[uint64][]byte, error) {
 	sql, args, err := GetMd5HashesSql(schema, table, pkColumn, columns, pks)
 	if err != nil {
 		return nil, err
@@ -610,7 +640,7 @@ func GetHashes(db *sql.DB, schema, table, pkColumn string, columns []schema.Tabl
 }
 
 func GetMd5HashesSql(schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64) (string, []interface{}, error) {
-	quotedPK := quoteField(pkColumn)
+	quotedPK := QuoteField(pkColumn)
 	return rowMd5Selector(columns, pkColumn).
 		From(QuotedTableNameFromString(schema, table)).
 		Where(sq.Eq{quotedPK: pks}).
@@ -619,7 +649,7 @@ func GetMd5HashesSql(schema, table, pkColumn string, columns []schema.TableColum
 }
 
 func rowMd5Selector(columns []schema.TableColumn, pkColumn string) sq.SelectBuilder {
-	quotedPK := quoteField(pkColumn)
+	quotedPK := QuoteField(pkColumn)
 
 	hashStrs := make([]string, len(columns))
 	for idx, column := range columns {
@@ -635,7 +665,7 @@ func rowMd5Selector(columns []schema.TableColumn, pkColumn string) sq.SelectBuil
 }
 
 func normalizeAndQuoteColumn(column schema.TableColumn) (quoted string) {
-	quoted = quoteField(column.Name)
+	quoted = QuoteField(column.Name)
 	if column.Type == schema.TYPE_FLOAT {
 		quoted = fmt.Sprintf("(if (%s = '-0', 0, %s))", quoted, quoted)
 	}

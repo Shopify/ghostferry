@@ -171,7 +171,7 @@ func showDatabases(c *sql.DB) ([]string, error) {
 }
 
 func showTablesFrom(c *sql.DB, dbname string) ([]string, error) {
-	rows, err := c.Query(fmt.Sprintf("show tables from %s", quoteField(dbname)))
+	rows, err := c.Query(fmt.Sprintf("show tables from %s", QuoteField(dbname)))
 	if err != nil {
 		return []string{}, err
 	}
@@ -193,7 +193,7 @@ func showTablesFrom(c *sql.DB, dbname string) ([]string, error) {
 
 func maxPk(db *sql.DB, table *schema.Table) (uint64, bool, error) {
 	primaryKeyColumn := table.GetPKColumn(0)
-	pkName := quoteField(primaryKeyColumn.Name)
+	pkName := QuoteField(primaryKeyColumn.Name)
 
 	query, args, err := sq.
 		Select(pkName).

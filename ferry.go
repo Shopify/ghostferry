@@ -26,7 +26,7 @@ const (
 	StateDone              = "done"
 )
 
-func quoteField(field string) string {
+func QuoteField(field string) string {
 	return fmt.Sprintf("`%s`", field)
 }
 

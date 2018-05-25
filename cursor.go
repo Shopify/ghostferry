@@ -259,7 +259,7 @@ func ScanGenericRow(rows *sql.Rows, columnCount int) (RowData, error) {
 }
 
 func DefaultBuildSelect(columns []string, table *schema.Table, lastPk, batchSize uint64) squirrel.SelectBuilder {
-	quotedPK := quoteField(table.GetPKColumn(0).Name)
+	quotedPK := QuoteField(table.GetPKColumn(0).Name)
 
 	return squirrel.Select(columns...).
 		From(QuotedTableName(table)).
