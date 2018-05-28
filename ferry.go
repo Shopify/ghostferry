@@ -100,23 +100,13 @@ func (f *Ferry) Initialize() (err error) {
 	f.logger.Infof("hello world from %s", VersionString)
 
 	// Connect to the database
-	sourceConfig, err := f.Source.MySQLConfig()
-	if err != nil {
-		f.logger.WithError(err).Error("failed to build config for source database")
-		return err
-	}
-
-	sourceDSN := sourceConfig.FormatDSN()
-	maskedSourceDSN := MaskedDSN(sourceConfig)
-
-	f.logger.WithField("dsn", maskedSourceDSN).Info("connecting to the source database")
-	f.SourceDB, err = sql.Open("mysql", sourceDSN)
+	f.SourceDB, err = f.Source.SqlDB(f.logger.WithField("destination", "source"))
 	if err != nil {
 		f.logger.WithError(err).Error("failed to connect to source database")
 		return err
 	}
 
-	err = checkConnection(f.logger, maskedSourceDSN, f.SourceDB)
+	err = checkConnection(f.logger, "source", f.SourceDB)
 	if err != nil {
 		f.logger.WithError(err).Error("source connection checking failed")
 		return err
@@ -128,23 +118,13 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
-	targetConfig, err := f.Target.MySQLConfig()
-	if err != nil {
-		f.logger.WithError(err).Error("failed to build config for target database")
-		return err
-	}
-
-	targetDSN := targetConfig.FormatDSN()
-	maskedTargetDSN := MaskedDSN(targetConfig)
-
-	f.logger.WithField("dsn", maskedTargetDSN).Info("connecting to the target database")
-	f.TargetDB, err = sql.Open("mysql", targetDSN)
+	f.TargetDB, err = f.Target.SqlDB(f.logger.WithField("destination", "target"))
 	if err != nil {
 		f.logger.WithError(err).Error("failed to connect to target database")
 		return err
 	}
 
-	err = checkConnection(f.logger, maskedTargetDSN, f.TargetDB)
+	err = checkConnection(f.logger, "target", f.TargetDB)
 	if err != nil {
 		f.logger.WithError(err).Error("target connection checking failed")
 		return err
@@ -358,7 +338,7 @@ func (f *Ferry) onFinishedIterations() error {
 	return nil
 }
 
-func checkConnection(logger *logrus.Entry, dsn string, db *sql.DB) error {
+func checkConnection(logger *logrus.Entry, destination string, db *sql.DB) error {
 	row := db.QueryRow("SHOW STATUS LIKE 'Ssl_cipher'")
 	var name, cipher string
 	err := row.Scan(&name, &cipher)
@@ -369,10 +349,10 @@ func checkConnection(logger *logrus.Entry, dsn string, db *sql.DB) error {
 	hasSSL := cipher != ""
 
 	logger.WithFields(logrus.Fields{
-		"hasSSL":     hasSSL,
-		"ssl_cipher": cipher,
-		"dsn":        dsn,
-	}).Infof("connected to %s", dsn)
+		"hasSSL":      hasSSL,
+		"ssl_cipher":  cipher,
+		"destination": destination,
+	}).Infof("connected to %s", destination)
 
 	return nil
 }
