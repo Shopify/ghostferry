@@ -49,7 +49,7 @@ deploy:
     keep-history: true
     local-dir: docs/build/ghostferry-pages
     on:
-      tags: master
+      branch: master
   - provider: releases
     skip-cleanup: true
     api_key: "$GITHUB_TOKEN"
