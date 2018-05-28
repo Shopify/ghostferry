@@ -100,7 +100,7 @@ func (f *Ferry) Initialize() (err error) {
 	f.logger.Infof("hello world from %s", VersionString)
 
 	// Connect to the database
-	f.SourceDB, err = f.Source.SqlDB(f.logger.WithField("destination", "source"))
+	f.SourceDB, err = f.Source.SqlDB(f.logger.WithField("dbname", "source"))
 	if err != nil {
 		f.logger.WithError(err).Error("failed to connect to source database")
 		return err
@@ -118,7 +118,7 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
-	f.TargetDB, err = f.Target.SqlDB(f.logger.WithField("destination", "target"))
+	f.TargetDB, err = f.Target.SqlDB(f.logger.WithField("dbname", "target"))
 	if err != nil {
 		f.logger.WithError(err).Error("failed to connect to target database")
 		return err
@@ -338,7 +338,7 @@ func (f *Ferry) onFinishedIterations() error {
 	return nil
 }
 
-func checkConnection(logger *logrus.Entry, destination string, db *sql.DB) error {
+func checkConnection(logger *logrus.Entry, dbname string, db *sql.DB) error {
 	row := db.QueryRow("SHOW STATUS LIKE 'Ssl_cipher'")
 	var name, cipher string
 	err := row.Scan(&name, &cipher)
@@ -349,10 +349,10 @@ func checkConnection(logger *logrus.Entry, destination string, db *sql.DB) error
 	hasSSL := cipher != ""
 
 	logger.WithFields(logrus.Fields{
-		"hasSSL":      hasSSL,
-		"ssl_cipher":  cipher,
-		"destination": destination,
-	}).Infof("connected to %s", destination)
+		"hasSSL":     hasSSL,
+		"ssl_cipher": cipher,
+		"dbname":     dbname,
+	}).Infof("connected to %s", dbname)
 
 	return nil
 }
