@@ -111,15 +111,8 @@ func NewLagThrottler(config *LagThrottlerConfig) (*LagThrottler, error) {
 		return nil, fmt.Errorf("connection invalid: %s", err)
 	}
 
-	dbCfg, err := config.Connection.MySQLConfig()
-	if err != nil {
-		return nil, fmt.Errorf("failed to build database config: %s", err)
-	}
-
 	logger := logrus.WithField("tag", "throttler")
-	logger.WithField("dsn", MaskedDSN(dbCfg)).Info("connecting to throttling database")
-
-	db, err := sql.Open("mysql", dbCfg.FormatDSN())
+	db, err := config.Connection.SqlDB(logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create connection: %s", err)
 	}
