@@ -57,3 +57,8 @@ deploy:
     file: build/ghostferry-*.deb
     on:
       tags: true
+  - provider: script
+    skip-cleanup: true
+    script: .travisci/deploy-packagecloud.sh
+    on:
+      branch: master
