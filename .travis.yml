@@ -32,6 +32,9 @@ before_deploy:
   - "[ \"$BEFORE_DEPLOY_RUN\" = '1' ] || .travisci/build-docs.sh"
   - "[ \"$BEFORE_DEPLOY_RUN\" = '1' ] || .travisci/build-debs.sh"
   - export BEFORE_DEPLOY_RUN=1
+  - "gem install package_cloud"
+
+
 
 deploy:
   # Need two providers for pages:
@@ -59,6 +62,6 @@ deploy:
       tags: true
   - provider: script
     skip-cleanup: true
-    script: "gem install package_cloud && package_cloud push --url https://packages.shopify.io shopify/ghostferry/ubuntu/trusty build/ghostferry-*.deb"
+    script: "rvm $TRAVIS_RUBY_VERSION do which package_cloud push --url https://packages.shopify.io shopify/ghostferry/ubuntu/trusty build/ghostferry-*.deb"
     on:
       all_branches: true
