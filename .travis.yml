@@ -57,3 +57,8 @@ deploy:
     file: build/ghostferry-*.deb
     on:
       tags: true
+  - provider: script
+    skip-cleanup: true
+    script: "gem install package_cloud && package_cloud push --url https://packages.shopify.io shopify/ghostferry/ubuntu/trusty build/ghostferry-*.deb"
+    on:
+      all_branches: true
