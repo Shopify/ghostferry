@@ -149,6 +149,10 @@ func ShowMasterStatusBinlogPosition(db *sql.DB) (mysql.Position, error) {
 	var position uint32
 	var binlog_do_db, binlog_ignore_db, executed_gtid_set string
 	err := row.Scan(&file, &position, &binlog_do_db, &binlog_ignore_db, &executed_gtid_set)
+	return NewMysqlPosition(file, position, err)
+}
+
+func NewMysqlPosition(file string, position uint32, err error) (mysql.Position, error) {
 	switch {
 	case err == sql.ErrNoRows:
 		return mysql.Position{}, fmt.Errorf("no results from show master status")

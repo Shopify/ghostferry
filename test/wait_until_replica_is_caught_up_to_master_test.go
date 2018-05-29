@@ -29,7 +29,7 @@ func (s *WaitUntilReplicaIsCaughtUpToMasterSuite) SetupTest() {
 	s.w = &ghostferry.WaitUntilReplicaIsCaughtUpToMaster{
 		MasterDB:  masterDB,
 		ReplicaDB: replicaDB,
-		ReplicatedMasterPosition: ghostferry.ReplicatedMasterPositionViaCustomQuery{
+		ReplicatedMasterPositionFetcher: ghostferry.ReplicatedMasterPositionViaCustomQuery{
 			Query: "SELECT file, position FROM meta.heartbeat WHERE server_id = 1",
 		},
 	}
@@ -60,7 +60,7 @@ func (s *WaitUntilReplicaIsCaughtUpToMasterSuite) updateHeartbeatMasterPos(db *s
 }
 
 func (s *WaitUntilReplicaIsCaughtUpToMasterSuite) TestIsCaughtUpIsCorrect() {
-	err := s.w.Start()
+	err := s.w.MarkTargetMasterPosition()
 	s.Require().Nil(err)
 
 	currentPosition, err := ghostferry.ShowMasterStatusBinlogPosition(s.w.MasterDB)

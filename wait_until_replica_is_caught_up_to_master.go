@@ -2,7 +2,6 @@ package ghostferry
 
 import (
 	"database/sql"
-	"fmt"
 	"time"
 
 	"github.com/siddontang/go-mysql/mysql"
@@ -36,32 +35,15 @@ func (r ReplicatedMasterPositionViaCustomQuery) Current(replicaDB *sql.DB) (mysq
 	var pos uint32
 	row := replicaDB.QueryRow(r.Query)
 	err := row.Scan(&file, &pos)
-	if err != nil {
-		return mysql.Position{}, nil
-	}
 
-	switch {
-	case err == sql.ErrNoRows:
-		return mysql.Position{}, fmt.Errorf("no results from query")
-	case err != nil:
-		return mysql.Position{}, err
-	default:
-		if file == "" {
-			return mysql.Position{}, fmt.Errorf("query does not return a file")
-		}
-
-		return mysql.Position{
-			Name: file,
-			Pos:  pos,
-		}, nil
-	}
+	return NewMysqlPosition(file, pos, err)
 }
 
 // Only set the MasterDB and ReplicatedMasterPosition options in your code as
 // the others will be overwritten by the ferry.
 type WaitUntilReplicaIsCaughtUpToMaster struct {
-	MasterDB                 *sql.DB
-	ReplicatedMasterPosition ReplicatedMasterPositionFetcher
+	MasterDB                        *sql.DB
+	ReplicatedMasterPositionFetcher ReplicatedMasterPositionFetcher
 
 	ReplicaDB    *sql.DB
 	ErrorHandler ErrorHandler
@@ -70,7 +52,7 @@ type WaitUntilReplicaIsCaughtUpToMaster struct {
 	targetMasterPos mysql.Position
 }
 
-func (w *WaitUntilReplicaIsCaughtUpToMaster) Start() error {
+func (w *WaitUntilReplicaIsCaughtUpToMaster) MarkTargetMasterPosition() error {
 	w.logger = logrus.WithField("tag", "wait_replica")
 
 	return WithRetries(100, 600*time.Millisecond, w.logger, "read master binlog position", func() error {
@@ -84,7 +66,7 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUp() (bool, error) {
 	var currentReplicatedMasterPos mysql.Position
 	err := WithRetries(100, 600*time.Millisecond, w.logger, "read replicated master binlog position", func() error {
 		var err error
-		currentReplicatedMasterPos, err = w.ReplicatedMasterPosition.Current(w.ReplicaDB)
+		currentReplicatedMasterPos, err = w.ReplicatedMasterPositionFetcher.Current(w.ReplicaDB)
 		return err
 	})
 
@@ -102,7 +84,7 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUp() (bool, error) {
 }
 
 func (w *WaitUntilReplicaIsCaughtUpToMaster) Wait() {
-	err := w.Start()
+	err := w.MarkTargetMasterPosition()
 	if err != nil {
 		w.logger.WithError(err).Error("failed to get master binlog coordinates")
 		w.ErrorHandler.Fatal("wait_replica", err)
@@ -111,13 +93,16 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) Wait() {
 
 	w.logger.Infof("target master position is: %v\n", w.targetMasterPos)
 
-	isCaughtUp := false
-	for !isCaughtUp {
-		isCaughtUp, err = w.IsCaughtUp()
+	for {
+		isCaughtUp, err := w.IsCaughtUp()
 		if err != nil {
 			w.logger.WithError(err).Error("failed to get replica binlog coordinates")
 			w.ErrorHandler.Fatal("wait_replica", err)
 			return
+		}
+
+		if isCaughtUp {
+			break
 		}
 
 		time.Sleep(600 * time.Millisecond)
