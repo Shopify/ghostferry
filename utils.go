@@ -3,11 +3,14 @@ package ghostferry
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/binary"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/siddontang/go-mysql/mysql"
 	"github.com/sirupsen/logrus"
 )
 
@@ -138,4 +141,31 @@ loop:
 		}
 	}
 	return results, err
+}
+
+func ShowMasterStatusBinlogPosition(db *sql.DB) (mysql.Position, error) {
+	row := db.QueryRow("SHOW MASTER STATUS")
+	var file string
+	var position uint32
+	var binlog_do_db, binlog_ignore_db, executed_gtid_set string
+	err := row.Scan(&file, &position, &binlog_do_db, &binlog_ignore_db, &executed_gtid_set)
+	return NewMysqlPosition(file, position, err)
+}
+
+func NewMysqlPosition(file string, position uint32, err error) (mysql.Position, error) {
+	switch {
+	case err == sql.ErrNoRows:
+		return mysql.Position{}, fmt.Errorf("no results from show master status")
+	case err != nil:
+		return mysql.Position{}, err
+	default:
+		if file == "" {
+			return mysql.Position{}, fmt.Errorf("show master status does not show a file")
+		}
+
+		return mysql.Position{
+			Name: file,
+			Pos:  position,
+		}, nil
+	}
 }

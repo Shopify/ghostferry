@@ -61,6 +61,8 @@ type Ferry struct {
 	DoneTime     time.Time
 	OverallState string
 
+	WaitUntilReplicaIsCaughtUpToMaster *WaitUntilReplicaIsCaughtUpToMaster
+
 	logger *logrus.Entry
 
 	rowCopyCompleteCh chan struct{}
@@ -318,6 +320,12 @@ func (f *Ferry) WaitUntilBinlogStreamerCatchesUp() {
 // This method will actually not shutdown the BinlogStreamer immediately.
 // You will know that the BinlogStreamer finished when .Run() returns.
 func (f *Ferry) FlushBinlogAndStopStreaming() {
+	if f.WaitUntilReplicaIsCaughtUpToMaster != nil {
+		f.WaitUntilReplicaIsCaughtUpToMaster.ErrorHandler = f.ErrorHandler
+		f.WaitUntilReplicaIsCaughtUpToMaster.ReplicaDB = f.SourceDB
+		f.WaitUntilReplicaIsCaughtUpToMaster.Wait()
+	}
+
 	f.BinlogStreamer.FlushAndStop()
 }
 

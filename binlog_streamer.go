@@ -81,7 +81,7 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysql() error {
 	}
 
 	s.logger.Info("reading current binlog position")
-	s.lastStreamedBinlogPosition, err = s.readCurrentBinlogPositionFromMasterStatus()
+	s.lastStreamedBinlogPosition, err = ShowMasterStatusBinlogPosition(s.Db)
 	if err != nil {
 		s.logger.WithError(err).Error("failed to read current binlog position")
 		return err
@@ -192,7 +192,7 @@ func (s *BinlogStreamer) FlushAndStop() {
 	// passed the initial target position.
 	err := WithRetries(100, 600*time.Millisecond, s.logger, "read current binlog position", func() error {
 		var err error
-		s.targetBinlogPosition, err = s.readCurrentBinlogPositionFromMasterStatus()
+		s.targetBinlogPosition, err = ShowMasterStatusBinlogPosition(s.Db)
 		return err
 	})
 
@@ -271,31 +271,6 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 	}
 
 	return nil
-}
-
-func (s *BinlogStreamer) readCurrentBinlogPositionFromMasterStatus() (mysql.Position, error) {
-	query := "show master status"
-	row := s.Db.QueryRow(query)
-	var file string
-	var position uint32
-	var binlog_do_db, binlog_ignore_db, executed_gtid_set string
-	err := row.Scan(&file, &position, &binlog_do_db, &binlog_ignore_db, &executed_gtid_set)
-
-	switch {
-	case err == sql.ErrNoRows:
-		return mysql.Position{}, fmt.Errorf("no results from show master status")
-	case err != nil:
-		return mysql.Position{}, err
-	default:
-		if file == "" {
-			return mysql.Position{}, fmt.Errorf("show master status does not show a file")
-		}
-
-		return mysql.Position{
-			Name: file,
-			Pos:  position,
-		}, nil
-	}
 }
 
 func (s *BinlogStreamer) generateNewServerId() (uint32, error) {
