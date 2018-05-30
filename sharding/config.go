@@ -12,6 +12,10 @@ type Config struct {
 	SourceDB      string
 	TargetDB      string
 
+	SourceReplicationMaster       ghostferry.DatabaseConfig
+	ReplicatedMasterPositionQuery string
+	RunFerryFromReplica           bool
+
 	StatsDAddress string
 	CutoverLock   HTTPCallback
 	CutoverUnlock HTTPCallback

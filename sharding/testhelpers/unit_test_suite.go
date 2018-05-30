@@ -69,6 +69,7 @@ func (t *ShardingUnitTestSuite) SetupTest() {
 	sharding.SetGlobalMetrics("sharding_test", t.metricsSink)
 
 	t.setupShardingFerry()
+	t.setWritable(t.Ferry.Ferry.SourceDB)
 	t.dropTestDbs()
 
 	testhelpers.SeedInitialData(t.Ferry.Ferry.SourceDB, sourceDbName, testTable, 1000)
@@ -94,6 +95,7 @@ func (t *ShardingUnitTestSuite) SetupTest() {
 }
 
 func (t *ShardingUnitTestSuite) TearDownTest() {
+	t.setWritable(t.Ferry.Ferry.SourceDB)
 	t.dropTestDbs()
 }
 
@@ -154,6 +156,11 @@ func (t *ShardingUnitTestSuite) dropTestDbs() {
 	t.Require().Nil(err)
 
 	_, err = t.Ferry.Ferry.TargetDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", targetDbName))
+	t.Require().Nil(err)
+}
+
+func (t *ShardingUnitTestSuite) setWritable(db *sql.DB) {
+	_, err := db.Exec("SET GLOBAL read_only = OFF")
 	t.Require().Nil(err)
 }
 
