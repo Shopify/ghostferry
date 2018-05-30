@@ -61,4 +61,5 @@ deploy:
     skip-cleanup: true
     script: .travisci/deploy-packagecloud.sh
     on:
-      branch: master
+      all_branches: true
+      condition: $TRAVIS_BRANCH =~ ^(staging-.*)|(master)$
