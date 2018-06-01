@@ -94,7 +94,12 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 			eventTableName = targetTableName
 		}
 
-		sql, err := ev.AsSQLString(&schema.Table{Schema: eventDatabaseName, Name: eventTableName})
+		targetSchema, err := schema.NewTableFromSqlDB(b.DB, eventDatabaseName, eventTableName)
+		if err != nil {
+			return fmt.Errorf("fetching target schema: %v", err)
+		}
+
+		sql, err := ev.AsSQLString(targetSchema)
 		if err != nil {
 			return fmt.Errorf("generating sql query: %v", err)
 		}

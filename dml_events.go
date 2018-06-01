@@ -90,7 +90,7 @@ func (e *BinlogInsertEvent) NewValues() RowData {
 }
 
 func (e *BinlogInsertEvent) AsSQLString(target *schema.Table) (string, error) {
-	columns, err := loadColumnsForTable(&e.table, e.newValues)
+	columns, values, err := loadColumnsForTable(&e.table, target, e.newValues)
 	if err != nil {
 		return "", err
 	}
@@ -98,7 +98,7 @@ func (e *BinlogInsertEvent) AsSQLString(target *schema.Table) (string, error) {
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(target.Schema, target.Name) +
 		" (" + strings.Join(columns, ",") + ")" +
-		" VALUES (" + buildStringListForValues(e.newValues) + ")"
+		" VALUES (" + buildStringListForValues(values[0]) + ")"
 
 	return query, nil
 }
@@ -145,14 +145,14 @@ func (e *BinlogUpdateEvent) NewValues() RowData {
 }
 
 func (e *BinlogUpdateEvent) AsSQLString(target *schema.Table) (string, error) {
-	columns, err := loadColumnsForTable(&e.table, e.oldValues, e.newValues)
+	columns, values, err := loadColumnsForTable(&e.table, target, e.oldValues, e.newValues)
 	if err != nil {
 		return "", err
 	}
 
 	query := "UPDATE " + QuotedTableNameFromString(target.Schema, target.Name) +
-		" SET " + buildStringMapForSet(columns, e.newValues) +
-		" WHERE " + buildStringMapForWhere(columns, e.oldValues)
+		" SET " + buildStringMapForSet(columns, values[1]) +
+		" WHERE " + buildStringMapForWhere(columns, values[0])
 
 	return query, nil
 }
@@ -188,13 +188,13 @@ func NewBinlogDeleteEvents(table *schema.Table, rowsEvent *replication.RowsEvent
 }
 
 func (e *BinlogDeleteEvent) AsSQLString(target *schema.Table) (string, error) {
-	columns, err := loadColumnsForTable(&e.table, e.oldValues)
+	columns, values, err := loadColumnsForTable(&e.table, target, e.oldValues)
 	if err != nil {
 		return "", err
 	}
 
 	query := "DELETE FROM " + QuotedTableNameFromString(target.Schema, target.Name) +
-		" WHERE " + buildStringMapForWhere(columns, e.oldValues)
+		" WHERE " + buildStringMapForWhere(columns, values[0])
 
 	return query, nil
 }
@@ -246,22 +246,41 @@ func NewBinlogDMLEvents(table *schema.Table, ev *replication.BinlogEvent) ([]DML
 	}
 }
 
-func loadColumnsForTable(table *schema.Table, valuesToVerify ...RowData) ([]string, error) {
-	for _, values := range valuesToVerify {
-		if err := verifyValuesHasTheSameLengthAsColumns(table, values); err != nil {
-			return nil, err
+func loadColumnsForTable(table *schema.Table, target *schema.Table, valuesToVerify ...RowData) ([]string, []RowData, error) {
+	var intersectedColumns []int
+	var quotedNames []string
+
+	if len(table.Columns) == 0 || len(target.Columns) == 0 {
+		panic(fmt.Sprintf("zero columns: table: %d, target: %d", len(table.Columns), len(target.Columns)))
+	}
+
+	for colIdx, col := range table.Columns {
+		for _, targetCol := range target.Columns {
+			if col.Name == targetCol.Name {
+				intersectedColumns = append(intersectedColumns, colIdx)
+				quotedNames = append(quotedNames, quoteField(col.Name))
+				break
+			}
 		}
 	}
 
-	return quotedColumnNames(table), nil
-}
+	var intersectedValueList []RowData
 
-func quotedColumnNames(table *schema.Table) []string {
-	cols := make([]string, len(table.Columns))
-	for i, column := range table.Columns {
-		cols[i] = quoteField(column.Name)
+	for _, values := range valuesToVerify {
+		if err := verifyValuesHasTheSameLengthAsColumns(table, values); err != nil {
+			return nil, nil, err
+		}
+
+		var intersectedValues RowData
+
+		for _, colIdx := range intersectedColumns {
+			intersectedValues = append(intersectedValues, values[colIdx])
+		}
+
+		intersectedValueList = append(intersectedValueList, intersectedValues)
 	}
-	return cols
+
+	return quotedNames, intersectedValueList, nil
 }
 
 func verifyValuesHasTheSameLengthAsColumns(table *schema.Table, values RowData) error {
