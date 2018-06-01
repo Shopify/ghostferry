@@ -154,6 +154,15 @@ func (s *BinlogStreamer) Run() {
 			}
 
 			s.updateLastStreamedPosAndTime(ev)
+		case *replication.QueryEvent:
+			// This event can tell us about table structure change which means
+			// the cached schemas of the tables would be invalidated.
+			query := string(e.Query)
+			if query != "BEGIN" {
+				fmt.Printf("!!! %#v\n", query)
+				s.TableSchema, err = LoadTables(s.Db, s.Config.TableFilter)
+			}
+			s.updateLastStreamedPosAndTime(ev)
 		case *replication.FormatDescriptionEvent:
 			// This event has a LogPos = 0, presumably because this is the first
 			// event received by the BinlogStreamer to get some metadata about
@@ -161,10 +170,6 @@ func (s *BinlogStreamer) Run() {
 			// We don't want to save the binlog position derived from this event
 			// as it will contain the wrong thing.
 			continue
-			// case *replication.QueryEvent:
-			// This event can tell us about table structure change which means
-			// the cached schemas of the tables would be invalidated.
-			// TODO: investigate using this to allow for migrations to occur.
 		default:
 			s.updateLastStreamedPosAndTime(ev)
 		}

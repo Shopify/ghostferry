@@ -41,26 +41,26 @@ func (e *RowBatch) TableSchema() *schema.Table {
 }
 
 func (e *RowBatch) AsSQLQuery(target *schema.Table) (string, []interface{}, error) {
-	columns, err := loadColumnsForTable(&e.table, e.values...)
+	columns, values, err := loadColumnsForTable(&e.table, target, e.values...)
 	if err != nil {
 		return "", nil, err
 	}
 
 	valuesStr := "(" + strings.Repeat("?,", len(columns)-1) + "?)"
-	valuesStr = strings.Repeat(valuesStr+",", len(e.values)-1) + valuesStr
+	valuesStr = strings.Repeat(valuesStr+",", len(values)-1) + valuesStr
 
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(target.Schema, target.Name) +
 		" (" + strings.Join(columns, ",") + ") VALUES " + valuesStr
 
-	return query, e.flattenRowData(), nil
+	return query, flattenRowData(values), nil
 }
 
-func (e *RowBatch) flattenRowData() []interface{} {
-	rowSize := len(e.values[0])
-	flattened := make([]interface{}, rowSize*len(e.values))
+func flattenRowData(values []RowData) []interface{} {
+	rowSize := len(values[0])
+	flattened := make([]interface{}, rowSize*len(values))
 
-	for rowIdx, row := range e.values {
+	for rowIdx, row := range values {
 		for colIdx, col := range row {
 			flattened[rowIdx*rowSize+colIdx] = col
 		}

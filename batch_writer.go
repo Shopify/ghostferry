@@ -43,7 +43,12 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 			table = targetTableName
 		}
 
-		query, args, err := batch.AsSQLQuery(&schema.Table{Schema: db, Name: table})
+		targetSchema, err := schema.NewTableFromSqlDB(w.DB, db, table)
+		if err != nil {
+			return fmt.Errorf("fetching target schema: %v", err)
+		}
+
+		query, args, err := batch.AsSQLQuery(targetSchema)
 		if err != nil {
 			return fmt.Errorf("during generating sql query: %v", err)
 		}
