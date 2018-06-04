@@ -108,13 +108,13 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
-	err = checkConnection(f.logger, "source", f.SourceDB)
+	err = f.checkConnection("source", f.SourceDB)
 	if err != nil {
 		f.logger.WithError(err).Error("source connection checking failed")
 		return err
 	}
 
-	err = checkConnectionForBinlogFormat(f.SourceDB)
+	err = f.checkConnectionForBinlogFormat(f.SourceDB)
 	if err != nil {
 		f.logger.WithError(err).Error("binlog format for source db is not compatible")
 		return err
@@ -126,7 +126,7 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
-	err = checkConnection(f.logger, "target", f.TargetDB)
+	err = f.checkConnection("target", f.TargetDB)
 	if err != nil {
 		f.logger.WithError(err).Error("target connection checking failed")
 		return err
@@ -349,7 +349,7 @@ func (f *Ferry) onFinishedIterations() error {
 	return nil
 }
 
-func checkConnection(logger *logrus.Entry, dbname string, db *sql.DB) error {
+func (f *Ferry) checkConnection(dbname string, db *sql.DB) error {
 	row := db.QueryRow("SHOW STATUS LIKE 'Ssl_cipher'")
 	var name, cipher string
 	err := row.Scan(&name, &cipher)
@@ -359,7 +359,7 @@ func checkConnection(logger *logrus.Entry, dbname string, db *sql.DB) error {
 
 	hasSSL := cipher != ""
 
-	logger.WithFields(logrus.Fields{
+	f.logger.WithFields(logrus.Fields{
 		"hasSSL":     hasSSL,
 		"ssl_cipher": cipher,
 		"dbname":     dbname,
@@ -368,7 +368,7 @@ func checkConnection(logger *logrus.Entry, dbname string, db *sql.DB) error {
 	return nil
 }
 
-func checkConnectionForBinlogFormat(db *sql.DB) error {
+func (f *Ferry) checkConnectionForBinlogFormat(db *sql.DB) error {
 	var name, value string
 
 	row := db.QueryRow("SHOW VARIABLES LIKE 'binlog_format'")
