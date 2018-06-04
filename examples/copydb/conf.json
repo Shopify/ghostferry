@@ -1,29 +1,39 @@
 {
   "Source": {
     "Host": "127.0.0.1",
-    "Port": 29291,
-    "User": "ghostferry",
-    "Pass": "ghostferry",
+    "Port": 29292,
+    "User": "root",
+    "Pass": "",
     "Collation": "utf8mb4_unicode_ci",
     "Params": {
       "charset": "utf8mb4"
-    },
-    "TLS": {
-      "CertPath": "/home/vagrant/.mysql-vending-machine/mysqls/gf.n1/data/server-cert.pem",
-      "ServerName": "MySQL_Server_5.7.20-19_Auto_Generated_Server_Certificate"
     }
   },
 
   "Target": {
     "Host": "127.0.0.1",
-    "Port": 29292,
-    "User": "ghostferry",
-    "Pass": "ghostferry",
+    "Port": 29293,
+    "User": "root",
+    "Pass": "",
     "Collation": "utf8mb4_unicode_ci",
     "Params": {
       "charset": "utf8mb4"
     }
   },
+
+  "RunFerryFromReplica": true,
+  "SourceReplicationMaster": {
+    "Host": "127.0.0.1",
+    "Port": 29291,
+    "User": "root",
+    "Pass": "",
+    "Collation": "utf8mb4_unicode_ci",
+    "Params": {
+      "charset": "utf8mb4"
+    }
+  },
+
+  "ReplicatedMasterPositionQuery": "SELECT file, position FROM meta.heartbeat",
 
   "Databases": {
     "Whitelist": ["abc"]
