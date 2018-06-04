@@ -321,9 +321,12 @@ func (f *Ferry) WaitUntilBinlogStreamerCatchesUp() {
 // You will know that the BinlogStreamer finished when .Run() returns.
 func (f *Ferry) FlushBinlogAndStopStreaming() {
 	if f.WaitUntilReplicaIsCaughtUpToMaster != nil {
-		f.WaitUntilReplicaIsCaughtUpToMaster.ErrorHandler = f.ErrorHandler
 		f.WaitUntilReplicaIsCaughtUpToMaster.ReplicaDB = f.SourceDB
-		f.WaitUntilReplicaIsCaughtUpToMaster.Wait()
+		err := f.WaitUntilReplicaIsCaughtUpToMaster.Wait()
+		if err != nil {
+			f.ErrorHandler.Fatal("wait_replica", err)
+			return
+		}
 	}
 
 	f.BinlogStreamer.FlushAndStop()
