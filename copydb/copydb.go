@@ -35,6 +35,13 @@ func NewFerry(config *Config) *CopydbFerry {
 }
 
 func (this *CopydbFerry) Initialize() error {
+	if this.config.RunFerryFromReplica {
+		err := this.initializeWaitUntilReplicaIsCaughtUpToMasterConnection()
+		if err != nil {
+			return err
+		}
+	}
+
 	err := this.Ferry.Initialize()
 	if err != nil {
 		return err
@@ -159,6 +166,21 @@ func (this *CopydbFerry) Run() {
 
 func (this *CopydbFerry) ShutdownControlServer() error {
 	return this.controlServer.Shutdown()
+}
+
+func (this *CopydbFerry) initializeWaitUntilReplicaIsCaughtUpToMasterConnection() error {
+	masterDB, err := this.config.SourceReplicationMaster.SqlDB(logrus.WithField("tag", "copydb"))
+	if err != nil {
+		return err
+	}
+
+	positionFetcher := ghostferry.ReplicatedMasterPositionViaCustomQuery{Query: this.config.ReplicatedMasterPositionQuery}
+
+	this.Ferry.WaitUntilReplicaIsCaughtUpToMaster = &ghostferry.WaitUntilReplicaIsCaughtUpToMaster{
+		MasterDB:                        masterDB,
+		ReplicatedMasterPositionFetcher: positionFetcher,
+	}
+	return nil
 }
 
 func (this *CopydbFerry) createDatabaseIfExistsOnTarget(database string) error {
