@@ -263,8 +263,10 @@ we get into the habit of thinking of this step:
 
 The last step ``FLUSH BINARY LOGS`` is not necessarily required if you run your
 MySQL server with ``sync_binlog=1``. If you're running Ghostferry from a source
-that is a replica, you need another tool to guarantee this property. See
-`<https://github.com/Shopify/ghostferry/issues/19>`_.
+that is a replica, you need to also use turn option ``RunFerryFromReplica`` on
+in the config json as well as other options. See
+`<https://godoc.org/github.com/Shopify/ghostferry/copydb#Config>`_ for more
+details.
 
 We can then go back to the web ui and click the Allow Automatic Cutover button.
 In a second or two the ghostferry binlog streaming process should stop. Refresh
