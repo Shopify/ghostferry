@@ -2,6 +2,8 @@ package ghostferry
 
 import (
 	"database/sql"
+	"errors"
+	"math"
 	"time"
 
 	"github.com/siddontang/go-mysql/mysql"
@@ -44,6 +46,7 @@ func (r ReplicatedMasterPositionViaCustomQuery) Current(replicaDB *sql.DB) (mysq
 type WaitUntilReplicaIsCaughtUpToMaster struct {
 	MasterDB                        *sql.DB
 	ReplicatedMasterPositionFetcher ReplicatedMasterPositionFetcher
+	Timeout                         time.Duration
 
 	ReplicaDB *sql.DB
 
@@ -77,6 +80,12 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUp(targetMasterPos mysql.Po
 
 func (w *WaitUntilReplicaIsCaughtUpToMaster) Wait() error {
 	w.logger = logrus.WithField("tag", "wait_replica")
+	// Essentially not timeout
+	if w.Timeout == time.Duration(0) {
+		w.Timeout = time.Duration(math.MaxInt64)
+	}
+
+	start := time.Now()
 
 	var targetMasterPos mysql.Position
 	err := WithRetries(100, 600*time.Millisecond, w.logger, "read master binlog position", func() error {
@@ -101,6 +110,11 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) Wait() error {
 
 		if isCaughtUp {
 			break
+		}
+
+		timeTaken := time.Now().Sub(start)
+		if timeTaken >= w.Timeout {
+			return errors.New("timeout reached before replica is caught up to master")
 		}
 
 		time.Sleep(600 * time.Millisecond)
