@@ -47,21 +47,14 @@ type WaitUntilReplicaIsCaughtUpToMaster struct {
 
 	ReplicaDB *sql.DB
 
-	logger          *logrus.Entry
-	targetMasterPos mysql.Position
+	logger *logrus.Entry
 }
 
-func (w *WaitUntilReplicaIsCaughtUpToMaster) MarkTargetMasterPosition() error {
-	w.logger = logrus.WithField("tag", "wait_replica")
+func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUp(targetMasterPos mysql.Position) (bool, error) {
+	if w.logger == nil {
+		w.logger = logrus.WithField("tag", "wait_replica")
+	}
 
-	return WithRetries(100, 600*time.Millisecond, w.logger, "read master binlog position", func() error {
-		var err error
-		w.targetMasterPos, err = ShowMasterStatusBinlogPosition(w.MasterDB)
-		return err
-	})
-}
-
-func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUp() (bool, error) {
 	var currentReplicatedMasterPos mysql.Position
 	err := WithRetries(100, 600*time.Millisecond, w.logger, "read replicated master binlog position", func() error {
 		var err error
@@ -73,26 +66,34 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUp() (bool, error) {
 		return false, err
 	}
 
-	if currentReplicatedMasterPos.Compare(w.targetMasterPos) >= 0 {
-		w.logger.Infof("target master position reached by replica: %v >= %v\n", currentReplicatedMasterPos, w.targetMasterPos)
+	if currentReplicatedMasterPos.Compare(targetMasterPos) >= 0 {
+		w.logger.Infof("target master position reached by replica: %v >= %v\n", currentReplicatedMasterPos, targetMasterPos)
 		return true, nil
 	}
 
-	w.logger.Debugf("replicated master position is: %v < %v\n", currentReplicatedMasterPos, w.targetMasterPos)
+	w.logger.Debugf("replicated master position is: %v < %v\n", currentReplicatedMasterPos, targetMasterPos)
 	return false, nil
 }
 
 func (w *WaitUntilReplicaIsCaughtUpToMaster) Wait() error {
-	err := w.MarkTargetMasterPosition()
+	w.logger = logrus.WithField("tag", "wait_replica")
+
+	var targetMasterPos mysql.Position
+	err := WithRetries(100, 600*time.Millisecond, w.logger, "read master binlog position", func() error {
+		var err error
+		targetMasterPos, err = ShowMasterStatusBinlogPosition(w.MasterDB)
+		return err
+	})
+
 	if err != nil {
 		w.logger.WithError(err).Error("failed to get master binlog coordinates")
 		return err
 	}
 
-	w.logger.Infof("target master position is: %v\n", w.targetMasterPos)
+	w.logger.Infof("target master position is: %v\n", targetMasterPos)
 
 	for {
-		isCaughtUp, err := w.IsCaughtUp()
+		isCaughtUp, err := w.IsCaughtUp(targetMasterPos)
 		if err != nil {
 			w.logger.WithError(err).Error("failed to get replica binlog coordinates")
 			return err
