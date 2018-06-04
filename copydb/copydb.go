@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/sirupsen/logrus"
@@ -176,8 +177,19 @@ func (this *CopydbFerry) initializeWaitUntilReplicaIsCaughtUpToMasterConnection(
 
 	positionFetcher := ghostferry.ReplicatedMasterPositionViaCustomQuery{Query: this.config.ReplicatedMasterPositionQuery}
 
+	var timeout time.Duration
+	if this.config.WaitForReplicationTimeout == "" {
+		timeout = time.Duration(0)
+	} else {
+		timeout, err = time.ParseDuration(this.config.WaitForReplicationTimeout)
+		if err != nil {
+			return err
+		}
+	}
+
 	this.Ferry.WaitUntilReplicaIsCaughtUpToMaster = &ghostferry.WaitUntilReplicaIsCaughtUpToMaster{
-		MasterDB:                        masterDB,
+		MasterDB: masterDB,
+		Timeout:  timeout,
 		ReplicatedMasterPositionFetcher: positionFetcher,
 	}
 	return nil

@@ -2,6 +2,7 @@ package copydb
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/Shopify/ghostferry"
 )
@@ -76,6 +77,9 @@ type Config struct {
 	//
 	// SELECT file, position FROM meta.ptheartbeat WHERE server_id = master_server_id
 	ReplicatedMasterPositionQuery string
+
+	// The duration to wait for the replication to catchup before aborting. Only use if RunFerryFromReplica is true.
+	WaitForReplicationTimeout string
 }
 
 func (c *Config) InitializeAndValidateConfig() error {
@@ -98,6 +102,13 @@ func (c *Config) InitializeAndValidateConfig() error {
 
 	c.DatabaseRewrites = c.Databases.Rewrites
 	c.TableRewrites = c.Tables.Rewrites
+
+	if c.WaitForReplicationTimeout != "" {
+		_, err := time.ParseDuration(c.WaitForReplicationTimeout)
+		if err != nil {
+			return err
+		}
+	}
 
 	if err := c.Config.ValidateConfig(); err != nil {
 		return err
