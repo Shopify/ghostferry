@@ -3,12 +3,14 @@ package ghostferry
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	siddongtangmysql "github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
@@ -130,6 +132,53 @@ func (f *Ferry) Initialize() (err error) {
 	if err != nil {
 		f.logger.WithError(err).Error("target connection checking failed")
 		return err
+	}
+
+	if f.WaitUntilReplicaIsCaughtUpToMaster != nil {
+		f.WaitUntilReplicaIsCaughtUpToMaster.ReplicaDB = f.SourceDB
+
+		if f.WaitUntilReplicaIsCaughtUpToMaster.MasterDB == nil {
+			err = errors.New("must specify a MasterDB")
+			f.logger.WithError(err).Error("must specify a MasterDB")
+			return err
+		}
+
+		err = f.checkConnection("source_master", f.WaitUntilReplicaIsCaughtUpToMaster.MasterDB)
+		if err != nil {
+			f.logger.WithError(err).Error("source master connection checking failed")
+			return err
+		}
+
+		var zeroPosition siddongtangmysql.Position
+		_, err = f.WaitUntilReplicaIsCaughtUpToMaster.IsCaughtUp(zeroPosition, 1)
+		if err != nil {
+			f.logger.WithError(err).Error("cannot check replicated master position on the source database")
+			return err
+		}
+
+		isReplica, err := f.checkDbIsAReplica(f.WaitUntilReplicaIsCaughtUpToMaster.MasterDB)
+		if err != nil {
+			f.logger.WithError(err).Error("cannot check if master is a read replica")
+			return err
+		}
+
+		if isReplica {
+			err = errors.New("source master is a read replica, not a master writer")
+			f.logger.WithError(err).Error("source master is a read replica")
+			return err
+		}
+	} else {
+		isReplica, err := f.checkDbIsAReplica(f.SourceDB)
+		if err != nil {
+			f.logger.WithError(err).Error("cannot check if source is a replica")
+			return err
+		}
+
+		if isReplica {
+			err = errors.New("source is a read replica. running Ghostferry with a source replica is unsafe unless WaitUntilReplicaIsCaughtUpToMaster is used")
+			f.logger.WithError(err).Error("source is a read replica")
+			return err
+		}
 	}
 
 	if f.ErrorHandler == nil {
@@ -321,7 +370,6 @@ func (f *Ferry) WaitUntilBinlogStreamerCatchesUp() {
 // You will know that the BinlogStreamer finished when .Run() returns.
 func (f *Ferry) FlushBinlogAndStopStreaming() {
 	if f.WaitUntilReplicaIsCaughtUpToMaster != nil {
-		f.WaitUntilReplicaIsCaughtUpToMaster.ReplicaDB = f.SourceDB
 		err := f.WaitUntilReplicaIsCaughtUpToMaster.Wait()
 		if err != nil {
 			f.ErrorHandler.Fatal("wait_replica", err)
@@ -388,4 +436,11 @@ func (f *Ferry) checkConnectionForBinlogFormat(db *sql.DB) error {
 	}
 
 	return nil
+}
+
+func (f *Ferry) checkDbIsAReplica(db *sql.DB) (bool, error) {
+	row := db.QueryRow("SELECT @@read_only")
+	var isReadOnly bool
+	err := row.Scan(&isReadOnly)
+	return isReadOnly, err
 }
