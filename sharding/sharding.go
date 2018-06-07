@@ -106,8 +106,9 @@ func (r *ShardingFerry) newIterativeVerifier() *ghostferry.IterativeVerifier {
 		DatabaseRewrites: r.config.DatabaseRewrites,
 		TableRewrites:    r.config.TableRewrites,
 
-		IgnoredTables: r.config.IgnoredVerificationTables,
-		Concurrency:   verifierConcurrency,
+		IgnoredTables:       r.config.IgnoredVerificationTables,
+		Concurrency:         verifierConcurrency,
+		MaxExpectedDowntime: r.config.MaxExpectedVerifierDowntime,
 	}
 }
 

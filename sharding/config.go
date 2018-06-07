@@ -1,6 +1,8 @@
 package sharding
 
 import (
+	"time"
+
 	"github.com/Shopify/ghostferry"
 )
 
@@ -27,6 +29,7 @@ type Config struct {
 	PrimaryKeyTables          []string
 
 	VerifierIterationConcurrency int
+	MaxExpectedVerifierDowntime  time.Duration
 
 	Throttle *ghostferry.LagThrottlerConfig
 }

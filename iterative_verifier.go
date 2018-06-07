@@ -75,6 +75,7 @@ func (r *ReverifyStore) Add(entry ReverifyEntry) {
 		r.MapStore[tableId][entry.Pk] = struct{}{}
 		r.RowCount++
 		if r.RowCount%r.EmitLogPerRowCount == 0 {
+			metrics.Gauge("iterative_verifier_store_rows", float64(r.RowCount), []MetricTag{}, 1.0)
 			logrus.WithFields(logrus.Fields{
 				"tag":  "reverify_store",
 				"rows": r.RowCount,
@@ -132,11 +133,12 @@ type IterativeVerifier struct {
 	SourceDB         *sql.DB
 	TargetDB         *sql.DB
 
-	Tables           []*schema.Table
-	IgnoredTables    []string
-	DatabaseRewrites map[string]string
-	TableRewrites    map[string]string
-	Concurrency      int
+	Tables              []*schema.Table
+	IgnoredTables       []string
+	DatabaseRewrites    map[string]string
+	TableRewrites       map[string]string
+	Concurrency         int
+	MaxExpectedDowntime time.Duration
 
 	reverifyStore *ReverifyStore
 	logger        *logrus.Entry
@@ -225,12 +227,12 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	})
 
 	if err == nil {
-		// This reverification is to reduce the size of the set of rows
+		// This reverification phase is to reduce the size of the set of rows
 		// that need to be reverified during cutover. Failures during
 		// reverification at this point could have been caused by still
 		// ongoing writes and we therefore just re-add those rows to the
 		// store rather than failing the move prematurely.
-		_, err = v.verifyStore()
+		err = v.reverifyUntilStoreIsSmallEnough(30)
 	}
 
 	v.logger.Info("pre-cutover verification complete")
@@ -239,10 +241,43 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	return err
 }
 
+func (v *IterativeVerifier) reverifyUntilStoreIsSmallEnough(maxIterations int) error {
+	var timeToVerify time.Duration
+
+	for iteration := 0; iteration < maxIterations; iteration++ {
+		before := v.reverifyStore.RowCount
+		start := time.Now()
+
+		_, err := v.verifyStore("reverification_before_cutover", []MetricTag{{"iteration", string(iteration)}})
+		if err != nil {
+			return err
+		}
+
+		after := v.reverifyStore.RowCount
+		timeToVerify = time.Now().Sub(start)
+
+		v.logger.WithFields(logrus.Fields{
+			"store_size_before": before,
+			"store_size_after":  after,
+			"iteration":         iteration,
+		}).Infof("completed re-verification iteration %d", iteration)
+
+		if after <= 1000 || after >= before {
+			break
+		}
+	}
+
+	if v.MaxExpectedDowntime != 0 && timeToVerify > v.MaxExpectedDowntime {
+		return fmt.Errorf("cutover stage verification will not complete within max downtime duration (took %s)", timeToVerify)
+	}
+
+	return nil
+}
+
 func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	v.logger.Info("starting verification during cutover")
 	v.verifyDuringCutoverStarted.Set(true)
-	result, err := v.verifyStore()
+	result, err := v.verifyStore("iterative_verifier_during_cutover", []MetricTag{})
 	v.logger.Info("cutover verification complete")
 
 	return result, err
@@ -364,7 +399,7 @@ func (v *IterativeVerifier) iterateTableFingerprints(table *schema.Table, mismat
 	})
 }
 
-func (v *IterativeVerifier) verifyStore() (VerificationResult, error) {
+func (v *IterativeVerifier) verifyStore(sourceTag string, additionalTags []MetricTag) (VerificationResult, error) {
 	allBatches := v.reverifyStore.FlushAndBatchByTable(int(v.CursorConfig.BatchSize))
 	v.logger.WithField("batches", len(allBatches)).Debug("reverifying")
 
@@ -380,17 +415,12 @@ func (v *IterativeVerifier) verifyStore() (VerificationResult, error) {
 			reverifyBatch := allBatches[reverifyBatchIndex]
 			table := v.TableSchemaCache.Get(reverifyBatch.Table.SchemaName, reverifyBatch.Table.TableName)
 
-			var tag string
-			if v.beforeCutoverVerifyDone {
-				tag = "iterative_verifier_during_cutover"
-			} else {
-				tag = "iterative_verifier_before_cutover"
-			}
-
-			metrics.Count("RowEvent", int64(len(reverifyBatch.Pks)), []MetricTag{
+			tags := append([]MetricTag{
 				MetricTag{"table", table.Name},
-				MetricTag{"source", tag},
-			}, 1.0)
+				MetricTag{"source", sourceTag},
+			}, additionalTags...)
+
+			metrics.Count("RowEvent", int64(len(reverifyBatch.Pks)), tags, 1.0)
 
 			v.logger.WithFields(logrus.Fields{
 				"table":    table.String(),

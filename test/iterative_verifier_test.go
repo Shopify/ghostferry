@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
@@ -92,6 +93,15 @@ func (t *IterativeVerifierTestSuite) TestBeforeCutoverFailuresFailAgainDuringCut
 	t.Require().Nil(err)
 	t.Require().False(result.DataCorrect)
 	t.Require().Equal("verification failed on table: gftest.test_table_1 for pks: 42", result.Message)
+}
+
+func (t *IterativeVerifierTestSuite) TestErrorsIfMaxDowntimeIsSurpassed() {
+	t.InsertRowInDb(42, "foo", t.Ferry.SourceDB)
+	t.InsertRowInDb(42, "bar", t.Ferry.TargetDB)
+
+	t.verifier.MaxExpectedDowntime = 1 * time.Nanosecond
+	err := t.verifier.VerifyBeforeCutover()
+	t.Require().Regexp("cutover stage verification will not complete within max downtime duration \\(took .*\\)", err.Error())
 }
 
 func (t *IterativeVerifierTestSuite) TestBeforeCutoverFailuresPassDuringCutover() {
