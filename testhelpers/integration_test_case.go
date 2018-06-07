@@ -1,7 +1,6 @@
 package testhelpers
 
 import (
-	"fmt"
 	"sync"
 	"testing"
 
@@ -129,20 +128,11 @@ func (this *IntegrationTestCase) Teardown() {
 		logrus.Error("you might see an unrelated panic as we delete the db, if there are background processes operating on the db")
 	}
 
-	for _, dbname := range ApplicableTestDbs {
-		if this.Ferry.SourceDB != nil {
-			_, err := this.Ferry.SourceDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbname))
-			if err != nil {
-				logrus.WithError(err).Errorf("failed to drop database %s on the source db as a part of the test cleanup", dbname)
-			}
-		}
-
-		if this.Ferry.TargetDB != nil {
-			_, err := this.Ferry.TargetDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbname))
-			if err != nil {
-				logrus.WithError(err).Errorf("failed to drop database %s on the target db as a part of the test cleanup", dbname)
-			}
-		}
+	if this.Ferry.SourceDB != nil {
+		DeleteTestDBs(this.Ferry.SourceDB)
+	}
+	if this.Ferry.TargetDB != nil {
+		DeleteTestDBs(this.Ferry.TargetDB)
 	}
 
 	if r != nil {

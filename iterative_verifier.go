@@ -133,6 +133,10 @@ type IterativeVerifier struct {
 	SourceDB         *sql.DB
 	TargetDB         *sql.DB
 
+	// This makes the verifier ignore any problems and assume all rows match,
+	// so that performance can be tested without running a full copy.
+	IgnoreVerificationErrors bool
+
 	Tables              []*schema.Table
 	IgnoredTables       []string
 	DatabaseRewrites    map[string]string
@@ -570,6 +574,10 @@ func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Tabl
 	}
 	if targetErr != nil {
 		return nil, targetErr
+	}
+	if v.IgnoreVerificationErrors {
+		// Execute all the slow work but don't ever return mismatched rows.
+		return nil, nil
 	}
 
 	return compareHashes(sourceHashes, targetHashes), nil

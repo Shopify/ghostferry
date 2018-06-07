@@ -56,12 +56,17 @@ func main() {
 		errorAndExit(fmt.Sprintf("failed to initialize ferry: %v", err))
 	}
 
-	err = ferry.Start()
-	if err != nil {
-		errorAndExit(fmt.Sprintf("failed to start ferry: %v", err))
-	}
+	if config.DryRunVerification {
+		fmt.Printf("performing dryrun verification only")
+		ferry.DryRunVerification()
+	} else {
+		err = ferry.Start()
+		if err != nil {
+			errorAndExit(fmt.Sprintf("failed to start ferry: %v", err))
+		}
 
-	ferry.Run()
+		ferry.Run()
+	}
 
 	sharding.StopAndFlushMetrics()
 }

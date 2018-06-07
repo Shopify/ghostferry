@@ -28,4 +28,6 @@ type Config struct {
 	MaxExpectedVerifierDowntime  time.Duration
 
 	Throttle *ghostferry.LagThrottlerConfig
+
+	DryRunVerification bool
 }
