@@ -54,12 +54,13 @@ func NewReverifyStore() *ReverifyStore {
 		EmitLogPerRowCount: uint64(10000),
 	}
 
-	r.newMapStore()
+	r.flushStore()
 	return r
 }
 
-func (r *ReverifyStore) newMapStore() {
+func (r *ReverifyStore) flushStore() {
 	r.MapStore = make(map[TableIdentifier]map[uint64]struct{})
+	r.RowCount = 0
 }
 
 func (r *ReverifyStore) Add(entry ReverifyEntry) {
@@ -113,7 +114,7 @@ func (r ReverifyStore) FlushAndBatchByTable(batchsize int) []ReverifyBatch {
 		delete(r.MapStore, tableId)
 	}
 
-	r.newMapStore()
+	r.flushStore()
 	return r.BatchStore
 }
 
