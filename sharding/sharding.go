@@ -81,10 +81,19 @@ func (r *ShardingFerry) Initialize() error {
 	return r.Ferry.Initialize()
 }
 
-func (r *ShardingFerry) newIterativeVerifier() *ghostferry.IterativeVerifier {
+func (r *ShardingFerry) newIterativeVerifier() (*ghostferry.IterativeVerifier, error) {
 	verifierConcurrency := r.config.VerifierIterationConcurrency
 	if verifierConcurrency == 0 {
 		verifierConcurrency = r.config.DataIterationConcurrency
+	}
+
+	var maxExpectedDowntime time.Duration
+	if r.config.MaxExpectedVerifierDowntime != "" {
+		var err error
+		maxExpectedDowntime, err = time.ParseDuration(r.config.MaxExpectedVerifierDowntime)
+		if err != nil {
+			return nil, fmt.Errorf("invalid MaxExpectedVerifierDowntime: %s", err)
+		}
 	}
 
 	return &ghostferry.IterativeVerifier{
@@ -108,8 +117,8 @@ func (r *ShardingFerry) newIterativeVerifier() *ghostferry.IterativeVerifier {
 
 		IgnoredTables:       r.config.IgnoredVerificationTables,
 		Concurrency:         verifierConcurrency,
-		MaxExpectedDowntime: r.config.MaxExpectedVerifierDowntime,
-	}
+		MaxExpectedDowntime: maxExpectedDowntime,
+	}, nil
 }
 
 func (r *ShardingFerry) Start() error {
@@ -123,7 +132,11 @@ func (r *ShardingFerry) Start() error {
 		return err
 	}
 
-	r.verifier = r.newIterativeVerifier()
+	r.verifier, err = r.newIterativeVerifier()
+	if err != nil {
+		return err
+	}
+
 	return r.verifier.Initialize()
 }
 
@@ -268,7 +281,11 @@ func (r *ShardingFerry) copyPrimaryKeyTables() error {
 		return err
 	}
 
-	verifier := r.newIterativeVerifier()
+	verifier, err := r.newIterativeVerifier()
+	if err != nil {
+		return err
+	}
+
 	verifier.TableSchemaCache = sourceDbTables
 	verifier.Tables = tables
 
