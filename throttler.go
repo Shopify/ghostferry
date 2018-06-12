@@ -148,12 +148,18 @@ func (t *LagThrottler) Run(ctx context.Context) error {
 }
 
 func (t *LagThrottler) updateLag(ctx context.Context) error {
-	var newLag int
+	var newLag sql.NullInt64
 	err := t.DB.QueryRowContext(ctx, t.config.Query).Scan(&newLag)
+	if err == sql.ErrNoRows {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
+	if !newLag.Valid {
+		return nil
+	}
 
-	t.lag = newLag
+	t.lag = int(newLag.Int64)
 	return nil
 }

@@ -3,6 +3,7 @@ package test
 import (
 	"context"
 	"database/sql"
+	"sync"
 	"testing"
 	"time"
 
@@ -11,19 +12,23 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func newThrottler() *ghostferry.LagThrottler {
+func newThrottlerWithQuery(query string) *ghostferry.LagThrottler {
 	testConfig := testhelpers.NewTestConfig()
 
 	config := &ghostferry.LagThrottlerConfig{
 		Connection:     testConfig.Target,
 		MaxLag:         6,
-		Query:          "SELECT MAX(lag) FROM meta.lag_table",
+		Query:          query,
 		UpdateInterval: "5ms",
 	}
 
 	throttler, err := ghostferry.NewLagThrottler(config)
 	testhelpers.PanicIfError(err)
 	return throttler
+}
+
+func newThrottler() *ghostferry.LagThrottler {
+	return newThrottlerWithQuery("SELECT MAX(lag) FROM meta.lag_table")
 }
 
 func setupLagTable(db *sql.DB, ctx context.Context) {
@@ -141,4 +146,42 @@ func TestThrottlerRunErrors(t *testing.T) {
 	done()
 	err = throttler.Run(ctx)
 	assert.Equal(t, context.Canceled, err)
+}
+
+func TestThrottlerWithNullReturned(t *testing.T) {
+	ctx, done := context.WithCancel(context.Background())
+
+	throttler := newThrottlerWithQuery("SELECT MAX(lag) FROM meta.lag_table")
+	setupLagTable(throttler.DB, ctx)
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		err := throttler.Run(ctx)
+		assert.Equal(t, context.Canceled, err)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	done()
+	wg.Wait()
+}
+
+func TestThrottlerWithNoRowsReturned(t *testing.T) {
+	ctx, done := context.WithCancel(context.Background())
+
+	throttler := newThrottlerWithQuery("SELECT * FROM meta.lag_table")
+	setupLagTable(throttler.DB, ctx)
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		err := throttler.Run(ctx)
+		assert.Equal(t, context.Canceled, err)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	done()
+	wg.Wait()
 }
