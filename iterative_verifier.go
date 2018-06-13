@@ -85,7 +85,7 @@ func (r *ReverifyStore) Add(entry ReverifyEntry) {
 	}
 }
 
-func (r ReverifyStore) FlushAndBatchByTable(batchsize int) []ReverifyBatch {
+func (r *ReverifyStore) FlushAndBatchByTable(batchsize int) []ReverifyBatch {
 	r.mapStoreMutex.Lock()
 	defer r.mapStoreMutex.Unlock()
 
