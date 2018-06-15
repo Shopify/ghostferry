@@ -60,9 +60,9 @@ image row based replication.</p>
 </div>
 <p>We will be moving data from the 29291 server to the 29292 server. To do this,
 we must first create some test data on the 29291 server to be copied over:</p>
-<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">#</span> <span class="nb">echo</span> <span class="s2">&quot;CREATE DATABASE abc&quot;</span> &gt;&gt; /tmp/n1create.sql
-<span class="gp">#</span> <span class="nb">echo</span> <span class="s2">&quot;CREATE TABLE abc.table1 (id bigint(20) AUTO_INCREMENT, data varchar(16), primary key(id))&quot;</span> &gt;&gt; /tmp/n1create.sql
-<span class="gp">#</span> <span class="nb">echo</span> <span class="s2">&quot;CREATE TABLE abc.table2 (id bigint(20) AUTO_INCREMENT, data TEXT, primary key(id))&quot;</span> &gt;&gt; /tmp/n1create.sql
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">#</span> <span class="nb">echo</span> <span class="s2">&quot;CREATE DATABASE abc;&quot;</span> &gt;&gt; /tmp/n1create.sql
+<span class="gp">#</span> <span class="nb">echo</span> <span class="s2">&quot;CREATE TABLE abc.table1 (id bigint(20) AUTO_INCREMENT, data varchar(16), primary key(id));&quot;</span> &gt;&gt; /tmp/n1create.sql
+<span class="gp">#</span> <span class="nb">echo</span> <span class="s2">&quot;CREATE TABLE abc.table2 (id bigint(20) AUTO_INCREMENT, data TEXT, primary key(id));&quot;</span> &gt;&gt; /tmp/n1create.sql
 <span class="gp">#</span> <span class="k">for</span> i in <span class="sb">`</span>seq <span class="m">1</span> <span class="m">350</span><span class="sb">`</span><span class="p">;</span> <span class="k">do</span>
 <span class="go">    echo &quot;INSERT INTO abc.table1 (id, data) VALUES (${i}, &#39;$(cat /dev/urandom | tr -cd &#39;a-z0-9&#39; | head -c 16)&#39;);&quot; &gt;&gt; /tmp/n1create.sql</span>
 <span class="go">    echo &quot;INSERT INTO abc.table2 (id, data) VALUES (${i}, &#39;$(cat /dev/urandom | tr -cd &#39;a-z0-9&#39; | head -c 16)&#39;);&quot; &gt;&gt; /tmp/n1create.sql</span>
