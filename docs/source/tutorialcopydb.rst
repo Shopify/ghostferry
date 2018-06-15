@@ -41,9 +41,9 @@ we must first create some test data on the 29291 server to be copied over:
 
 .. code-block:: shell-session
 
-  # echo "CREATE DATABASE abc" >> /tmp/n1create.sql
-  # echo "CREATE TABLE abc.table1 (id bigint(20) AUTO_INCREMENT, data varchar(16), primary key(id))" >> /tmp/n1create.sql
-  # echo "CREATE TABLE abc.table2 (id bigint(20) AUTO_INCREMENT, data TEXT, primary key(id))" >> /tmp/n1create.sql
+  # echo "CREATE DATABASE abc;" >> /tmp/n1create.sql
+  # echo "CREATE TABLE abc.table1 (id bigint(20) AUTO_INCREMENT, data varchar(16), primary key(id));" >> /tmp/n1create.sql
+  # echo "CREATE TABLE abc.table2 (id bigint(20) AUTO_INCREMENT, data TEXT, primary key(id));" >> /tmp/n1create.sql
   # for i in `seq 1 350`; do
       echo "INSERT INTO abc.table1 (id, data) VALUES (${i}, '$(cat /dev/urandom | tr -cd 'a-z0-9' | head -c 16)');" >> /tmp/n1create.sql
       echo "INSERT INTO abc.table2 (id, data) VALUES (${i}, '$(cat /dev/urandom | tr -cd 'a-z0-9' | head -c 16)');" >> /tmp/n1create.sql
