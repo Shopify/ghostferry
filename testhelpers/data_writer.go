@@ -97,6 +97,13 @@ func AddTenantID(db *sql.DB, dbName, tableName string, numberOfTenants int) {
 	PanicIfError(err)
 }
 
+func DeleteTestDBs(db *sql.DB) {
+	for _, dbname := range ApplicableTestDbs {
+		_, err := db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbname))
+		PanicIfError(err)
+	}
+}
+
 type DataWriter interface {
 	Run()
 	Stop()

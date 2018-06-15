@@ -304,6 +304,45 @@ func (r *ShardingFerry) copyPrimaryKeyTables() error {
 	return nil
 }
 
+func (r *ShardingFerry) DryRunVerification() {
+	var err error
+	if r.Ferry.Tables, err = ghostferry.LoadTables(r.Ferry.SourceDB, r.Ferry.TableFilter); err != nil {
+		r.Ferry.ErrorHandler.Fatal("sharding_dryrun", err)
+	}
+
+	r.Ferry.BinlogStreamer.TableSchema = r.Ferry.Tables
+	if err = r.Ferry.BinlogStreamer.ConnectBinlogStreamerToMysql(); err != nil {
+		r.Ferry.ErrorHandler.Fatal("sharding_dryrun", err)
+	}
+
+	r.verifier = r.newIterativeVerifier()
+	if err = r.verifier.Initialize(); err != nil {
+		r.Ferry.ErrorHandler.Fatal("sharding_dryrun", err)
+	}
+
+	r.verifier.IgnoreVerificationErrors = true
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+
+	go func() {
+		r.Ferry.BinlogStreamer.Run()
+		wg.Done()
+	}()
+
+	if err = r.verifier.VerifyBeforeCutover(); err != nil {
+		r.logger.WithField("error", err).Errorf("dryrun pre-cutover verification encountered an error")
+		r.Ferry.ErrorHandler.Fatal("sharding_dryrun", err)
+	}
+
+	r.Ferry.BinlogStreamer.FlushAndStop()
+	wg.Wait()
+
+	if _, err = r.verifier.VerifyDuringCutover(); err != nil {
+		r.logger.WithField("error", err).Errorf("dryrun cutover verification encountered an error")
+		r.Ferry.ErrorHandler.Fatal("sharding_dryrun", err)
+	}
+}
+
 func compileRegexps(exps []string) ([]*regexp.Regexp, error) {
 	var err error
 	res := make([]*regexp.Regexp, len(exps))
