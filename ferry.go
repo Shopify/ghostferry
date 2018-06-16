@@ -55,7 +55,7 @@ type Ferry struct {
 	ErrorHandler ErrorHandler
 	Throttler    Throttler
 
-	Tables TableSchemaCache
+	Schema *Schema
 
 	StartTime    time.Time
 	DoneTime     time.Time
@@ -185,6 +185,18 @@ func (f *Ferry) Initialize() (err error) {
 	}
 	f.BatchWriter.Initialize()
 
+	// Loads the schema of the tables that are applicable.
+	// We need to do this at the beginning of the run as this is required
+	// in order to determine the PrimaryKey of each table as well as finding
+	// which value in the binlog event correspond to which field in the
+	// table.
+	metrics.Measure("Schema.Init", nil, 1.0, func() {
+		f.Schema.Init()
+	})
+	if err != nil {
+		return err
+	}
+
 	f.logger.Info("ferry initialized")
 	return nil
 }
@@ -213,21 +225,8 @@ func (f *Ferry) Start() error {
 		return err
 	}
 
-	// Loads the schema of the tables that are applicable.
-	// We need to do this at the beginning of the run as this is required
-	// in order to determine the PrimaryKey of each table as well as finding
-	// which value in the binlog event correspond to which field in the
-	// table.
-	metrics.Measure("LoadTables", nil, 1.0, func() {
-		f.Tables, err = LoadTables(f.SourceDB, f.TableFilter)
-	})
-	if err != nil {
-		return err
-	}
-
-	// TODO(pushrax): handle changes to schema during copying and clean this up.
-	f.BinlogStreamer.TableSchema = f.Tables
-	f.DataIterator.Tables = f.Tables.AsSlice()
+	f.BinlogStreamer.Schema = f.Schema
+	f.DataIterator.Tables = f.Schema.GetSourceSchema().AsSlice()
 
 	return nil
 }

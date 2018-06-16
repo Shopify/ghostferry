@@ -20,7 +20,7 @@ type BinlogStreamer struct {
 	ErrorHandler ErrorHandler
 	Filter       CopyFilter
 
-	TableSchema TableSchemaCache
+	Schema *Schema
 
 	binlogSyncer               *replication.BinlogSyncer
 	binlogStreamer             *replication.BinlogStreamer
@@ -157,10 +157,10 @@ func (s *BinlogStreamer) Run() {
 		case *replication.QueryEvent:
 			// This event can tell us about table structure change which means
 			// the cached schemas of the tables would be invalidated.
-			query := string(e.Query)
-			if query != "BEGIN" {
-				fmt.Printf("!!! %#v\n", query)
-				s.TableSchema, err = LoadTables(s.Db, s.Config.TableFilter)
+			stmt := string(e.Query)
+			if stmt != "BEGIN" {
+				fmt.Printf("!!! %#v\n", stmt)
+				s.Schema.SynchronizeTableSchema(stmt)
 			}
 			s.updateLastStreamedPosAndTime(ev)
 		case *replication.FormatDescriptionEvent:
@@ -232,7 +232,7 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
-	table := s.TableSchema.Get(string(rowsEvent.Table.Schema), string(rowsEvent.Table.Table))
+	table := s.Schema.GetSourceSchema().Get(string(rowsEvent.Table.Schema), string(rowsEvent.Table.Table))
 	if table == nil {
 		return nil
 	}

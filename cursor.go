@@ -199,6 +199,8 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, pkpos uint64, err error
 		return
 	}
 
+	// TODO: make sure number of columns matches schema
+
 	var pkIndex int = -1
 	for idx, col := range columns {
 		if col == c.pkColumn.Name {
