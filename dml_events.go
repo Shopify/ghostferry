@@ -38,7 +38,7 @@ type DMLEvent interface {
 	Database() string
 	Table() string
 	TableSchema() *schema.Table
-	AsSQLString(target *schema.Table) (string, error)
+	AsSQLString(intersection *schema.Table) (string, error)
 	OldValues() RowData
 	NewValues() RowData
 	PK() (uint64, error)
@@ -61,6 +61,15 @@ func (e *DMLEventBase) Table() string {
 
 func (e *DMLEventBase) TableSchema() *schema.Table {
 	return &e.table
+}
+
+func (e *DMLEventBase) pkFromEventData(rowData RowData) (uint64, error) {
+	if err := verifyValuesHasTheSameLengthAsColumns(&e.table, rowData); err != nil {
+		return 0, err
+	}
+
+	pkIndex := e.table.PKColumns[0]
+	return rowData.GetUint64(pkIndex)
 }
 
 type BinlogInsertEvent struct {
@@ -89,14 +98,14 @@ func (e *BinlogInsertEvent) NewValues() RowData {
 	return e.newValues
 }
 
-func (e *BinlogInsertEvent) AsSQLString(target *schema.Table) (string, error) {
-	columns, values, err := loadColumnsForTable(&e.table, target, e.newValues)
+func (e *BinlogInsertEvent) AsSQLString(intersection *schema.Table) (string, error) {
+	columns, values, err := loadColumnsAndValuesInIntersection(&e.table, intersection, e.newValues)
 	if err != nil {
 		return "", err
 	}
 
 	query := "INSERT IGNORE INTO " +
-		QuotedTableNameFromString(target.Schema, target.Name) +
+		QuotedTableNameFromString(intersection.Schema, intersection.Name) +
 		" (" + strings.Join(columns, ",") + ")" +
 		" VALUES (" + buildStringListForValues(values[0]) + ")"
 
@@ -104,7 +113,7 @@ func (e *BinlogInsertEvent) AsSQLString(target *schema.Table) (string, error) {
 }
 
 func (e *BinlogInsertEvent) PK() (uint64, error) {
-	return pkFromEventData(&e.table, e.newValues)
+	return e.pkFromEventData(e.newValues)
 }
 
 type BinlogUpdateEvent struct {
@@ -144,13 +153,13 @@ func (e *BinlogUpdateEvent) NewValues() RowData {
 	return e.newValues
 }
 
-func (e *BinlogUpdateEvent) AsSQLString(target *schema.Table) (string, error) {
-	columns, values, err := loadColumnsForTable(&e.table, target, e.oldValues, e.newValues)
+func (e *BinlogUpdateEvent) AsSQLString(intersection *schema.Table) (string, error) {
+	columns, values, err := loadColumnsAndValuesInIntersection(&e.table, intersection, e.oldValues, e.newValues)
 	if err != nil {
 		return "", err
 	}
 
-	query := "UPDATE " + QuotedTableNameFromString(target.Schema, target.Name) +
+	query := "UPDATE " + QuotedTableNameFromString(intersection.Schema, intersection.Name) +
 		" SET " + buildStringMapForSet(columns, values[1]) +
 		" WHERE " + buildStringMapForWhere(columns, values[0])
 
@@ -158,7 +167,7 @@ func (e *BinlogUpdateEvent) AsSQLString(target *schema.Table) (string, error) {
 }
 
 func (e *BinlogUpdateEvent) PK() (uint64, error) {
-	return pkFromEventData(&e.table, e.newValues)
+	return e.pkFromEventData(e.newValues)
 }
 
 type BinlogDeleteEvent struct {
@@ -187,20 +196,20 @@ func NewBinlogDeleteEvents(table *schema.Table, rowsEvent *replication.RowsEvent
 	return deleteEvents, nil
 }
 
-func (e *BinlogDeleteEvent) AsSQLString(target *schema.Table) (string, error) {
-	columns, values, err := loadColumnsForTable(&e.table, target, e.oldValues)
+func (e *BinlogDeleteEvent) AsSQLString(intersection *schema.Table) (string, error) {
+	columns, values, err := loadColumnsAndValuesInIntersection(&e.table, intersection, e.oldValues)
 	if err != nil {
 		return "", err
 	}
 
-	query := "DELETE FROM " + QuotedTableNameFromString(target.Schema, target.Name) +
+	query := "DELETE FROM " + QuotedTableNameFromString(intersection.Schema, intersection.Name) +
 		" WHERE " + buildStringMapForWhere(columns, values[0])
 
 	return query, nil
 }
 
 func (e *BinlogDeleteEvent) PK() (uint64, error) {
-	return pkFromEventData(&e.table, e.oldValues)
+	return e.pkFromEventData(e.oldValues)
 }
 
 func NewBinlogDMLEvents(table *schema.Table, ev *replication.BinlogEvent) ([]DMLEvent, error) {
@@ -246,16 +255,16 @@ func NewBinlogDMLEvents(table *schema.Table, ev *replication.BinlogEvent) ([]DML
 	}
 }
 
-func loadColumnsForTable(table *schema.Table, target *schema.Table, valuesToVerify ...RowData) ([]string, []RowData, error) {
+func loadColumnsAndValuesInIntersection(table *schema.Table, intersection *schema.Table, valuesToVerify ...RowData) ([]string, []RowData, error) {
 	var intersectedColumns []int
 	var quotedNames []string
 
-	if len(table.Columns) == 0 || len(target.Columns) == 0 {
-		panic(fmt.Sprintf("zero columns: table: %d, target: %d", len(table.Columns), len(target.Columns)))
+	if len(table.Columns) == 0 || len(intersection.Columns) == 0 {
+		panic(fmt.Sprintf("zero columns: table: %d, intersection: %d", len(table.Columns), len(intersection.Columns)))
 	}
 
 	for colIdx, col := range table.Columns {
-		for _, targetCol := range target.Columns {
+		for _, targetCol := range intersection.Columns {
 			if col.Name == targetCol.Name {
 				intersectedColumns = append(intersectedColumns, colIdx)
 				quotedNames = append(quotedNames, quoteField(col.Name))
@@ -458,13 +467,4 @@ func appendEscapedBuffer(buffer, value []byte) []byte {
 	}
 
 	return append(buffer, '\'')
-}
-
-func pkFromEventData(table *schema.Table, rowData RowData) (uint64, error) {
-	if err := verifyValuesHasTheSameLengthAsColumns(table, rowData); err != nil {
-		return 0, err
-	}
-
-	pkIndex := table.PKColumns[0]
-	return rowData.GetUint64(pkIndex)
 }

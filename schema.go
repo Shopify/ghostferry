@@ -11,16 +11,27 @@ import (
 type Schema struct {
 	SourceDB    *sql.DB
 	TargetDB    *sql.DB
-	TableSchema TableSchemaCache
 	TableFilter TableFilter
+
+	sourceSchema TableSchemaCache
+	targetSchema TableSchemaCache
+	intersection TableSchemaCache
 }
 
 func (s *Schema) Init() error {
 	return s.FetchSchema()
 }
 
+func (s *Schema) GetTargetSchema() TableSchemaCache {
+	return s.targetSchema
+}
+
+func (s *Schema) GetIntersectedSchema() TableSchemaCache {
+	return s.intersection
+}
+
 func (s *Schema) GetSourceSchema() TableSchemaCache {
-	return s.TableSchema
+	return s.sourceSchema
 }
 
 func (s *Schema) SynchronizeTableSchema(stmt string) error {
@@ -67,7 +78,9 @@ func (s *Schema) FetchSchema() error {
 		return err
 	}
 
-	s.TableSchema = intersectSchema(sourceSchema, targetSchema)
+	s.sourceSchema = sourceSchema
+	s.targetSchema = targetSchema
+	s.intersection = intersectSchema(sourceSchema, targetSchema)
 
 	return nil
 }

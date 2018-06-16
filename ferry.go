@@ -226,7 +226,7 @@ func (f *Ferry) Start() error {
 	}
 
 	f.BinlogStreamer.Schema = f.Schema
-	f.DataIterator.Tables = f.Schema.GetSourceSchema().AsSlice()
+	f.DataIterator.Tables = f.Schema.GetIntersectedSchema().AsSlice()
 
 	return nil
 }

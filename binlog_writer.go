@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -13,6 +12,7 @@ type BinlogWriter struct {
 	DatabaseRewrites map[string]string
 	TableRewrites    map[string]string
 	Throttler        Throttler
+	Schema           *Schema
 
 	BatchSize    int
 	WriteRetries int
@@ -94,12 +94,12 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 			eventTableName = targetTableName
 		}
 
-		targetSchema, err := schema.NewTableFromSqlDB(b.DB, eventDatabaseName, eventTableName)
-		if err != nil {
-			return fmt.Errorf("fetching target schema: %v", err)
+		intersectedTable := b.Schema.GetIntersectedSchema().Get(eventDatabaseName, eventTableName)
+		if intersectedTable == nil {
+			return fmt.Errorf("have event for table that doesnt exist in intersection schema")
 		}
 
-		sql, err := ev.AsSQLString(targetSchema)
+		sql, err := ev.AsSQLString(intersectedTable)
 		if err != nil {
 			return fmt.Errorf("generating sql query: %v", err)
 		}

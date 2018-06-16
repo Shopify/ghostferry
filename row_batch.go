@@ -41,7 +41,7 @@ func (e *RowBatch) TableSchema() *schema.Table {
 }
 
 func (e *RowBatch) AsSQLQuery(target *schema.Table) (string, []interface{}, error) {
-	columns, values, err := loadColumnsForTable(&e.table, target, e.values...)
+	columns, values, err := loadColumnsAndValuesInIntersection(&e.table, target, e.values...)
 	if err != nil {
 		return "", nil, err
 	}
