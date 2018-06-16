@@ -88,22 +88,21 @@ func TestCopyDataWithLargePrimaryKeyValues(t *testing.T) {
 func TestCopyDataWhileRenamingDatabaseAndTable(t *testing.T) {
 	sourceDatabaseName := testhelpers.ApplicableTestDbs[0]
 	targetDatabaseName := testhelpers.ApplicableTestDbs[1]
-	sourceTableName := "table1"
-	targetTableName := "table2"
+	tableName := "table1"
 
 	testcase := &testhelpers.IntegrationTestCase{
 		T:     t,
 		Ferry: testhelpers.NewTestFerry(),
 		DisableChecksumVerifier: true,
 		SetupAction: func(f *testhelpers.TestFerry) {
-			testhelpers.SeedInitialData(f.SourceDB, sourceDatabaseName, sourceTableName, 1111)
-			testhelpers.SeedInitialData(f.TargetDB, targetDatabaseName, targetTableName, 0)
+			testhelpers.SeedInitialData(f.SourceDB, sourceDatabaseName, tableName, 1111)
+			testhelpers.SeedInitialData(f.TargetDB, targetDatabaseName, tableName, 0)
 		},
 	}
 
 	testcase.CustomVerifyAction = func(f *testhelpers.TestFerry) {
-		sourceQuery := fmt.Sprintf("CHECKSUM TABLE `%s`.`%s` EXTENDED", sourceDatabaseName, sourceTableName)
-		targetQuery := fmt.Sprintf("CHECKSUM TABLE `%s`.`%s` EXTENDED", targetDatabaseName, targetTableName)
+		sourceQuery := fmt.Sprintf("CHECKSUM TABLE `%s`.`%s` EXTENDED", sourceDatabaseName, tableName)
+		targetQuery := fmt.Sprintf("CHECKSUM TABLE `%s`.`%s` EXTENDED", targetDatabaseName, tableName)
 
 		var tablename string
 		var sourceChecksum sql.NullInt64
@@ -139,10 +138,6 @@ func TestCopyDataWhileRenamingDatabaseAndTable(t *testing.T) {
 
 	testcase.Ferry.DatabaseRewrites = map[string]string{
 		sourceDatabaseName: targetDatabaseName,
-	}
-
-	testcase.Ferry.TableRewrites = map[string]string{
-		sourceTableName: targetTableName,
 	}
 
 	testcase.Run()

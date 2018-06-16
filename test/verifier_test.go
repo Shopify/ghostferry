@@ -84,19 +84,6 @@ func (this *ChecksumTableVerifierTestSuite) TestVerifyMatchAndRestartable() {
 	this.AssertVerifierNotMatched()
 }
 
-func (this *ChecksumTableVerifierTestSuite) TestVerifyWithRewrites() {
-	this.copyDataFromSourceToTargetTable("table2")
-
-	this.verifier.TableRewrites = map[string]string{
-		testhelpers.TestTable1Name: "table2",
-	}
-
-	err := this.verifier.StartInBackground()
-	this.Require().Nil(err)
-	this.verifier.Wait()
-	this.AssertVerifierMatched()
-}
-
 func (this *ChecksumTableVerifierTestSuite) AssertVerifierMatched() {
 	result, err := this.verifier.Result()
 	this.Require().True(result.IsStarted())

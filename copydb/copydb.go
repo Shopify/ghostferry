@@ -67,7 +67,6 @@ func (this *CopydbFerry) Start() error {
 			TargetDB:         this.Ferry.TargetDB,
 			Concurrency:      this.config.DataIterationConcurrency,
 			DatabaseRewrites: this.Ferry.Config.DatabaseRewrites,
-			TableRewrites:    this.Ferry.Config.TableRewrites,
 		}
 
 		err = iterativeVerifier.Initialize()
@@ -82,7 +81,6 @@ func (this *CopydbFerry) Start() error {
 			SourceDB:         this.Ferry.SourceDB,
 			TargetDB:         this.Ferry.TargetDB,
 			DatabaseRewrites: this.Ferry.Config.DatabaseRewrites,
-			TableRewrites:    this.Ferry.Config.TableRewrites,
 		}
 	} else {
 		this.verifier = nil
@@ -187,10 +185,6 @@ func (this *CopydbFerry) createTableOnTarget(database, table string) error {
 
 	if targetDbName, exists := this.Ferry.DatabaseRewrites[database]; exists {
 		database = targetDbName
-	}
-
-	if targetTableName, exists := this.Ferry.TableRewrites[tableNameAgain]; exists {
-		tableNameAgain = targetTableName
 	}
 
 	createTableQueryReplaced := strings.Replace(

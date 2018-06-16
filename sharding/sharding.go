@@ -113,7 +113,6 @@ func (r *ShardingFerry) newIterativeVerifier() (*ghostferry.IterativeVerifier, e
 		TargetDB: r.Ferry.TargetDB,
 
 		DatabaseRewrites: r.config.DatabaseRewrites,
-		TableRewrites:    r.config.TableRewrites,
 
 		IgnoredTables:       r.config.IgnoredVerificationTables,
 		Concurrency:         verifierConcurrency,

@@ -156,7 +156,6 @@ func (f *Ferry) Initialize() (err error) {
 	f.BinlogWriter = &BinlogWriter{
 		DB:               f.TargetDB,
 		DatabaseRewrites: f.Config.DatabaseRewrites,
-		TableRewrites:    f.Config.TableRewrites,
 		Throttler:        f.Throttler,
 
 		BatchSize:    f.Config.BinlogEventBatchSize,
@@ -179,7 +178,6 @@ func (f *Ferry) Initialize() (err error) {
 		DB: f.TargetDB,
 
 		DatabaseRewrites: f.Config.DatabaseRewrites,
-		TableRewrites:    f.Config.TableRewrites,
 
 		WriteRetries: f.Config.DBWriteRetries,
 	}

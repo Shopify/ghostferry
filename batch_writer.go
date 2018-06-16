@@ -13,7 +13,6 @@ type BatchWriter struct {
 	DB *sql.DB
 
 	DatabaseRewrites map[string]string
-	TableRewrites    map[string]string
 
 	WriteRetries int
 
@@ -39,9 +38,6 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 		}
 
 		table := batch.TableSchema().Name
-		if targetTableName, exists := w.TableRewrites[table]; exists {
-			table = targetTableName
-		}
 
 		query, args, err := batch.AsSQLQuery(&schema.Table{Schema: db, Name: table})
 		if err != nil {

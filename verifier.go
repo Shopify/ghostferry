@@ -78,7 +78,6 @@ type Verifier interface {
 type ChecksumTableVerifier struct {
 	Tables           []*schema.Table
 	DatabaseRewrites map[string]string
-	TableRewrites    map[string]string
 	SourceDB         *sql.DB
 	TargetDB         *sql.DB
 
@@ -107,12 +106,6 @@ func (v *ChecksumTableVerifier) Verify() (VerificationResult, error) {
 		}
 
 		targetTableName := table.Name
-		if v.TableRewrites != nil {
-			if rewrittenName, exists := v.TableRewrites[table.Name]; exists {
-				targetTableName = rewrittenName
-			}
-		}
-
 		targetTable := QuotedTableNameFromString(targetDbName, targetTableName)
 
 		logWithTable := v.logger.WithFields(logrus.Fields{

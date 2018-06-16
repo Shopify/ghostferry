@@ -81,7 +81,6 @@ func (c *Config) InitializeAndValidateConfig() error {
 	)
 
 	c.DatabaseRewrites = c.Databases.Rewrites
-	c.TableRewrites = c.Tables.Rewrites
 
 	if err := c.Config.ValidateConfig(); err != nil {
 		return err

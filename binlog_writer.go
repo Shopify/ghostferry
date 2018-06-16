@@ -11,7 +11,6 @@ import (
 type BinlogWriter struct {
 	DB               *sql.DB
 	DatabaseRewrites map[string]string
-	TableRewrites    map[string]string
 	Throttler        Throttler
 
 	BatchSize    int
@@ -89,12 +88,7 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 			eventDatabaseName = targetDatabaseName
 		}
 
-		eventTableName := ev.Table()
-		if targetTableName, exists := b.TableRewrites[eventTableName]; exists {
-			eventTableName = targetTableName
-		}
-
-		sql, err := ev.AsSQLString(&schema.Table{Schema: eventDatabaseName, Name: eventTableName})
+		sql, err := ev.AsSQLString(&schema.Table{Schema: eventDatabaseName, Name: ev.Table()})
 		if err != nil {
 			return fmt.Errorf("generating sql query: %v", err)
 		}

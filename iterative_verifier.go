@@ -137,7 +137,6 @@ type IterativeVerifier struct {
 	Tables              []*schema.Table
 	IgnoredTables       []string
 	DatabaseRewrites    map[string]string
-	TableRewrites       map[string]string
 	Concurrency         int
 	MaxExpectedDowntime time.Duration
 
@@ -538,9 +537,6 @@ func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Tabl
 	}
 
 	targetTable := table.Name
-	if targetTableName, exists := v.TableRewrites[targetTable]; exists {
-		targetTable = targetTableName
-	}
 
 	wg := &sync.WaitGroup{}
 	wg.Add(2)

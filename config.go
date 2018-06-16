@@ -153,12 +153,6 @@ type Config struct {
 	// Optional: defaults to empty map/no rewrites
 	DatabaseRewrites map[string]string
 
-	// Map the table name on the source dataabase to a different name on
-	// the target database. See DatabaseRewrite.
-	//
-	// Optional: defaults to empty map/no rewrites
-	TableRewrites map[string]string
-
 	// The maximum number of retries for writes if the writes failed on
 	// the target database.
 	//
