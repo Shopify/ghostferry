@@ -1,7 +1,9 @@
 package test
 
 import (
+	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
@@ -154,6 +156,57 @@ func TestIgnoresTables(t *testing.T) {
 	assert.True(t, ran)
 }
 
+func TestReverifiesUntilStoreSmallEnough(t *testing.T) {
+	ferry := testhelpers.NewTestFerry()
+	iterativeVerifier := &ghostferry.IterativeVerifier{}
+	ran := false
+
+	testcase := &testhelpers.IntegrationTestCase{
+		T:           t,
+		SetupAction: setupSingleTableDatabase,
+		AfterRowCopyIsComplete: func(ferry *testhelpers.TestFerry) {
+			setupIterativeVerifierFromFerry(iterativeVerifier, ferry.Ferry)
+
+			err := iterativeVerifier.Initialize()
+			testhelpers.PanicIfError(err)
+
+			time.Sleep(5 * time.Second)
+
+			err = iterativeVerifier.VerifyBeforeCutover()
+			testhelpers.PanicIfError(err)
+		},
+		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry) {
+			result, err := iterativeVerifier.VerifyDuringCutover()
+			assert.Nil(t, err)
+			assert.True(t, result.DataCorrect)
+			ran = true
+		},
+		DataWriter: &testhelpers.MixedActionDataWriter{
+			ProbabilityOfInsert: 1.0 / 5.0,
+			ProbabilityOfUpdate: 3.0 / 5.0,
+			ProbabilityOfDelete: 1.0 / 5.0,
+			NumberOfWriters:     1,
+			Tables:              []string{"gftest.table1"},
+		},
+		Ferry: ferry,
+	}
+
+	testcase.Run()
+	assert.True(t, ran)
+}
+func setupSingleTableDatabase(f *testhelpers.TestFerry) {
+	maxId := 5111
+	testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", maxId)
+
+	for i := 0; i < 140; i++ {
+		query := "DELETE FROM gftest.table1 WHERE id = ?"
+		_, err := f.SourceDB.Exec(query, rand.Intn(maxId-1)+1)
+		testhelpers.PanicIfError(err)
+	}
+
+	testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
+}
+
 func TestVerificationPasses(t *testing.T) {
 	ferry := testhelpers.NewTestFerry()
 	iterativeVerifier := &ghostferry.IterativeVerifier{}
@@ -194,7 +247,7 @@ func TestVerificationPasses(t *testing.T) {
 func setupIterativeVerifierFromFerry(v *ghostferry.IterativeVerifier, f *ghostferry.Ferry) {
 	v.CursorConfig = &ghostferry.CursorConfig{
 		DB:          f.SourceDB,
-		BatchSize:   f.Config.DataIterationBatchSize,
+		BatchSize:   2000,
 		ReadRetries: f.Config.DBReadRetries,
 	}
 
@@ -203,7 +256,7 @@ func setupIterativeVerifierFromFerry(v *ghostferry.IterativeVerifier, f *ghostfe
 	v.TargetDB = f.TargetDB
 	v.Tables = f.Tables.AsSlice()
 	v.TableSchemaCache = f.Tables
-	v.Concurrency = 2
+	v.Concurrency = 1
 }
 
 func ensureTestRowsAreReverified(ferry *testhelpers.TestFerry) {

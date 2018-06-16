@@ -263,7 +263,7 @@ func (v *IterativeVerifier) reverifyUntilStoreIsSmallEnough(maxIterations int) e
 			"iteration":         iteration,
 		}).Infof("completed re-verification iteration %d", iteration)
 
-		if after <= 1000 || after >= before {
+		if after <= 10 || after >= before {
 			break
 		}
 	}
