@@ -191,12 +191,18 @@ CONSTANT InitialTable
 CONSTANT MaxPrimaryKey
 
 (***************************************************************************
-This defines the set of possible records that can be written to the
+Records defines the set of possible records that can be written to the
 database.
 
 Example: {r0, r1}
+
+NoRecordHere serves as a placeholder for saying that the row with that id
+does not exist in the database. This can be defined as a regular model value
+in TLC.
  ***************************************************************************)
 CONSTANT Records
+CONSTANT NoRecordHere
+ASSUME NoRecordHere \notin Records
 
 (***************************************************************************
 These are defined as ModelValues that will serve as the identifier to the
@@ -209,10 +215,6 @@ TableCapacity == Len(InitialTable)
 
 \* The set of all possible primary key
 PrimaryKeys == 1..TableCapacity
-
-\* This value cannot be computed by the TLC. Use the Model to override it to be
-\* a model value instead.
-NoRecordHere == CHOOSE r : r \notin Records
 
 \* A set of possible records for TypeOK
 PossibleRecords == Records \cup {NoRecordHere}
@@ -626,5 +628,5 @@ BinlogSizeActionConstraint == Len(SourceBinlog) <= MaxBinlogSize
 
 =============================================================================
 \* Modification History
-\* Last modified Thu Jan 25 10:09:10 EST 2018 by shuhao
+\* Last modified Mon Jun 25 14:04:50 EDT 2018 by shuhao
 \* Created Thu Jan 18 11:35:40 EST 2018 by shuhao

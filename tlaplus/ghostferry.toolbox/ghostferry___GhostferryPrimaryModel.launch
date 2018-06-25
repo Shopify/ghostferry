@@ -40,11 +40,10 @@
 <listEntry value="BinlogStreamer;;BinlogStreamer;1;0"/>
 <listEntry value="TableIterator;;TableIterator;1;0"/>
 <listEntry value="MaxBinlogSize;;3;0;0"/>
-</listAttribute>
-<stringAttribute key="modelParameterContraint" value=""/>
-<listAttribute key="modelParameterDefinitions">
 <listEntry value="NoRecordHere;;NoRecordHere;1;0"/>
 </listAttribute>
+<stringAttribute key="modelParameterContraint" value=""/>
+<listAttribute key="modelParameterDefinitions"/>
 <stringAttribute key="modelParameterModelValues" value="{}"/>
 <stringAttribute key="modelParameterNewDefinitions" value=""/>
 <intAttribute key="numberOfWorkers" value="3"/>
