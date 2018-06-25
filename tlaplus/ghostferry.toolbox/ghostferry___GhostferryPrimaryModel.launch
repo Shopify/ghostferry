@@ -19,28 +19,27 @@
 <stringAttribute key="modelBehaviorNext" value=""/>
 <stringAttribute key="modelBehaviorSpec" value="Spec"/>
 <intAttribute key="modelBehaviorSpecType" value="1"/>
-<stringAttribute key="modelBehaviorVars" value="lastSuccessfulPK, CurrentMaxPrimaryKey, chosenPK, SourceBinlog, currentRow, BinlogStreamingStopRequested, pc, newRecord, oldRecord, TargetTable, TargetBinlogPos, currentBinlogEntry, ApplicationReadonly, SourceTable, lastSuccessfulBinlogPos"/>
+<stringAttribute key="modelBehaviorVars" value="lastSuccessfulPK, CurrentMaxPrimaryKey, chosenPK, SourceBinlog, MaxPrimaryKey, currentRow, BinlogStreamingStopRequested, pc, newRecord, oldRecord, TargetTable, TargetBinlogPos, currentBinlogEntry, ApplicationReadonly, SourceTable, lastSuccessfulBinlogPos"/>
 <stringAttribute key="modelComments" value=""/>
 <booleanAttribute key="modelCorrectnessCheckDeadlock" value="true"/>
 <listAttribute key="modelCorrectnessInvariants">
 <listEntry value="1SourceTargetEquality"/>
 </listAttribute>
 <listAttribute key="modelCorrectnessProperties">
-<listEntry value="1Termination"/>
+<listEntry value="0Termination"/>
 </listAttribute>
 <stringAttribute key="modelExpressionEval" value=""/>
 <stringAttribute key="modelParameterActionConstraint" value="BinlogSizeActionConstraint"/>
 <listAttribute key="modelParameterConstants">
 <listEntry value="defaultInitValue;;defaultInitValue;1;0"/>
-<listEntry value="Records;;{r0, r1};1;0"/>
-<listEntry value="MaxPrimaryKey;;2;0;0"/>
+<listEntry value="Records;;{r0, r1};1;1"/>
 <listEntry value="Ferry;;Ferry;1;0"/>
-<listEntry value="InitialTable;;&lt;&lt;r0, r1, NoRecordHere&gt;&gt;;0;0"/>
 <listEntry value="Application;;Application;1;0"/>
 <listEntry value="BinlogStreamer;;BinlogStreamer;1;0"/>
 <listEntry value="TableIterator;;TableIterator;1;0"/>
 <listEntry value="MaxBinlogSize;;3;0;0"/>
 <listEntry value="NoRecordHere;;NoRecordHere;1;0"/>
+<listEntry value="TableCapacity;;3;0;0"/>
 </listAttribute>
 <stringAttribute key="modelParameterContraint" value=""/>
 <listAttribute key="modelParameterDefinitions"/>
