@@ -1,0 +1,24 @@
+package: github.com/Shopify/ghostferry
+import:
+- package: github.com/Masterminds/squirrel
+- package: github.com/sirupsen/logrus
+  version: ^1.0.0
+- package: github.com/siddontang/go-mysql
+  subpackages:
+  - driver
+  - client
+  - mysql
+  - replication
+  - schema
+- package: github.com/stretchr/testify
+  version: ^1.1.4
+  subpackages:
+  - assert
+  - require
+  - suite
+- package: github.com/gorilla/mux
+  version: ^1.4.0
+- package: github.com/go-sql-driver/mysql
+  version: ^1.3.0
+- package: github.com/Shopify/go-dogstatsd
+- package: github.com/golang/snappy

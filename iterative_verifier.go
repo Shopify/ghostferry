@@ -128,11 +128,12 @@ func (r verificationResultAndError) ErroredOrFailed() bool {
 }
 
 type IterativeVerifier struct {
-	CursorConfig     *CursorConfig
-	BinlogStreamer   *BinlogStreamer
-	TableSchemaCache TableSchemaCache
-	SourceDB         *sql.DB
-	TargetDB         *sql.DB
+	CompressionVerifier *CompressionVerifier
+	CursorConfig        *CursorConfig
+	BinlogStreamer      *BinlogStreamer
+	TableSchemaCache    TableSchemaCache
+	SourceDB            *sql.DB
+	TargetDB            *sql.DB
 
 	Tables              []*schema.Table
 	IgnoredTables       []string
@@ -601,6 +602,13 @@ func compareHashes(source, target map[uint64][]byte) []uint64 {
 }
 
 func (v *IterativeVerifier) GetHashes(db *sql.DB, schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64) (map[uint64][]byte, error) {
+	if v.CompressionVerifier != nil {
+		if tableCompression, ok := v.CompressionVerifier.tableColumnCompressions[table]; ok {
+			// Use the CompressionVerifier to verify data equality
+			return v.CompressionVerifier.GetCompressedHashes(db, schema, table, pkColumn, columns, pks, tableCompression)
+		}
+	}
+
 	sql, args, err := GetMd5HashesSql(schema, table, pkColumn, columns, pks)
 	if err != nil {
 		return nil, err

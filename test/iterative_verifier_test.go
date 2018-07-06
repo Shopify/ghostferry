@@ -26,7 +26,17 @@ func (t *IterativeVerifierTestSuite) SetupTest() {
 	t.SeedSourceDB(0)
 	t.SeedTargetDB(0)
 
+	tableCompressions := make(ghostferry.TableColumnCompressionConfig)
+	tableCompressions[testhelpers.TestCompressedTable1Name] = make(map[string]string)
+	tableCompressions[testhelpers.TestCompressedTable1Name][testhelpers.TestCompressedColumn1Name] = ghostferry.CompressionSnappy
+
+	compressionVerifier, err := ghostferry.NewCompressionVerifier(tableCompressions)
+	if err != nil {
+		t.FailNow(err.Error())
+	}
+
 	t.verifier = &ghostferry.IterativeVerifier{
+		CompressionVerifier: compressionVerifier,
 		CursorConfig: &ghostferry.CursorConfig{
 			DB:          t.Ferry.SourceDB,
 			BatchSize:   t.Ferry.Config.DataIterationBatchSize,
@@ -42,7 +52,7 @@ func (t *IterativeVerifierTestSuite) SetupTest() {
 	t.db = t.Ferry.SourceDB
 	t.reloadTables()
 
-	err := t.verifier.Initialize()
+	err = t.verifier.Initialize()
 	testhelpers.PanicIfError(err)
 }
 
@@ -70,10 +80,34 @@ func (t *IterativeVerifierTestSuite) TestVerifyOnceFails() {
 	t.Require().False(result.DataCorrect)
 	t.Require().Equal("verification failed on table: gftest.test_table_1 for pk: 42", result.Message)
 }
+func (t *IterativeVerifierTestSuite) TestVerifyCompressedOnceFails() {
+	t.InsertCompressedRowInDb(42, testhelpers.TestCompressedData1, t.Ferry.SourceDB)
+	t.InsertCompressedRowInDb(42, testhelpers.TestCompressedData2, t.Ferry.TargetDB)
+
+	result, err := t.verifier.VerifyOnce()
+	t.Require().NotNil(result)
+	t.Require().Nil(err)
+	t.Require().False(result.DataCorrect)
+	t.Require().Equal(
+		fmt.Sprintf("verification failed on table: %s.%s for pk: %s", testhelpers.TestSchemaName, testhelpers.TestCompressedTable1Name, "42"),
+		result.Message,
+	)
+}
 
 func (t *IterativeVerifierTestSuite) TestVerifyOncePass() {
 	t.InsertRowInDb(42, "foo", t.Ferry.SourceDB)
 	t.InsertRowInDb(42, "foo", t.Ferry.TargetDB)
+
+	result, err := t.verifier.VerifyOnce()
+	t.Require().NotNil(result)
+	t.Require().Nil(err)
+	t.Require().True(result.DataCorrect)
+	t.Require().Equal("", result.Message)
+}
+
+func (t *IterativeVerifierTestSuite) TestVerifyCompressedOncePass() {
+	t.InsertCompressedRowInDb(42, testhelpers.TestCompressedData1, t.Ferry.SourceDB)
+	t.InsertCompressedRowInDb(42, testhelpers.TestCompressedData1, t.Ferry.TargetDB)
 
 	result, err := t.verifier.VerifyOnce()
 	t.Require().NotNil(result)
@@ -93,6 +127,19 @@ func (t *IterativeVerifierTestSuite) TestBeforeCutoverFailuresFailAgainDuringCut
 	t.Require().Nil(err)
 	t.Require().False(result.DataCorrect)
 	t.Require().Equal("verification failed on table: gftest.test_table_1 for pks: 42", result.Message)
+}
+
+func (t *IterativeVerifierTestSuite) TestBeforeCutoverCompressionFailuresFailAgainDuringCutover() {
+	t.InsertCompressedRowInDb(42, testhelpers.TestCompressedData1, t.Ferry.SourceDB)
+	t.InsertCompressedRowInDb(42, testhelpers.TestCompressedData2, t.Ferry.TargetDB)
+
+	err := t.verifier.VerifyBeforeCutover()
+	t.Require().Nil(err)
+
+	result, err := t.verifier.VerifyDuringCutover()
+	t.Require().Nil(err)
+	t.Require().False(result.DataCorrect)
+	t.Require().Equal(fmt.Sprintf("verification failed on table: %s.%s for pks: %s", "gftest", testhelpers.TestCompressedTable1Name, "42"), result.Message)
 }
 
 func (t *IterativeVerifierTestSuite) TestErrorsIfMaxDowntimeIsSurpassed() {
@@ -219,6 +266,11 @@ func (t *IterativeVerifierTestSuite) InsertRow(id int, data string) {
 
 func (t *IterativeVerifierTestSuite) InsertRowInDb(id int, data string, db *sql.DB) {
 	_, err := db.Exec(fmt.Sprintf("INSERT INTO %s.%s VALUES (%d,\"%s\")", testhelpers.TestSchemaName, testhelpers.TestTable1Name, id, data))
+	t.Require().Nil(err)
+}
+
+func (t *IterativeVerifierTestSuite) InsertCompressedRowInDb(id int, data string, db *sql.DB) {
+	_, err := db.Exec(fmt.Sprintf("INSERT INTO %s.%s VALUES (%d,\"%s\")", testhelpers.TestSchemaName, testhelpers.TestCompressedTable1Name, id, data))
 	t.Require().Nil(err)
 }
 

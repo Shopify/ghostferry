@@ -1,0 +1,68 @@
+hash: 0094e2e17c38846b339d252d3374c4e587556dbc1764d7740478795bf4d71a31
+updated: 2018-07-31T08:05:29.293171-05:00
+imports:
+- name: github.com/davecgh/go-spew
+  version: 8991bc29aa16c548c550c7ff78260e27b9ab7c73
+  subpackages:
+  - spew
+- name: github.com/go-sql-driver/mysql
+  version: d523deb1b23d913de5bdada721a6071e71283618
+- name: github.com/golang/snappy
+  version: 2e65f85255dbc3072edf28d6b5b8efc472979f5a
+- name: github.com/gorilla/context
+  version: 08b5f424b9271eedf6f9f0ce86cb9396ed337a42
+- name: github.com/gorilla/mux
+  version: e3702bed27f0d39777b0b37b664b6280e8ef8fbf
+- name: github.com/juju/errors
+  version: c7d06af17c68cd34c835053720b21f6549d9b0ee
+- name: github.com/lann/builder
+  version: 1b87b36280d04fe7882d1512bf038ea2967ad534
+- name: github.com/lann/ps
+  version: 62de8c46ede02a7675c4c79c84883eb164cb71e3
+- name: github.com/Masterminds/squirrel
+  version: 2a85d1d526545de922a487d4841e61d6ee690c35
+- name: github.com/pmezard/go-difflib
+  version: 792786c7400a136282c1664665ae0a8db921c6c2
+  subpackages:
+  - difflib
+- name: github.com/satori/go.uuid
+  version: f58768cc1a7a7e77a3bd49e98cdd21419399b6a3
+- name: github.com/Shopify/go-dogstatsd
+  version: 76f9377ffde254a7e012e7d422e8b8f9748571aa
+- name: github.com/shopspring/decimal
+  version: 9ca7f51822d222ae4e246f070f9aad863599bd1a
+- name: github.com/siddontang/go
+  version: cb568a3e5cc06256f91a2da5a87455f717eb33f4
+  subpackages:
+  - hack
+- name: github.com/siddontang/go-mysql
+  version: f77cd2a3cb46c6ceba6c3439cf5b937f6a314569
+  subpackages:
+  - client
+  - driver
+  - mysql
+  - packet
+  - replication
+  - schema
+- name: github.com/sirupsen/logrus
+  version: 3e01752db0189b9157070a0e1668a620f9a85da2
+- name: github.com/stretchr/testify
+  version: f35b8ab0b5a2cef36673838d662e249dd9c94686
+  subpackages:
+  - assert
+  - require
+  - suite
+- name: golang.org/x/crypto
+  version: 49796115aa4b964c318aad4f3084fdb41e9aa067
+  subpackages:
+  - ssh/terminal
+- name: golang.org/x/sys
+  version: c1138c84af3a9927aee1a1b8b7ce06c9b7ea52bc
+  subpackages:
+  - unix
+  - windows
+- name: google.golang.org/appengine
+  version: b1f26356af11148e710935ed1ac8a7f5702c7612
+  subpackages:
+  - cloudsql
+testImports: []

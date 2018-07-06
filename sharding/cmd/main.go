@@ -73,8 +73,7 @@ func errorAndExit(msg string) {
 
 func parseConfig() *sharding.Config {
 	config := &sharding.Config{
-		Config: &ghostferry.Config{AutomaticCutover: true},
-
+		Config:        &ghostferry.Config{AutomaticCutover: true},
 		ShardingValue: -1,
 	}
 
