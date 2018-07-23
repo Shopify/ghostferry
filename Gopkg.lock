@@ -73,11 +73,13 @@
   version = "1.0.0"
 
 [[projects]]
+  branch = "master"
   name = "github.com/siddontang/go"
   packages = ["hack"]
-  revision = "cb568a3e5cc06256f91a2da5a87455f717eb33f4"
+  revision = "bdc77568d726a8702315ec4eafda030b6abc4f43"
 
 [[projects]]
+  branch = "master"
   name = "github.com/siddontang/go-mysql"
   packages = [
     "client",
@@ -86,7 +88,7 @@
     "replication",
     "schema"
   ]
-  revision = "f77cd2a3cb46c6ceba6c3439cf5b937f6a314569"
+  revision = "29c07937590cbe74c168fe0d0b8df389ea3e77d4"
 
 [[projects]]
   name = "github.com/sirupsen/logrus"
@@ -116,6 +118,18 @@
     "windows"
   ]
   revision = "c1138c84af3a9927aee1a1b8b7ce06c9b7ea52bc"
+
+[[projects]]
+  branch = "master"
+  name = "gopkg.in/birkirb/loggers.v1"
+  packages = [
+    ".",
+    "log",
+    "mappers",
+    "mappers/stdlib"
+  ]
+  revision = "fa51471f8169216876525e7b6c9fbd0c8789b57a"
+  source = "https://github.com/siddontang/loggers.git"
 
 [solve-meta]
   analyzer-name = "dep"
