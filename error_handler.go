@@ -2,7 +2,9 @@ package ghostferry
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
 	"sync/atomic"
 
 	"github.com/sirupsen/logrus"
@@ -46,6 +48,15 @@ func (this *PanicErrorHandler) ReportError(from string, err error) {
 				logger.WithField("error", postErr).Errorf("ghostferry-sharding failed to notify error")
 			}
 		}
+	}
+
+	logger.WithError(err).WithField("errfrom", from).Error("fatal error detected, state dump coming in stdout")
+
+	stateJSON, err := this.Ferry.SerializeStateToJSON()
+	if err != nil {
+		logger.WithError(err).Error("failed to dump state to JSON...")
+	} else {
+		fmt.Fprintln(os.Stdout, stateJSON)
 	}
 
 	// Print error to STDERR
