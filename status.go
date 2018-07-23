@@ -79,9 +79,18 @@ func FetchStatus(f *Ferry, v Verifier) *Status {
 
 	// Getting all table statuses
 	status.TableStatuses = make([]*TableStatus, 0, len(f.Tables))
-	completedTables := f.DataIterator.CurrentState.CompletedTables()
-	targetPKs := f.DataIterator.CurrentState.TargetPrimaryKeys()
-	lastSuccessfulPKs := f.DataIterator.CurrentState.LastSuccessfulPrimaryKeys()
+
+	serializedState := &SerializableState{}
+	f.StateTracker.Serialize(serializedState)
+
+	lastSuccessfulPKs := serializedState.LastSuccessfulPrimaryKeys
+	completedTables := serializedState.CompletedTables
+
+	targetPKs := make(map[string]uint64)
+	f.DataIterator.targetPKs.Range(func(k, v interface{}) bool {
+		targetPKs[k.(string)] = v.(uint64)
+		return true
+	})
 
 	status.CompletedTableCount = len(completedTables)
 	status.TotalTableCount = len(f.Tables)
@@ -170,7 +179,7 @@ func FetchStatus(f *Ferry, v Verifier) *Status {
 	// ASAP. It's not supposed to be that accurate anyway.
 	var totalPKsToCopy uint64 = 0
 	var completedPKs uint64 = 0
-	estimatedPKsPerSecond := f.DataIterator.CurrentState.EstimatedPKProcessedPerSecond()
+	estimatedPKsPerSecond := f.StateTracker.EstimatedPKCopiedPerSecond()
 	for _, targetPK := range targetPKs {
 		totalPKsToCopy += targetPK
 	}

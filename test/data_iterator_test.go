@@ -51,6 +51,7 @@ func (this *DataIteratorTestSuite) SetupTest() {
 			BatchSize:   config.DataIterationBatchSize,
 			ReadRetries: config.DBReadRetries,
 		},
+		StateTracker: ghostferry.NewStateTracker(config.DataIterationConcurrency*10, nil),
 
 		Tables: tables.AsSlice(),
 	}
@@ -73,7 +74,7 @@ func (this *DataIteratorTestSuite) TestNoEventsForEmptyTable() {
 
 	this.Require().Equal(0, len(this.receivedRows))
 	this.Require().Equal(
-		this.di.CurrentState.CompletedTables(),
+		this.completedTables(),
 		map[string]bool{
 			fmt.Sprintf("%s.%s", testhelpers.TestSchemaName, testhelpers.TestTable1Name):           true,
 			fmt.Sprintf("%s.%s", testhelpers.TestSchemaName, testhelpers.TestCompressedTable1Name): true,
@@ -115,7 +116,7 @@ func (this *DataIteratorTestSuite) TestExistingRowsAreIterated() {
 		data[testhelpers.TestCompressedTable1Name] = append(data[testhelpers.TestCompressedTable1Name], datum)
 	}
 
-	this.Require().Equal(0, len(this.di.CurrentState.CompletedTables()))
+	this.Require().Equal(0, len(this.completedTables()))
 
 	this.Require().Equal(5, len(ids[testhelpers.TestTable1Name]))
 	this.Require().Equal(5, len(ids[testhelpers.TestCompressedTable1Name]))
@@ -138,7 +139,7 @@ func (this *DataIteratorTestSuite) TestExistingRowsAreIterated() {
 	}
 
 	this.Require().Equal(
-		this.di.CurrentState.CompletedTables(),
+		this.completedTables(),
 		map[string]bool{
 			fmt.Sprintf("%s.%s", testhelpers.TestSchemaName, testhelpers.TestTable1Name):           true,
 			fmt.Sprintf("%s.%s", testhelpers.TestSchemaName, testhelpers.TestCompressedTable1Name): true,
@@ -159,8 +160,10 @@ func (this *DataIteratorTestSuite) TestDoneListenerGetsNotifiedWhenDone() {
 	this.Require().True(wasNotified)
 }
 
-func (this *DataIteratorTestSuite) TestInitialize() {
-	this.Require().NotNil(this.di.CurrentState)
+func (this *DataIteratorTestSuite) completedTables() map[string]bool {
+	serializedState := &ghostferry.SerializableState{}
+	this.di.StateTracker.Serialize(serializedState)
+	return serializedState.CompletedTables
 }
 
 func TestDataIterator(t *testing.T) {

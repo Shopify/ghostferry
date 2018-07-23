@@ -1,142 +1,14 @@
 package ghostferry
 
 import (
-	"container/ring"
 	"database/sql"
+	"errors"
+	"fmt"
 	"sync"
-	"time"
 
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
-
-type PKPositionLog struct {
-	Position uint64
-	At       time.Time
-}
-
-type DataIteratorState struct {
-	// We need to lock these maps as Go does not support concurrent access to
-	// maps.
-	// Maybe able to convert to sync.Map in Go1.9
-	targetPrimaryKeys         map[string]uint64
-	lastSuccessfulPrimaryKeys map[string]uint64
-	completedTables           map[string]bool
-	copySpeedLog              *ring.Ring
-
-	targetPkMutex     *sync.RWMutex
-	successfulPkMutex *sync.RWMutex
-	tablesMutex       *sync.RWMutex
-}
-
-func newDataIteratorState(tableIteratorCount int) *DataIteratorState {
-	// We want to make sure that the ring buffer is not filled with
-	// only the timestamp from the last iteration.
-	//
-	// Having it some multiple times of the number of table iterators
-	// _should_ allow for this.
-	speedLog := ring.New(tableIteratorCount * 5)
-	speedLog.Value = PKPositionLog{
-		Position: 0,
-		At:       time.Now(),
-	}
-
-	return &DataIteratorState{
-		targetPrimaryKeys:         make(map[string]uint64),
-		lastSuccessfulPrimaryKeys: make(map[string]uint64),
-		completedTables:           make(map[string]bool),
-		copySpeedLog:              speedLog,
-		targetPkMutex:             &sync.RWMutex{},
-		successfulPkMutex:         &sync.RWMutex{},
-		tablesMutex:               &sync.RWMutex{},
-	}
-}
-
-func (this *DataIteratorState) UpdateTargetPK(table string, pk uint64) {
-	this.targetPkMutex.Lock()
-	defer this.targetPkMutex.Unlock()
-
-	this.targetPrimaryKeys[table] = pk
-}
-
-func (this *DataIteratorState) UpdateLastSuccessfulPK(table string, pk uint64) {
-	this.successfulPkMutex.Lock()
-	defer this.successfulPkMutex.Unlock()
-
-	deltaPK := pk - this.lastSuccessfulPrimaryKeys[table]
-	this.lastSuccessfulPrimaryKeys[table] = pk
-
-	currentTotalPK := this.copySpeedLog.Value.(PKPositionLog).Position
-	this.copySpeedLog = this.copySpeedLog.Next()
-	this.copySpeedLog.Value = PKPositionLog{
-		Position: currentTotalPK + deltaPK,
-		At:       time.Now(),
-	}
-}
-
-func (this *DataIteratorState) MarkTableAsCompleted(table string) {
-	this.tablesMutex.Lock()
-	defer this.tablesMutex.Unlock()
-
-	this.completedTables[table] = true
-}
-
-func (this *DataIteratorState) TargetPrimaryKeys() map[string]uint64 {
-	this.targetPkMutex.RLock()
-	defer this.targetPkMutex.RUnlock()
-
-	m := make(map[string]uint64)
-	for k, v := range this.targetPrimaryKeys {
-		m[k] = v
-	}
-
-	return m
-}
-
-func (this *DataIteratorState) LastSuccessfulPrimaryKeys() map[string]uint64 {
-	this.successfulPkMutex.RLock()
-	defer this.successfulPkMutex.RUnlock()
-
-	m := make(map[string]uint64)
-	for k, v := range this.lastSuccessfulPrimaryKeys {
-		m[k] = v
-	}
-
-	return m
-}
-
-func (this *DataIteratorState) CompletedTables() map[string]bool {
-	this.tablesMutex.RLock()
-	defer this.tablesMutex.RUnlock()
-
-	m := make(map[string]bool)
-	for k, v := range this.completedTables {
-		m[k] = v
-	}
-
-	return m
-}
-
-func (this *DataIteratorState) EstimatedPKProcessedPerSecond() float64 {
-	this.successfulPkMutex.RLock()
-	defer this.successfulPkMutex.RUnlock()
-
-	if this.copySpeedLog.Value.(PKPositionLog).Position == 0 {
-		return 0.0
-	}
-
-	earliest := this.copySpeedLog
-	for earliest.Prev() != nil && earliest.Prev() != this.copySpeedLog && earliest.Prev().Value.(PKPositionLog).Position != 0 {
-		earliest = earliest.Prev()
-	}
-
-	currentValue := this.copySpeedLog.Value.(PKPositionLog)
-	earliestValue := earliest.Value.(PKPositionLog)
-	deltaPK := currentValue.Position - earliestValue.Position
-	deltaT := currentValue.At.Sub(earliestValue.At).Seconds()
-
-	return float64(deltaPK) / deltaT
-}
 
 type DataIterator struct {
 	DB          *sql.DB
@@ -145,9 +17,9 @@ type DataIterator struct {
 
 	ErrorHandler ErrorHandler
 	CursorConfig *CursorConfig
+	StateTracker *StateTracker
 
-	CurrentState *DataIteratorState
-
+	targetPKs      *sync.Map
 	batchListeners []func(*RowBatch) error
 	doneListeners  []func() error
 	logger         *logrus.Entry
@@ -155,7 +27,11 @@ type DataIterator struct {
 
 func (d *DataIterator) Initialize() error {
 	d.logger = logrus.WithField("tag", "data_iterator")
-	d.CurrentState = newDataIteratorState(d.Concurrency)
+	d.targetPKs = &sync.Map{}
+
+	if d.StateTracker == nil {
+		return errors.New("StateTracker must be defined")
+	}
 
 	return nil
 }
@@ -170,11 +46,11 @@ func (d *DataIterator) Run() {
 	}
 
 	for _, table := range emptyTables {
-		d.CurrentState.MarkTableAsCompleted(table.String())
+		d.StateTracker.MarkTableAsCompleted(table.String())
 	}
 
 	for table, maxPk := range tablesWithData {
-		d.CurrentState.UpdateTargetPK(table.String(), maxPk)
+		d.targetPKs.Store(table.String(), maxPk)
 	}
 
 	tablesQueue := make(chan *schema.Table)
@@ -193,7 +69,15 @@ func (d *DataIterator) Run() {
 
 				logger := d.logger.WithField("table", table.String())
 
-				cursor := d.CursorConfig.NewCursor(table, d.CurrentState.TargetPrimaryKeys()[table.String()])
+				targetPKInterface, found := d.targetPKs.Load(table.String())
+				if !found {
+					err := fmt.Errorf("%s not found in targetPKs, this is likely a programmer error", table.String())
+					logger.WithError(err).Error("this is definitely a bug")
+					d.ErrorHandler.Fatal("data_iterator", err)
+					return
+				}
+
+				cursor := d.CursorConfig.NewCursor(table, targetPKInterface.(uint64))
 				err := cursor.Each(func(batch *RowBatch) error {
 					metrics.Count("RowEvent", int64(batch.Size()), []MetricTag{
 						MetricTag{"table", table.Name},
@@ -226,7 +110,7 @@ func (d *DataIterator) Run() {
 					}
 
 					logger.Debugf("updated last successful PK to %d", pkpos)
-					d.CurrentState.UpdateLastSuccessfulPK(table.String(), pkpos)
+					d.StateTracker.UpdateLastSuccessfulPK(table.String(), pkpos)
 
 					return nil
 				})
@@ -238,7 +122,7 @@ func (d *DataIterator) Run() {
 				}
 
 				logger.Debug("table iteration completed")
-				d.CurrentState.MarkTableAsCompleted(table.String())
+				d.StateTracker.MarkTableAsCompleted(table.String())
 			}
 		}()
 	}
