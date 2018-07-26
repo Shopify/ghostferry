@@ -1,4 +1,8 @@
 [[constraint]]
+  branch = "v1"
+  name = "github.com/Masterminds/squirrel"
+
+[[constraint]]
   branch = "master"
   name = "github.com/Shopify/go-dogstatsd"
 
@@ -13,6 +17,10 @@
 [[constraint]]
   name = "github.com/shopspring/decimal"
   version = "1.0.0"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/siddontang/go-mysql"
 
 [[constraint]]
   name = "github.com/sirupsen/logrus"
