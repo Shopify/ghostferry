@@ -5,15 +5,15 @@ up:
     - glide
     - mysql
   - go:
-      version: 1.9
+      version: 1.10.3
   - custom:
       name: Docker for Mac
       met?: test -e /Applications/Docker.app
       meet: echo "Docker not found. Install from https://docs.docker.com/docker-for-mac/"; false
   - custom:
       name: Go Dependencies
-      met?: glide install
-      meet: echo 'glide failed to install deps'; false
+      met?: dep ensure
+      meet: echo 'dep failed to ensure dependencies'; false
   - custom:
       name: MySQL
       met?: docker-compose up -d mysql-1 mysql-2
