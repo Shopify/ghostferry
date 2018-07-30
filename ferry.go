@@ -6,8 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
@@ -330,6 +333,26 @@ func (f *Ferry) Run() {
 		defer supportingServicesWg.Done()
 		handleError("throttler", f.Throttler.Run(ctx))
 	}()
+
+	if f.DumpStateToStdoutOnSignal {
+		supportingServicesWg.Add(1)
+
+		go func() {
+			defer supportingServicesWg.Done()
+
+			c := make(chan os.Signal, 1)
+			signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
+
+			select {
+			case <-ctx.Done():
+				f.logger.Debug("shutting down signal monitoring goroutine")
+				return
+			case s := <-c:
+				f.ErrorHandler.Fatal("user", fmt.Errorf("signal received: %v", s.String()))
+			}
+		}()
+
+	}
 
 	binlogWg := &sync.WaitGroup{}
 	binlogWg.Add(2)

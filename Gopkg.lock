@@ -184,6 +184,7 @@
     "github.com/golang/snappy",
     "github.com/gorilla/mux",
     "github.com/shopspring/decimal",
+    "github.com/siddontang/go-log/log",
     "github.com/siddontang/go-mysql/mysql",
     "github.com/siddontang/go-mysql/replication",
     "github.com/siddontang/go-mysql/schema",
