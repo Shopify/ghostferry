@@ -5,11 +5,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	siddontanglog "github.com/siddontang/go-log/log"
 	siddontangmysql "github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
@@ -105,6 +109,12 @@ func (f *Ferry) Initialize() (err error) {
 	f.rowCopyCompleteCh = make(chan struct{})
 
 	f.logger.Infof("hello world from %s", VersionString)
+
+	// Suppress siddontang/go-mysql logging as we already log the equivalents.
+	// It also by defaults logs to stdout, which is different from Ghostferry
+	// logging, which all goes to stderr. stdout in Ghostferry is reserved for
+	// dumping states due to an abort.
+	siddontanglog.SetDefaultLogger(siddontanglog.NewDefault(&siddontanglog.NullHandler{}))
 
 	// Connect to the database
 	f.SourceDB, err = f.Source.SqlDB(f.logger.WithField("dbname", "source"))
@@ -312,11 +322,26 @@ func (f *Ferry) Run() {
 	}
 
 	supportingServicesWg := &sync.WaitGroup{}
-	supportingServicesWg.Add(1)
+	supportingServicesWg.Add(2)
 
 	go func() {
 		defer supportingServicesWg.Done()
 		handleError("throttler", f.Throttler.Run(ctx))
+	}()
+
+	go func() {
+		defer supportingServicesWg.Done()
+
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
+
+		select {
+		case <-ctx.Done():
+			f.logger.Debug("shutting down signal monitoring goroutine")
+			return
+		case s := <-c:
+			f.ErrorHandler.Fatal("user", fmt.Errorf("signal received: %v", s.String()))
+		}
 	}()
 
 	coreServicesWg := &sync.WaitGroup{}
