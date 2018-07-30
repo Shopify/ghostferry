@@ -12,9 +12,9 @@ import (
 
 	"github.com/juju/errors"
 	"github.com/satori/go.uuid"
+	"github.com/siddontang/go-log/log"
 	"github.com/siddontang/go-mysql/client"
 	. "github.com/siddontang/go-mysql/mysql"
-	"gopkg.in/birkirb/loggers.v1/log"
 )
 
 var (
@@ -71,6 +71,13 @@ type BinlogSyncerConfig struct {
 
 	// maximum number of attempts to re-establish a broken connection
 	MaxReconnectAttempts int
+
+	// Only works when MySQL/MariaDB variable binlog_checksum=CRC32.
+	// For MySQL, binlog_checksum was introduced since 5.6.2, but CRC32 was set as default value since 5.6.6 .
+	// https://dev.mysql.com/doc/refman/5.6/en/replication-options-binary-log.html#option_mysqld_binlog-checksum
+	// For MariaDB, binlog_checksum was introduced since MariaDB 5.3, but CRC32 was set as default value since MariaDB 10.2.1 .
+	// https://mariadb.com/kb/en/library/replication-and-binary-log-server-system-variables/#binlog_checksum
+	VerifyChecksum bool
 }
 
 // BinlogSyncer syncs binlog event from server.
@@ -101,6 +108,10 @@ type BinlogSyncer struct {
 
 // NewBinlogSyncer creates the BinlogSyncer with cfg.
 func NewBinlogSyncer(cfg BinlogSyncerConfig) *BinlogSyncer {
+	if cfg.ServerID == 0 {
+		log.Fatal("can't use 0 as the server ID")
+	}
+
 	// Clear the Password to avoid outputing it in log.
 	pass := cfg.Password
 	cfg.Password = ""
@@ -114,6 +125,7 @@ func NewBinlogSyncer(cfg BinlogSyncerConfig) *BinlogSyncer {
 	b.parser.SetRawMode(b.cfg.RawModeEnabled)
 	b.parser.SetParseTime(b.cfg.ParseTime)
 	b.parser.SetUseDecimal(b.cfg.UseDecimal)
+	b.parser.SetVerifyChecksum(b.cfg.VerifyChecksum)
 	b.running = false
 	b.ctx, b.cancel = context.WithCancel(context.Background())
 

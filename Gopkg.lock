@@ -107,7 +107,18 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:a63998baf2281873b2facf04d0865aa8573b629ffdad9b865a46ae5dbb4489f1"
+  digest = "1:22d4ade969b8af6af12062fbd4c68500553aef9366d245421da47dd7a8929a02"
+  name = "github.com/siddontang/go-log"
+  packages = [
+    "log",
+    "loggers",
+  ]
+  pruneopts = "UT"
+  revision = "a4d157e46fa3e08b7e7ff329af341fa3ff86c02c"
+
+[[projects]]
+  branch = "master"
+  digest = "1:8a890d0793e1199e134a0c8192c33456d1aca48bc874ca08dc8b7822d8d06b01"
   name = "github.com/siddontang/go-mysql"
   packages = [
     "client",
@@ -117,7 +128,7 @@
     "schema",
   ]
   pruneopts = "UT"
-  revision = "29c07937590cbe74c168fe0d0b8df389ea3e77d4"
+  revision = "29d34f19266fe38678ecfcf7ad4449c33b2bd26d"
 
 [[projects]]
   digest = "1:5622116f2c79239f2d25d47b881e14f96a8b8c17b63b8a8326a38ee1a332b007"
@@ -155,20 +166,6 @@
   ]
   pruneopts = "UT"
   revision = "c1138c84af3a9927aee1a1b8b7ce06c9b7ea52bc"
-
-[[projects]]
-  branch = "master"
-  digest = "1:1c2b2f3918a719de530bd184a55b1a44013b94bab9951f4889a705e552ba3c61"
-  name = "gopkg.in/birkirb/loggers.v1"
-  packages = [
-    ".",
-    "log",
-    "mappers",
-    "mappers/stdlib",
-  ]
-  pruneopts = "UT"
-  revision = "fa51471f8169216876525e7b6c9fbd0c8789b57a"
-  source = "https://github.com/siddontang/loggers.git"
 
 [solve-meta]
   analyzer-name = "dep"
