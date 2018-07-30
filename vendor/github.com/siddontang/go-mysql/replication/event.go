@@ -2,7 +2,6 @@ package replication
 
 import (
 	"encoding/binary"
-	//"encoding/hex"
 	"fmt"
 	"io"
 	"strconv"
@@ -20,6 +19,7 @@ const (
 	SidLength                  = 16
 	LogicalTimestampTypeCode   = 2
 	PartLogicalTimestampLength = 8
+	BinlogChecksumLength       = 4
 )
 
 type BinlogEvent struct {
@@ -53,7 +53,7 @@ type EventError struct {
 }
 
 func (e *EventError) Error() string {
-	return e.Err
+	return fmt.Sprintf("Header %#v, Data %q, Err: %v", e.Header, e.Data, e.Err)
 }
 
 type EventHeader struct {
@@ -453,7 +453,7 @@ func (e *MariadbGTIDEvent) Decode(data []byte) error {
 }
 
 func (e *MariadbGTIDEvent) Dump(w io.Writer) {
-	fmt.Fprintf(w, "GTID: %s\n", e.GTID)
+	fmt.Fprintf(w, "GTID: %v\n", e.GTID)
 	fmt.Fprintln(w)
 }
 
