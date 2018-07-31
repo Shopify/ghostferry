@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
-	siddongtangmysql "github.com/siddontang/go-mysql/mysql"
+	siddontangmysql "github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
@@ -149,7 +149,8 @@ func (f *Ferry) Initialize() (err error) {
 			return err
 		}
 
-		var zeroPosition siddongtangmysql.Position
+		var zeroPosition siddontangmysql.Position
+		// Ensures the query to check for position is executable.
 		_, err = f.WaitUntilReplicaIsCaughtUpToMaster.IsCaughtUp(zeroPosition, 1)
 		if err != nil {
 			f.logger.WithError(err).Error("cannot check replicated master position on the source database")
