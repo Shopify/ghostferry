@@ -64,13 +64,13 @@ func (s *WaitUntilReplicaIsCaughtUpToMasterSuite) TestIsCaughtUpIsCorrect() {
 	s.Require().Nil(err)
 	s.Require().Equal(1, currentPosition.Compare(s.outdatedMasterPosition), "test setup error, master position did not advance")
 
-	isCaughtUp, err := s.w.IsCaughtUp(currentPosition)
+	isCaughtUp, err := s.w.IsCaughtUp(currentPosition, 1)
 	s.Require().Nil(err)
 	s.Require().False(isCaughtUp)
 
 	s.updateHeartbeatMasterPos(s.w.ReplicaDB, currentPosition)
 
-	isCaughtUp, err = s.w.IsCaughtUp(currentPosition)
+	isCaughtUp, err = s.w.IsCaughtUp(currentPosition, 1)
 	s.Require().Nil(err)
 	s.Require().True(isCaughtUp)
 }

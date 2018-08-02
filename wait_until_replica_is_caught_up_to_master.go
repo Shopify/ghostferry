@@ -53,13 +53,13 @@ type WaitUntilReplicaIsCaughtUpToMaster struct {
 	logger *logrus.Entry
 }
 
-func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUp(targetMasterPos mysql.Position) (bool, error) {
+func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUp(targetMasterPos mysql.Position, retries int) (bool, error) {
 	if w.logger == nil {
 		w.logger = logrus.WithField("tag", "wait_replica")
 	}
 
 	var currentReplicatedMasterPos mysql.Position
-	err := WithRetries(100, 600*time.Millisecond, w.logger, "read replicated master binlog position", func() error {
+	err := WithRetries(retries, 600*time.Millisecond, w.logger, "read replicated master binlog position", func() error {
 		var err error
 		currentReplicatedMasterPos, err = w.ReplicatedMasterPositionFetcher.Current(w.ReplicaDB)
 		return err
@@ -102,7 +102,7 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) Wait() error {
 	w.logger.Infof("target master position is: %v\n", targetMasterPos)
 
 	for {
-		isCaughtUp, err := w.IsCaughtUp(targetMasterPos)
+		isCaughtUp, err := w.IsCaughtUp(targetMasterPos, 100)
 		if err != nil {
 			w.logger.WithError(err).Error("failed to get replica binlog coordinates")
 			return err

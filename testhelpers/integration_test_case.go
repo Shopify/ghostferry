@@ -47,9 +47,6 @@ func (this *IntegrationTestCase) Setup() {
 
 	PanicIfError(this.Ferry.Initialize())
 
-	_, err := this.Ferry.SourceDB.Exec("SET GLOBAL read_only = OFF")
-	PanicIfError(err)
-
 	this.callCustomAction(this.SetupAction)
 }
 
@@ -127,6 +124,13 @@ func (this *IntegrationTestCase) Teardown() {
 		logrus.Errorf("panic detected in integration test: %v", r)
 		logrus.Error("cleaning up now...")
 		logrus.Error("you might see an unrelated panic as we delete the db, if there are background processes operating on the db")
+	}
+
+	if this.Ferry.SourceDB != nil {
+		_, err := this.Ferry.SourceDB.Exec("SET GLOBAL read_only = OFF")
+		if err != nil {
+			logrus.WithError(err).Error("cannot set global read_only = OFF at the source db")
+		}
 	}
 
 	for _, dbname := range ApplicableTestDbs {

@@ -78,6 +78,14 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 }
 
 func (r *ShardingFerry) Initialize() error {
+	if r.config.RunFerryFromReplica {
+		err := r.initializeWaitUntilReplicaIsCaughtUpToMasterConnection()
+		if err != nil {
+			r.logger.WithField("error", err).Errorf("could not open connection to master replica")
+			return err
+		}
+	}
+
 	return r.Ferry.Initialize()
 }
 
@@ -122,12 +130,7 @@ func (r *ShardingFerry) newIterativeVerifier() (*ghostferry.IterativeVerifier, e
 }
 
 func (r *ShardingFerry) Start() error {
-	err := r.sanityCheckReplicationConfig()
-	if err != nil {
-		return err
-	}
-
-	err = r.Ferry.Start()
+	err := r.Ferry.Start()
 	if err != nil {
 		return err
 	}
@@ -163,15 +166,6 @@ func (r *ShardingFerry) Run() {
 	r.Ferry.WaitUntilBinlogStreamerCatchesUp()
 
 	var err error
-
-	if r.config.RunFerryFromReplica {
-		err := r.initializeWaitUntilReplicaIsCaughtUpToMasterConnection()
-		if err != nil {
-			r.logger.WithField("error", err).Errorf("could not open connection to master replica")
-			r.Ferry.ErrorHandler.Fatal("sharding", err)
-		}
-	}
-
 	client := &http.Client{}
 
 	cutoverStart := time.Now()
@@ -317,33 +311,6 @@ func compileRegexps(exps []string) ([]*regexp.Regexp, error) {
 	}
 
 	return res, nil
-}
-
-func (r *ShardingFerry) sanityCheckReplicationConfig() error {
-	if r.config.RunFerryFromReplica {
-		if r.config.ReplicatedMasterPositionQuery == "" {
-			return fmt.Errorf("must provide a query to get latest replicated master position in ReplicatedMasterPositionQuery")
-		}
-
-		masterConfigIsAReplica, err := r.dbConfigIsForReplica(r.config.SourceReplicationMaster)
-		if err != nil {
-			return err
-		}
-
-		if masterConfigIsAReplica {
-			return fmt.Errorf("expected SourceReplicationMaster config to be the master's config but master is readonly")
-		}
-	} else {
-		sourceConfigIsAReplica, err := r.dbConfigIsForReplica(r.config.Source)
-		if err != nil {
-			return err
-		}
-
-		if sourceConfigIsAReplica {
-			return fmt.Errorf("running ferry from a read replica without providing RunFerryFromReplica and SourceReplicationMaster configs is dangerous")
-		}
-	}
-	return nil
 }
 
 func (r *ShardingFerry) initializeWaitUntilReplicaIsCaughtUpToMasterConnection() error {

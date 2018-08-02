@@ -2,6 +2,7 @@ package copydb
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/Shopify/ghostferry"
 )
@@ -60,6 +61,25 @@ type Config struct {
 	// Iterative
 	// NoVerification
 	VerifierType string
+
+	// If you're running Ghostferry from a read only replica, turn this option
+	// on and specify SourceReplicationMaster and ReplicatedMasterPositionQuery.
+	RunFerryFromReplica bool
+
+	// This is the configuration to connect to the master writer of the source DB.
+	// This is only used if the source db is a replica and RunFerryFromReplica
+	// is on.
+	SourceReplicationMaster ghostferry.DatabaseConfig
+
+	// This is the SQL query used to read the position of the master binlog that
+	// has been replicated to the Source. As an example, you can query the
+	// pt-heartbeat table:
+	//
+	// SELECT file, position FROM meta.ptheartbeat WHERE server_id = master_server_id
+	ReplicatedMasterPositionQuery string
+
+	// The duration to wait for the replication to catchup before aborting. Only use if RunFerryFromReplica is true.
+	WaitForReplicationTimeout string
 }
 
 func (c *Config) InitializeAndValidateConfig() error {
@@ -82,6 +102,13 @@ func (c *Config) InitializeAndValidateConfig() error {
 
 	c.DatabaseRewrites = c.Databases.Rewrites
 	c.TableRewrites = c.Tables.Rewrites
+
+	if c.WaitForReplicationTimeout != "" {
+		_, err := time.ParseDuration(c.WaitForReplicationTimeout)
+		if err != nil {
+			return err
+		}
+	}
 
 	if err := c.Config.ValidateConfig(); err != nil {
 		return err
