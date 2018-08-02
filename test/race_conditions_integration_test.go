@@ -7,6 +7,7 @@ import (
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
+	"github.com/stretchr/testify/require"
 )
 
 func setupSingleEntryTable(f *testhelpers.TestFerry) {
@@ -68,6 +69,40 @@ func TestUpdateBinlogSelectCopy(t *testing.T) {
 	}
 
 	testcase.Run()
+}
+
+func TestMasterChangingBeforeStoppingBinlogStreaming(t *testing.T) {
+	ferry := testhelpers.NewTestFerry()
+
+	sourceDB, err := ferry.Source.SqlDB(nil)
+	testhelpers.PanicIfError(err)
+	defer sourceDB.Close()
+
+	errHandler := &testhelpers.ErrorHandler{}
+	ferry.ErrorHandler = errHandler
+
+	ferry.WaitUntilReplicaIsCaughtUpToMaster = &ghostferry.WaitUntilReplicaIsCaughtUpToMaster{
+		MasterDB: sourceDB,
+		ReplicatedMasterPositionFetcher: &ghostferry.ReplicatedMasterPositionViaCustomQuery{
+			Query: "SELECT 'mysql-bin.9999999', 9999999",
+		},
+	}
+
+	testcase := &testhelpers.IntegrationTestCase{
+		T:           t,
+		SetupAction: setupSingleEntryTable,
+		Ferry:       ferry,
+	}
+
+	testcase.BeforeStoppingBinlogStreaming = func(f *testhelpers.TestFerry) {
+		_, err := sourceDB.Exec("SET GLOBAL read_only = ON")
+		testhelpers.PanicIfError(err)
+	}
+
+	testcase.Run()
+
+	require.NotNil(t, errHandler.LastError)
+	require.Equal(t, "source master is no longer a master writer", errHandler.LastError.Error())
 }
 
 func TestSelectCopyUpdateBinlog(t *testing.T) {
