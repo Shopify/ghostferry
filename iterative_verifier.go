@@ -574,7 +574,27 @@ func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Tabl
 		return nil, targetErr
 	}
 
-	return compareHashes(sourceHashes, targetHashes), nil
+	mismatches := compareHashes(sourceHashes, targetHashes)
+	if len(mismatches) > 0 && v.CompressionVerifier != nil {
+		// Use the CompressionVerifier to decompress the payload and then hash the rows if we find a mismatch
+		if tableCompression, ok := v.CompressionVerifier.tableColumnCompressions[table.Name]; ok {
+			var err error
+
+			sourceHashes, err = v.CompressionVerifier.GetCompressedHashes(v.SourceDB, table.Schema, table.Name, table.GetPKColumn(0).Name, table.Columns, pks, tableCompression)
+			if err != nil {
+				return nil, err
+			}
+
+			targetHashes, err = v.CompressionVerifier.GetCompressedHashes(v.TargetDB, targetDb, targetTable, table.GetPKColumn(0).Name, table.Columns, pks, tableCompression)
+			if err != nil {
+				return nil, err
+			}
+
+			return compareHashes(sourceHashes, targetHashes), nil
+		}
+	}
+
+	return mismatches, nil
 }
 
 func compareHashes(source, target map[uint64][]byte) []uint64 {
@@ -598,17 +618,11 @@ func compareHashes(source, target map[uint64][]byte) []uint64 {
 	for mismatch, _ := range mismatchSet {
 		mismatches = append(mismatches, mismatch)
 	}
+
 	return mismatches
 }
 
 func (v *IterativeVerifier) GetHashes(db *sql.DB, schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64) (map[uint64][]byte, error) {
-	if v.CompressionVerifier != nil {
-		if tableCompression, ok := v.CompressionVerifier.tableColumnCompressions[table]; ok {
-			// Use the CompressionVerifier to verify data equality
-			return v.CompressionVerifier.GetCompressedHashes(db, schema, table, pkColumn, columns, pks, tableCompression)
-		}
-	}
-
 	sql, args, err := GetMd5HashesSql(schema, table, pkColumn, columns, pks)
 	if err != nil {
 		return nil, err
