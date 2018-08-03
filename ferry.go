@@ -380,7 +380,22 @@ func (f *Ferry) WaitUntilBinlogStreamerCatchesUp() {
 // You will know that the BinlogStreamer finished when .Run() returns.
 func (f *Ferry) FlushBinlogAndStopStreaming() {
 	if f.WaitUntilReplicaIsCaughtUpToMaster != nil {
-		err := f.WaitUntilReplicaIsCaughtUpToMaster.Wait()
+		isReplica, err := f.checkDbIsAReplica(f.WaitUntilReplicaIsCaughtUpToMaster.MasterDB)
+		if err != nil {
+			f.ErrorHandler.Fatal("wait_replica", err)
+		}
+
+		if isReplica {
+			err = errors.New("source master is no longer a master writer")
+			msg := "aborting the ferry since the source master is no longer the master writer " +
+				"this means that the perceived master can be lagging compared to the actual master " +
+				"and lead to missed writes. aborting ferry"
+
+			f.logger.Error(msg)
+			f.ErrorHandler.Fatal("wait_replica", err)
+		}
+
+		err = f.WaitUntilReplicaIsCaughtUpToMaster.Wait()
 		if err != nil {
 			f.ErrorHandler.Fatal("wait_replica", err)
 			return
