@@ -134,6 +134,15 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
+	isReplica, err := f.checkDbIsAReplica(f.TargetDB)
+	if err != nil {
+		f.logger.WithError(err).Error("cannot check if target db is writable")
+		return err
+	}
+	if isReplica {
+		return fmt.Errorf("@@read_only must be OFF on target db")
+	}
+
 	if f.WaitUntilReplicaIsCaughtUpToMaster != nil {
 		f.WaitUntilReplicaIsCaughtUpToMaster.ReplicaDB = f.SourceDB
 
@@ -432,6 +441,10 @@ func (f *Ferry) checkConnectionForBinlogFormat(db *sql.DB) error {
 
 	row = db.QueryRow("SHOW VARIABLES LIKE 'binlog_row_image'")
 	err = row.Scan(&name, &value)
+	if err != nil {
+		return err
+	}
+
 	if strings.ToUpper(value) != "FULL" {
 		return fmt.Errorf("binlog_row_image must be FULL, not %s", value)
 	}

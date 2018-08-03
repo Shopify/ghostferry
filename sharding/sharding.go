@@ -86,7 +86,12 @@ func (r *ShardingFerry) Initialize() error {
 		}
 	}
 
-	return r.Ferry.Initialize()
+	err := r.Ferry.Initialize()
+	if err != nil {
+		r.Ferry.ErrorHandler.Fatal("ferry.initialize", err)
+		return err
+	}
+	return nil
 }
 
 func (r *ShardingFerry) newIterativeVerifier() (*ghostferry.IterativeVerifier, error) {

@@ -10,14 +10,14 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-type FerryTestSuite struct {
+type BinlogStreamerTestSuite struct {
 	*testhelpers.GhostferryUnitTestSuite
 
 	config         *ghostferry.Config
 	binlogStreamer *ghostferry.BinlogStreamer
 }
 
-func (this *FerryTestSuite) SetupTest() {
+func (this *BinlogStreamerTestSuite) SetupTest() {
 	this.GhostferryUnitTestSuite.SetupTest()
 
 	testFerry := testhelpers.NewTestFerry()
@@ -41,7 +41,7 @@ func (this *FerryTestSuite) SetupTest() {
 	this.Require().Nil(this.binlogStreamer.Initialize())
 }
 
-func (this *FerryTestSuite) TestConnectWithIdKeepsId() {
+func (this *BinlogStreamerTestSuite) TestConnectWithIdKeepsId() {
 	this.binlogStreamer.Config.MyServerId = 1421
 
 	err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
@@ -50,7 +50,7 @@ func (this *FerryTestSuite) TestConnectWithIdKeepsId() {
 	this.Require().Equal(uint32(1421), this.binlogStreamer.Config.MyServerId)
 }
 
-func (this *FerryTestSuite) TestConnectWithZeroIdGetsRandomServerId() {
+func (this *BinlogStreamerTestSuite) TestConnectWithZeroIdGetsRandomServerId() {
 	this.binlogStreamer.Config.MyServerId = 0
 
 	err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
@@ -59,7 +59,7 @@ func (this *FerryTestSuite) TestConnectWithZeroIdGetsRandomServerId() {
 	this.Require().NotZero(this.binlogStreamer.Config.MyServerId)
 }
 
-func (this *FerryTestSuite) TestConnectErrorsOutIfErrorInServerIdGeneration() {
+func (this *BinlogStreamerTestSuite) TestConnectErrorsOutIfErrorInServerIdGeneration() {
 	this.binlogStreamer.Config.MyServerId = 0
 
 	this.binlogStreamer.Db.Close()
@@ -70,7 +70,7 @@ func (this *FerryTestSuite) TestConnectErrorsOutIfErrorInServerIdGeneration() {
 	this.Require().Zero(this.binlogStreamer.Config.MyServerId)
 }
 
-func TestFerryTestSuite(t *testing.T) {
+func TestBinlogStreamerTestSuite(t *testing.T) {
 	testhelpers.SetupTest()
-	suite.Run(t, &FerryTestSuite{GhostferryUnitTestSuite: &testhelpers.GhostferryUnitTestSuite{}})
+	suite.Run(t, &BinlogStreamerTestSuite{GhostferryUnitTestSuite: &testhelpers.GhostferryUnitTestSuite{}})
 }
