@@ -49,10 +49,7 @@ func (e UnsupportedCompressionError) Error() string {
 type CompressionVerifier struct {
 	logger *logrus.Entry
 
-	// supportedAlgorithms provide O(1) lookup to check if a configured algorithm is supported
-	supportedAlgorithms map[string]struct{}
-
-	// tableColumnCompressions is represented as table -> column -> compression-type
+	supportedAlgorithms     map[string]struct{}
 	tableColumnCompressions TableColumnCompressionConfig
 }
 
@@ -230,12 +227,8 @@ func (c *CompressionVerifier) HashRow(decompressedRowData map[uint64][]byte) ([]
 func rowSelector(columns []schema.TableColumn, pkColumn string) sq.SelectBuilder {
 	columnStrs := make([]string, len(columns))
 	for idx, column := range columns {
-		quotedCol := normalizeAndQuoteColumn(column)
-		columnStrs[idx] = quotedCol
+		columnStrs[idx] = column.Name
 	}
 
-	return sq.Select(fmt.Sprintf(
-		"%s",
-		strings.Join(columnStrs, ","),
-	))
+	return sq.Select(fmt.Sprintf("%s", strings.Join(columnStrs, ",")))
 }
