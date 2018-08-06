@@ -53,51 +53,13 @@ type CompressionVerifier struct {
 	tableColumnCompressions TableColumnCompressionConfig
 }
 
-// NewCompressionVerifier first checks the map for supported compression algorithms before
-// initializing and returning the initialized instance.
-func NewCompressionVerifier(tableColumnCompressions TableColumnCompressionConfig) (*CompressionVerifier, error) {
-	supportedAlgorithms := make(map[string]struct{})
-	supportedAlgorithms[CompressionSnappy] = struct{}{}
-
-	compressionVerifier := &CompressionVerifier{
-		logger:                  logrus.WithField("tag", "compression_verifier"),
-		supportedAlgorithms:     supportedAlgorithms,
-		tableColumnCompressions: tableColumnCompressions,
-	}
-
-	if err := compressionVerifier.verifyConfiguredCompression(tableColumnCompressions); err != nil {
-		return nil, err
-	}
-
-	return compressionVerifier, nil
-}
-
-func (c *CompressionVerifier) verifyConfiguredCompression(tableColumnCompressions TableColumnCompressionConfig) error {
-	for table, columns := range tableColumnCompressions {
-		for column, algorithm := range columns {
-			algorithm = strings.ToUpper(algorithm)
-			tableColumnCompressions[table][column] = algorithm
-
-			if _, ok := c.supportedAlgorithms[algorithm]; !ok {
-				return &UnsupportedCompressionError{
-					table:     table,
-					column:    column,
-					algorithm: algorithm,
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
 // GetCompressedHashes compares the source data with the target data to ensure the integrity of the
 // data being copied.
 //
 // The GetCompressedHashes method checks if the existing table contains compressed data
 // and will apply the decompression algorithm to the applicable columns if necessary.
 // After the columns are decompressed, the hashes of the data are used to verify equality
-func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64, tableCompression map[string]string) (map[uint64][]byte, error) {
+func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64, tableCompression columnCompressionConfig) (map[uint64][]byte, error) {
 	c.logger.Info("decompressing table data before verification")
 
 	// Extract the raw rows using SQL to be decompressed
@@ -123,7 +85,7 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pkC
 		// Decompress the applicable columns and then hash them together
 		// to create a fingerprint. decompressedRowData contains a map of all
 		// columns and associated decompressed values by the index of the column
-		decompressedRowData := make(map[uint64][]byte)
+		decompressedRowData := [][]byte{}
 		for idx, column := range columns {
 			// Check if column is configured as compressed and decompress if necessary
 			if algorithm, ok := tableCompression[column.Name]; ok {
@@ -131,14 +93,14 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pkC
 				if err != nil {
 					return nil, err
 				}
-				decompressedRowData[uint64(idx)] = decompressedColData
+				decompressedRowData = append(decompressedRowData, decompressedColData)
 			} else {
 				// Do not decompress the column, add it to the decompressedRowData to be fingerprinted
 				switch rowData[idx].(type) {
 				case int64:
 					rowSlice := make([]byte, 8)
 					binary.LittleEndian.PutUint64(rowSlice, uint64(rowData[idx].(int64)))
-					decompressedRowData[uint64(idx)] = rowSlice
+					decompressedRowData = append(decompressedRowData, rowSlice)
 				default:
 					decompressedRowData[uint64(idx)] = rowData[idx].([]byte)
 				}
@@ -159,6 +121,76 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pkC
 	logrus.WithFields(logrus.Fields{"tag": "compression_verifier", "rows": len(resultSet), "table": table}).Debug("rows will be decompressed")
 
 	return resultSet, nil
+}
+
+// Decompress will apply the configured decompression algorithm to the configured columns data
+func (c *CompressionVerifier) Decompress(table, column, algorithm string, compressed []byte) ([]byte, error) {
+	var decompressed []byte
+	switch algorithm {
+	case CompressionSnappy:
+		return snappy.Decode(decompressed, compressed)
+	default:
+		return nil, UnsupportedCompressionError{
+			table:     table,
+			column:    column,
+			algorithm: algorithm,
+		}
+	}
+
+}
+
+// HashRow will fingerprint the non-primary columns of the row to verify data equality
+func (c *CompressionVerifier) HashRow(decompressedRowData [][]byte) ([]byte, error) {
+	if len(decompressedRowData) == 0 {
+		return nil, errors.New("Row data to fingerprint must not be empty")
+	}
+
+	hash := md5.New()
+	var rowFingerprint []byte
+	for _, colData := range decompressedRowData {
+		rowFingerprint = append(rowFingerprint, colData...)
+	}
+
+	hash.Write(rowFingerprint)
+	return []byte(hex.EncodeToString(hash.Sum(nil))), nil
+}
+
+func (c *CompressionVerifier) verifyConfiguredCompression(tableColumnCompressions TableColumnCompressionConfig) error {
+	for table, columns := range tableColumnCompressions {
+		for column, algorithm := range columns {
+			algorithm = strings.ToUpper(algorithm)
+			tableColumnCompressions[table][column] = algorithm
+
+			if _, ok := c.supportedAlgorithms[algorithm]; !ok {
+				return &UnsupportedCompressionError{
+					table:     table,
+					column:    column,
+					algorithm: algorithm,
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// NewCompressionVerifier first checks the map for supported compression algorithms before
+// initializing and returning the initialized instance.
+func NewCompressionVerifier(tableColumnCompressions TableColumnCompressionConfig) (*CompressionVerifier, error) {
+	supportedAlgorithms := make(map[string]struct{})
+	supportedAlgorithms[CompressionSnappy] = struct{}{}
+
+	compressionVerifier := &CompressionVerifier{
+		logger:                  logrus.WithField("tag", "compression_verifier"),
+		supportedAlgorithms:     supportedAlgorithms,
+		tableColumnCompressions: tableColumnCompressions,
+	}
+
+	if err := compressionVerifier.verifyConfiguredCompression(tableColumnCompressions); err != nil {
+		return nil, err
+	}
+
+	return compressionVerifier, nil
 }
 
 // GetRows returns rows from the table as specified in the rowSelector func
@@ -189,38 +221,6 @@ func GetRows(db *sql.DB, schema, table, pkColumn string, columns []schema.TableC
 	}
 
 	return rows, nil
-}
-
-// Decompress will apply the configured decompression algorithm to the configured columns data
-func (c *CompressionVerifier) Decompress(table, column, algorithm string, compressed []byte) ([]byte, error) {
-	var decompressed []byte
-	switch algorithm {
-	case CompressionSnappy:
-		return snappy.Decode(decompressed, compressed)
-	default:
-		return nil, UnsupportedCompressionError{
-			table:     table,
-			column:    column,
-			algorithm: algorithm,
-		}
-	}
-
-}
-
-// HashRow will fingerprint the non-primary columns of the row to verify data equality
-func (c *CompressionVerifier) HashRow(decompressedRowData map[uint64][]byte) ([]byte, error) {
-	if len(decompressedRowData) == 0 {
-		return nil, errors.New("Row data to fingerprint must not be empty")
-	}
-
-	hash := md5.New()
-	var rowFingerprint []byte
-	for _, colData := range decompressedRowData {
-		rowFingerprint = append(rowFingerprint, colData...)
-	}
-
-	hash.Write(rowFingerprint)
-	return []byte(hex.EncodeToString(hash.Sum(nil))), nil
 }
 
 func rowSelector(columns []schema.TableColumn, pkColumn string) sq.SelectBuilder {
