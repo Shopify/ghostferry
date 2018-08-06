@@ -2,6 +2,7 @@ package testhelpers
 
 import (
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"os"
 	"strconv"
@@ -36,6 +37,31 @@ const (
 	TestCompressedData1       = "\x08" + "\x0cabcd" + "\x01\x02" // abcdcdcd
 	TestCompressedData2       = "\x08" + "\x0cabcd" + "\x01\x01" // abcddddd
 )
+
+var (
+	TestCompressedData3 string
+	TestCompressedData4 string
+)
+
+func init() {
+	filePaths := []string{
+		FixturePath("urls1.snappy"),
+		FixturePath("urls2.snappy"),
+	}
+
+	decompressed := [][]byte{}
+	for _, path := range filePaths {
+		fileStr, err := ioutil.ReadFile(path)
+		if err != nil {
+			panic(err)
+		}
+
+		decompressed = append(decompressed, fileStr)
+	}
+
+	TestCompressedData3 = string(decompressed[0])
+	TestCompressedData4 = string(decompressed[1])
+}
 
 type GhostferryUnitTestSuite struct {
 	suite.Suite

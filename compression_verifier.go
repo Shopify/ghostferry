@@ -104,7 +104,7 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pkC
 	c.logger.Info("decompressing table data before verification")
 
 	// Extract the raw rows using SQL to be decompressed
-	rows, err := c.getRows(db, schema, table, pkColumn, columns, pks)
+	rows, err := GetRows(db, schema, table, pkColumn, columns, pks, rowSelector)
 	if err != nil {
 		return nil, err
 	}
@@ -153,10 +153,14 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pkC
 		resultSet[pk] = decompressedRowHash
 	}
 
+	metrics.Gauge("compression_verifier_decompress_rows", float64(len(resultSet)), []MetricTag{}, 1.0)
+	logrus.WithFields(logrus.Fields{"tag": "compression_verifier", "rows": len(resultSet)}).Debug("rows will be decompressed")
+
 	return resultSet, nil
 }
 
-func (c *CompressionVerifier) getRows(db *sql.DB, schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64) (*sql.Rows, error) {
+// GetRows returns rows from the table as specified in the rowSelector func
+func GetRows(db *sql.DB, schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64, rowSelector func([]schema.TableColumn, string) sq.SelectBuilder) (*sql.Rows, error) {
 	quotedPK := quoteField(pkColumn)
 	sql, args, err := rowSelector(columns, pkColumn).
 		From(QuotedTableNameFromString(schema, table)).
@@ -185,7 +189,7 @@ func (c *CompressionVerifier) getRows(db *sql.DB, schema, table, pkColumn string
 	return rows, nil
 }
 
-// Decode will apply the configured decompression algorithm to the configured columns data
+// Decompress will apply the configured decompression algorithm to the configured columns data
 func (c *CompressionVerifier) Decompress(table, column, algorithm string, compressed []byte) ([]byte, error) {
 	var decompressed []byte
 	switch algorithm {

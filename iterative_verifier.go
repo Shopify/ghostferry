@@ -623,22 +623,7 @@ func compareHashes(source, target map[uint64][]byte) []uint64 {
 }
 
 func (v *IterativeVerifier) GetHashes(db *sql.DB, schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64) (map[uint64][]byte, error) {
-	sql, args, err := GetMd5HashesSql(schema, table, pkColumn, columns, pks)
-	if err != nil {
-		return nil, err
-	}
-
-	// This query must be a prepared query. If it is not, querying will use
-	// MySQL's plain text interface, which will scan all values into []uint8
-	// if we give it []interface{}.
-	stmt, err := db.Prepare(sql)
-	if err != nil {
-		return nil, err
-	}
-
-	defer stmt.Close()
-
-	rows, err := stmt.Query(args...)
+	rows, err := GetRows(db, schema, table, pkColumn, columns, pks, rowMd5Selector)
 	if err != nil {
 		return nil, err
 	}

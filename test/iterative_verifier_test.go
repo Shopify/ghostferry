@@ -116,6 +116,17 @@ func (t *IterativeVerifierTestSuite) TestVerifyCompressedOncePass() {
 	t.Require().Equal("", result.Message)
 }
 
+func (t *IterativeVerifierTestSuite) TestVerifyCompressedMismatchOncePass() {
+	t.InsertCompressedRowInDb(42, testhelpers.TestCompressedData3, t.Ferry.SourceDB)
+	t.InsertCompressedRowInDb(42, testhelpers.TestCompressedData4, t.Ferry.TargetDB)
+
+	result, err := t.verifier.VerifyOnce()
+	t.Require().NotNil(result)
+	t.Require().Nil(err)
+	t.Require().True(result.DataCorrect)
+	t.Require().Equal("", result.Message)
+}
+
 func (t *IterativeVerifierTestSuite) TestBeforeCutoverFailuresFailAgainDuringCutover() {
 	t.InsertRowInDb(42, "foo", t.Ferry.SourceDB)
 	t.InsertRowInDb(42, "bar", t.Ferry.TargetDB)
@@ -270,7 +281,21 @@ func (t *IterativeVerifierTestSuite) InsertRowInDb(id int, data string, db *sql.
 }
 
 func (t *IterativeVerifierTestSuite) InsertCompressedRowInDb(id int, data string, db *sql.DB) {
-	_, err := db.Exec(fmt.Sprintf("INSERT INTO %s.%s VALUES (%d,\"%s\")", testhelpers.TestSchemaName, testhelpers.TestCompressedTable1Name, id, data))
+	t.SetColumnType(testhelpers.TestSchemaName, testhelpers.TestCompressedTable1Name, testhelpers.TestCompressedColumn1Name, "MEDIUMBLOB", db)
+	_, err := db.Exec("INSERT INTO "+testhelpers.TestSchemaName+"."+testhelpers.TestCompressedTable1Name+" VALUES (?,?)", id, data)
+	t.Require().Nil(err)
+}
+
+func (t *IterativeVerifierTestSuite) SetColumnType(schema, table, column, columnType string, db *sql.DB) {
+	t.Require().True(columnType != "")
+
+	_, err := db.Exec(fmt.Sprintf(
+		"ALTER TABLE %s.%s MODIFY %s %s",
+		schema,
+		table,
+		column,
+		columnType,
+	))
 	t.Require().Nil(err)
 }
 
