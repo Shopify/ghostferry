@@ -117,8 +117,8 @@ func (t *IterativeVerifierTestSuite) TestVerifyCompressedOncePass() {
 }
 
 func (t *IterativeVerifierTestSuite) TestVerifyCompressedMismatchOncePass() {
-	t.InsertCompressedRowInDb(42, testhelpers.TestCompressedData3, t.Ferry.SourceDB)
-	t.InsertCompressedRowInDb(42, testhelpers.TestCompressedData4, t.Ferry.TargetDB)
+	t.InsertCompressedRowInDb(43, testhelpers.TestCompressedData3, t.Ferry.SourceDB)
+	t.InsertCompressedRowInDb(43, testhelpers.TestCompressedData4, t.Ferry.TargetDB)
 
 	result, err := t.verifier.VerifyOnce()
 	t.Require().NotNil(result)

@@ -3,6 +3,7 @@ package ghostferry
 import (
 	"crypto/md5"
 	"database/sql"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -128,9 +129,6 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pkC
 		// columns and associated decompressed values by the index of the column
 		decompressedRowData := make(map[uint64][]byte)
 		for idx, column := range columns {
-			if column.Name == pkColumn {
-				continue
-			}
 			// Check if column is configured as compressed and decompress if necessary
 			if algorithm, ok := tableCompression[column.Name]; ok {
 				decompressedColData, err := c.Decompress(table, column.Name, algorithm, rowData[idx].([]byte))
@@ -140,7 +138,15 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pkC
 				decompressedRowData[uint64(idx)] = decompressedColData
 			} else {
 				// Do not decompress the column, add it to the decompressedRowData to be fingerprinted
-				decompressedRowData[uint64(idx)] = rowData[idx].([]byte)
+				switch rowData[idx].(type) {
+				case int64:
+					rowSlice := make([]byte, 8)
+					binary.LittleEndian.PutUint64(rowSlice, uint64(rowData[idx].(int64)))
+					decompressedRowData[uint64(idx)] = rowSlice
+				default:
+					decompressedRowData[uint64(idx)] = rowData[idx].([]byte)
+				}
+
 			}
 		}
 
@@ -154,7 +160,7 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pkC
 	}
 
 	metrics.Gauge("compression_verifier_decompress_rows", float64(len(resultSet)), []MetricTag{}, 1.0)
-	logrus.WithFields(logrus.Fields{"tag": "compression_verifier", "rows": len(resultSet)}).Debug("rows will be decompressed")
+	logrus.WithFields(logrus.Fields{"tag": "compression_verifier", "rows": len(resultSet), "table": table}).Debug("rows will be decompressed")
 
 	return resultSet, nil
 }
@@ -222,21 +228,14 @@ func (c *CompressionVerifier) HashRow(decompressedRowData map[uint64][]byte) ([]
 }
 
 func rowSelector(columns []schema.TableColumn, pkColumn string) sq.SelectBuilder {
-	quotedPK := quoteField(pkColumn)
-
 	columnStrs := make([]string, len(columns))
 	for idx, column := range columns {
-		if column.Name == pkColumn {
-			continue
-		}
-
 		quotedCol := normalizeAndQuoteColumn(column)
-		columnStrs[idx] = fmt.Sprintf("COALESCE(%s, 'NULL')", quotedCol)
+		columnStrs[idx] = quotedCol
 	}
 
 	return sq.Select(fmt.Sprintf(
-		"%s %s",
-		quotedPK,
+		"%s",
 		strings.Join(columnStrs, ","),
 	))
 }
