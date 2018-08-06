@@ -36,7 +36,7 @@ func (this *DataIteratorTestSuite) SetupTest() {
 	tables, err := ghostferry.LoadTables(sourceDb, tableFilter)
 	this.Require().Nil(err)
 
-	config.DataIterationBatchSize = 5
+	config.DataIterationBatchSize = 2
 
 	this.di = &ghostferry.DataIterator{
 		DB:          sourceDb,

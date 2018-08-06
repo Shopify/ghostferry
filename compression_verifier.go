@@ -75,7 +75,6 @@ func NewCompressionVerifier(tableColumnCompressions TableColumnCompressionConfig
 func (c *CompressionVerifier) verifyConfiguredCompression(tableColumnCompressions TableColumnCompressionConfig) error {
 	for table, columns := range tableColumnCompressions {
 		for column, algorithm := range columns {
-			// Ensure algorithm is uppercased
 			algorithm = strings.ToUpper(algorithm)
 			tableColumnCompressions[table][column] = algorithm
 

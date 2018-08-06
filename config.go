@@ -160,12 +160,12 @@ type Config struct {
 	TableRewrites map[string]string
 
 	// Map of the table and column identifying the compression type
-	// (if any) of the column. This is used during verification  to ensure
+	// (if any) of the column. This is used during verification to ensure
 	// the data was successfully copied as it must be manually verified.
 	//
-	// Note that the VerifierType must be set to the IterativeVerifier
-	// and the CompressionVerifiers for the configuration below will be
-	// instantiated to handle the decompression before verification
+	// Note that the IterativeVerifier must be used and the
+	// CompressionVerifiers for the configuration below will be instantiated
+	// to handle the decompression before verification
 	//
 	// Currently supported compression algorithms are:
 	//	1. Snappy (https://google.github.io/snappy/) as "SNAPPY"
