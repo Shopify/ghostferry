@@ -20,15 +20,6 @@ const (
 	CompressionSnappy = "SNAPPY"
 )
 
-type (
-	columnCompressionConfig map[string]string
-
-	// TableColumnCompressionConfig represents compression configuration for a
-	// column in a table as table -> column -> compression-type
-	// ex: books -> contents -> snappy
-	TableColumnCompressionConfig map[string]columnCompressionConfig
-)
-
 // UnsupportedCompressionError is used to identify errors resulting
 // from attempting to decompress unsupported algorithms
 type UnsupportedCompressionError struct {
@@ -47,10 +38,8 @@ func (e UnsupportedCompressionError) Error() string {
 // may have different hashes for the same data by first decompressing the compressed
 // data before fingerprinting
 type CompressionVerifier struct {
-	logger *logrus.Entry
-
-	supportedAlgorithms     map[string]struct{}
-	tableColumnCompressions TableColumnCompressionConfig
+	logger              *logrus.Entry
+	supportedAlgorithms map[string]struct{}
 }
 
 // GetCompressedHashes compares the source data with the target data to ensure the integrity of the
@@ -126,7 +115,7 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pkC
 // Decompress will apply the configured decompression algorithm to the configured columns data
 func (c *CompressionVerifier) Decompress(table, column, algorithm string, compressed []byte) ([]byte, error) {
 	var decompressed []byte
-	switch algorithm {
+	switch strings.ToUpper(algorithm) {
 	case CompressionSnappy:
 		return snappy.Decode(decompressed, compressed)
 	default:
@@ -155,42 +144,16 @@ func (c *CompressionVerifier) HashRow(decompressedRowData [][]byte) ([]byte, err
 	return []byte(hex.EncodeToString(hash.Sum(nil))), nil
 }
 
-func (c *CompressionVerifier) verifyConfiguredCompression(tableColumnCompressions TableColumnCompressionConfig) error {
-	for table, columns := range tableColumnCompressions {
-		for column, algorithm := range columns {
-			algorithm = strings.ToUpper(algorithm)
-			tableColumnCompressions[table][column] = algorithm
-
-			if _, ok := c.supportedAlgorithms[algorithm]; !ok {
-				return &UnsupportedCompressionError{
-					table:     table,
-					column:    column,
-					algorithm: algorithm,
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
 // NewCompressionVerifier first checks the map for supported compression algorithms before
 // initializing and returning the initialized instance.
-func NewCompressionVerifier(tableColumnCompressions TableColumnCompressionConfig) (*CompressionVerifier, error) {
+func NewCompressionVerifier() *CompressionVerifier {
 	supportedAlgorithms := make(map[string]struct{})
 	supportedAlgorithms[CompressionSnappy] = struct{}{}
 
-	compressionVerifier := &CompressionVerifier{
-		logger:                  logrus.WithField("tag", "compression_verifier"),
-		supportedAlgorithms:     supportedAlgorithms,
-		tableColumnCompressions: tableColumnCompressions,
+	return &CompressionVerifier{
+		logger:              logrus.WithField("tag", "compression_verifier"),
+		supportedAlgorithms: supportedAlgorithms,
 	}
-
-	if err := compressionVerifier.verifyConfiguredCompression(tableColumnCompressions); err != nil {
-		return nil, err
-	}
-
-	return compressionVerifier, nil
 }
 
 // GetRows returns rows from the table as specified in the rowSelector func

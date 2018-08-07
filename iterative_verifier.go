@@ -16,6 +16,15 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type (
+	columnCompressionConfig map[string]string
+
+	// TableColumnCompressionConfig represents compression configuration for a
+	// column in a table as table -> column -> compression-type
+	// ex: books -> contents -> snappy
+	TableColumnCompressionConfig map[string]columnCompressionConfig
+)
+
 // A comparable and lightweight type that stores the schema and table name.
 type TableIdentifier struct {
 	SchemaName string
@@ -135,12 +144,13 @@ type IterativeVerifier struct {
 	SourceDB            *sql.DB
 	TargetDB            *sql.DB
 
-	Tables              []*schema.Table
-	IgnoredTables       []string
-	DatabaseRewrites    map[string]string
-	TableRewrites       map[string]string
-	Concurrency         int
-	MaxExpectedDowntime time.Duration
+	Tables                  []*schema.Table
+	IgnoredTables           []string
+	DatabaseRewrites        map[string]string
+	TableRewrites           map[string]string
+	Concurrency             int
+	MaxExpectedDowntime     time.Duration
+	TableColumnCompressions TableColumnCompressionConfig
 
 	reverifyStore *ReverifyStore
 	logger        *logrus.Entry
@@ -602,7 +612,7 @@ func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Tabl
 	mismatches := compareHashes(sourceHashes, targetHashes)
 	if len(mismatches) > 0 && v.CompressionVerifier != nil {
 		// Use the CompressionVerifier to decompress the payload and then hash the rows if we find a mismatch
-		if tableCompression, ok := v.CompressionVerifier.tableColumnCompressions[table.Name]; ok {
+		if tableCompression, ok := v.TableColumnCompressions[table.Name]; ok {
 			var err error
 
 			sourceHashes, err = v.CompressionVerifier.GetCompressedHashes(v.SourceDB, table.Schema, table.Name, table.GetPKColumn(0).Name, table.Columns, pks, tableCompression)
