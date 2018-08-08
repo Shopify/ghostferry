@@ -3,6 +3,7 @@ package ghostferry
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"sync/atomic"
 
@@ -14,8 +15,9 @@ type ErrorHandler interface {
 }
 
 type PanicErrorHandler struct {
-	Ferry      *Ferry
-	errorCount int32
+	Ferry         *Ferry
+	errorCount    int32
+	ErrorCallback HTTPCallback
 }
 
 func (this *PanicErrorHandler) Fatal(from string, err error) {
@@ -26,8 +28,31 @@ func (this *PanicErrorHandler) Fatal(from string, err error) {
 		return
 	}
 
+	// Invoke ErrorCallback if defined
+	if this.ErrorCallback != (HTTPCallback{}) {
+		client := &http.Client{}
+
+		errorData := make(map[string]string)
+		errorData["ErrFrom"] = from
+		errorData["ErrMessage"] = err.Error()
+
+		errorDataBytes, jsonErr := json.MarshalIndent(errorData, "", "  ")
+		if jsonErr != nil {
+			logger.WithField("error", jsonErr).Errorf("ghostferry-sharding failed to marshal error data")
+		} else {
+			this.ErrorCallback.Payload = string(errorDataBytes)
+
+			postErr := this.ErrorCallback.Post(client)
+			if postErr != nil {
+				logger.WithField("error", postErr).Errorf("ghostferry-sharding failed to notify error")
+			}
+		}
+	}
+
+	// Print error to STDERR
 	logger.WithError(err).WithField("errfrom", from).Error("fatal error detected, state dump coming in stdout")
 
+	// Save current state to STDOUT
 	state := make(map[string]interface{})
 	state["LastSuccessfulBinlogPos"] = this.Ferry.BinlogStreamer.GetLastStreamedBinlogPosition()
 	state["LastSuccessfulPrimaryKeys"] = this.Ferry.DataIterator.CurrentState.LastSuccessfulPrimaryKeys()
@@ -41,5 +66,6 @@ func (this *PanicErrorHandler) Fatal(from string, err error) {
 		fmt.Fprintln(os.Stdout, string(stateBytes))
 	}
 
+	// Panic
 	panic("fatal error detected, see logs for details")
 }

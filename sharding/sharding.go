@@ -62,12 +62,9 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 
 	logger := logrus.WithField("tag", "sharding")
 
-	ferry.ErrorHandler = &ShardingErrorHandler{
-		ErrorHandler: &ghostferry.PanicErrorHandler{
-			Ferry: ferry,
-		},
+	ferry.ErrorHandler = &ghostferry.PanicErrorHandler{
+		Ferry:         ferry,
 		ErrorCallback: config.ErrorCallback,
-		Logger:        logger,
 	}
 
 	return &ShardingFerry{
