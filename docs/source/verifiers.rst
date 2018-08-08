@@ -57,8 +57,10 @@ IterativeVerifier verifies the source and target in a couple of steps:
 2. For any rows changed during the initial verification process, add it into
    the reverify queue.
 
-3. (Optionally, not fully implemented) After the initial verification, verify
-   the rows' hashes in the reverification queue again. [3]_
+3. After the initial verification, verify the rows' hashes in the
+   reverification queue again. This is done to reduce the time needed to
+   reverify during the cutover as we assume the reverification queue will
+   become smaller during this process.
 
 4. During the cutover stage, verify all rows' hashes in the reverify queue.
 
@@ -68,10 +70,6 @@ IterativeVerifier verifies the source and target in a couple of steps:
 5. If no verification failure occurs, the source and the target are identical.
    If verification failure does occur (4b), then the source and target are not
    identical.
-
-.. [3] This can be done a number of times to reduce the number of entries in
-       the reverify queue and thus the downtime. Although this is not currently
-       implemented. See `<https://github.com/Shopify/ghostferry/issues/13>`_.
 
 A proof of concept TLA+ verification of this algorithm is done in
 `<https://github.com/Shopify/ghostferry/tree/iterative-verifier-tla>`_.
