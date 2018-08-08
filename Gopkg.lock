@@ -118,7 +118,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:8a890d0793e1199e134a0c8192c33456d1aca48bc874ca08dc8b7822d8d06b01"
+  digest = "1:8b826f26e0bbb00dcfd8284c4480c41dab14240be39ebcd84341213052fd71e5"
   name = "github.com/siddontang/go-mysql"
   packages = [
     "client",
@@ -128,7 +128,7 @@
     "schema",
   ]
   pruneopts = "UT"
-  revision = "29d34f19266fe38678ecfcf7ad4449c33b2bd26d"
+  revision = "58848a70cf1a8baf4ae5647485c3885f39907988"
 
 [[projects]]
   digest = "1:5622116f2c79239f2d25d47b881e14f96a8b8c17b63b8a8326a38ee1a332b007"

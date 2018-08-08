@@ -20,7 +20,7 @@ func addTypesToTable(db *sql.DB, dbName, tableName string) {
 		"ADD date_col DATE," +
 		"ADD time_col TIME," +
 		"ADD dt_col DATETIME," +
-		"ADD ts_col TIMESTAMP," + // TODO broken on master
+		"ADD ts_col TIMESTAMP," +
 		"ADD varchar_col VARCHAR(128)," +
 		"ADD enum_col ENUM('foo', 'bar')," +
 		"ADD set_col SET('foo', 'bar', 'baz')," +
@@ -50,8 +50,8 @@ func setupMultiTypeTable(f *testhelpers.TestFerry) {
 
 	for i := 0; i < 100; i++ {
 		query := "INSERT INTO gftest.table1 " +
-			"(id, data, tiny_col, float_col, double_col, decimal_col, year_col, date_col, time_col, dt_col, varchar_col, enum_col, set_col, utfmb4_col, utf32_col, latin1_col, blob_col, uint64_col, uint32_col, uint16_col, uint8_col)" +
-			"VALUES (NULL, ?, ?, 3.14, 2.72, 42.42, NOW(), NOW(), NOW(), NOW(), ?, ?, 'foo,baz', ?, ?, ?, ?, 18446744073709551615, 3221225472, 49152, 192)"
+			"(id, data, tiny_col, float_col, double_col, decimal_col, year_col, date_col, time_col, dt_col, ts_col, varchar_col, enum_col, set_col, utfmb4_col, utf32_col, latin1_col, blob_col, uint64_col, uint32_col, uint16_col, uint8_col)" +
+			"VALUES (NULL, ?, ?, 3.14, 2.72, 42.42, NOW(), NOW(), NOW(), NOW(), NOW(), ?, ?, 'foo,baz', ?, ?, ?, ?, 18446744073709551615, 3221225472, 49152, 192)"
 
 		enumVal := "foo"
 		if i%2 == 0 {
