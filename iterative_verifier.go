@@ -58,11 +58,6 @@ func NewReverifyStore() *ReverifyStore {
 	return r
 }
 
-func (r *ReverifyStore) flushStore() {
-	r.MapStore = make(map[TableIdentifier]map[uint64]struct{})
-	r.RowCount = 0
-}
-
 func (r *ReverifyStore) Add(entry ReverifyEntry) {
 	r.mapStoreMutex.Lock()
 	defer r.mapStoreMutex.Unlock()
@@ -118,6 +113,11 @@ func (r *ReverifyStore) FlushAndBatchByTable(batchsize int) []ReverifyBatch {
 	return r.BatchStore
 }
 
+func (r *ReverifyStore) flushStore() {
+	r.MapStore = make(map[TableIdentifier]map[uint64]struct{})
+	r.RowCount = 0
+}
+
 type verificationResultAndError struct {
 	Result VerificationResult
 	Error  error
@@ -128,11 +128,12 @@ func (r verificationResultAndError) ErroredOrFailed() bool {
 }
 
 type IterativeVerifier struct {
-	CursorConfig     *CursorConfig
-	BinlogStreamer   *BinlogStreamer
-	TableSchemaCache TableSchemaCache
-	SourceDB         *sql.DB
-	TargetDB         *sql.DB
+	CompressionVerifier *CompressionVerifier
+	CursorConfig        *CursorConfig
+	BinlogStreamer      *BinlogStreamer
+	TableSchemaCache    TableSchemaCache
+	SourceDB            *sql.DB
+	TargetDB            *sql.DB
 
 	Tables              []*schema.Table
 	IgnoredTables       []string
@@ -242,39 +243,6 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	return err
 }
 
-func (v *IterativeVerifier) reverifyUntilStoreIsSmallEnough(maxIterations int) error {
-	var timeToVerify time.Duration
-
-	for iteration := 0; iteration < maxIterations; iteration++ {
-		before := v.reverifyStore.RowCount
-		start := time.Now()
-
-		_, err := v.verifyStore("reverification_before_cutover", []MetricTag{{"iteration", string(iteration)}})
-		if err != nil {
-			return err
-		}
-
-		after := v.reverifyStore.RowCount
-		timeToVerify = time.Now().Sub(start)
-
-		v.logger.WithFields(logrus.Fields{
-			"store_size_before": before,
-			"store_size_after":  after,
-			"iteration":         iteration,
-		}).Infof("completed re-verification iteration %d", iteration)
-
-		if after <= 1000 || after >= before {
-			break
-		}
-	}
-
-	if v.MaxExpectedDowntime != 0 && timeToVerify > v.MaxExpectedDowntime {
-		return fmt.Errorf("cutover stage verification will not complete within max downtime duration (took %s)", timeToVerify)
-	}
-
-	return nil
-}
-
 func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	v.logger.Info("starting verification during cutover")
 	v.verifyDuringCutoverStarted.Set(true)
@@ -327,6 +295,79 @@ func (v *IterativeVerifier) Wait() {
 
 func (v *IterativeVerifier) Result() (VerificationResultAndStatus, error) {
 	return v.verificationResultAndStatus, v.verificationErr
+}
+
+func (v *IterativeVerifier) GetHashes(db *sql.DB, schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64) (map[uint64][]byte, error) {
+	sql, args, err := GetMd5HashesSql(schema, table, pkColumn, columns, pks)
+	if err != nil {
+		return nil, err
+	}
+
+	// This query must be a prepared query. If it is not, querying will use
+	// MySQL's plain text interface, which will scan all values into []uint8
+	// if we give it []interface{}.
+	stmt, err := db.Prepare(sql)
+	if err != nil {
+		return nil, err
+	}
+
+	defer stmt.Close()
+
+	rows, err := stmt.Query(args...)
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	resultSet := make(map[uint64][]byte)
+	for rows.Next() {
+		rowData, err := ScanGenericRow(rows, 2)
+		if err != nil {
+			return nil, err
+		}
+
+		pk, err := rowData.GetUint64(0)
+		if err != nil {
+			return nil, err
+		}
+
+		resultSet[pk] = rowData[1].([]byte)
+	}
+	return resultSet, nil
+}
+
+func (v *IterativeVerifier) reverifyUntilStoreIsSmallEnough(maxIterations int) error {
+	var timeToVerify time.Duration
+
+	for iteration := 0; iteration < maxIterations; iteration++ {
+		before := v.reverifyStore.RowCount
+		start := time.Now()
+
+		_, err := v.verifyStore("reverification_before_cutover", []MetricTag{{"iteration", string(iteration)}})
+		if err != nil {
+			return err
+		}
+
+		after := v.reverifyStore.RowCount
+		timeToVerify = time.Now().Sub(start)
+
+		v.logger.WithFields(logrus.Fields{
+			"store_size_before": before,
+			"store_size_after":  after,
+			"iteration":         iteration,
+		}).Infof("completed re-verification iteration %d", iteration)
+
+		if after <= 1000 || after >= before {
+			break
+		}
+	}
+
+	if v.MaxExpectedDowntime != 0 && timeToVerify > v.MaxExpectedDowntime {
+		return fmt.Errorf("cutover stage verification will not complete within max downtime duration (took %s)", timeToVerify)
+	}
+
+	return nil
 }
 
 func (v *IterativeVerifier) iterateAllTables(mismatchedPkFunc func(uint64, *schema.Table) error) error {
@@ -573,6 +614,25 @@ func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Tabl
 		return nil, targetErr
 	}
 
+	mismatches := compareHashes(sourceHashes, targetHashes)
+	if len(mismatches) > 0 && v.CompressionVerifier != nil && v.CompressionVerifier.IsCompressedTable(table.Name) {
+		return v.compareCompressedHashes(targetDb, targetTable, table, pks)
+	}
+
+	return mismatches, nil
+}
+
+func (v *IterativeVerifier) compareCompressedHashes(targetDb, targetTable string, table *schema.Table, pks []uint64) ([]uint64, error) {
+	sourceHashes, err := v.CompressionVerifier.GetCompressedHashes(v.SourceDB, table.Schema, table.Name, table.GetPKColumn(0).Name, table.Columns, pks)
+	if err != nil {
+		return nil, err
+	}
+
+	targetHashes, err := v.CompressionVerifier.GetCompressedHashes(v.TargetDB, targetDb, targetTable, table.GetPKColumn(0).Name, table.Columns, pks)
+	if err != nil {
+		return nil, err
+	}
+
 	return compareHashes(sourceHashes, targetHashes), nil
 }
 
@@ -597,47 +657,8 @@ func compareHashes(source, target map[uint64][]byte) []uint64 {
 	for mismatch, _ := range mismatchSet {
 		mismatches = append(mismatches, mismatch)
 	}
+
 	return mismatches
-}
-
-func (v *IterativeVerifier) GetHashes(db *sql.DB, schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64) (map[uint64][]byte, error) {
-	sql, args, err := GetMd5HashesSql(schema, table, pkColumn, columns, pks)
-	if err != nil {
-		return nil, err
-	}
-
-	// This query must be a prepared query. If it is not, querying will use
-	// MySQL's plain text interface, which will scan all values into []uint8
-	// if we give it []interface{}.
-	stmt, err := db.Prepare(sql)
-	if err != nil {
-		return nil, err
-	}
-
-	defer stmt.Close()
-
-	rows, err := stmt.Query(args...)
-	if err != nil {
-		return nil, err
-	}
-
-	defer rows.Close()
-
-	resultSet := make(map[uint64][]byte)
-	for rows.Next() {
-		rowData, err := ScanGenericRow(rows, 2)
-		if err != nil {
-			return nil, err
-		}
-
-		pk, err := rowData.GetUint64(0)
-		if err != nil {
-			return nil, err
-		}
-
-		resultSet[pk] = rowData[1].([]byte)
-	}
-	return resultSet, nil
 }
 
 func GetMd5HashesSql(schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64) (string, []interface{}, error) {

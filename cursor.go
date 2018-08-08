@@ -258,6 +258,18 @@ func ScanGenericRow(rows *sql.Rows, columnCount int) (RowData, error) {
 	return values, err
 }
 
+func ScanByteRow(rows *sql.Rows, columnCount int) ([][]byte, error) {
+	values := make([][]byte, columnCount)
+	valuePtrs := make(RowData, columnCount)
+
+	for i, _ := range values {
+		valuePtrs[i] = &values[i]
+	}
+
+	err := rows.Scan(valuePtrs...)
+	return values, err
+}
+
 func DefaultBuildSelect(columns []string, table *schema.Table, lastPk, batchSize uint64) squirrel.SelectBuilder {
 	quotedPK := quoteField(table.GetPKColumn(0).Name)
 
