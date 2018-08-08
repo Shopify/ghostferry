@@ -14,7 +14,7 @@ database from one machine to another.
 
 Talk to us on IRC at [irc.freenode.net #ghostferry](https://webchat.freenode.net/?channels=#ghostferry).
 
-- Documentations: https://shopify.github.io/ghostferry
+- **Tutorial and General Documentations**: https://shopify.github.io/ghostferry
 - Code documentations: https://godoc.org/github.com/Shopify/ghostferry
 
 Overview of How it Works
@@ -26,9 +26,8 @@ that as it has a concise definition. However, the specification might not be
 entirely correct as proofs remain elusive.
 
 On a high-level, Ghostferry is broken into several components, enabling it to
-copy data. This is detailed in docs/source/technicaloverview.rst.
-
-A more detailed documentation is coming soon.
+copy data. This is documented at 
+https://shopify.github.io/ghostferry/master/technicaloverview.html
 
 Development Setup
 -----------------
@@ -46,3 +45,5 @@ Run tests:
 Test copydb:
 
 - `make copydb && ghostferry-copydb -verbose examples/copydb/conf.json`
+- For a more detailed tutorial, see the
+  [documentation](https://shopify.github.io/ghostferry).
