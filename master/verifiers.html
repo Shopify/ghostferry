@@ -114,8 +114,10 @@ is known as the initial verification.<ol class="loweralpha">
 </li>
 <li>For any rows changed during the initial verification process, add it into
 the reverify queue.</li>
-<li>(Optionally, not fully implemented) After the initial verification, verify
-the rows’ hashes in the reverification queue again. <a class="footnote-reference" href="#id7" id="id6">[3]</a></li>
+<li>After the initial verification, verify the rows’ hashes in the
+reverification queue again. This is done to reduce the time needed to
+reverify during the cutover as we assume the reverification queue will
+become smaller during this process.</li>
 <li>During the cutover stage, verify all rows’ hashes in the reverify queue.<ol class="loweralpha">
 <li>If they are the same: the verification for that row is complete.</li>
 <li>If they are not the same: the verification fails.</li>
@@ -125,14 +127,6 @@ the rows’ hashes in the reverification queue again. <a class="footnote-referen
 If verification failure does occur (4b), then the source and target are not
 identical.</li>
 </ol>
-<table class="docutils footnote" frame="void" id="id7" rules="none">
-<colgroup><col class="label" /><col /></colgroup>
-<tbody valign="top">
-<tr><td class="label"><a class="fn-backref" href="#id6">[3]</a></td><td>This can be done a number of times to reduce the number of entries in
-the reverify queue and thus the downtime. Although this is not currently
-implemented. See <a class="reference external" href="https://github.com/Shopify/ghostferry/issues/13">https://github.com/Shopify/ghostferry/issues/13</a>.</td></tr>
-</tbody>
-</table>
 <p>A proof of concept TLA+ verification of this algorithm is done in
 <a class="reference external" href="https://github.com/Shopify/ghostferry/tree/iterative-verifier-tla">https://github.com/Shopify/ghostferry/tree/iterative-verifier-tla</a>.</p>
 </div>
