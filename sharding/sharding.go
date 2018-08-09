@@ -109,6 +109,15 @@ func (r *ShardingFerry) newIterativeVerifier() (*ghostferry.IterativeVerifier, e
 		}
 	}
 
+	var compressionVerifier *ghostferry.CompressionVerifier
+	if r.config.TableColumnCompression != nil {
+		var err error
+		compressionVerifier, err = ghostferry.NewCompressionVerifier(r.config.TableColumnCompression)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &ghostferry.IterativeVerifier{
 		CursorConfig: &ghostferry.CursorConfig{
 			DB:          r.Ferry.SourceDB,
@@ -117,7 +126,8 @@ func (r *ShardingFerry) newIterativeVerifier() (*ghostferry.IterativeVerifier, e
 			BuildSelect: r.config.CopyFilter.BuildSelect,
 		},
 
-		BinlogStreamer: r.Ferry.BinlogStreamer,
+		BinlogStreamer:      r.Ferry.BinlogStreamer,
+		CompressionVerifier: compressionVerifier,
 
 		TableSchemaCache: r.Ferry.Tables,
 		Tables:           r.Ferry.Tables.AsSlice(),
