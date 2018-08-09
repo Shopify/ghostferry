@@ -177,7 +177,7 @@ func (c *CompressionVerifier) IsCompressedTable(table string) bool {
 func (c *CompressionVerifier) verifyConfiguredCompression(tableColumnCompressions TableColumnCompressionConfig) error {
 	for table, columns := range tableColumnCompressions {
 		for column, algorithm := range columns {
-			if _, ok := c.supportedAlgorithms[algorithm]; !ok {
+			if _, ok := c.supportedAlgorithms[strings.ToUpper(algorithm)]; !ok {
 				return &UnsupportedCompressionError{
 					table:     table,
 					column:    column,
