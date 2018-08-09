@@ -16,7 +16,7 @@ type DataIteratorTestSuite struct {
 
 	di           *ghostferry.DataIterator
 	wg           *sync.WaitGroup
-	receivedRows []ghostferry.RowData
+	receivedRows map[string][]ghostferry.RowData
 }
 
 func (this *DataIteratorTestSuite) SetupTest() {
@@ -55,28 +55,35 @@ func (this *DataIteratorTestSuite) SetupTest() {
 		Tables: tables.AsSlice(),
 	}
 
-	this.receivedRows = make([]ghostferry.RowData, 0)
+	this.receivedRows = make(map[string][]ghostferry.RowData, 0)
 
 	this.di.Initialize()
 	this.di.AddBatchListener(func(ev *ghostferry.RowBatch) error {
-		this.receivedRows = append(this.receivedRows, ev.Values()...)
+		this.receivedRows[ev.TableSchema().Name] = append(this.receivedRows[ev.TableSchema().Name], ev.Values()...)
 		return nil
 	})
 }
 
 func (this *DataIteratorTestSuite) TestNoEventsForEmptyTable() {
 	_, err := this.Ferry.SourceDB.Query(fmt.Sprintf("DELETE FROM `%s`.`%s`", testhelpers.TestSchemaName, testhelpers.TestTable1Name))
+	_, err = this.Ferry.SourceDB.Query(fmt.Sprintf("DELETE FROM `%s`.`%s`", testhelpers.TestSchemaName, testhelpers.TestCompressedTable1Name))
 	this.Require().Nil(err)
 
 	this.di.Run()
 
 	this.Require().Equal(0, len(this.receivedRows))
-	this.Require().Equal(this.di.CurrentState.CompletedTables(), map[string]bool{fmt.Sprintf("%s.%s", testhelpers.TestSchemaName, testhelpers.TestTable1Name): true})
+	this.Require().Equal(
+		this.di.CurrentState.CompletedTables(),
+		map[string]bool{
+			fmt.Sprintf("%s.%s", testhelpers.TestSchemaName, testhelpers.TestTable1Name):           true,
+			fmt.Sprintf("%s.%s", testhelpers.TestSchemaName, testhelpers.TestCompressedTable1Name): true,
+		},
+	)
 }
 
 func (this *DataIteratorTestSuite) TestExistingRowsAreIterated() {
-	var ids []int64
-	var datas []string
+	ids := make(map[string][]int64)
+	data := make(map[string][]string)
 
 	rows, err := this.Ferry.SourceDB.Query(fmt.Sprintf("SELECT id, data FROM `%s`.`%s`", testhelpers.TestSchemaName, testhelpers.TestTable1Name))
 	this.Require().Nil(err)
@@ -84,33 +91,59 @@ func (this *DataIteratorTestSuite) TestExistingRowsAreIterated() {
 
 	for rows.Next() {
 		var id int64
-		var data string
+		var datum string
 
-		err = rows.Scan(&id, &data)
+		err = rows.Scan(&id, &datum)
 		this.Require().Nil(err)
 
-		ids = append(ids, id)
-		datas = append(datas, data)
+		ids[testhelpers.TestTable1Name] = append(ids[testhelpers.TestTable1Name], id)
+		data[testhelpers.TestTable1Name] = append(data[testhelpers.TestTable1Name], datum)
+	}
+
+	rows, err = this.Ferry.SourceDB.Query(fmt.Sprintf("SELECT id, data FROM `%s`.`%s`", testhelpers.TestSchemaName, testhelpers.TestCompressedTable1Name))
+	this.Require().Nil(err)
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int64
+		var datum string
+
+		err = rows.Scan(&id, &datum)
+		this.Require().Nil(err)
+
+		ids[testhelpers.TestCompressedTable1Name] = append(ids[testhelpers.TestCompressedTable1Name], id)
+		data[testhelpers.TestCompressedTable1Name] = append(data[testhelpers.TestCompressedTable1Name], datum)
 	}
 
 	this.Require().Equal(0, len(this.di.CurrentState.CompletedTables()))
 
-	this.Require().Equal(5, len(ids))
-	this.Require().Equal(0, len(this.receivedRows))
+	this.Require().Equal(5, len(ids[testhelpers.TestTable1Name]))
+	this.Require().Equal(5, len(ids[testhelpers.TestCompressedTable1Name]))
+	this.Require().Equal(0, len(this.receivedRows[testhelpers.TestTable1Name]))
+	this.Require().Equal(0, len(this.receivedRows[testhelpers.TestCompressedTable1Name]))
 
 	this.di.Run()
 
-	this.Require().Equal(5, len(this.receivedRows))
+	this.Require().Equal(5, len(this.receivedRows[testhelpers.TestTable1Name]))
+	this.Require().Equal(5, len(this.receivedRows[testhelpers.TestCompressedTable1Name]))
 
-	for idx, row := range this.receivedRows {
-		id := int64(row[0].(int64))
-		data := string(row[1].([]byte))
+	for table, rows := range this.receivedRows {
+		for idx, row := range rows {
+			id := int64(row[0].(int64))
+			datum := string(row[1].([]byte))
 
-		this.Require().Equal(ids[idx], id)
-		this.Require().Equal(datas[idx], data)
+			this.Require().Equal(ids[table][idx], id)
+			this.Require().Equal(data[table][idx], datum)
+		}
 	}
 
-	this.Require().Equal(this.di.CurrentState.CompletedTables(), map[string]bool{fmt.Sprintf("%s.%s", testhelpers.TestSchemaName, testhelpers.TestTable1Name): true})
+	this.Require().Equal(
+		this.di.CurrentState.CompletedTables(),
+		map[string]bool{
+			fmt.Sprintf("%s.%s", testhelpers.TestSchemaName, testhelpers.TestTable1Name):           true,
+			fmt.Sprintf("%s.%s", testhelpers.TestSchemaName, testhelpers.TestCompressedTable1Name): true,
+		},
+	)
 }
 
 func (this *DataIteratorTestSuite) TestDoneListenerGetsNotifiedWhenDone() {

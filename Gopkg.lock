@@ -34,6 +34,13 @@
   version = "v1.3.0"
 
 [[projects]]
+  digest = "1:4a0c6bb4805508a6287675fac876be2ac1182539ca8a32468d8128882e9d5009"
+  name = "github.com/golang/snappy"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "2e65f85255dbc3072edf28d6b5b8efc472979f5a"
+
+[[projects]]
   digest = "1:c79fb010be38a59d657c48c6ba1d003a8aa651fa56b579d959d74573b7dff8e1"
   name = "github.com/gorilla/context"
   packages = ["."]
@@ -174,6 +181,7 @@
     "github.com/Masterminds/squirrel",
     "github.com/Shopify/go-dogstatsd",
     "github.com/go-sql-driver/mysql",
+    "github.com/golang/snappy",
     "github.com/gorilla/mux",
     "github.com/shopspring/decimal",
     "github.com/siddontang/go-mysql/mysql",
@@ -181,6 +189,7 @@
     "github.com/siddontang/go-mysql/schema",
     "github.com/sirupsen/logrus",
     "github.com/stretchr/testify/assert",
+    "github.com/stretchr/testify/require",
     "github.com/stretchr/testify/suite",
   ]
   solver-name = "gps-cdcl"

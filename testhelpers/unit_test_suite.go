@@ -2,6 +2,7 @@ package testhelpers
 
 import (
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"os"
 	"strconv"
@@ -29,9 +30,27 @@ func SetupTest() {
 }
 
 const (
-	TestSchemaName = "gftest"
-	TestTable1Name = "test_table_1"
+	TestSchemaName            = "gftest"
+	TestTable1Name            = "test_table_1"
+	TestCompressedTable1Name  = "test_compressed_table_1"
+	TestCompressedColumn1Name = "data"
+	TestCompressedData1       = "\x08" + "\x0cabcd" + "\x01\x02" // abcdcdcd
+	TestCompressedData2       = "\x08" + "\x0cabcd" + "\x01\x01" // abcddddd
 )
+
+var (
+	TestCompressedData3 = loadFixtureFromFile("urls1.snappy")
+	TestCompressedData4 = loadFixtureFromFile("urls2.snappy")
+)
+
+func loadFixtureFromFile(path string) string {
+	decompressed, err := ioutil.ReadFile(FixturePath(path))
+	if err != nil {
+		panic(err)
+	}
+
+	return string(decompressed)
+}
 
 type GhostferryUnitTestSuite struct {
 	suite.Suite
@@ -51,10 +70,12 @@ func (this *GhostferryUnitTestSuite) SetupTest() {
 
 func (this *GhostferryUnitTestSuite) SeedTargetDB(numberOfRows int) {
 	SeedInitialData(this.Ferry.TargetDB, TestSchemaName, TestTable1Name, numberOfRows)
+	SeedInitialData(this.Ferry.TargetDB, TestSchemaName, TestCompressedTable1Name, numberOfRows)
 }
 
 func (this *GhostferryUnitTestSuite) SeedSourceDB(numberOfRows int) {
 	SeedInitialData(this.Ferry.SourceDB, TestSchemaName, TestTable1Name, numberOfRows)
+	SeedInitialData(this.Ferry.SourceDB, TestSchemaName, TestCompressedTable1Name, numberOfRows)
 }
 
 func (this *GhostferryUnitTestSuite) TearDownTest() {

@@ -153,11 +153,25 @@ type Config struct {
 	// Optional: defaults to empty map/no rewrites
 	DatabaseRewrites map[string]string
 
-	// Map the table name on the source dataabase to a different name on
+	// Map the table name on the source database to a different name on
 	// the target database. See DatabaseRewrite.
 	//
 	// Optional: defaults to empty map/no rewrites
 	TableRewrites map[string]string
+
+	// Map of the table and column identifying the compression type
+	// (if any) of the column. This is used during verification to ensure
+	// the data was successfully copied as it must be manually verified.
+	//
+	// Note that the IterativeVerifier must be used and the
+	// CompressionVerifiers for the configuration below will be instantiated
+	// to handle the decompression before verification
+	//
+	// Currently supported compression algorithms are:
+	//	1. Snappy (https://google.github.io/snappy/) as "SNAPPY"
+	//
+	// Optional: defaults to empty map/no compression
+	TableColumnCompression map[string]map[string]string
 
 	// The maximum number of retries for writes if the writes failed on
 	// the target database.
