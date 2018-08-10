@@ -118,6 +118,14 @@ func (r *ShardingFerry) newIterativeVerifier() (*ghostferry.IterativeVerifier, e
 		}
 	}
 
+	ignoredColumns := make(map[string]map[string]struct{})
+	for table, columns := range r.config.IgnoredVerificationColumns {
+		ignoredColumns[table] = make(map[string]struct{})
+		for _, column := range columns {
+			ignoredColumns[table][column] = struct{}{}
+		}
+	}
+
 	return &ghostferry.IterativeVerifier{
 		CursorConfig: &ghostferry.CursorConfig{
 			DB:          r.Ferry.SourceDB,
@@ -139,6 +147,7 @@ func (r *ShardingFerry) newIterativeVerifier() (*ghostferry.IterativeVerifier, e
 		TableRewrites:    r.config.TableRewrites,
 
 		IgnoredTables:       r.config.IgnoredVerificationTables,
+		IgnoredColumns:      ignoredColumns,
 		Concurrency:         verifierConcurrency,
 		MaxExpectedDowntime: maxExpectedDowntime,
 	}, nil
