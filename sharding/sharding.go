@@ -180,6 +180,8 @@ func (r *ShardingFerry) Run() {
 
 	r.Ferry.WaitUntilBinlogStreamerCatchesUp()
 
+	r.AbortIfTargetDbNoLongerWriteable()
+
 	var err error
 	client := &http.Client{}
 
@@ -384,4 +386,15 @@ func (r *ShardingFerry) dbConfigIsForReplica(dbConfig ghostferry.DatabaseConfig)
 	err = row.Scan(&isReadOnly)
 
 	return isReadOnly, err
+}
+
+func (r *ShardingFerry) AbortIfTargetDbNoLongerWriteable() {
+	isReplica, err := ghostferry.CheckDbIsAReplica(r.Ferry.TargetDB)
+	if err != nil {
+		r.logger.WithError(err).Error("cannot check if target db is writable")
+		r.Ferry.ErrorHandler.Fatal("sharding", err)
+	}
+	if isReplica {
+		r.Ferry.ErrorHandler.Fatal("sharding", fmt.Errorf("@@read_only must be OFF on target db"))
+	}
 }

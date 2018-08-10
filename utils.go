@@ -169,3 +169,10 @@ func NewMysqlPosition(file string, position uint32, err error) (mysql.Position, 
 		}, nil
 	}
 }
+
+func CheckDbIsAReplica(db *sql.DB) (bool, error) {
+	row := db.QueryRow("SELECT @@read_only")
+	var isReadOnly bool
+	err := row.Scan(&isReadOnly)
+	return isReadOnly, err
+}
