@@ -171,7 +171,7 @@ type Config struct {
 	//	1. Snappy (https://google.github.io/snappy/) as "SNAPPY"
 	//
 	// Optional: defaults to empty map/no compression
-	TableColumnCompression map[string]map[string]string
+	TableColumnCompression TableColumnCompressionConfig
 
 	// The maximum number of retries for writes if the writes failed on
 	// the target database.

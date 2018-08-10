@@ -109,6 +109,15 @@ func (r *ShardingFerry) newIterativeVerifier() (*ghostferry.IterativeVerifier, e
 		}
 	}
 
+	var compressionVerifier *ghostferry.CompressionVerifier
+	if r.config.TableColumnCompression != nil {
+		var err error
+		compressionVerifier, err = ghostferry.NewCompressionVerifier(r.config.TableColumnCompression)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &ghostferry.IterativeVerifier{
 		CursorConfig: &ghostferry.CursorConfig{
 			DB:          r.Ferry.SourceDB,
@@ -117,7 +126,8 @@ func (r *ShardingFerry) newIterativeVerifier() (*ghostferry.IterativeVerifier, e
 			BuildSelect: r.config.CopyFilter.BuildSelect,
 		},
 
-		BinlogStreamer: r.Ferry.BinlogStreamer,
+		BinlogStreamer:      r.Ferry.BinlogStreamer,
+		CompressionVerifier: compressionVerifier,
 
 		TableSchemaCache: r.Ferry.Tables,
 		Tables:           r.Ferry.Tables.AsSlice(),
@@ -189,12 +199,15 @@ func (r *ShardingFerry) Run() {
 	r.Ferry.FlushBinlogAndStopStreaming()
 	copyWG.Wait()
 
+	// Joined tables cannot be easily monitored for changes in the binlog stream
+	// so we copy and verify them for a second time during the cutover phase to
+	// pick up any new changes since DataIterator copied the tables
 	metrics.Measure("deltaCopyJoinedTables", nil, 1.0, func() {
 		err = r.deltaCopyJoinedTables()
 	})
 	if err != nil {
 		r.logger.WithField("error", err).Errorf("failed to delta-copy joined tables after locking")
-		r.Ferry.ErrorHandler.Fatal("sharding", err)
+		r.Ferry.ErrorHandler.Fatal("sharding.delta_copy", err)
 	}
 
 	var verificationResult ghostferry.VerificationResult
@@ -240,7 +253,32 @@ func (r *ShardingFerry) deltaCopyJoinedTables() error {
 		}
 	}
 
-	return r.Ferry.RunStandaloneDataCopy(tables)
+	err := r.Ferry.RunStandaloneDataCopy(tables)
+	if err != nil {
+		return err
+	}
+
+	verifier, err := r.newIterativeVerifier()
+	if err != nil {
+		return err
+	}
+
+	verifier.Tables = tables
+
+	err = verifier.Initialize()
+	if err != nil {
+		return err
+	}
+
+	verificationResult, err := verifier.VerifyOnce()
+	if err != nil {
+		return err
+	}
+	if !verificationResult.DataCorrect {
+		return fmt.Errorf("joined tables verifier detected data discrepancy: %s", verificationResult.Message)
+	}
+
+	return nil
 }
 
 func (r *ShardingFerry) copyPrimaryKeyTables() error {
