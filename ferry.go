@@ -134,7 +134,7 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
-	isReplica, err := f.checkDbIsAReplica(f.TargetDB)
+	isReplica, err := CheckDbIsAReplica(f.TargetDB)
 	if err != nil {
 		f.logger.WithError(err).Error("cannot check if target db is writable")
 		return err
@@ -166,7 +166,7 @@ func (f *Ferry) Initialize() (err error) {
 			return err
 		}
 
-		isReplica, err := f.checkDbIsAReplica(f.WaitUntilReplicaIsCaughtUpToMaster.MasterDB)
+		isReplica, err := CheckDbIsAReplica(f.WaitUntilReplicaIsCaughtUpToMaster.MasterDB)
 		if err != nil {
 			f.logger.WithError(err).Error("cannot check if master is a read replica")
 			return err
@@ -178,7 +178,7 @@ func (f *Ferry) Initialize() (err error) {
 			return err
 		}
 	} else {
-		isReplica, err := f.checkDbIsAReplica(f.SourceDB)
+		isReplica, err := CheckDbIsAReplica(f.SourceDB)
 		if err != nil {
 			f.logger.WithError(err).Error("cannot check if source is a replica")
 			return err
@@ -380,7 +380,7 @@ func (f *Ferry) WaitUntilBinlogStreamerCatchesUp() {
 // You will know that the BinlogStreamer finished when .Run() returns.
 func (f *Ferry) FlushBinlogAndStopStreaming() {
 	if f.WaitUntilReplicaIsCaughtUpToMaster != nil {
-		isReplica, err := f.checkDbIsAReplica(f.WaitUntilReplicaIsCaughtUpToMaster.MasterDB)
+		isReplica, err := CheckDbIsAReplica(f.WaitUntilReplicaIsCaughtUpToMaster.MasterDB)
 		if err != nil {
 			f.ErrorHandler.Fatal("wait_replica", err)
 		}
@@ -465,11 +465,4 @@ func (f *Ferry) checkConnectionForBinlogFormat(db *sql.DB) error {
 	}
 
 	return nil
-}
-
-func (f *Ferry) checkDbIsAReplica(db *sql.DB) (bool, error) {
-	row := db.QueryRow("SELECT @@read_only")
-	var isReadOnly bool
-	err := row.Scan(&isReadOnly)
-	return isReadOnly, err
 }
