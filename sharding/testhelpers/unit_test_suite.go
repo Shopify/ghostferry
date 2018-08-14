@@ -91,6 +91,15 @@ func (t *ShardingUnitTestSuite) SetupTest() {
 
 	testhelpers.SeedInitialData(t.Ferry.Ferry.SourceDB, sourceDbName, primaryKeyTable, 3)
 	testhelpers.SeedInitialData(t.Ferry.Ferry.TargetDB, targetDbName, primaryKeyTable, 0)
+
+	testhelpers.SeedInitialData(t.Ferry.Ferry.SourceDB, sourceDbName, testhelpers.TestCompressedTable1Name, 0)
+	testhelpers.SeedInitialData(t.Ferry.Ferry.TargetDB, targetDbName, testhelpers.TestCompressedTable1Name, 0)
+
+	setColumnType(t.Ferry.Ferry.SourceDB, sourceDbName, testhelpers.TestCompressedTable1Name, testhelpers.TestCompressedColumn1Name, "MEDIUMBLOB")
+	setColumnType(t.Ferry.Ferry.TargetDB, targetDbName, testhelpers.TestCompressedTable1Name, testhelpers.TestCompressedColumn1Name, "MEDIUMBLOB")
+
+	testhelpers.AddTenantID(t.Ferry.Ferry.SourceDB, sourceDbName, testhelpers.TestCompressedTable1Name, 3)
+	testhelpers.AddTenantID(t.Ferry.Ferry.TargetDB, targetDbName, testhelpers.TestCompressedTable1Name, 3)
 }
 
 func (t *ShardingUnitTestSuite) TearDownTest() {
@@ -167,5 +176,16 @@ func addJoinID(db *sql.DB, dbName, tableName string) {
 
 	query = fmt.Sprintf("UPDATE %s.%s SET %s = id", dbName, tableName, joiningKey)
 	_, err = db.Exec(query)
+	testhelpers.PanicIfError(err)
+}
+
+func setColumnType(db *sql.DB, schema, table, column, columnType string) {
+	_, err := db.Exec(fmt.Sprintf(
+		"ALTER TABLE %s.%s MODIFY %s %s",
+		schema,
+		table,
+		column,
+		columnType,
+	))
 	testhelpers.PanicIfError(err)
 }
