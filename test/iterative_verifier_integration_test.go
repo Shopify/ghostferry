@@ -87,11 +87,58 @@ func TestVerificationFailsUpdatedRow(t *testing.T) {
 			ensureTestRowsAreReverified(ferry)
 		},
 		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry) {
-			modifyTestRowsInSource(ferry)
+			modifyDataColumnInSourceDB(ferry)
 			result, err := iterativeVerifier.VerifyDuringCutover()
 			assert.Nil(t, err)
 			assert.False(t, result.DataCorrect)
 			assert.Regexp(t, "verification failed.*gftest.table1.*pks: (42)|(43)|(43,42)|(42,43)", result.Message)
+			ran = true
+		},
+		DataWriter: &testhelpers.MixedActionDataWriter{
+			ProbabilityOfInsert: 1.0 / 3.0,
+			ProbabilityOfUpdate: 1.0 / 3.0,
+			ProbabilityOfDelete: 1.0 / 3.0,
+			NumberOfWriters:     4,
+			Tables:              []string{"gftest.table1"},
+		},
+		Ferry: ferry,
+		DisableChecksumVerifier: true,
+	}
+
+	testcase.Run()
+	assert.True(t, ran)
+}
+
+func TestIgnoresColumns(t *testing.T) {
+	ferry := testhelpers.NewTestFerry()
+	iterativeVerifier := &ghostferry.IterativeVerifier{}
+	ran := false
+
+	testcase := &testhelpers.IntegrationTestCase{
+		T: t,
+		SetupAction: func(ferry *testhelpers.TestFerry) {
+			setupSingleTableDatabase(ferry)
+			iterativeVerifier.IgnoredColumns = map[string]map[string]struct{}{"table1": {"data": struct{}{}}}
+		},
+		AfterRowCopyIsComplete: func(ferry *testhelpers.TestFerry) {
+			setupIterativeVerifierFromFerry(iterativeVerifier, ferry.Ferry)
+
+			err := iterativeVerifier.Initialize()
+			testhelpers.PanicIfError(err)
+
+			err = iterativeVerifier.VerifyBeforeCutover()
+			testhelpers.PanicIfError(err)
+		},
+		BeforeStoppingBinlogStreaming: func(ferry *testhelpers.TestFerry) {
+			ensureTestRowsAreReverified(ferry)
+		},
+		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry) {
+			modifyDataColumnInSourceDB(ferry)
+
+			result, err := iterativeVerifier.VerifyDuringCutover()
+			assert.Nil(t, err)
+			assert.True(t, result.DataCorrect)
+			assert.Equal(t, "", result.Message)
 			ran = true
 		},
 		DataWriter: &testhelpers.MixedActionDataWriter{
@@ -223,7 +270,7 @@ func ensureTestRowsAreReverified(ferry *testhelpers.TestFerry) {
 	testhelpers.PanicIfError(err)
 }
 
-func modifyTestRowsInSource(ferry *testhelpers.TestFerry) {
+func modifyDataColumnInSourceDB(ferry *testhelpers.TestFerry) {
 	_, err := ferry.Ferry.SourceDB.Exec("UPDATE gftest.table1 SET data=\"FAIL\" WHERE id = \"42\"")
 	testhelpers.PanicIfError(err)
 

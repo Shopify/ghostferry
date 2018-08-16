@@ -137,6 +137,7 @@ type IterativeVerifier struct {
 
 	Tables              []*schema.Table
 	IgnoredTables       []string
+	IgnoredColumns      map[string]map[string]struct{}
 	DatabaseRewrites    map[string]string
 	TableRewrites       map[string]string
 	Concurrency         int
@@ -572,6 +573,22 @@ func (v *IterativeVerifier) tableIsIgnored(table *schema.Table) bool {
 	return false
 }
 
+func (v *IterativeVerifier) columnsToVerify(table *schema.Table) []schema.TableColumn {
+	ignoredColsSet, containsIgnoredColumns := v.IgnoredColumns[table.Name]
+	if !containsIgnoredColumns {
+		return table.Columns
+	}
+
+	var columns []schema.TableColumn
+	for _, column := range table.Columns {
+		if _, isIgnored := ignoredColsSet[column.Name]; !isIgnored {
+			columns = append(columns, column)
+		}
+	}
+
+	return columns
+}
+
 func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Table) ([]uint64, error) {
 	targetDb := table.Schema
 	if targetDbName, exists := v.DatabaseRewrites[targetDb]; exists {
@@ -591,7 +608,7 @@ func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Tabl
 	go func() {
 		defer wg.Done()
 		sourceErr = WithRetries(5, 0, v.logger, "get fingerprints from source db", func() (err error) {
-			sourceHashes, err = v.GetHashes(v.SourceDB, table.Schema, table.Name, table.GetPKColumn(0).Name, table.Columns, pks)
+			sourceHashes, err = v.GetHashes(v.SourceDB, table.Schema, table.Name, table.GetPKColumn(0).Name, v.columnsToVerify(table), pks)
 			return
 		})
 	}()
@@ -601,7 +618,7 @@ func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Tabl
 	go func() {
 		defer wg.Done()
 		targetErr = WithRetries(5, 0, v.logger, "get fingerprints from target db", func() (err error) {
-			targetHashes, err = v.GetHashes(v.TargetDB, targetDb, targetTable, table.GetPKColumn(0).Name, table.Columns, pks)
+			targetHashes, err = v.GetHashes(v.TargetDB, targetDb, targetTable, table.GetPKColumn(0).Name, v.columnsToVerify(table), pks)
 			return
 		})
 	}()
@@ -623,12 +640,12 @@ func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Tabl
 }
 
 func (v *IterativeVerifier) compareCompressedHashes(targetDb, targetTable string, table *schema.Table, pks []uint64) ([]uint64, error) {
-	sourceHashes, err := v.CompressionVerifier.GetCompressedHashes(v.SourceDB, table.Schema, table.Name, table.GetPKColumn(0).Name, table.Columns, pks)
+	sourceHashes, err := v.CompressionVerifier.GetCompressedHashes(v.SourceDB, table.Schema, table.Name, table.GetPKColumn(0).Name, v.columnsToVerify(table), pks)
 	if err != nil {
 		return nil, err
 	}
 
-	targetHashes, err := v.CompressionVerifier.GetCompressedHashes(v.TargetDB, targetDb, targetTable, table.GetPKColumn(0).Name, table.Columns, pks)
+	targetHashes, err := v.CompressionVerifier.GetCompressedHashes(v.TargetDB, targetDb, targetTable, table.GetPKColumn(0).Name, v.columnsToVerify(table), pks)
 	if err != nil {
 		return nil, err
 	}

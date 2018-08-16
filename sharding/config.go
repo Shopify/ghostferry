@@ -21,10 +21,11 @@ type Config struct {
 	CutoverUnlock HTTPCallback
 	ErrorCallback HTTPCallback
 
-	JoinedTables              map[string][]JoinTable
-	IgnoredTables             []string
-	IgnoredVerificationTables []string
-	PrimaryKeyTables          []string
+	JoinedTables               map[string][]JoinTable
+	IgnoredTables              []string
+	IgnoredVerificationTables  []string
+	IgnoredVerificationColumns map[string][]string
+	PrimaryKeyTables           []string
 
 	VerifierIterationConcurrency int
 	MaxExpectedVerifierDowntime  string
