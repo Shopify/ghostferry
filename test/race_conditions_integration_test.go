@@ -11,7 +11,7 @@ import (
 )
 
 func setupSingleEntryTable(f *testhelpers.TestFerry) {
-	testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 1)
+	testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 1000)
 	testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
 }
 
@@ -120,6 +120,43 @@ func TestSelectCopyUpdateBinlog(t *testing.T) {
 	testcase.CustomVerifyAction = func(f *testhelpers.TestFerry) {
 		testcase.AssertOnlyDataOnSourceAndTargetIs("changed")
 	}
+
+	testcase.Run()
+}
+
+func TestInterruption(t *testing.T) {
+	n := 0
+	goInterrupt := false
+
+	ferry := testhelpers.NewTestFerry()
+
+	testcase := &testhelpers.IntegrationTestCase{
+		T: t,
+		SetupAction: func(f *testhelpers.TestFerry) {
+			setupSingleEntryTable(f)
+			f.Ferry.DataIterator.AddBatchListener(func(batch *ghostferry.RowBatch) error {
+				n += 1
+				fmt.Println("HK-DEBUG")
+				fmt.Printf("n = %+v\n", n)
+				if n > 2 {
+					fmt.Println("SET AS INTERRUPTED")
+					goInterrupt = true
+					time.Sleep(1 * time.Second)
+				}
+				return nil
+			})
+		},
+		Ferry: ferry,
+	}
+
+	go func() {
+		for {
+			if goInterrupt {
+				ferry.Ferry.Interrupt()
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
 
 	testcase.Run()
 }

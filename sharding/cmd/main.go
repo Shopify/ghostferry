@@ -51,6 +51,8 @@ func main() {
 		errorAndExit(fmt.Sprintf("failed to create ferry: %v", err))
 	}
 
+	go ferry.SignalHandler()
+
 	err = ferry.Initialize()
 	if err != nil {
 		errorAndExit(fmt.Sprintf("failed to initialize ferry: %v", err))

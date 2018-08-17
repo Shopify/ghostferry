@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	"container/ring"
+	"context"
 	"database/sql"
 	"sync"
 	"time"
@@ -9,6 +10,12 @@ import (
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
+
+type InterruptionError struct{}
+
+func (e InterruptionError) Error() string {
+	return "execution was interrupted"
+}
 
 type PKPositionLog struct {
 	Position uint64
@@ -160,7 +167,7 @@ func (d *DataIterator) Initialize() error {
 	return nil
 }
 
-func (d *DataIterator) Run() {
+func (d *DataIterator) Run(ctx context.Context) {
 	d.logger.WithField("tablesCount", len(d.Tables)).Info("starting data iterator run")
 
 	tablesWithData, emptyTables, err := MaxPrimaryKeys(d.DB, d.Tables, d.logger)
@@ -228,10 +235,20 @@ func (d *DataIterator) Run() {
 					logger.Debugf("updated last successful PK to %d", pkpos)
 					d.CurrentState.UpdateLastSuccessfulPK(table.String(), pkpos)
 
+					select {
+					case <-ctx.Done():
+						return InterruptionError{}
+					default:
+						// continue
+					}
+
 					return nil
 				})
 
-				if err != nil {
+				if nerr, ok := err.(InterruptionError); ok {
+					logger.WithError(nerr).Info("Exiting data iterator due to interruption")
+					return
+				} else if err != nil {
 					logger.WithError(err).Error("failed to iterate table")
 					d.ErrorHandler.Fatal("data_iterator", err)
 					return

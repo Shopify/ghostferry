@@ -67,7 +67,10 @@ type Ferry struct {
 
 	logger *logrus.Entry
 
-	rowCopyCompleteCh chan struct{}
+	rowCopyCompleteCh         chan struct{}
+	coreServicesWg            *sync.WaitGroup
+	supportingServicesWg      *sync.WaitGroup
+	coreServicesCtxCancelFunc context.CancelFunc
 }
 
 func (f *Ferry) newDataIterator() (*DataIterator, error) {
@@ -298,6 +301,7 @@ func (f *Ferry) Run() {
 	f.OverallState = StateCopying
 
 	ctx, shutdown := context.WithCancel(context.Background())
+	f.coreServicesCtxCancelFunc = shutdown
 
 	handleError := func(name string, err error) {
 		if err != nil && err != context.Canceled {
@@ -305,41 +309,42 @@ func (f *Ferry) Run() {
 		}
 	}
 
-	supportingServicesWg := &sync.WaitGroup{}
-	supportingServicesWg.Add(1)
+	f.supportingServicesWg = &sync.WaitGroup{}
+	f.supportingServicesWg.Add(1)
 
 	go func() {
-		defer supportingServicesWg.Done()
+		defer f.supportingServicesWg.Done()
 		handleError("throttler", f.Throttler.Run(ctx))
 	}()
 
-	coreServicesWg := &sync.WaitGroup{}
-	coreServicesWg.Add(3)
+	f.coreServicesWg = &sync.WaitGroup{}
+	f.coreServicesWg.Add(3)
 
 	go func() {
-		defer coreServicesWg.Done()
+		defer f.coreServicesWg.Done()
 
-		f.BinlogStreamer.Run()
+		f.BinlogStreamer.Run(ctx)
+		fmt.Println("Done binlog streamer")
 		f.BinlogWriter.Stop()
 	}()
 
 	go func() {
-		defer coreServicesWg.Done()
-		f.BinlogWriter.Run()
+		defer f.coreServicesWg.Done()
+		f.BinlogWriter.Run(ctx)
 	}()
 
 	go func() {
-		defer coreServicesWg.Done()
-		f.DataIterator.Run()
+		defer f.coreServicesWg.Done()
+		f.DataIterator.Run(ctx)
 	}()
 
-	coreServicesWg.Wait()
+	f.coreServicesWg.Wait()
 
 	f.OverallState = StateDone
 	f.DoneTime = time.Now()
 
-	shutdown()
-	supportingServicesWg.Wait()
+	f.coreServicesCtxCancelFunc()
+	f.supportingServicesWg.Wait()
 }
 
 func (f *Ferry) RunStandaloneDataCopy(tables []*schema.Table) error {
@@ -356,7 +361,7 @@ func (f *Ferry) RunStandaloneDataCopy(tables []*schema.Table) error {
 	dataIterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
 	f.logger.WithField("tables", tables).Info("starting standalone table copy")
 
-	dataIterator.Run()
+	dataIterator.Run(context.Background())
 
 	return nil
 }
@@ -465,4 +470,24 @@ func (f *Ferry) checkConnectionForBinlogFormat(db *sql.DB) error {
 	}
 
 	return nil
+}
+
+func (f *Ferry) Interrupt() {
+	if f.coreServicesCtxCancelFunc != nil {
+		fmt.Println("called cancels")
+		f.coreServicesCtxCancelFunc()
+
+		fmt.Println("waiting for supports")
+		f.supportingServicesWg.Wait()
+
+		fmt.Println("waiting for cores")
+		f.coreServicesWg.Wait()
+
+		fmt.Println("dumping")
+		f.dumpState()
+	}
+}
+
+func (f *Ferry) dumpState() {
+	fmt.Println("!!! dumping state for ferry and exiting")
 }

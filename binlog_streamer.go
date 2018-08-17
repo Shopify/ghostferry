@@ -102,7 +102,7 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysql() error {
 	return nil
 }
 
-func (s *BinlogStreamer) Run() {
+func (s *BinlogStreamer) Run(ctx context.Context) {
 	defer func() {
 		s.logger.Info("exiting binlog streamer")
 		s.binlogSyncer.Close()
@@ -129,6 +129,13 @@ func (s *BinlogStreamer) Run() {
 		if err != nil {
 			s.ErrorHandler.Fatal("binlog_streamer", err)
 			return
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			// keep going
 		}
 
 		if timedOut {
@@ -168,6 +175,13 @@ func (s *BinlogStreamer) Run() {
 			// TODO: investigate using this to allow for migrations to occur.
 		default:
 			s.updateLastStreamedPosAndTime(ev)
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			// keep going
 		}
 	}
 }

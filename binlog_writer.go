@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -29,7 +30,7 @@ func (b *BinlogWriter) Initialize() error {
 	return nil
 }
 
-func (b *BinlogWriter) Run() {
+func (b *BinlogWriter) Run(ctx context.Context) {
 	batch := make([]DMLEvent, 0, b.BatchSize)
 	for {
 		firstEvent := <-b.binlogEventBuffer
@@ -63,6 +64,13 @@ func (b *BinlogWriter) Run() {
 		}
 
 		batch = make([]DMLEvent, 0, b.BatchSize)
+
+		select {
+		case <-ctx.Done():
+			fmt.Println("binlog writer will exit after buffer is closed and flushed")
+		default:
+			// keep writing
+		}
 	}
 }
 

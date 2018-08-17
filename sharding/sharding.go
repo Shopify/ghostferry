@@ -3,8 +3,11 @@ package sharding
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
 	"regexp"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Shopify/ghostferry"
@@ -405,5 +408,23 @@ func (r *ShardingFerry) AbortIfTargetDbNoLongerWriteable() {
 	}
 	if isReplica {
 		r.Ferry.ErrorHandler.Fatal("sharding", fmt.Errorf("@@read_only must be OFF on target db"))
+	}
+}
+
+func (r *ShardingFerry) SignalHandler() {
+	c := make(chan os.Signal, 1)
+
+	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
+
+	for {
+		sig := <-c
+
+		if r.Ferry.OverallState == ghostferry.StateCutover {
+			r.logger.WithField("signal", sig.String).Warn("received termination signal but ferry is in cutover stage")
+			continue
+		}
+
+		r.logger.WithField("signal", sig.String).Errorf("received termination signal, interrupting ferry and shutting down")
+		r.Ferry.Interrupt()
 	}
 }
