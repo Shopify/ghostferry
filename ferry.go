@@ -3,8 +3,10 @@ package ghostferry
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -503,4 +505,17 @@ func (f *Ferry) Interrupt() {
 
 func (f *Ferry) dumpState() {
 	fmt.Println("!!! dumping state for ferry and exiting")
+
+	serializedState := &SerializableState{
+		GhostferryVersion:         VersionString,
+		LastKnownTableSchemaCache: f.Tables,
+	}
+	f.StateTracker.Serialize(serializedState)
+
+	stateBytes, err := json.MarshalIndent(serializedState, "", "  ")
+	if err != nil {
+		panic("shit")
+	} else {
+		fmt.Fprintln(os.Stdout, string(stateBytes))
+	}
 }
