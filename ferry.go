@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	siddontanglog "github.com/siddontang/go-log/log"
 	siddontangmysql "github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
@@ -54,6 +55,8 @@ type Ferry struct {
 	DataIterator *DataIterator
 	BatchWriter  *BatchWriter
 
+	StateTracker *StateTracker
+
 	ErrorHandler ErrorHandler
 	Throttler    Throttler
 
@@ -86,6 +89,7 @@ func (f *Ferry) newDataIterator() (*DataIterator, error) {
 			BatchSize:   f.Config.DataIterationBatchSize,
 			ReadRetries: f.Config.DBReadRetries,
 		},
+		StateTracker: f.StateTracker,
 	}
 
 	if f.CopyFilter != nil {
@@ -105,6 +109,12 @@ func (f *Ferry) Initialize() (err error) {
 	f.rowCopyCompleteCh = make(chan struct{})
 
 	f.logger.Infof("hello world from %s", VersionString)
+
+	// Suppress siddontang/go-mysql logging as we already log the equivalents.
+	// It also by defaults logs to stdout, which is different from Ghostferry
+	// logging, which all goes to stderr. stdout in Ghostferry is reserved for
+	// dumping states due to an abort.
+	siddontanglog.SetDefaultLogger(siddontanglog.NewDefault(&siddontanglog.NullHandler{}))
 
 	// Connect to the database
 	f.SourceDB, err = f.Source.SqlDB(f.logger.WithField("dbname", "source"))
@@ -204,11 +214,14 @@ func (f *Ferry) Initialize() (err error) {
 		f.Throttler = &PauserThrottler{}
 	}
 
+	f.StateTracker = NewStateTracker(f.DataIterationConcurrency*10, nil)
+
 	f.BinlogStreamer = &BinlogStreamer{
 		Db:           f.SourceDB,
 		Config:       f.Config,
 		ErrorHandler: f.ErrorHandler,
 		Filter:       f.CopyFilter,
+		StateTracker: f.StateTracker,
 	}
 	err = f.BinlogStreamer.Initialize()
 	if err != nil {
