@@ -85,7 +85,7 @@ func (r *ShardingFerry) Initialize() error {
 
 	err := r.Ferry.Initialize()
 	if err != nil {
-		r.Ferry.ErrorHandler.Fatal("ferry.initialize", err)
+		r.Ferry.ErrorHandler.ReportError("ferry.initialize", err)
 		return err
 	}
 	return nil

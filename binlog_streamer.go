@@ -128,7 +128,6 @@ func (s *BinlogStreamer) Run() {
 
 		if err != nil {
 			s.ErrorHandler.Fatal("binlog_streamer", err)
-			return
 		}
 
 		if timedOut {
@@ -151,7 +150,6 @@ func (s *BinlogStreamer) Run() {
 			if err != nil {
 				s.logger.WithError(err).Error("failed to handle rows event")
 				s.ErrorHandler.Fatal("binlog_streamer", err)
-				return
 			}
 
 			s.updateLastStreamedPosAndTime(ev)
@@ -199,7 +197,6 @@ func (s *BinlogStreamer) FlushAndStop() {
 
 	if err != nil {
 		s.ErrorHandler.Fatal("binlog_streamer", err)
-		return
 	}
 	s.logger.WithField("target_position", s.targetBinlogPosition).Info("current stop binlog position was recorded")
 

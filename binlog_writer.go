@@ -59,7 +59,6 @@ func (b *BinlogWriter) Run() {
 		})
 		if err != nil {
 			b.ErrorHandler.Fatal("binlog_writer", err)
-			return
 		}
 
 		batch = make([]DMLEvent, 0, b.BatchSize)
