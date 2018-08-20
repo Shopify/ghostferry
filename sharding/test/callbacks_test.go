@@ -83,20 +83,15 @@ func (t *CallbacksTestSuite) TestFailsRunOnPanicError() {
 		Ferry:         t.Ferry.Ferry,
 		ErrorCallback: t.Config.ErrorCallback,
 	}
-	panicReceived := false
 	defer func() {
 		if r := recover(); r != nil {
-			panicReceived = true
 			t.Require().Equal(r, "fatal error detected, see logs for details")
+			t.Require().True(callbackReceived)
 		}
 	}()
 	t.Ferry.Ferry.ErrorHandler.Fatal("test_error", errors.New("test error"))
 
-	t.Require().True(callbackReceived)
-	t.Require().True(panicReceived)
-
-	t.Require().NotNil(t.errHandler.LastError)
-	t.Require().Equal("test error", t.errHandler.LastError.Error())
+	t.Require().FailNow("ErrorHandler.Fatal never panicked")
 }
 
 func (t *CallbacksTestSuite) TestPostsCallbacks() {
