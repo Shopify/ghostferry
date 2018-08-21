@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"context"
 	"html/template"
 	"net/http"
 	"path/filepath"
@@ -128,7 +129,7 @@ func (this *ControlServer) HandleVerify(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	err := this.Verifier.StartInBackground()
+	err := this.Verifier.StartInBackground(context.Background())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

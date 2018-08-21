@@ -128,7 +128,7 @@ func (this *CopydbFerry) CreateDatabasesAndTables() error {
 }
 
 func (this *CopydbFerry) runIterativeVerifierAfterRowCopy(ctx context.Context) error {
-	err := this.verifier.(*ghostferry.IterativeVerifier).VerifyBeforeCutover()
+	err := this.verifier.(*ghostferry.IterativeVerifier).VerifyBeforeCutover(ctx)
 	return err
 }
 

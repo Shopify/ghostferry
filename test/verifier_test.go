@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -36,7 +37,7 @@ func (this *ChecksumTableVerifierTestSuite) SetupTest() {
 }
 
 func (this *ChecksumTableVerifierTestSuite) TestVerifyNoMatchWithEmptyTarget() {
-	err := this.verifier.StartInBackground()
+	err := this.verifier.StartInBackground(context.Background())
 	this.Require().Nil(err)
 	this.verifier.Wait()
 
@@ -46,7 +47,7 @@ func (this *ChecksumTableVerifierTestSuite) TestVerifyNoMatchWithEmptyTarget() {
 func (this *ChecksumTableVerifierTestSuite) TestVerifyNoMatchWithDifferentTargetData() {
 	testhelpers.SeedInitialData(this.Ferry.TargetDB, testhelpers.TestSchemaName, testhelpers.TestTable1Name, 1)
 
-	err := this.verifier.StartInBackground()
+	err := this.verifier.StartInBackground(context.Background())
 	this.Require().Nil(err)
 	this.verifier.Wait()
 	this.AssertVerifierNotMatched()
@@ -55,7 +56,7 @@ func (this *ChecksumTableVerifierTestSuite) TestVerifyNoMatchWithDifferentTarget
 func (this *ChecksumTableVerifierTestSuite) TestVerifyMatchAndRestartable() {
 	this.copyDataFromSourceToTarget()
 
-	err := this.verifier.StartInBackground()
+	err := this.verifier.StartInBackground(context.Background())
 	this.Require().Nil(err)
 	this.verifier.Wait()
 	this.AssertVerifierMatched()
@@ -63,7 +64,7 @@ func (this *ChecksumTableVerifierTestSuite) TestVerifyMatchAndRestartable() {
 	_, err = this.Ferry.TargetDB.Exec(fmt.Sprintf("DROP DATABASE %s", testhelpers.TestSchemaName))
 	this.Require().Nil(err)
 
-	err = this.verifier.StartInBackground()
+	err = this.verifier.StartInBackground(context.Background())
 	this.Require().Nil(err)
 	this.verifier.Wait()
 	this.AssertVerifierErrored("cannot find table gftest.test_table_1 during verification")
@@ -78,7 +79,7 @@ func (this *ChecksumTableVerifierTestSuite) TestVerifyMatchAndRestartable() {
 	_, err = this.Ferry.TargetDB.Exec(query, nil, "New Data")
 	this.Require().Nil(err)
 
-	err = this.verifier.StartInBackground()
+	err = this.verifier.StartInBackground(context.Background())
 	this.Require().Nil(err)
 	this.verifier.Wait()
 	this.AssertVerifierNotMatched()
@@ -91,7 +92,7 @@ func (this *ChecksumTableVerifierTestSuite) TestVerifyWithRewrites() {
 		testhelpers.TestTable1Name: "table2",
 	}
 
-	err := this.verifier.StartInBackground()
+	err := this.verifier.StartInBackground(context.Background())
 	this.Require().Nil(err)
 	this.verifier.Wait()
 	this.AssertVerifierMatched()

@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/Shopify/ghostferry"
@@ -37,7 +38,7 @@ func TestVerificationFailsDeletedRow(t *testing.T) {
 			err := iterativeVerifier.Initialize()
 			testhelpers.PanicIfError(err)
 
-			err = iterativeVerifier.VerifyBeforeCutover()
+			err = iterativeVerifier.VerifyBeforeCutover(context.Background())
 			testhelpers.PanicIfError(err)
 		},
 		BeforeStoppingBinlogStreaming: func(ferry *testhelpers.TestFerry) {
@@ -45,7 +46,7 @@ func TestVerificationFailsDeletedRow(t *testing.T) {
 		},
 		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry) {
 			deleteTestRowsToTriggerFailure(ferry)
-			result, err := iterativeVerifier.VerifyDuringCutover()
+			result, err := iterativeVerifier.VerifyDuringCutover(context.Background())
 			assert.Nil(t, err)
 			assert.False(t, result.DataCorrect)
 			assert.Regexp(t, "verification failed.*gftest.table1.*pks: (43)|(42)|(43,42)|(42,43)", result.Message)
@@ -80,7 +81,7 @@ func TestVerificationFailsUpdatedRow(t *testing.T) {
 			err := iterativeVerifier.Initialize()
 			testhelpers.PanicIfError(err)
 
-			err = iterativeVerifier.VerifyBeforeCutover()
+			err = iterativeVerifier.VerifyBeforeCutover(context.Background())
 			testhelpers.PanicIfError(err)
 		},
 		BeforeStoppingBinlogStreaming: func(ferry *testhelpers.TestFerry) {
@@ -88,7 +89,7 @@ func TestVerificationFailsUpdatedRow(t *testing.T) {
 		},
 		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry) {
 			modifyDataColumnInSourceDB(ferry)
-			result, err := iterativeVerifier.VerifyDuringCutover()
+			result, err := iterativeVerifier.VerifyDuringCutover(context.Background())
 			assert.Nil(t, err)
 			assert.False(t, result.DataCorrect)
 			assert.Regexp(t, "verification failed.*gftest.table1.*pks: (42)|(43)|(43,42)|(42,43)", result.Message)
@@ -126,7 +127,7 @@ func TestIgnoresColumns(t *testing.T) {
 			err := iterativeVerifier.Initialize()
 			testhelpers.PanicIfError(err)
 
-			err = iterativeVerifier.VerifyBeforeCutover()
+			err = iterativeVerifier.VerifyBeforeCutover(context.Background())
 			testhelpers.PanicIfError(err)
 		},
 		BeforeStoppingBinlogStreaming: func(ferry *testhelpers.TestFerry) {
@@ -135,7 +136,7 @@ func TestIgnoresColumns(t *testing.T) {
 		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry) {
 			modifyDataColumnInSourceDB(ferry)
 
-			result, err := iterativeVerifier.VerifyDuringCutover()
+			result, err := iterativeVerifier.VerifyDuringCutover(context.Background())
 			assert.Nil(t, err)
 			assert.True(t, result.DataCorrect)
 			assert.Equal(t, "", result.Message)
@@ -173,7 +174,7 @@ func TestIgnoresTables(t *testing.T) {
 			err := iterativeVerifier.Initialize()
 			testhelpers.PanicIfError(err)
 
-			err = iterativeVerifier.VerifyBeforeCutover()
+			err = iterativeVerifier.VerifyBeforeCutover(context.Background())
 			testhelpers.PanicIfError(err)
 		},
 		BeforeStoppingBinlogStreaming: func(ferry *testhelpers.TestFerry) {
@@ -181,7 +182,7 @@ func TestIgnoresTables(t *testing.T) {
 		},
 		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry) {
 			modifyAllRows(ferry)
-			result, err := iterativeVerifier.VerifyDuringCutover()
+			result, err := iterativeVerifier.VerifyDuringCutover(context.Background())
 			assert.Nil(t, err)
 			assert.True(t, result.DataCorrect)
 			ran = true
@@ -215,11 +216,11 @@ func TestVerificationPasses(t *testing.T) {
 			err := iterativeVerifier.Initialize()
 			testhelpers.PanicIfError(err)
 
-			err = iterativeVerifier.VerifyBeforeCutover()
+			err = iterativeVerifier.VerifyBeforeCutover(context.Background())
 			testhelpers.PanicIfError(err)
 		},
 		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry) {
-			result, err := iterativeVerifier.VerifyDuringCutover()
+			result, err := iterativeVerifier.VerifyDuringCutover(context.Background())
 			assert.Nil(t, err)
 			assert.True(t, result.DataCorrect)
 			ran = true

@@ -198,10 +198,10 @@ func (v *IterativeVerifier) Initialize() error {
 	return nil
 }
 
-func (v *IterativeVerifier) VerifyOnce() (VerificationResult, error) {
+func (v *IterativeVerifier) VerifyOnce(ctx context.Context) (VerificationResult, error) {
 	v.logger.Info("starting one-off verification of all tables")
 
-	err := v.iterateAllTables(func(pk uint64, tableSchema *schema.Table) error {
+	err := v.iterateAllTables(ctx, func(pk uint64, tableSchema *schema.Table) error {
 		return VerificationResult{
 			DataCorrect: false,
 			Message:     fmt.Sprintf("verification failed on table: %s for pk: %d", tableSchema.String(), pk),
@@ -218,14 +218,14 @@ func (v *IterativeVerifier) VerifyOnce() (VerificationResult, error) {
 	}
 }
 
-func (v *IterativeVerifier) VerifyBeforeCutover() error {
+func (v *IterativeVerifier) VerifyBeforeCutover(ctx context.Context) error {
 	v.logger.Info("starting pre-cutover verification")
 
 	v.logger.Debug("attaching binlog event listener")
 	v.BinlogStreamer.AddEventListener(v.binlogEventListener)
 
 	v.logger.Debug("verifying all tables")
-	err := v.iterateAllTables(func(pk uint64, tableSchema *schema.Table) error {
+	err := v.iterateAllTables(ctx, func(pk uint64, tableSchema *schema.Table) error {
 		v.reverifyStore.Add(ReverifyEntry{Pk: pk, Table: tableSchema})
 		return nil
 	})
@@ -236,7 +236,7 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 		// reverification at this point could have been caused by still
 		// ongoing writes and we therefore just re-add those rows to the
 		// store rather than failing the move prematurely.
-		err = v.reverifyUntilStoreIsSmallEnough(30)
+		err = v.reverifyUntilStoreIsSmallEnough(ctx, 30)
 	}
 
 	v.logger.Info("pre-cutover verification complete")
@@ -245,16 +245,16 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	return err
 }
 
-func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {
+func (v *IterativeVerifier) VerifyDuringCutover(ctx context.Context) (VerificationResult, error) {
 	v.logger.Info("starting verification during cutover")
 	v.verifyDuringCutoverStarted.Set(true)
-	result, err := v.verifyStore("iterative_verifier_during_cutover", []MetricTag{})
+	result, err := v.verifyStore(ctx, "iterative_verifier_during_cutover", []MetricTag{})
 	v.logger.Info("cutover verification complete")
 
 	return result, err
 }
 
-func (v *IterativeVerifier) StartInBackground() error {
+func (v *IterativeVerifier) StartInBackground(ctx context.Context) error {
 	if v.logger == nil {
 		return errors.New("Initialize() must be called before this")
 	}
@@ -284,7 +284,7 @@ func (v *IterativeVerifier) StartInBackground() error {
 			v.backgroundVerificationWg.Done()
 		}()
 
-		v.verificationResultAndStatus.VerificationResult, v.verificationErr = v.VerifyDuringCutover()
+		v.verificationResultAndStatus.VerificationResult, v.verificationErr = v.VerifyDuringCutover(ctx)
 		v.verificationResultAndStatus.DoneTime = time.Now()
 	}()
 
@@ -339,14 +339,14 @@ func (v *IterativeVerifier) GetHashes(db *sql.DB, schema, table, pkColumn string
 	return resultSet, nil
 }
 
-func (v *IterativeVerifier) reverifyUntilStoreIsSmallEnough(maxIterations int) error {
+func (v *IterativeVerifier) reverifyUntilStoreIsSmallEnough(ctx context.Context, maxIterations int) error {
 	var timeToVerify time.Duration
 
 	for iteration := 0; iteration < maxIterations; iteration++ {
 		before := v.reverifyStore.RowCount
 		start := time.Now()
 
-		_, err := v.verifyStore("reverification_before_cutover", []MetricTag{{"iteration", string(iteration)}})
+		_, err := v.verifyStore(ctx, "reverification_before_cutover", []MetricTag{{"iteration", string(iteration)}})
 		if err != nil {
 			return err
 		}
@@ -372,17 +372,17 @@ func (v *IterativeVerifier) reverifyUntilStoreIsSmallEnough(maxIterations int) e
 	return nil
 }
 
-func (v *IterativeVerifier) iterateAllTables(mismatchedPkFunc func(uint64, *schema.Table) error) error {
+func (v *IterativeVerifier) iterateAllTables(ctx context.Context, mismatchedPkFunc func(uint64, *schema.Table) error) error {
 	pool := &WorkerPool{
 		Concurrency: v.Concurrency,
-		Process: func(tableIndex int) (interface{}, error) {
+		Process: func(ctx context.Context, tableIndex int) (interface{}, error) {
 			table := v.Tables[tableIndex]
 
 			if v.tableIsIgnored(table) {
 				return nil, nil
 			}
 
-			err := v.iterateTableFingerprints(table, mismatchedPkFunc)
+			err := v.iterateTableFingerprints(ctx, table, mismatchedPkFunc)
 			if err != nil {
 				v.logger.WithError(err).WithField("table", table.String()).Error("error occured during table verification")
 			}
@@ -390,19 +390,19 @@ func (v *IterativeVerifier) iterateAllTables(mismatchedPkFunc func(uint64, *sche
 		},
 	}
 
-	_, err := pool.Run(len(v.Tables))
+	_, err := pool.Run(ctx, len(v.Tables))
 
 	return err
 }
 
-func (v *IterativeVerifier) iterateTableFingerprints(table *schema.Table, mismatchedPkFunc func(uint64, *schema.Table) error) error {
+func (v *IterativeVerifier) iterateTableFingerprints(ctx context.Context, table *schema.Table, mismatchedPkFunc func(uint64, *schema.Table) error) error {
 	// The cursor will stop iterating when it cannot find anymore rows,
 	// so it will not iterate until MaxUint64.
 	cursor := v.CursorConfig.NewCursorWithoutRowLock(table, math.MaxUint64)
 
 	// It only needs the PKs, not the entire row.
 	cursor.ColumnsToSelect = []string{fmt.Sprintf("`%s`", table.GetPKColumn(0).Name)}
-	return cursor.Each(context.TODO(), func(batch *RowBatch) error {
+	return cursor.Each(ctx, func(batch *RowBatch) error {
 		metrics.Count("RowEvent", int64(batch.Size()), []MetricTag{
 			MetricTag{"table", table.Name},
 			MetricTag{"source", "iterative_verifier_before_cutover"},
@@ -419,7 +419,7 @@ func (v *IterativeVerifier) iterateTableFingerprints(table *schema.Table, mismat
 			pks = append(pks, pk)
 		}
 
-		mismatchedPks, err := v.compareFingerprints(pks, batch.TableSchema())
+		mismatchedPks, err := v.compareFingerprints(ctx, pks, batch.TableSchema())
 		if err != nil {
 			v.logger.WithError(err).Errorf("failed to fingerprint table %s", batch.TableSchema().String())
 			return err
@@ -443,7 +443,7 @@ func (v *IterativeVerifier) iterateTableFingerprints(table *schema.Table, mismat
 	})
 }
 
-func (v *IterativeVerifier) verifyStore(sourceTag string, additionalTags []MetricTag) (VerificationResult, error) {
+func (v *IterativeVerifier) verifyStore(ctx context.Context, sourceTag string, additionalTags []MetricTag) (VerificationResult, error) {
 	allBatches := v.reverifyStore.FlushAndBatchByTable(int(v.CursorConfig.BatchSize))
 	v.logger.WithField("batches", len(allBatches)).Debug("reverifying")
 
@@ -455,7 +455,7 @@ func (v *IterativeVerifier) verifyStore(sourceTag string, additionalTags []Metri
 
 	pool := &WorkerPool{
 		Concurrency: v.Concurrency,
-		Process: func(reverifyBatchIndex int) (interface{}, error) {
+		Process: func(ctx context.Context, reverifyBatchIndex int) (interface{}, error) {
 			reverifyBatch := allBatches[reverifyBatchIndex]
 			table := v.TableSchemaCache.Get(reverifyBatch.Table.SchemaName, reverifyBatch.Table.TableName)
 
@@ -471,7 +471,7 @@ func (v *IterativeVerifier) verifyStore(sourceTag string, additionalTags []Metri
 				"len(pks)": len(reverifyBatch.Pks),
 			}).Debug("received pk batch to reverify")
 
-			verificationResult, mismatchedPks, err := v.reverifyPks(table, reverifyBatch.Pks)
+			verificationResult, mismatchedPks, err := v.reverifyPks(ctx, table, reverifyBatch.Pks)
 			resultAndErr := verificationResultAndError{verificationResult, err}
 
 			// If we haven't entered the cutover phase yet, then reverification failures
@@ -499,10 +499,12 @@ func (v *IterativeVerifier) verifyStore(sourceTag string, additionalTags []Metri
 		},
 	}
 
-	results, _ := pool.Run(len(allBatches))
+	results, err := pool.Run(ctx, len(allBatches))
+	if err == context.Canceled {
+		return VerificationResult{false, ""}, err
+	}
 
 	var result VerificationResult
-	var err error
 	for i := 0; i < v.Concurrency; i++ {
 		if results[i] == nil {
 			// This means the worker pool exited early and another goroutine
@@ -522,8 +524,8 @@ func (v *IterativeVerifier) verifyStore(sourceTag string, additionalTags []Metri
 	return result, err
 }
 
-func (v *IterativeVerifier) reverifyPks(table *schema.Table, pks []uint64) (VerificationResult, []uint64, error) {
-	mismatchedPks, err := v.compareFingerprints(pks, table)
+func (v *IterativeVerifier) reverifyPks(ctx context.Context, table *schema.Table, pks []uint64) (VerificationResult, []uint64, error) {
+	mismatchedPks, err := v.compareFingerprints(ctx, pks, table)
 	if err != nil {
 		return VerificationResult{}, mismatchedPks, err
 	}
@@ -590,7 +592,7 @@ func (v *IterativeVerifier) columnsToVerify(table *schema.Table) []schema.TableC
 	return columns
 }
 
-func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Table) ([]uint64, error) {
+func (v *IterativeVerifier) compareFingerprints(ctx context.Context, pks []uint64, table *schema.Table) ([]uint64, error) {
 	targetDb := table.Schema
 	if targetDbName, exists := v.DatabaseRewrites[targetDb]; exists {
 		targetDb = targetDbName
@@ -608,7 +610,7 @@ func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Tabl
 	var sourceErr error
 	go func() {
 		defer wg.Done()
-		sourceErr = WithRetries(5, 0, v.logger, "get fingerprints from source db", func() (err error) {
+		sourceErr = WithRetriesContext(ctx, 5, 0, v.logger, "get fingerprints from source db", func() (err error) {
 			sourceHashes, err = v.GetHashes(v.SourceDB, table.Schema, table.Name, table.GetPKColumn(0).Name, v.columnsToVerify(table), pks)
 			return
 		})
@@ -618,7 +620,7 @@ func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Tabl
 	var targetErr error
 	go func() {
 		defer wg.Done()
-		targetErr = WithRetries(5, 0, v.logger, "get fingerprints from target db", func() (err error) {
+		targetErr = WithRetriesContext(ctx, 5, 0, v.logger, "get fingerprints from target db", func() (err error) {
 			targetHashes, err = v.GetHashes(v.TargetDB, targetDb, targetTable, table.GetPKColumn(0).Name, v.columnsToVerify(table), pks)
 			return
 		})

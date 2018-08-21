@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -51,7 +52,7 @@ type Verifier interface {
 	//
 	// This method maybe called multiple times and it's up to the verifier
 	// to decide if it is possible to re-run the verification.
-	StartInBackground() error
+	StartInBackground(context.Context) error
 
 	// Wait for the verifier until it finishes verification after it was
 	// started with the StartInBackground.
@@ -91,7 +92,7 @@ type ChecksumTableVerifier struct {
 	wg     *sync.WaitGroup
 }
 
-func (v *ChecksumTableVerifier) Verify() (VerificationResult, error) {
+func (v *ChecksumTableVerifier) Verify(ctx context.Context) (VerificationResult, error) {
 	if v.logger == nil {
 		v.logger = logrus.WithField("tag", "checksum_verifier")
 	}
@@ -129,14 +130,14 @@ func (v *ChecksumTableVerifier) Verify() (VerificationResult, error) {
 		go func() {
 			defer wg.Done()
 			query := fmt.Sprintf("CHECKSUM TABLE %s EXTENDED", sourceTable)
-			sourceRow := v.SourceDB.QueryRow(query)
+			sourceRow := v.SourceDB.QueryRowContext(ctx, query)
 			sourceChecksum, sourceErr = v.fetchChecksumValueFromRow(sourceRow)
 		}()
 
 		go func() {
 			defer wg.Done()
 			query := fmt.Sprintf("CHECKSUM TABLE %s EXTENDED", targetTable)
-			targetRow := v.TargetDB.QueryRow(query)
+			targetRow := v.TargetDB.QueryRowContext(ctx, query)
 			targetChecksum, targetErr = v.fetchChecksumValueFromRow(targetRow)
 		}()
 		wg.Wait()
@@ -183,7 +184,7 @@ func (v *ChecksumTableVerifier) fetchChecksumValueFromRow(row *sql.Row) (int64, 
 	return checksum.Int64, nil
 }
 
-func (v *ChecksumTableVerifier) StartInBackground() error {
+func (v *ChecksumTableVerifier) StartInBackground(ctx context.Context) error {
 	if v.SourceDB == nil || v.TargetDB == nil {
 		return errors.New("must specify source and target db")
 	}
@@ -210,7 +211,7 @@ func (v *ChecksumTableVerifier) StartInBackground() error {
 	go func() {
 		defer v.wg.Done()
 
-		v.verificationResultAndStatus.VerificationResult, v.verificationErr = v.Verify()
+		v.verificationResultAndStatus.VerificationResult, v.verificationErr = v.Verify(ctx)
 		v.verificationResultAndStatus.DoneTime = time.Now()
 		v.started.Set(false)
 	}()

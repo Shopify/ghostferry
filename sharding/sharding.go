@@ -176,7 +176,7 @@ func (r *ShardingFerry) Run() {
 	r.Ferry.WaitUntilRowCopyIsComplete(context.TODO())
 
 	metrics.Measure("VerifyBeforeCutover", nil, 1.0, func() {
-		err := r.verifier.VerifyBeforeCutover()
+		err := r.verifier.VerifyBeforeCutover(context.TODO())
 		if err != nil {
 			r.logger.WithField("error", err).Errorf("pre-cutover verification encountered an error, aborting run")
 			r.Ferry.ErrorHandler.Fatal("sharding", err)
@@ -221,7 +221,7 @@ func (r *ShardingFerry) Run() {
 
 	var verificationResult ghostferry.VerificationResult
 	metrics.Measure("VerifyCutover", nil, 1.0, func() {
-		verificationResult, err = r.verifier.VerifyDuringCutover()
+		verificationResult, err = r.verifier.VerifyDuringCutover(context.TODO())
 	})
 	if err != nil {
 		r.logger.WithField("error", err).Errorf("verification encountered an error, aborting run")
@@ -279,7 +279,7 @@ func (r *ShardingFerry) deltaCopyJoinedTables() error {
 		return err
 	}
 
-	verificationResult, err := verifier.VerifyOnce()
+	verificationResult, err := verifier.VerifyOnce(context.TODO())
 	if err != nil {
 		return err
 	}
@@ -340,7 +340,7 @@ func (r *ShardingFerry) copyPrimaryKeyTables() error {
 		return err
 	}
 
-	verificationResult, err := verifier.VerifyOnce()
+	verificationResult, err := verifier.VerifyOnce(context.TODO())
 	if err != nil {
 		return err
 	} else if !verificationResult.DataCorrect {

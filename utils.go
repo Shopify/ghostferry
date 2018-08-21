@@ -80,13 +80,13 @@ func (a *AtomicBoolean) Get() bool {
 
 type WorkerPool struct {
 	Concurrency int
-	Process     func(int) (interface{}, error)
+	Process     func(context.Context, int) (interface{}, error)
 }
 
 // Returns a list of results of the size same as the concurrency number.
 // Returns the first error that occurs during the run. Also as soon as
 // a single worker errors, all workers terminates.
-func (p *WorkerPool) Run(n int) ([]interface{}, error) {
+func (p *WorkerPool) Run(ctx context.Context, n int) ([]interface{}, error) {
 	results := make([]interface{}, p.Concurrency)
 	errCh := make(chan error, p.Concurrency)
 	workQueue := make(chan int)
@@ -97,17 +97,39 @@ func (p *WorkerPool) Run(n int) ([]interface{}, error) {
 	for j := 0; j < p.Concurrency; j++ {
 		go func(j int) {
 			defer wg.Done()
+			for {
+				var result interface{}
+				var err error
 
-			for workIndex := range workQueue {
-				result, err := p.Process(workIndex)
-				results[j] = result
-				if err != nil {
-					errCh <- err
+				select {
+				case <-ctx.Done():
 					return
+				case workIndex, hasMoreWork := <-workQueue:
+					if !hasMoreWork {
+						return
+					}
+
+					result, err = p.Process(ctx, workIndex)
+					if err == context.Canceled {
+						return
+					}
+
+					results[j] = result
+					if err != nil {
+						select {
+						case <-ctx.Done():
+							return
+						case errCh <- err:
+						}
+					}
+
 				}
 			}
 
-			errCh <- nil
+			select {
+			case <-ctx.Done():
+			case errCh <- nil:
+			}
 		}(j)
 	}
 
@@ -122,8 +144,13 @@ loop:
 			if err != nil {
 				break loop
 			}
-		default:
-			time.Sleep(500 * time.Millisecond)
+		case <-ctx.Done():
+			// Don't close the work queue and errCh in this case If errCh is closed,
+			// a panic may occur as one of the workers try to send the error down the
+			// channel.  It's better to leave the channel open and use select inside
+			// the worker to ensure they quit in the event of a context cancellation.
+			return []interface{}{}, err
+		case <-time.After(500 * time.Millisecond):
 		}
 	}
 

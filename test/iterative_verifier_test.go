@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"sort"
@@ -61,10 +62,10 @@ func (t *IterativeVerifierTestSuite) TearDownTest() {
 }
 
 func (t *IterativeVerifierTestSuite) TestNothingToVerify() {
-	err := t.verifier.VerifyBeforeCutover()
+	err := t.verifier.VerifyBeforeCutover(context.Background())
 	t.Require().Nil(err)
 
-	result, err := t.verifier.VerifyDuringCutover()
+	result, err := t.verifier.VerifyDuringCutover(context.Background())
 	t.Require().Nil(err)
 	t.Require().True(result.DataCorrect)
 	t.Require().Equal("", result.Message)
@@ -77,7 +78,7 @@ func (t *IterativeVerifierTestSuite) TestVerifyOnceWithIgnoredColumns() {
 	t.InsertRowInDb(42, "foo", t.Ferry.SourceDB)
 	t.InsertRowInDb(42, "bar", t.Ferry.TargetDB)
 
-	result, err := t.verifier.VerifyOnce()
+	result, err := t.verifier.VerifyOnce(context.Background())
 	t.Require().NotNil(result)
 	t.Require().Nil(err)
 	t.Require().True(result.DataCorrect)
@@ -88,7 +89,7 @@ func (t *IterativeVerifierTestSuite) TestVerifyOnceFails() {
 	t.InsertRowInDb(42, "foo", t.Ferry.SourceDB)
 	t.InsertRowInDb(42, "bar", t.Ferry.TargetDB)
 
-	result, err := t.verifier.VerifyOnce()
+	result, err := t.verifier.VerifyOnce(context.Background())
 	t.Require().NotNil(result)
 	t.Require().Nil(err)
 	t.Require().False(result.DataCorrect)
@@ -99,7 +100,7 @@ func (t *IterativeVerifierTestSuite) TestVerifyCompressedOnceFails() {
 	t.InsertCompressedRowInDb(42, testhelpers.TestCompressedData1, t.Ferry.SourceDB)
 	t.InsertCompressedRowInDb(42, testhelpers.TestCompressedData2, t.Ferry.TargetDB)
 
-	result, err := t.verifier.VerifyOnce()
+	result, err := t.verifier.VerifyOnce(context.Background())
 	t.Require().NotNil(result)
 	t.Require().Nil(err)
 	t.Require().False(result.DataCorrect)
@@ -113,7 +114,7 @@ func (t *IterativeVerifierTestSuite) TestVerifyOncePass() {
 	t.InsertRowInDb(42, "foo", t.Ferry.SourceDB)
 	t.InsertRowInDb(42, "foo", t.Ferry.TargetDB)
 
-	result, err := t.verifier.VerifyOnce()
+	result, err := t.verifier.VerifyOnce(context.Background())
 	t.Require().NotNil(result)
 	t.Require().Nil(err)
 	t.Require().True(result.DataCorrect)
@@ -124,7 +125,7 @@ func (t *IterativeVerifierTestSuite) TestVerifyCompressedOncePass() {
 	t.InsertCompressedRowInDb(42, testhelpers.TestCompressedData1, t.Ferry.SourceDB)
 	t.InsertCompressedRowInDb(42, testhelpers.TestCompressedData1, t.Ferry.TargetDB)
 
-	result, err := t.verifier.VerifyOnce()
+	result, err := t.verifier.VerifyOnce(context.Background())
 	t.Require().NotNil(result)
 	t.Require().Nil(err)
 	t.Require().True(result.DataCorrect)
@@ -137,7 +138,7 @@ func (t *IterativeVerifierTestSuite) TestVerifyDifferentCompressedSameDecompress
 	t.InsertCompressedRowInDb(43, testhelpers.TestCompressedData3, t.Ferry.SourceDB)
 	t.InsertCompressedRowInDb(43, testhelpers.TestCompressedData4, t.Ferry.TargetDB)
 
-	result, err := t.verifier.VerifyOnce()
+	result, err := t.verifier.VerifyOnce(context.Background())
 	t.Require().NotNil(result)
 	t.Require().Nil(err)
 	t.Require().True(result.DataCorrect)
@@ -148,10 +149,10 @@ func (t *IterativeVerifierTestSuite) TestBeforeCutoverFailuresFailAgainDuringCut
 	t.InsertRowInDb(42, "foo", t.Ferry.SourceDB)
 	t.InsertRowInDb(42, "bar", t.Ferry.TargetDB)
 
-	err := t.verifier.VerifyBeforeCutover()
+	err := t.verifier.VerifyBeforeCutover(context.Background())
 	t.Require().Nil(err)
 
-	result, err := t.verifier.VerifyDuringCutover()
+	result, err := t.verifier.VerifyDuringCutover(context.Background())
 	t.Require().Nil(err)
 	t.Require().False(result.DataCorrect)
 	t.Require().Equal("verification failed on table: gftest.test_table_1 for pks: 42", result.Message)
@@ -161,10 +162,10 @@ func (t *IterativeVerifierTestSuite) TestBeforeCutoverCompressionFailuresFailAga
 	t.InsertCompressedRowInDb(42, testhelpers.TestCompressedData1, t.Ferry.SourceDB)
 	t.InsertCompressedRowInDb(42, testhelpers.TestCompressedData2, t.Ferry.TargetDB)
 
-	err := t.verifier.VerifyBeforeCutover()
+	err := t.verifier.VerifyBeforeCutover(context.Background())
 	t.Require().Nil(err)
 
-	result, err := t.verifier.VerifyDuringCutover()
+	result, err := t.verifier.VerifyDuringCutover(context.Background())
 	t.Require().Nil(err)
 	t.Require().False(result.DataCorrect)
 	t.Require().Equal(fmt.Sprintf("verification failed on table: %s.%s for pks: %s", "gftest", testhelpers.TestCompressedTable1Name, "42"), result.Message)
@@ -176,10 +177,10 @@ func (t *IterativeVerifierTestSuite) TestBeforeCutoverDifferentCompressedSameDec
 	t.InsertCompressedRowInDb(43, testhelpers.TestCompressedData3, t.Ferry.SourceDB)
 	t.InsertCompressedRowInDb(43, testhelpers.TestCompressedData4, t.Ferry.TargetDB)
 
-	err := t.verifier.VerifyBeforeCutover()
+	err := t.verifier.VerifyBeforeCutover(context.Background())
 	t.Require().Nil(err)
 
-	result, err := t.verifier.VerifyDuringCutover()
+	result, err := t.verifier.VerifyDuringCutover(context.Background())
 	t.Require().Nil(err)
 	t.Require().True(result.DataCorrect)
 	t.Require().Equal("", result.Message)
@@ -190,7 +191,7 @@ func (t *IterativeVerifierTestSuite) TestErrorsIfMaxDowntimeIsSurpassed() {
 	t.InsertRowInDb(42, "bar", t.Ferry.TargetDB)
 
 	t.verifier.MaxExpectedDowntime = 1 * time.Nanosecond
-	err := t.verifier.VerifyBeforeCutover()
+	err := t.verifier.VerifyBeforeCutover(context.Background())
 	t.Require().Regexp("cutover stage verification will not complete within max downtime duration \\(took .*\\)", err.Error())
 }
 
@@ -198,12 +199,12 @@ func (t *IterativeVerifierTestSuite) TestBeforeCutoverFailuresPassDuringCutover(
 	t.InsertRowInDb(42, "foo", t.Ferry.SourceDB)
 	t.InsertRowInDb(42, "bar", t.Ferry.TargetDB)
 
-	err := t.verifier.VerifyBeforeCutover()
+	err := t.verifier.VerifyBeforeCutover(context.Background())
 	t.Require().Nil(err)
 
 	t.UpdateRowInDb(42, "foo", t.Ferry.TargetDB)
 
-	result, err := t.verifier.VerifyDuringCutover()
+	result, err := t.verifier.VerifyDuringCutover(context.Background())
 	t.Require().Nil(err)
 	t.Require().True(result.DataCorrect)
 	t.Require().Equal("", result.Message)

@@ -156,7 +156,7 @@ func (this *IntegrationTestCase) Teardown() {
 }
 
 func (this *IntegrationTestCase) verifyTableChecksum() (ghostferry.VerificationResult, error) {
-	return this.Verifier.Verify()
+	return this.Verifier.Verify(context.Background())
 }
 
 func (this *IntegrationTestCase) callCustomAction(f func(*TestFerry)) {
