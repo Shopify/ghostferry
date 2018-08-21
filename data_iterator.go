@@ -166,7 +166,6 @@ func (d *DataIterator) Run() {
 	tablesWithData, emptyTables, err := MaxPrimaryKeys(d.DB, d.Tables, d.logger)
 	if err != nil {
 		d.ErrorHandler.Fatal("data_iterator", err)
-		return
 	}
 
 	for _, table := range emptyTables {
@@ -234,7 +233,6 @@ func (d *DataIterator) Run() {
 				if err != nil {
 					logger.WithError(err).Error("failed to iterate table")
 					d.ErrorHandler.Fatal("data_iterator", err)
-					return
 				}
 
 				logger.Debug("table iteration completed")

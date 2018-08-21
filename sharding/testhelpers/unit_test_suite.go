@@ -138,17 +138,17 @@ func (t *ShardingUnitTestSuite) setupShardingFerry() {
 
 		PrimaryKeyTables: []string{primaryKeyTable},
 
-		CutoverLock: sharding.HTTPCallback{
+		CutoverLock: ghostferry.HTTPCallback{
 			URI:     fmt.Sprintf("%s/lock", t.server.URL),
 			Payload: "test_lock",
 		},
 
-		CutoverUnlock: sharding.HTTPCallback{
+		CutoverUnlock: ghostferry.HTTPCallback{
 			URI:     fmt.Sprintf("%s/unlock", t.server.URL),
 			Payload: "test_unlock",
 		},
 
-		ErrorCallback: sharding.HTTPCallback{
+		ErrorCallback: ghostferry.HTTPCallback{
 			URI: fmt.Sprintf("%s/error", t.server.URL),
 		},
 	}

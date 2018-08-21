@@ -398,7 +398,6 @@ func (f *Ferry) FlushBinlogAndStopStreaming() {
 		err = f.WaitUntilReplicaIsCaughtUpToMaster.Wait()
 		if err != nil {
 			f.ErrorHandler.Fatal("wait_replica", err)
-			return
 		}
 	}
 

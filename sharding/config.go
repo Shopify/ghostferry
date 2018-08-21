@@ -17,9 +17,9 @@ type Config struct {
 	RunFerryFromReplica           bool
 
 	StatsDAddress string
-	CutoverLock   HTTPCallback
-	CutoverUnlock HTTPCallback
-	ErrorCallback HTTPCallback
+	CutoverLock   ghostferry.HTTPCallback
+	CutoverUnlock ghostferry.HTTPCallback
+	ErrorCallback ghostferry.HTTPCallback
 
 	JoinedTables               map[string][]JoinTable
 	IgnoredTables              []string

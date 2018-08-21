@@ -1,4 +1,4 @@
-package sharding
+package ghostferry
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ type HTTPCallback struct {
 	Payload string
 }
 
-func (h *HTTPCallback) Post(client *http.Client) error {
+func (h HTTPCallback) Post(client *http.Client) error {
 	if h.URI == "" {
 		return nil
 	}
