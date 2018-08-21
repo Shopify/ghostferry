@@ -1,9 +1,13 @@
 package copydb
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Shopify/ghostferry"
@@ -123,48 +127,70 @@ func (this *CopydbFerry) CreateDatabasesAndTables() error {
 	return nil
 }
 
-func (this *CopydbFerry) runIterativeVerifierAfterRowCopy() error {
+func (this *CopydbFerry) runIterativeVerifierAfterRowCopy(ctx context.Context) error {
 	err := this.verifier.(*ghostferry.IterativeVerifier).VerifyBeforeCutover()
 	return err
 }
 
 func (this *CopydbFerry) Run() {
-	serverWG := &sync.WaitGroup{}
-	serverWG.Add(1)
-	go this.controlServer.Run(serverWG)
+	ctx, shutdown := context.WithCancel(context.Background())
+
+	supportingServicesWg := &sync.WaitGroup{}
+	supportingServicesWg.Add(2)
+
+	go this.controlServer.Run(supportingServicesWg)
+	go func() {
+		defer supportingServicesWg.Done()
+
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
+
+		select {
+		case <-ctx.Done():
+		case s := <-c:
+			logrus.WithField("signal", s.String()).Warn("shutdown signal received")
+			shutdown()
+			this.controlServer.Shutdown()
+		}
+	}()
 
 	copyWG := &sync.WaitGroup{}
 	copyWG.Add(1)
 	go func() {
 		defer copyWG.Done()
-		this.Ferry.Run()
+		this.Ferry.Run(ctx)
 	}()
 
 	// If AutomaticCutover == false, it will pause below the following line
-	this.Ferry.WaitUntilRowCopyIsComplete()
+	this.Ferry.WaitUntilRowCopyIsComplete(ctx)
 
 	// This waits until we're pretty close in the binlog before making the
 	// source readonly. This is to avoid excessive downtime caused by the
 	// binlog streamer catching up.
-	this.Ferry.WaitUntilBinlogStreamerCatchesUp()
+	this.Ferry.WaitUntilBinlogStreamerCatchesUp(ctx)
 
 	// This is when the source database should be set as read only, whether it
 	// is done in application level or the database level.
 	// Must ensure that all transactions are flushed to the binlog before
 	// proceeding.
-	this.Ferry.FlushBinlogAndStopStreaming()
+	this.Ferry.FlushBinlogAndStopStreaming(ctx)
 
 	// After waiting for the binlog streamer to stop, the source and the target
 	// should be identical.
 	copyWG.Wait()
 
-	logrus.Info("ghostferry main operations has terminated but the control server remains online")
-	logrus.Info("press CTRL+C or send an interrupt to stop the control server and end this process")
+	if ctx.Err() == nil {
+		logrus.Info("ghostferry main operations has terminated but the control server remains online")
+		logrus.Info("press CTRL+C or send an interrupt to stop the control server and end this process")
+	} else if ctx.Err() == context.Canceled {
+		logrus.Info("copydb run was canceled via signals")
+	}
 	// This is where you cutover from using the source database to
 	// using the target database.
 
-	// Work is done, the process will run the web server until killed.
-	serverWG.Wait()
+	// Work is done, the process will run the web server until it is shutdown
+	// via SIGTERM/SIGINT.
+	supportingServicesWg.Wait()
 }
 
 func (this *CopydbFerry) ShutdownControlServer() error {

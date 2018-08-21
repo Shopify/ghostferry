@@ -1,6 +1,7 @@
 package sharding
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -169,10 +170,10 @@ func (r *ShardingFerry) Run() {
 	copyWG.Add(1)
 	go func() {
 		defer copyWG.Done()
-		r.Ferry.Run()
+		r.Ferry.Run(context.TODO())
 	}()
 
-	r.Ferry.WaitUntilRowCopyIsComplete()
+	r.Ferry.WaitUntilRowCopyIsComplete(context.TODO())
 
 	metrics.Measure("VerifyBeforeCutover", nil, 1.0, func() {
 		err := r.verifier.VerifyBeforeCutover()
@@ -182,9 +183,9 @@ func (r *ShardingFerry) Run() {
 		}
 	})
 
-	ghostferry.WaitForThrottle(r.Ferry.Throttler)
+	ghostferry.WaitForThrottle(context.TODO(), r.Ferry.Throttler)
 
-	r.Ferry.WaitUntilBinlogStreamerCatchesUp()
+	r.Ferry.WaitUntilBinlogStreamerCatchesUp(context.TODO())
 
 	r.AbortIfTargetDbNoLongerWriteable()
 
@@ -204,7 +205,7 @@ func (r *ShardingFerry) Run() {
 
 	r.Ferry.Throttler.SetDisabled(true)
 
-	r.Ferry.FlushBinlogAndStopStreaming()
+	r.Ferry.FlushBinlogAndStopStreaming(context.TODO())
 	copyWG.Wait()
 
 	// Joined tables cannot be easily monitored for changes in the binlog stream

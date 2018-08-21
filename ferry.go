@@ -26,6 +26,7 @@ const (
 	StateWaitingForCutover = "wait-for-cutover"
 	StateCutover           = "cutover"
 	StateDone              = "done"
+	StateCanceled          = "canceled"
 )
 
 func quoteField(field string) string {
@@ -160,7 +161,9 @@ func (f *Ferry) Initialize() (err error) {
 
 		var zeroPosition siddontangmysql.Position
 		// Ensures the query to check for position is executable.
-		_, err = f.WaitUntilReplicaIsCaughtUpToMaster.IsCaughtUp(zeroPosition, 1)
+		// Don't need a cancelable context as this is in the initialize phase,
+		// where no goroutines have really spawned.
+		_, err = f.WaitUntilReplicaIsCaughtUpToMaster.IsCaughtUp(context.Background(), zeroPosition, 1)
 		if err != nil {
 			f.logger.WithError(err).Error("cannot check replicated master position on the source database")
 			return err
@@ -292,11 +295,11 @@ func (f *Ferry) Start() error {
 
 // Spawns the background tasks that actually perform the run.
 // Wait for the background tasks to finish.
-func (f *Ferry) Run() {
+func (f *Ferry) Run(ctx context.Context) {
 	f.logger.Info("starting ferry run")
 	f.OverallState = StateCopying
 
-	ctx, shutdown := context.WithCancel(context.Background())
+	throttlerCtx, throttlerShutdown := context.WithCancel(ctx)
 
 	handleError := func(name string, err error) {
 		if err != nil && err != context.Canceled {
@@ -309,7 +312,7 @@ func (f *Ferry) Run() {
 
 	go func() {
 		defer supportingServicesWg.Done()
-		handleError("throttler", f.Throttler.Run(ctx))
+		handleError("throttler", f.Throttler.Run(throttlerCtx))
 	}()
 
 	binlogWg := &sync.WaitGroup{}
@@ -317,13 +320,13 @@ func (f *Ferry) Run() {
 
 	go func() {
 		defer binlogWg.Done()
-		f.BinlogWriter.Run()
+		f.BinlogWriter.Run(ctx)
 	}()
 
 	go func() {
 		defer binlogWg.Done()
 
-		f.BinlogStreamer.Run()
+		f.BinlogStreamer.Run(ctx)
 		f.BinlogWriter.Stop()
 	}()
 
@@ -332,18 +335,18 @@ func (f *Ferry) Run() {
 
 	go func() {
 		defer dataIteratorWg.Done()
-		f.DataIterator.Run()
+		f.DataIterator.Run(ctx)
 	}()
 
 	dataIteratorWg.Wait()
 
 	f.logger.Info("data copy is complete, waiting for cutover")
 	f.OverallState = StateWaitingForCutover
-	f.waitUntilAutomaticCutoverIsTrue()
+	f.waitUntilAutomaticCutoverIsTrue(ctx)
 
 	f.logger.Info("entering cutover phase, notifying caller that row copy is complete")
 	f.OverallState = StateCutover
-	f.notifyRowCopyComplete()
+	f.notifyRowCopyComplete(ctx)
 
 	binlogWg.Wait()
 
@@ -351,7 +354,12 @@ func (f *Ferry) Run() {
 	f.OverallState = StateDone
 	f.DoneTime = time.Now()
 
-	shutdown()
+	if ctx.Err() != nil {
+		f.logger.Warn("ghostferry run was canceled, certain log lines may be inaccurate")
+		f.OverallState = StateCanceled
+	}
+
+	throttlerShutdown()
 	supportingServicesWg.Wait()
 }
 
@@ -369,19 +377,26 @@ func (f *Ferry) RunStandaloneDataCopy(tables []*schema.Table) error {
 	dataIterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
 	f.logger.WithField("tables", tables).Info("starting standalone table copy")
 
-	dataIterator.Run()
+	dataIterator.Run(context.TODO())
 
 	return nil
 }
 
 // Call this method and perform the cutover after this method returns.
-func (f *Ferry) WaitUntilRowCopyIsComplete() {
-	<-f.rowCopyCompleteCh
+func (f *Ferry) WaitUntilRowCopyIsComplete(ctx context.Context) {
+	select {
+	case <-ctx.Done():
+	case <-f.rowCopyCompleteCh:
+	}
 }
 
-func (f *Ferry) WaitUntilBinlogStreamerCatchesUp() {
+func (f *Ferry) WaitUntilBinlogStreamerCatchesUp(ctx context.Context) {
 	for !f.BinlogStreamer.IsAlmostCaughtUp() {
-		time.Sleep(500 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 }
 
@@ -391,10 +406,17 @@ func (f *Ferry) WaitUntilBinlogStreamerCatchesUp() {
 //
 // This method will actually not shutdown the BinlogStreamer immediately.
 // You will know that the BinlogStreamer finished when .Run() returns.
-func (f *Ferry) FlushBinlogAndStopStreaming() {
+func (f *Ferry) FlushBinlogAndStopStreaming(ctx context.Context) {
 	if f.WaitUntilReplicaIsCaughtUpToMaster != nil {
 		isReplica, err := CheckDbIsAReplica(f.WaitUntilReplicaIsCaughtUpToMaster.MasterDB)
 		if err != nil {
+			// TODO: this method is usually called in the main thread. panicking
+			// here is different from the style where only Run panics (as it runs
+			// in a separate thread).
+			//
+			// Perhaps it's also a better idea to return errors in all situations
+			// so the caller can more clearly deal with the errors as oppose to
+			// just panicking.
 			f.ErrorHandler.Fatal("wait_replica", err)
 		}
 
@@ -408,24 +430,30 @@ func (f *Ferry) FlushBinlogAndStopStreaming() {
 			f.ErrorHandler.Fatal("wait_replica", err)
 		}
 
-		err = f.WaitUntilReplicaIsCaughtUpToMaster.Wait()
 		if err != nil {
 			f.ErrorHandler.Fatal("wait_replica", err)
 		}
 	}
 
-	f.BinlogStreamer.FlushAndStop()
+	f.BinlogStreamer.FlushAndStop(ctx)
 }
 
-func (f *Ferry) waitUntilAutomaticCutoverIsTrue() {
+func (f *Ferry) waitUntilAutomaticCutoverIsTrue(ctx context.Context) {
 	for !f.AutomaticCutover {
-		time.Sleep(1 * time.Second)
-		f.logger.Debug("waiting for AutomaticCutover to become true before signaling for row copy complete")
+		select {
+		case <-time.After(1 * time.Second):
+			f.logger.Debug("waiting for AutomaticCutover to become true before signaling for row copy complete")
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
-func (f *Ferry) notifyRowCopyComplete() {
-	f.rowCopyCompleteCh <- struct{}{}
+func (f *Ferry) notifyRowCopyComplete(ctx context.Context) {
+	select {
+	case <-ctx.Done():
+	case f.rowCopyCompleteCh <- struct{}{}:
+	}
 }
 
 func (f *Ferry) checkConnection(dbname string, db *sql.DB) error {

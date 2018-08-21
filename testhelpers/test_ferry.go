@@ -1,6 +1,7 @@
 package testhelpers
 
 import (
+	"context"
 	"os"
 	"strconv"
 
@@ -10,13 +11,13 @@ import (
 type TestFerry struct {
 	*ghostferry.Ferry
 
-	BeforeBatchCopyListener   func(batch *ghostferry.RowBatch) error
-	BeforeBinlogApplyListener func(events []ghostferry.DMLEvent) error
-	BeforeRowCopyDoneListener func() error
+	BeforeBatchCopyListener   func(ctx context.Context, batch *ghostferry.RowBatch) error
+	BeforeBinlogApplyListener func(ctx context.Context, events []ghostferry.DMLEvent) error
+	BeforeRowCopyDoneListener func(ctx context.Context) error
 
-	AfterBatchCopyListener   func(batch *ghostferry.RowBatch) error
-	AfterBinlogApplyListener func(events []ghostferry.DMLEvent) error
-	AfterRowCopyDoneListener func() error
+	AfterBatchCopyListener   func(ctx context.Context, batch *ghostferry.RowBatch) error
+	AfterBinlogApplyListener func(ctx context.Context, events []ghostferry.DMLEvent) error
+	AfterRowCopyDoneListener func(ctx context.Context) error
 }
 
 var (
@@ -111,7 +112,7 @@ func (this *TestFerry) Start() error {
 }
 
 func (this *TestFerry) Run() {
-	this.Ferry.Run()
+	this.Ferry.Run(context.TODO())
 }
 
 func getPortFromEnv(env string, defaultVal uint64) uint64 {

@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -36,7 +37,7 @@ func (t *ThrottlerTestSuite) TestEnableDisable() {
 
 	t.throttler.SetDisabled(true)
 	t.Require().True(t.throttler.Disabled())
-	ghostferry.WaitForThrottle(t.throttler)
+	ghostferry.WaitForThrottle(context.Background(), t.throttler)
 
 	t.throttler.SetDisabled(false)
 	t.Require().False(t.throttler.Disabled())
@@ -44,7 +45,7 @@ func (t *ThrottlerTestSuite) TestEnableDisable() {
 	done := make(chan bool)
 	resumed := false
 	go func() {
-		ghostferry.WaitForThrottle(t.throttler)
+		ghostferry.WaitForThrottle(context.Background(), t.throttler)
 		resumed = true
 		done <- true
 	}()

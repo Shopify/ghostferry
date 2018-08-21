@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	"container/ring"
+	"context"
 	"database/sql"
 	"sync"
 	"time"
@@ -148,8 +149,8 @@ type DataIterator struct {
 
 	CurrentState *DataIteratorState
 
-	batchListeners []func(*RowBatch) error
-	doneListeners  []func() error
+	batchListeners []func(context.Context, *RowBatch) error
+	doneListeners  []func(context.Context) error
 	logger         *logrus.Entry
 }
 
@@ -160,7 +161,11 @@ func (d *DataIterator) Initialize() error {
 	return nil
 }
 
-func (d *DataIterator) Run() {
+func (d *DataIterator) Run(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
+
 	d.logger.WithField("tablesCount", len(d.Tables)).Info("starting data iterator run")
 
 	tablesWithData, emptyTables, err := MaxPrimaryKeys(d.DB, d.Tables, d.logger)
@@ -185,7 +190,13 @@ func (d *DataIterator) Run() {
 			defer wg.Done()
 
 			for {
-				table, ok := <-tablesQueue
+				var table *schema.Table
+				var ok bool
+				select {
+				case table, ok = <-tablesQueue:
+				case <-ctx.Done():
+					logrus.WithField("tag", "table_iterator").Info("cancellation received, terminating goroutine abruptly")
+				}
 				if !ok {
 					break
 				}
@@ -193,14 +204,14 @@ func (d *DataIterator) Run() {
 				logger := d.logger.WithField("table", table.String())
 
 				cursor := d.CursorConfig.NewCursor(table, d.CurrentState.TargetPrimaryKeys()[table.String()])
-				err := cursor.Each(func(batch *RowBatch) error {
+				err := cursor.Each(ctx, func(batch *RowBatch) error {
 					metrics.Count("RowEvent", int64(batch.Size()), []MetricTag{
 						MetricTag{"table", table.Name},
 						MetricTag{"source", "table"},
 					}, 1.0)
 
 					for _, listener := range d.batchListeners {
-						err := listener(batch)
+						err := listener(ctx, batch)
 						if err != nil {
 							logger.WithError(err).Error("failed to process row batch with listeners")
 							return err
@@ -230,6 +241,11 @@ func (d *DataIterator) Run() {
 					return nil
 				})
 
+				if err == context.Canceled {
+					logger.Info("cancellation received, terminating goroutine abruptly")
+					return
+				}
+
 				if err != nil {
 					logger.WithError(err).Error("failed to iterate table")
 					d.ErrorHandler.Fatal("data_iterator", err)
@@ -242,7 +258,12 @@ func (d *DataIterator) Run() {
 	}
 
 	for table, _ := range tablesWithData {
-		tablesQueue <- table
+		select {
+		case <-ctx.Done():
+			d.logger.Info("cancellation received, terminating goroutine abruptly")
+			return
+		case tablesQueue <- table:
+		}
 	}
 
 	d.logger.Info("done queueing tables to be iterated, closing table channel")
@@ -250,14 +271,14 @@ func (d *DataIterator) Run() {
 
 	wg.Wait()
 	for _, listener := range d.doneListeners {
-		listener()
+		listener(ctx)
 	}
 }
 
-func (d *DataIterator) AddBatchListener(listener func(*RowBatch) error) {
+func (d *DataIterator) AddBatchListener(listener func(context.Context, *RowBatch) error) {
 	d.batchListeners = append(d.batchListeners, listener)
 }
 
-func (d *DataIterator) AddDoneListener(listener func() error) {
+func (d *DataIterator) AddDoneListener(listener func(context.Context) error) {
 	d.doneListeners = append(d.doneListeners, listener)
 }

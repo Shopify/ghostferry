@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"math"
@@ -53,13 +54,13 @@ type WaitUntilReplicaIsCaughtUpToMaster struct {
 	logger *logrus.Entry
 }
 
-func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUp(targetMasterPos mysql.Position, retries int) (bool, error) {
+func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUp(ctx context.Context, targetMasterPos mysql.Position, retries int) (bool, error) {
 	if w.logger == nil {
 		w.logger = logrus.WithField("tag", "wait_replica")
 	}
 
 	var currentReplicatedMasterPos mysql.Position
-	err := WithRetries(retries, 600*time.Millisecond, w.logger, "read replicated master binlog position", func() error {
+	err := WithRetriesContext(ctx, retries, 600*time.Millisecond, w.logger, "read replicated master binlog position", func() error {
 		var err error
 		currentReplicatedMasterPos, err = w.ReplicatedMasterPositionFetcher.Current(w.ReplicaDB)
 		return err
@@ -78,7 +79,7 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUp(targetMasterPos mysql.Po
 	return false, nil
 }
 
-func (w *WaitUntilReplicaIsCaughtUpToMaster) Wait() error {
+func (w *WaitUntilReplicaIsCaughtUpToMaster) Wait(ctx context.Context) error {
 	w.logger = logrus.WithField("tag", "wait_replica")
 	// Essentially not timeout
 	if w.Timeout == time.Duration(0) {
@@ -88,11 +89,15 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) Wait() error {
 	start := time.Now()
 
 	var targetMasterPos mysql.Position
-	err := WithRetries(100, 600*time.Millisecond, w.logger, "read master binlog position", func() error {
+	err := WithRetriesContext(ctx, 100, 600*time.Millisecond, w.logger, "read master binlog position", func() error {
 		var err error
 		targetMasterPos, err = ShowMasterStatusBinlogPosition(w.MasterDB)
 		return err
 	})
+
+	if err == context.Canceled {
+		return err
+	}
 
 	if err != nil {
 		w.logger.WithError(err).Error("failed to get master binlog coordinates")
@@ -102,7 +107,7 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) Wait() error {
 	w.logger.Infof("target master position is: %v\n", targetMasterPos)
 
 	for {
-		isCaughtUp, err := w.IsCaughtUp(targetMasterPos, 100)
+		isCaughtUp, err := w.IsCaughtUp(ctx, targetMasterPos, 100)
 		if err != nil {
 			w.logger.WithError(err).Error("failed to get replica binlog coordinates")
 			return err
@@ -117,7 +122,11 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) Wait() error {
 			return errors.New("timeout reached before replica is caught up to master")
 		}
 
-		time.Sleep(600 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(600 * time.Millisecond):
+		}
 	}
 
 	return nil

@@ -1,6 +1,7 @@
 package testhelpers
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -75,7 +76,7 @@ func (this *IntegrationTestCase) StartFerryAndDataWriter() {
 }
 
 func (this *IntegrationTestCase) WaitUntilRowCopyIsComplete() {
-	this.Ferry.WaitUntilRowCopyIsComplete()
+	this.Ferry.WaitUntilRowCopyIsComplete(context.TODO())
 	this.callCustomAction(this.AfterRowCopyIsComplete)
 }
 
@@ -92,7 +93,7 @@ func (this *IntegrationTestCase) SetReadonlyOnSourceDbAndStopDataWriter() {
 func (this *IntegrationTestCase) StopStreamingAndWaitForGhostferryFinish() {
 	this.callCustomAction(this.BeforeStoppingBinlogStreaming)
 
-	this.Ferry.FlushBinlogAndStopStreaming()
+	this.Ferry.FlushBinlogAndStopStreaming(context.TODO())
 	this.wg.Wait()
 
 	this.callCustomAction(this.AfterStoppedBinlogStreaming)

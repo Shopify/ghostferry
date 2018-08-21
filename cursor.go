@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -71,7 +72,7 @@ type Cursor struct {
 	logger                   *logrus.Entry
 }
 
-func (c *Cursor) Each(f func(*RowBatch) error) error {
+func (c *Cursor) Each(ctx context.Context, f func(*RowBatch) error) error {
 	c.lastSuccessfulPrimaryKey = 0
 	c.logger = logrus.WithFields(logrus.Fields{
 		"table": c.Table.String(),
@@ -88,9 +89,9 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 		var batch *RowBatch
 		var pkpos uint64
 
-		err := WithRetries(c.ReadRetries, 0, c.logger, "fetch rows", func() (err error) {
+		err := WithRetriesContext(ctx, c.ReadRetries, 0, c.logger, "fetch rows", func() (err error) {
 			if c.Throttler != nil {
-				WaitForThrottle(c.Throttler)
+				WaitForThrottle(ctx, c.Throttler)
 			}
 
 			// Only need to use a transaction if RowLock == true. Otherwise

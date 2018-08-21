@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -29,10 +30,17 @@ func (b *BinlogWriter) Initialize() error {
 	return nil
 }
 
-func (b *BinlogWriter) Run() {
+func (b *BinlogWriter) Run(ctx context.Context) {
 	batch := make([]DMLEvent, 0, b.BatchSize)
 	for {
-		firstEvent := <-b.binlogEventBuffer
+		var firstEvent DMLEvent
+		select {
+		case firstEvent = <-b.binlogEventBuffer:
+		case <-ctx.Done():
+			b.logger.Info("cancellation received, terminating goroutine abruptly")
+			return
+		}
+
 		if firstEvent == nil {
 			// Channel is closed, no more events to write
 			break
@@ -49,14 +57,23 @@ func (b *BinlogWriter) Run() {
 					// Channel is closed, finish writing batch.
 					wantMoreEvents = false
 				}
+			case <-ctx.Done():
+				b.logger.Info("cancellation received, terminating goroutine abruptly")
+				return
 			default: // Nothing in the buffer so just write it
 				wantMoreEvents = false
 			}
 		}
 
-		err := WithRetries(b.WriteRetries, 0, b.logger, "write events to target", func() error {
-			return b.writeEvents(batch)
+		err := WithRetriesContext(ctx, b.WriteRetries, 0, b.logger, "write events to target", func() error {
+			return b.writeEvents(ctx, batch)
 		})
+
+		if err == context.Canceled {
+			b.logger.Info("cancellation received, terminating goroutine abruptly")
+			return
+		}
+
 		if err != nil {
 			b.ErrorHandler.Fatal("binlog_writer", err)
 		}
@@ -69,16 +86,20 @@ func (b *BinlogWriter) Stop() {
 	close(b.binlogEventBuffer)
 }
 
-func (b *BinlogWriter) BufferBinlogEvents(events []DMLEvent) error {
+func (b *BinlogWriter) BufferBinlogEvents(ctx context.Context, events []DMLEvent) error {
 	for _, event := range events {
-		b.binlogEventBuffer <- event
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case b.binlogEventBuffer <- event:
+		}
 	}
 
 	return nil
 }
 
-func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
-	WaitForThrottle(b.Throttler)
+func (b *BinlogWriter) writeEvents(ctx context.Context, events []DMLEvent) error {
+	WaitForThrottle(ctx, b.Throttler)
 
 	queryBuffer := []byte("BEGIN;\n")
 

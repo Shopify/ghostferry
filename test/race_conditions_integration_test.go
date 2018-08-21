@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -22,7 +23,7 @@ func TestSelectUpdateBinlogCopy(t *testing.T) {
 		Ferry:       testhelpers.NewTestFerry(),
 	}
 
-	testcase.Ferry.BeforeBatchCopyListener = func(batch *ghostferry.RowBatch) error {
+	testcase.Ferry.BeforeBatchCopyListener = func(ctx context.Context, batch *ghostferry.RowBatch) error {
 		queries := make([]string, len(batch.Values()))
 		for i, row := range batch.Values() {
 			id := row[0].(int64)
@@ -137,7 +138,7 @@ func TestOnlyDeleteRowWithMaxPrimaryKey(t *testing.T) {
 	testcase.Ferry.DataIterationBatchSize = 1
 
 	lastRowDeleted := false
-	testcase.Ferry.BeforeBatchCopyListener = func(batch *ghostferry.RowBatch) error {
+	testcase.Ferry.BeforeBatchCopyListener = func(ctx context.Context, batch *ghostferry.RowBatch) error {
 		if lastRowDeleted {
 			return nil
 		}

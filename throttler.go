@@ -18,14 +18,18 @@ type Throttler interface {
 	Run(context.Context) error
 }
 
-func WaitForThrottle(t Throttler) {
+func WaitForThrottle(ctx context.Context, t Throttler) {
 	if t.Disabled() || !t.Throttled() {
 		return
 	}
 
 	metrics.Measure("WaitForThrottle", nil, 1.0, func() {
 		for {
-			time.Sleep(500 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(500 * time.Millisecond):
+			}
 
 			if t.Disabled() || !t.Throttled() {
 				break

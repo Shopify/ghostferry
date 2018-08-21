@@ -32,7 +32,7 @@ type BinlogStreamer struct {
 	stopRequested bool
 
 	logger         *logrus.Entry
-	eventListeners []func([]DMLEvent) error
+	eventListeners []func(context.Context, []DMLEvent) error
 }
 
 func (s *BinlogStreamer) Initialize() (err error) {
@@ -102,7 +102,7 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysql() error {
 	return nil
 }
 
-func (s *BinlogStreamer) Run() {
+func (s *BinlogStreamer) Run(ctx context.Context) {
 	defer func() {
 		s.logger.Info("exiting binlog streamer")
 		s.binlogSyncer.Close()
@@ -114,10 +114,10 @@ func (s *BinlogStreamer) Run() {
 		var ev *replication.BinlogEvent
 		var timedOut bool
 
-		err := WithRetries(5, 0, s.logger, "get binlog event", func() (er error) {
-			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-			defer cancel()
-			ev, er = s.binlogStreamer.GetEvent(ctx)
+		err := WithRetriesContext(ctx, 5, 0, s.logger, "get binlog event", func() (er error) {
+			eventCtx, eventCancel := context.WithTimeout(ctx, 500*time.Millisecond)
+			defer eventCancel()
+			ev, er = s.binlogStreamer.GetEvent(eventCtx)
 
 			if er == context.DeadlineExceeded {
 				timedOut = true
@@ -126,6 +126,11 @@ func (s *BinlogStreamer) Run() {
 
 			return er
 		})
+
+		if err == context.Canceled {
+			s.logger.Info("cancellation received, terminating goroutine abruptly")
+			return
+		}
 
 		if err != nil {
 			s.ErrorHandler.Fatal("binlog_streamer", err)
@@ -147,7 +152,7 @@ func (s *BinlogStreamer) Run() {
 				"file": s.lastStreamedBinlogPosition.Name,
 			}).Info("rotated binlog file")
 		case *replication.RowsEvent:
-			err = s.handleRowsEvent(ev)
+			err = s.handleRowsEvent(ctx, ev)
 			if err != nil {
 				s.logger.WithError(err).Error("failed to handle rows event")
 				s.ErrorHandler.Fatal("binlog_streamer", err)
@@ -171,7 +176,7 @@ func (s *BinlogStreamer) Run() {
 	}
 }
 
-func (s *BinlogStreamer) AddEventListener(listener func([]DMLEvent) error) {
+func (s *BinlogStreamer) AddEventListener(listener func(context.Context, []DMLEvent) error) {
 	s.eventListeners = append(s.eventListeners, listener)
 }
 
@@ -183,22 +188,29 @@ func (s *BinlogStreamer) IsAlmostCaughtUp() bool {
 	return time.Now().Sub(s.lastProcessedEventTime) < caughtUpThreshold
 }
 
-func (s *BinlogStreamer) FlushAndStop() {
-	s.logger.Info("requesting binlog streamer to stop")
+func (s *BinlogStreamer) FlushAndStop(ctx context.Context) {
+	if ctx.Err() == nil {
+		s.logger.Info("requesting binlog streamer to stop")
+	}
 	// Must first read the binlog position before requesting stop
 	// Otherwise there is a race condition where the stopRequested is
 	// set to True but the TargetPosition is nil, which would cause
 	// the BinlogStreamer to immediately exit, as it thinks that it has
 	// passed the initial target position.
-	err := WithRetries(100, 600*time.Millisecond, s.logger, "read current binlog position", func() error {
+	err := WithRetriesContext(ctx, 100, 600*time.Millisecond, s.logger, "read current binlog position", func() error {
 		var err error
 		s.targetBinlogPosition, err = ShowMasterStatusBinlogPosition(s.Db)
 		return err
 	})
 
+	if err == context.Canceled {
+		return
+	}
+
 	if err != nil {
 		s.ErrorHandler.Fatal("binlog_streamer", err)
 	}
+
 	s.logger.WithField("target_position", s.targetBinlogPosition).Info("current stop binlog position was recorded")
 
 	s.stopRequested = true
@@ -222,7 +234,7 @@ func (s *BinlogStreamer) updateLastStreamedPosAndTime(ev *replication.BinlogEven
 	}
 }
 
-func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
+func (s *BinlogStreamer) handleRowsEvent(ctx context.Context, ev *replication.BinlogEvent) error {
 	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
@@ -263,7 +275,7 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 	}
 
 	for _, listener := range s.eventListeners {
-		err := listener(events)
+		err := listener(ctx, events)
 		if err != nil {
 			return err
 		}
