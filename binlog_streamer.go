@@ -115,7 +115,8 @@ func (s *BinlogStreamer) Run() {
 		var timedOut bool
 
 		err := WithRetries(5, 0, s.logger, "get binlog event", func() (er error) {
-			ctx, _ := context.WithTimeout(context.Background(), 500*time.Millisecond)
+			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+			defer cancel()
 			ev, er = s.binlogStreamer.GetEvent(ctx)
 
 			if er == context.DeadlineExceeded {
