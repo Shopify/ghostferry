@@ -260,7 +260,6 @@ func (f *Ferry) Start() error {
 	// and after the data gets written to the target database.
 	f.BinlogStreamer.AddEventListener(f.BinlogWriter.BufferBinlogEvents)
 	f.DataIterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
-	f.DataIterator.AddDoneListener(f.onFinishedIterations)
 
 	// The starting binlog coordinates must be determined first. If it is
 	// determined after the DataIterator starts, the DataIterator might
@@ -313,28 +312,42 @@ func (f *Ferry) Run() {
 		handleError("throttler", f.Throttler.Run(ctx))
 	}()
 
-	coreServicesWg := &sync.WaitGroup{}
-	coreServicesWg.Add(3)
+	binlogWg := &sync.WaitGroup{}
+	binlogWg.Add(2)
 
 	go func() {
-		defer coreServicesWg.Done()
+		defer binlogWg.Done()
+		f.BinlogWriter.Run()
+	}()
+
+	go func() {
+		defer binlogWg.Done()
 
 		f.BinlogStreamer.Run()
 		f.BinlogWriter.Stop()
 	}()
 
-	go func() {
-		defer coreServicesWg.Done()
-		f.BinlogWriter.Run()
-	}()
+	dataIteratorWg := &sync.WaitGroup{}
+	dataIteratorWg.Add(1)
 
 	go func() {
-		defer coreServicesWg.Done()
+		defer dataIteratorWg.Done()
 		f.DataIterator.Run()
 	}()
 
-	coreServicesWg.Wait()
+	dataIteratorWg.Wait()
 
+	f.logger.Info("data copy is complete, waiting for cutover")
+	f.OverallState = StateWaitingForCutover
+	f.waitUntilAutomaticCutoverIsTrue()
+
+	f.logger.Info("entering cutover phase, notifying caller that row copy is complete")
+	f.OverallState = StateCutover
+	f.notifyRowCopyComplete()
+
+	binlogWg.Wait()
+
+	f.logger.Info("ghostferry run is complete, shutting down auxiliary services")
 	f.OverallState = StateDone
 	f.DoneTime = time.Now()
 
@@ -404,21 +417,15 @@ func (f *Ferry) FlushBinlogAndStopStreaming() {
 	f.BinlogStreamer.FlushAndStop()
 }
 
-func (f *Ferry) onFinishedIterations() error {
-	f.logger.Info("finished iterations")
-	f.OverallState = StateWaitingForCutover
-
+func (f *Ferry) waitUntilAutomaticCutoverIsTrue() {
 	for !f.AutomaticCutover {
 		time.Sleep(1 * time.Second)
 		f.logger.Debug("waiting for AutomaticCutover to become true before signaling for row copy complete")
 	}
+}
 
-	f.logger.Info("entering cutover phase")
-
-	f.OverallState = StateCutover
-	// TODO: make it so that this is non-blocking
+func (f *Ferry) notifyRowCopyComplete() {
 	f.rowCopyCompleteCh <- struct{}{}
-	return nil
 }
 
 func (f *Ferry) checkConnection(dbname string, db *sql.DB) error {
