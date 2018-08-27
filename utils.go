@@ -26,6 +26,14 @@ func WithRetriesContext(ctx context.Context, maxRetries int, sleep time.Duration
 	}
 
 	for {
+		if ctx != nil {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+		}
+
 		err = f()
 		if err == nil || err == context.Canceled {
 			return err
@@ -38,15 +46,7 @@ func WithRetriesContext(ctx context.Context, maxRetries int, sleep time.Duration
 		logger.WithError(err).Errorf("failed to %s, %d of %d max retries", verb, try, maxRetries)
 
 		try++
-		if ctx != nil {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(sleep):
-			}
-		} else {
-			time.Sleep(sleep)
-		}
+		time.Sleep(sleep)
 	}
 
 	logger.WithError(err).Errorf("failed to %s after %d attempts, retry limit exceeded", verb, try)
