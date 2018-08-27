@@ -11,12 +11,12 @@ import (
 type TestFerry struct {
 	*ghostferry.Ferry
 
-	BeforeBatchCopyListener   func(ctx context.Context, batch *ghostferry.RowBatch) error
-	BeforeBinlogApplyListener func(ctx context.Context, events []ghostferry.DMLEvent) error
+	BeforeBatchCopyListener   func(batch *ghostferry.RowBatch) error
+	BeforeBinlogApplyListener func(events []ghostferry.DMLEvent) error
 	BeforeRowCopyDoneListener func(ctx context.Context) error
 
-	AfterBatchCopyListener   func(ctx context.Context, batch *ghostferry.RowBatch) error
-	AfterBinlogApplyListener func(ctx context.Context, events []ghostferry.DMLEvent) error
+	AfterBatchCopyListener   func(batch *ghostferry.RowBatch) error
+	AfterBinlogApplyListener func(events []ghostferry.DMLEvent) error
 	AfterRowCopyDoneListener func(ctx context.Context) error
 }
 

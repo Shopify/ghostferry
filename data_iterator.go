@@ -149,7 +149,7 @@ type DataIterator struct {
 
 	CurrentState *DataIteratorState
 
-	batchListeners []func(context.Context, *RowBatch) error
+	batchListeners []func(*RowBatch) error
 	doneListeners  []func(context.Context) error
 	logger         *logrus.Entry
 }
@@ -190,13 +190,7 @@ func (d *DataIterator) Run(ctx context.Context) {
 			defer wg.Done()
 
 			for {
-				var table *schema.Table
-				var ok bool
-				select {
-				case table, ok = <-tablesQueue:
-				case <-ctx.Done():
-					logrus.WithField("tag", "table_iterator").Info("cancellation received, terminating goroutine abruptly")
-				}
+				table, ok := <-tablesQueue
 				if !ok {
 					break
 				}
@@ -211,7 +205,7 @@ func (d *DataIterator) Run(ctx context.Context) {
 					}, 1.0)
 
 					for _, listener := range d.batchListeners {
-						err := listener(ctx, batch)
+						err := listener(batch)
 						if err != nil {
 							logger.WithError(err).Error("failed to process row batch with listeners")
 							return err
@@ -261,6 +255,7 @@ func (d *DataIterator) Run(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			d.logger.Info("cancellation received, terminating goroutine abruptly")
+			close(tablesQueue)
 			return
 		case tablesQueue <- table:
 		}
@@ -275,7 +270,7 @@ func (d *DataIterator) Run(ctx context.Context) {
 	}
 }
 
-func (d *DataIterator) AddBatchListener(listener func(context.Context, *RowBatch) error) {
+func (d *DataIterator) AddBatchListener(listener func(*RowBatch) error) {
 	d.batchListeners = append(d.batchListeners, listener)
 }
 

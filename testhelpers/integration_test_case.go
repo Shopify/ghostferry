@@ -93,8 +93,13 @@ func (this *IntegrationTestCase) SetReadonlyOnSourceDbAndStopDataWriter() {
 func (this *IntegrationTestCase) StopStreamingAndWaitForGhostferryFinish() {
 	this.callCustomAction(this.BeforeStoppingBinlogStreaming)
 
-	this.Ferry.FlushBinlogAndStopStreaming(context.TODO())
-	this.wg.Wait()
+	err := this.Ferry.FlushBinlogAndStopStreaming(context.TODO())
+	if err == nil {
+		// TODO: this is probably some buggy test behaviour that needs to be fixed.
+		// Also needs to fix error handling for all other Wait/Flush methods
+		// in the tests
+		this.wg.Wait()
+	}
 
 	this.callCustomAction(this.AfterStoppedBinlogStreaming)
 }

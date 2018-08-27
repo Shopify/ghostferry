@@ -173,7 +173,10 @@ func (r *ShardingFerry) Run() {
 		r.Ferry.Run(context.TODO())
 	}()
 
-	r.Ferry.WaitUntilRowCopyIsComplete(context.TODO())
+	err := r.Ferry.WaitUntilRowCopyIsComplete(context.TODO())
+	if err != nil {
+		panic(err)
+	}
 
 	metrics.Measure("VerifyBeforeCutover", nil, 1.0, func() {
 		err := r.verifier.VerifyBeforeCutover(context.TODO())
@@ -185,11 +188,13 @@ func (r *ShardingFerry) Run() {
 
 	ghostferry.WaitForThrottle(context.TODO(), r.Ferry.Throttler)
 
-	r.Ferry.WaitUntilBinlogStreamerCatchesUp(context.TODO())
+	err = r.Ferry.WaitUntilBinlogStreamerCatchesUp(context.TODO())
+	if err != nil {
+		panic(err)
+	}
 
 	r.AbortIfTargetDbNoLongerWriteable()
 
-	var err error
 	client := &http.Client{}
 
 	cutoverStart := time.Now()
@@ -205,7 +210,11 @@ func (r *ShardingFerry) Run() {
 
 	r.Ferry.Throttler.SetDisabled(true)
 
-	r.Ferry.FlushBinlogAndStopStreaming(context.TODO())
+	err = r.Ferry.FlushBinlogAndStopStreaming(context.TODO())
+	if err != nil {
+		panic(err)
+	}
+
 	copyWG.Wait()
 
 	// Joined tables cannot be easily monitored for changes in the binlog stream

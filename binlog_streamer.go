@@ -32,7 +32,7 @@ type BinlogStreamer struct {
 	stopRequested bool
 
 	logger         *logrus.Entry
-	eventListeners []func(context.Context, []DMLEvent) error
+	eventListeners []func([]DMLEvent) error
 }
 
 func (s *BinlogStreamer) Initialize() (err error) {
@@ -176,7 +176,7 @@ func (s *BinlogStreamer) Run(ctx context.Context) {
 	}
 }
 
-func (s *BinlogStreamer) AddEventListener(listener func(context.Context, []DMLEvent) error) {
+func (s *BinlogStreamer) AddEventListener(listener func([]DMLEvent) error) {
 	s.eventListeners = append(s.eventListeners, listener)
 }
 
@@ -188,7 +188,7 @@ func (s *BinlogStreamer) IsAlmostCaughtUp() bool {
 	return time.Now().Sub(s.lastProcessedEventTime) < caughtUpThreshold
 }
 
-func (s *BinlogStreamer) FlushAndStop(ctx context.Context) {
+func (s *BinlogStreamer) FlushAndStop(ctx context.Context) error {
 	if ctx.Err() == nil {
 		s.logger.Info("requesting binlog streamer to stop")
 	}
@@ -204,16 +204,18 @@ func (s *BinlogStreamer) FlushAndStop(ctx context.Context) {
 	})
 
 	if err == context.Canceled {
-		return
+		return err
 	}
 
 	if err != nil {
-		s.ErrorHandler.Fatal("binlog_streamer", err)
+		s.ErrorHandler.ReportError("binlog_streamer", err)
+		return err
 	}
 
 	s.logger.WithField("target_position", s.targetBinlogPosition).Info("current stop binlog position was recorded")
 
 	s.stopRequested = true
+	return nil
 }
 
 func (s *BinlogStreamer) updateLastStreamedPosAndTime(ev *replication.BinlogEvent) {
@@ -275,7 +277,7 @@ func (s *BinlogStreamer) handleRowsEvent(ctx context.Context, ev *replication.Bi
 	}
 
 	for _, listener := range s.eventListeners {
-		err := listener(ctx, events)
+		err := listener(events)
 		if err != nil {
 			return err
 		}

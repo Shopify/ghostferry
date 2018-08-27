@@ -1,7 +1,6 @@
 package ghostferry
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"sync"
@@ -28,8 +27,8 @@ func (w *BatchWriter) Initialize() {
 	w.logger = logrus.WithField("tag", "batch_writer")
 }
 
-func (w *BatchWriter) WriteRowBatch(ctx context.Context, batch *RowBatch) error {
-	return WithRetriesContext(ctx, w.WriteRetries, 0, w.logger, "write batch to target", func() error {
+func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
+	return WithRetries(w.WriteRetries, 0, w.logger, "write batch to target", func() error {
 		if batch.Size() == 0 {
 			return nil
 		}

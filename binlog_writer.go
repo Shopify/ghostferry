@@ -86,13 +86,9 @@ func (b *BinlogWriter) Stop() {
 	close(b.binlogEventBuffer)
 }
 
-func (b *BinlogWriter) BufferBinlogEvents(ctx context.Context, events []DMLEvent) error {
+func (b *BinlogWriter) BufferBinlogEvents(events []DMLEvent) error {
 	for _, event := range events {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case b.binlogEventBuffer <- event:
-		}
+		b.binlogEventBuffer <- event
 	}
 
 	return nil

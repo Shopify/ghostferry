@@ -59,7 +59,7 @@ func (this *DataIteratorTestSuite) SetupTest() {
 	this.receivedRows = make(map[string][]ghostferry.RowData, 0)
 
 	this.di.Initialize()
-	this.di.AddBatchListener(func(ctx context.Context, ev *ghostferry.RowBatch) error {
+	this.di.AddBatchListener(func(ev *ghostferry.RowBatch) error {
 		this.receivedRows[ev.TableSchema().Name] = append(this.receivedRows[ev.TableSchema().Name], ev.Values()...)
 		return nil
 	})

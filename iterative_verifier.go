@@ -545,7 +545,7 @@ func (v *IterativeVerifier) reverifyPks(ctx context.Context, table *schema.Table
 	}, mismatchedPks, nil
 }
 
-func (v *IterativeVerifier) binlogEventListener(ctx context.Context, evs []DMLEvent) error {
+func (v *IterativeVerifier) binlogEventListener(evs []DMLEvent) error {
 	if v.verifyDuringCutoverStarted.Get() {
 		return fmt.Errorf("cutover has started but received binlog event!")
 	}
