@@ -114,14 +114,14 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:22d4ade969b8af6af12062fbd4c68500553aef9366d245421da47dd7a8929a02"
+  digest = "1:6336d25b225c6ec8733bb33d77249c22d41e6ee3adafa89313de71ade2551b7f"
   name = "github.com/siddontang/go-log"
   packages = [
     "log",
     "loggers",
   ]
   pruneopts = "UT"
-  revision = "a4d157e46fa3e08b7e7ff329af341fa3ff86c02c"
+  revision = "8d05993dda0722163e59b0e79e8c6dda6c38d5c0"
 
 [[projects]]
   branch = "master"
