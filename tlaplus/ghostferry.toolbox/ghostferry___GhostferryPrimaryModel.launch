@@ -6,7 +6,7 @@
 <intAttribute key="dfidDepth" value="100"/>
 <booleanAttribute key="dfidMode" value="false"/>
 <intAttribute key="distributedFPSetCount" value="0"/>
-<stringAttribute key="distributedNetworkInterface" value="10.0.3.1"/>
+<stringAttribute key="distributedNetworkInterface" value="172.17.0.1"/>
 <intAttribute key="distributedNodesCount" value="1"/>
 <stringAttribute key="distributedTLC" value="off"/>
 <stringAttribute key="distributedTLCVMArgs" value=""/>
@@ -19,7 +19,7 @@
 <stringAttribute key="modelBehaviorNext" value=""/>
 <stringAttribute key="modelBehaviorSpec" value="Spec"/>
 <intAttribute key="modelBehaviorSpecType" value="1"/>
-<stringAttribute key="modelBehaviorVars" value="lastSuccessfulPK, CurrentMaxPrimaryKey, chosenPK, SourceBinlog, currentRow, BinlogStreamingStopRequested, pc, newRecord, oldRecord, TargetTable, TargetBinlogPos, currentBinlogEntry, ApplicationReadonly, SourceTable, lastSuccessfulBinlogPos"/>
+<stringAttribute key="modelBehaviorVars" value="lastSuccessfulPK, CurrentMaxPrimaryKey, BinlogWriteQueue, chosenPK, SourceBinlog, currentRow, BinlogStreamingStopRequested, pc, newRecord, oldRecord, TargetTable, TargetBinlogPos, currentBinlogEntry, lastWrittenBinlogPos, ApplicationReadonly, SourceTable, lastSuccessfulBinlogPos"/>
 <stringAttribute key="modelComments" value=""/>
 <booleanAttribute key="modelCorrectnessCheckDeadlock" value="true"/>
 <listAttribute key="modelCorrectnessInvariants">
@@ -40,6 +40,7 @@
 <listEntry value="BinlogStreamer;;BinlogStreamer;1;0"/>
 <listEntry value="TableIterator;;TableIterator;1;0"/>
 <listEntry value="MaxBinlogSize;;3;0;0"/>
+<listEntry value="BinlogWriter;;BinlogWriter;1;0"/>
 </listAttribute>
 <stringAttribute key="modelParameterContraint" value=""/>
 <listAttribute key="modelParameterDefinitions">
