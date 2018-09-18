@@ -226,12 +226,24 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
+	if ev.Header.LogPos == 0 {
+		// This shouldn't happen, as rows events always have a logpos.
+		s.logger.Panicf("logpos: %d %d %T", ev.Header.LogPos, ev.Header.Timestamp, ev.Event)
+	}
+
+	pos := mysql.Position{
+		// The filename is only changed and visible during the RotateEvent, which
+		// is handled transparently in Run().
+		Name: s.lastStreamedBinlogPosition.Name,
+		Pos:  ev.Header.LogPos,
+	}
+
 	table := s.TableSchema.Get(string(rowsEvent.Table.Schema), string(rowsEvent.Table.Table))
 	if table == nil {
 		return nil
 	}
 
-	dmlEvs, err := NewBinlogDMLEvents(table, ev)
+	dmlEvs, err := NewBinlogDMLEvents(table, ev, pos)
 	if err != nil {
 		return err
 	}

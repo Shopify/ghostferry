@@ -8,6 +8,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/replication"
 	"github.com/siddontang/go-mysql/schema"
 )
@@ -42,6 +43,7 @@ type DMLEvent interface {
 	OldValues() RowData
 	NewValues() RowData
 	PK() (uint64, error)
+	BinlogPosition() mysql.Position
 }
 
 // The base of DMLEvent to provide the necessary methods.
@@ -49,6 +51,7 @@ type DMLEvent interface {
 // changes in the future.
 type DMLEventBase struct {
 	table schema.Table
+	pos   mysql.Position
 }
 
 func (e *DMLEventBase) Database() string {
@@ -63,18 +66,22 @@ func (e *DMLEventBase) TableSchema() *schema.Table {
 	return &e.table
 }
 
+func (e *DMLEventBase) BinlogPosition() mysql.Position {
+	return e.pos
+}
+
 type BinlogInsertEvent struct {
 	newValues RowData
 	*DMLEventBase
 }
 
-func NewBinlogInsertEvents(table *schema.Table, rowsEvent *replication.RowsEvent) ([]DMLEvent, error) {
+func NewBinlogInsertEvents(table *schema.Table, rowsEvent *replication.RowsEvent, pos mysql.Position) ([]DMLEvent, error) {
 	insertEvents := make([]DMLEvent, len(rowsEvent.Rows))
 
 	for i, row := range rowsEvent.Rows {
 		insertEvents[i] = &BinlogInsertEvent{
 			newValues:    row,
-			DMLEventBase: &DMLEventBase{table: *table},
+			DMLEventBase: &DMLEventBase{table: *table, pos: pos},
 		}
 	}
 
@@ -113,7 +120,7 @@ type BinlogUpdateEvent struct {
 	*DMLEventBase
 }
 
-func NewBinlogUpdateEvents(table *schema.Table, rowsEvent *replication.RowsEvent) ([]DMLEvent, error) {
+func NewBinlogUpdateEvents(table *schema.Table, rowsEvent *replication.RowsEvent, pos mysql.Position) ([]DMLEvent, error) {
 	// UPDATE events have two rows in the RowsEvent. The first row is the
 	// entries of the old record (for WHERE) and the second row is the
 	// entries of the new record (for SET).
@@ -129,7 +136,7 @@ func NewBinlogUpdateEvents(table *schema.Table, rowsEvent *replication.RowsEvent
 		updateEvents[i/2] = &BinlogUpdateEvent{
 			oldValues:    row,
 			newValues:    rowsEvent.Rows[i+1],
-			DMLEventBase: &DMLEventBase{table: *table},
+			DMLEventBase: &DMLEventBase{table: *table, pos: pos},
 		}
 	}
 
@@ -174,13 +181,13 @@ func (e *BinlogDeleteEvent) NewValues() RowData {
 	return nil
 }
 
-func NewBinlogDeleteEvents(table *schema.Table, rowsEvent *replication.RowsEvent) ([]DMLEvent, error) {
+func NewBinlogDeleteEvents(table *schema.Table, rowsEvent *replication.RowsEvent, pos mysql.Position) ([]DMLEvent, error) {
 	deleteEvents := make([]DMLEvent, len(rowsEvent.Rows))
 
 	for i, row := range rowsEvent.Rows {
 		deleteEvents[i] = &BinlogDeleteEvent{
 			oldValues:    row,
-			DMLEventBase: &DMLEventBase{table: *table},
+			DMLEventBase: &DMLEventBase{table: *table, pos: pos},
 		}
 	}
 
@@ -203,7 +210,7 @@ func (e *BinlogDeleteEvent) PK() (uint64, error) {
 	return pkFromEventData(&e.table, e.oldValues)
 }
 
-func NewBinlogDMLEvents(table *schema.Table, ev *replication.BinlogEvent) ([]DMLEvent, error) {
+func NewBinlogDMLEvents(table *schema.Table, ev *replication.BinlogEvent, pos mysql.Position) ([]DMLEvent, error) {
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
 	for _, row := range rowsEvent.Rows {
@@ -236,11 +243,11 @@ func NewBinlogDMLEvents(table *schema.Table, ev *replication.BinlogEvent) ([]DML
 
 	switch ev.Header.EventType {
 	case replication.WRITE_ROWS_EVENTv1, replication.WRITE_ROWS_EVENTv2:
-		return NewBinlogInsertEvents(table, rowsEvent)
+		return NewBinlogInsertEvents(table, rowsEvent, pos)
 	case replication.DELETE_ROWS_EVENTv1, replication.DELETE_ROWS_EVENTv2:
-		return NewBinlogDeleteEvents(table, rowsEvent)
+		return NewBinlogDeleteEvents(table, rowsEvent, pos)
 	case replication.UPDATE_ROWS_EVENTv1, replication.UPDATE_ROWS_EVENTv2:
-		return NewBinlogUpdateEvents(table, rowsEvent)
+		return NewBinlogUpdateEvents(table, rowsEvent, pos)
 	default:
 		return nil, fmt.Errorf("unrecognized rows event: %s", ev.Header.EventType.String())
 	}
