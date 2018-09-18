@@ -245,6 +245,19 @@ type Config struct {
 	// Config for the ControlServer
 	ServerBindAddr string
 	WebBasedir     string
+
+	// The state to resume from as dumped by the PanicErrorHandler.
+	// If this is null, a new Ghostferry run will be started. Otherwise, the
+	// reconciliation process will start and Ghostferry will resume after that.
+	StateToResumeFrom *SerializableState
+
+	// If GhostferryVersion within StateToResumeFrom mismatch with the actual
+	// Ghostferry version, the config validation will by default fail with an
+	// error. This boolean allows one to override that behaviour.
+	//
+	// Caution: there is no guarentee that setting this variable to true will
+	// be safe.
+	AllowResumeWithMismatchedGhostferryVersion bool
 }
 
 func (c *Config) ValidateConfig() error {
@@ -258,6 +271,12 @@ func (c *Config) ValidateConfig() error {
 
 	if c.TableFilter == nil {
 		return fmt.Errorf("Table filter function must be provided")
+	}
+
+	if !c.AllowResumeWithMismatchedGhostferryVersion {
+		if c.StateToResumeFrom != nil && c.StateToResumeFrom.GhostferryVersion != VersionString {
+			return fmt.Errorf("StateToResumeFrom version mismatch: resume = %s, current = %s", c.StateToResumeFrom.GhostferryVersion, VersionString)
+		}
 	}
 
 	if c.DBWriteRetries == 0 {

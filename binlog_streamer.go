@@ -76,22 +76,27 @@ func (s *BinlogStreamer) createBinlogSyncer() error {
 }
 
 func (s *BinlogStreamer) ConnectBinlogStreamerToMysql() error {
-	err := s.createBinlogSyncer()
-	if err != nil {
-		return err
-	}
-
-	s.logger.Info("reading current binlog position")
-	s.lastStreamedBinlogPosition, err = ShowMasterStatusBinlogPosition(s.Db)
+	currentPosition, err := ShowMasterStatusBinlogPosition(s.Db)
 	if err != nil {
 		s.logger.WithError(err).Error("failed to read current binlog position")
 		return err
 	}
 
+	return s.ConnectBinlogStreamerToMysqlFrom(currentPosition)
+}
+
+func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFrom(startFromBinlogPosition mysql.Position) error {
+	err := s.createBinlogSyncer()
+	if err != nil {
+		return err
+	}
+
+	s.lastStreamedBinlogPosition = startFromBinlogPosition
+
 	s.logger.WithFields(logrus.Fields{
 		"file": s.lastStreamedBinlogPosition.Name,
 		"pos":  s.lastStreamedBinlogPosition.Pos,
-	}).Info("found binlog position, starting synchronization")
+	}).Info("starting binlog streaming")
 
 	s.binlogStreamer, err = s.binlogSyncer.StartSync(s.lastStreamedBinlogPosition)
 	if err != nil {

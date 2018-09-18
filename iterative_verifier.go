@@ -397,7 +397,7 @@ func (v *IterativeVerifier) iterateAllTables(mismatchedPkFunc func(uint64, *sche
 func (v *IterativeVerifier) iterateTableFingerprints(table *schema.Table, mismatchedPkFunc func(uint64, *schema.Table) error) error {
 	// The cursor will stop iterating when it cannot find anymore rows,
 	// so it will not iterate until MaxUint64.
-	cursor := v.CursorConfig.NewCursorWithoutRowLock(table, math.MaxUint64)
+	cursor := v.CursorConfig.NewCursorWithoutRowLock(table, 0, math.MaxUint64)
 
 	// It only needs the PKs, not the entire row.
 	cursor.ColumnsToSelect = []string{fmt.Sprintf("`%s`", table.GetPKColumn(0).Name)}
