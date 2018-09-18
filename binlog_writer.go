@@ -109,5 +109,8 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 	if err != nil {
 		return fmt.Errorf("exec query (%d bytes): %v", len(query), err)
 	}
+
+	// lastWrittenBinlogPosition = events[len(events)-1].BinlogPosition()
+
 	return nil
 }

@@ -2,6 +2,8 @@ package test
 
 import (
 	"database/sql"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/Shopify/ghostferry"
@@ -15,6 +17,7 @@ type BinlogStreamerTestSuite struct {
 
 	config         *ghostferry.Config
 	binlogStreamer *ghostferry.BinlogStreamer
+	sourceDb       *sql.DB
 }
 
 func (this *BinlogStreamerTestSuite) SetupTest() {
@@ -26,16 +29,27 @@ func (this *BinlogStreamerTestSuite) SetupTest() {
 	this.Require().Nil(err)
 
 	sourceDSN := sourceConfig.FormatDSN()
-	sourceDb, err := sql.Open("mysql", sourceDSN)
+	this.sourceDb, err = sql.Open("mysql", sourceDSN)
 	if err != nil {
 		this.Fail("failed to connect to source database")
 	}
 
+	testhelpers.SeedInitialData(this.sourceDb, "gftest", "test_table_1", 0)
+	tableSchemaCache, err := ghostferry.LoadTables(
+		this.sourceDb,
+		&testhelpers.TestTableFilter{
+			DbsFunc:    testhelpers.DbApplicabilityFilter([]string{testhelpers.TestSchemaName}),
+			TablesFunc: nil,
+		},
+	)
+	this.Require().Nil(err)
+
 	this.binlogStreamer = &ghostferry.BinlogStreamer{
-		Db:           sourceDb,
+		Db:           this.sourceDb,
 		Config:       testFerry.Config,
 		ErrorHandler: testFerry.ErrorHandler,
 		Filter:       testFerry.CopyFilter,
+		TableSchema:  tableSchemaCache,
 	}
 
 	this.Require().Nil(this.binlogStreamer.Initialize())
@@ -68,6 +82,35 @@ func (this *BinlogStreamerTestSuite) TestConnectErrorsOutIfErrorInServerIdGenera
 
 	this.Require().NotNil(err)
 	this.Require().Zero(this.binlogStreamer.Config.MyServerId)
+}
+
+func (this *BinlogStreamerTestSuite) TestBinlogStreamerSetsBinlogPositionOnDMLEvent() {
+	err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
+	this.Require().Nil(err)
+
+	eventAsserted := false
+
+	this.binlogStreamer.AddEventListener(func(evs []ghostferry.DMLEvent) error {
+		eventAsserted = true
+		this.Require().Equal(1, len(evs))
+		this.Require().True(strings.HasPrefix(evs[0].BinlogPosition().Name, "mysql-bin."))
+		this.Require().True(evs[0].BinlogPosition().Pos > 0)
+		this.binlogStreamer.FlushAndStop()
+		return nil
+	})
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		this.binlogStreamer.Run()
+	}()
+
+	_, err = this.sourceDb.Exec("INSERT INTO gftest.test_table_1 VALUES (null, 'testdata')")
+	this.Require().Nil(err)
+
+	wg.Wait()
+	this.Require().True(eventAsserted)
 }
 
 func TestBinlogStreamerTestSuite(t *testing.T) {

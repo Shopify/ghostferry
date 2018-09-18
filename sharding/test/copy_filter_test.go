@@ -7,6 +7,7 @@ import (
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/sharding"
 
+	"github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/replication"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/stretchr/testify/suite"
@@ -129,7 +130,7 @@ func (t *CopyFilterTestSuite) TestShardingValueTypes() {
 	}
 
 	for _, tenantId := range tenantIds {
-		dmlEvents, _ := ghostferry.NewBinlogInsertEvents(t.normalTable, t.newRowsEvent([]interface{}{1001, tenantId, "data"}))
+		dmlEvents, _ := ghostferry.NewBinlogInsertEvents(t.normalTable, t.newRowsEvent([]interface{}{1001, tenantId, "data"}), mysql.Position{})
 		applicable, err := t.filter.ApplicableEvent(dmlEvents[0])
 		t.Require().Nil(err)
 		t.Require().True(applicable, fmt.Sprintf("value %t wasn't applicable", tenantId))
@@ -137,7 +138,7 @@ func (t *CopyFilterTestSuite) TestShardingValueTypes() {
 }
 
 func (t *CopyFilterTestSuite) TestInvalidShardingValueTypesErrors() {
-	dmlEvents, err := ghostferry.NewBinlogInsertEvents(t.normalTable, t.newRowsEvent([]interface{}{1001, string("1"), "data"}))
+	dmlEvents, err := ghostferry.NewBinlogInsertEvents(t.normalTable, t.newRowsEvent([]interface{}{1001, string("1"), "data"}), mysql.Position{})
 	_, err = t.filter.ApplicableEvent(dmlEvents[0])
 	t.Require().Equal("parsing new sharding key: invalid type %!t(string=1)", err.Error())
 }
