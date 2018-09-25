@@ -35,7 +35,7 @@ type BinlogStreamer struct {
 	eventListeners []func([]DMLEvent) error
 }
 
-func (s *BinlogStreamer) Initialize() (err error) {
+func (s *BinlogStreamer) Initialize() error {
 	s.logger = logrus.WithField("tag", "binlog_streamer")
 	s.stopRequested = false
 	return nil
