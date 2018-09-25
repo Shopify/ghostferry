@@ -91,26 +91,6 @@ func (d *DataIterator) Run() {
 						}
 					}
 
-					// The way we save the LastSuccessfulPK is probably incorrect if we
-					// want to ensure that when we crash, we have a "correct" view of
-					// the LastSuccessfulPK.
-					// However, it's uncertain if it is even theoretically possible to
-					// save the "correct" value.
-					// TODO: investigate this if we want to ensure that on error, we have
-					//       the "correct" last successful PK and other values.
-					// TODO: it is also perhaps possible to save the Cursor objects
-					// directly as opposed to saving a state, but that is left to
-					// the future.
-					lastRow := batch.Values()[len(batch.Values())-1]
-					pkpos, err := lastRow.GetUint64(batch.PkIndex())
-					if err != nil {
-						logger.WithError(err).Error("failed to convert pk to uint64")
-						return err
-					}
-
-					logger.Debugf("updated last successful PK to %d", pkpos)
-					d.StateTracker.UpdateLastSuccessfulPK(table.String(), pkpos)
-
 					return nil
 				})
 

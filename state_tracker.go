@@ -41,12 +41,7 @@ func (s *StateTracker) UpdateLastSuccessfulPK(table string, pk uint64) {
 	deltaPK := pk - s.lastSuccessfulPrimaryKeys[table]
 	s.lastSuccessfulPrimaryKeys[table] = pk
 
-	currentTotalPK := s.copySpeedLog.Value.(PKPositionLog).Position
-	s.copySpeedLog = s.copySpeedLog.Next()
-	s.copySpeedLog.Value = PKPositionLog{
-		Position: currentTotalPK + deltaPK,
-		At:       time.Now(),
-	}
+	s.updateSpeedLog(deltaPK)
 }
 
 func (s *StateTracker) MarkTableAsCompleted(table string) {
@@ -115,24 +110,20 @@ func (s *StateTracker) EstimatedPKCopiedPerSecond() float64 {
 	return float64(deltaPK) / deltaT
 }
 
+func (s *StateTracker) updateSpeedLog(deltaPK uint64) {
+	currentTotalPK := s.copySpeedLog.Value.(PKPositionLog).Position
+	s.copySpeedLog = s.copySpeedLog.Next()
+	s.copySpeedLog.Value = PKPositionLog{
+		Position: currentTotalPK + deltaPK,
+		At:       time.Now(),
+	}
+}
+
 // speedLogCount should be a number that is an order of magnitude or so larger
 // than the number of table iterators. This is to ensure the ring buffer used
 // to calculate the speed is not filled with only data from the last iteration
 // of the cursor and thus would be wildly inaccurate.
-//
-// serializedState is a state the tracker should start from, as opposed to
-// starting from the beginning.
-func NewStateTracker(speedLogCount int, serializedState *SerializableState) *StateTracker {
-	if serializedState == nil {
-		// A zero MySQL position will be set in the state tracker. The consumer
-		// of this struct should realize this means to load the current master
-		// position.
-		serializedState = &SerializableState{
-			LastSuccessfulPrimaryKeys: make(map[string]uint64),
-			CompletedTables:           make(map[string]bool),
-		}
-	}
-
+func NewStateTracker(speedLogCount int) *StateTracker {
 	speedLog := ring.New(speedLogCount)
 	speedLog.Value = PKPositionLog{
 		Position: 0,
@@ -140,11 +131,21 @@ func NewStateTracker(speedLogCount int, serializedState *SerializableState) *Sta
 	}
 
 	return &StateTracker{
-		lastSuccessfulPrimaryKeys: serializedState.LastSuccessfulPrimaryKeys,
-		completedTables:           serializedState.CompletedTables,
-		lastWrittenBinlogPosition: serializedState.LastWrittenBinlogPosition,
+		lastSuccessfulPrimaryKeys: make(map[string]uint64),
+		completedTables:           make(map[string]bool),
+		lastWrittenBinlogPosition: mysql.Position{},
 		binlogMutex:               &sync.RWMutex{},
 		tableMutex:                &sync.RWMutex{},
 		copySpeedLog:              speedLog,
 	}
+}
+
+// serializedState is a state the tracker should start from, as opposed to
+// starting from the beginning.
+func NewStateTrackerFromSerializedState(speedLogCount int, serializedState *SerializableState) *StateTracker {
+	s := NewStateTracker(speedLogCount)
+	s.lastSuccessfulPrimaryKeys = serializedState.LastSuccessfulPrimaryKeys
+	s.completedTables = serializedState.CompletedTables
+	s.lastWrittenBinlogPosition = serializedState.LastWrittenBinlogPosition
+	return s
 }

@@ -51,7 +51,7 @@ func (this *DataIteratorTestSuite) SetupTest() {
 			BatchSize:   config.DataIterationBatchSize,
 			ReadRetries: config.DBReadRetries,
 		},
-		StateTracker: ghostferry.NewStateTracker(config.DataIterationConcurrency*10, nil),
+		StateTracker: ghostferry.NewStateTracker(config.DataIterationConcurrency * 10),
 
 		Tables: tables.AsSlice(),
 	}

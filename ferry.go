@@ -205,7 +205,7 @@ func (f *Ferry) Initialize() (err error) {
 		f.Throttler = &PauserThrottler{}
 	}
 
-	f.StateTracker = NewStateTracker(f.DataIterationConcurrency*10, nil)
+	f.StateTracker = NewStateTracker(f.DataIterationConcurrency * 10)
 
 	f.BinlogStreamer = &BinlogStreamer{
 		Db:           f.SourceDB,
@@ -242,14 +242,19 @@ func (f *Ferry) Initialize() (err error) {
 	}
 
 	f.BatchWriter = &BatchWriter{
-		DB: f.TargetDB,
+		DB:           f.TargetDB,
+		StateTracker: f.StateTracker,
 
 		DatabaseRewrites: f.Config.DatabaseRewrites,
 		TableRewrites:    f.Config.TableRewrites,
 
 		WriteRetries: f.Config.DBWriteRetries,
 	}
-	f.BatchWriter.Initialize()
+
+	err = f.BatchWriter.Initialize()
+	if err != nil {
+		return err
+	}
 
 	f.logger.Info("ferry initialized")
 	return nil

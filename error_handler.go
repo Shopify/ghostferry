@@ -29,6 +29,13 @@ func (this *PanicErrorHandler) ReportError(from string, err error) {
 		return
 	}
 
+	stateJSON, jsonErr := this.Ferry.SerializeStateToJSON()
+	if jsonErr != nil {
+		logger.WithError(jsonErr).Error("failed to dump state to JSON...")
+	} else {
+		fmt.Fprintln(os.Stdout, stateJSON)
+	}
+
 	// Invoke ErrorCallback if defined
 	if this.ErrorCallback != (HTTPCallback{}) {
 		client := &http.Client{}
@@ -39,28 +46,19 @@ func (this *PanicErrorHandler) ReportError(from string, err error) {
 
 		errorDataBytes, jsonErr := json.MarshalIndent(errorData, "", "  ")
 		if jsonErr != nil {
-			logger.WithField("error", jsonErr).Errorf("ghostferry-sharding failed to marshal error data")
+			logger.WithField("error", jsonErr).Errorf("ghostferry failed to marshal error data")
 		} else {
 			this.ErrorCallback.Payload = string(errorDataBytes)
 
 			postErr := this.ErrorCallback.Post(client)
 			if postErr != nil {
-				logger.WithField("error", postErr).Errorf("ghostferry-sharding failed to notify error")
+				logger.WithField("error", postErr).Errorf("ghostferry failed to notify error")
 			}
 		}
 	}
 
-	logger.WithError(err).WithField("errfrom", from).Error("fatal error detected, state dump coming in stdout")
-
-	stateJSON, err := this.Ferry.SerializeStateToJSON()
-	if err != nil {
-		logger.WithError(err).Error("failed to dump state to JSON...")
-	} else {
-		fmt.Fprintln(os.Stdout, stateJSON)
-	}
-
 	// Print error to STDERR
-	logger.WithError(err).WithField("errfrom", from).Error("fatal error detected, state dump coming in stdout")
+	logger.WithError(err).WithField("errfrom", from).Error("fatal error detected, state dump in stdout")
 }
 
 func (this *PanicErrorHandler) Fatal(from string, err error) {
