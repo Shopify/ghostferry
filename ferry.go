@@ -77,7 +77,7 @@ type Ferry struct {
 	rowCopyCompleteCh chan struct{}
 }
 
-func (f *Ferry) newDataIterator() (*DataIterator, error) {
+func (f *Ferry) NewDataIterator() *DataIterator {
 	dataIterator := &DataIterator{
 		DB:          f.SourceDB,
 		Concurrency: f.Config.DataIterationConcurrency,
@@ -97,8 +97,71 @@ func (f *Ferry) newDataIterator() (*DataIterator, error) {
 		dataIterator.CursorConfig.BuildSelect = f.CopyFilter.BuildSelect
 	}
 
-	err := dataIterator.Initialize()
-	return dataIterator, err
+	return dataIterator
+}
+
+func (f *Ferry) NewDataIteratorWithoutStateTracker() *DataIterator {
+	dataIterator := f.NewDataIterator()
+	dataIterator.StateTracker = nil
+	return dataIterator
+}
+
+func (f *Ferry) NewBinlogStreamer() *BinlogStreamer {
+	return &BinlogStreamer{
+		DB:           f.SourceDB,
+		DBConfig:     f.Source,
+		MyServerId:   f.Config.MyServerId,
+		ErrorHandler: f.ErrorHandler,
+		Filter:       f.CopyFilter,
+	}
+}
+
+// Even tho this function is identical to NewBinlogStreamer, it is here
+// for consistency so it will lead to less confusion.
+func (f *Ferry) NewBinlogStreamerWithoutStateTracker() *BinlogStreamer {
+	return f.NewBinlogStreamer()
+}
+
+func (f *Ferry) NewBinlogWriter() *BinlogWriter {
+	return &BinlogWriter{
+		DB:               f.TargetDB,
+		DatabaseRewrites: f.Config.DatabaseRewrites,
+		TableRewrites:    f.Config.TableRewrites,
+		Throttler:        f.Throttler,
+
+		BatchSize:    f.Config.BinlogEventBatchSize,
+		WriteRetries: f.Config.DBWriteRetries,
+
+		ErrorHandler: f.ErrorHandler,
+		StateTracker: f.StateTracker,
+	}
+}
+
+func (f *Ferry) NewBinlogWriterWithoutStateTracker() *BinlogWriter {
+	binlogWriter := f.NewBinlogWriter()
+	binlogWriter.StateTracker = nil
+	return binlogWriter
+}
+
+func (f *Ferry) NewBatchWriter() *BatchWriter {
+	batchWriter := &BatchWriter{
+		DB:           f.TargetDB,
+		StateTracker: f.StateTracker,
+
+		DatabaseRewrites: f.Config.DatabaseRewrites,
+		TableRewrites:    f.Config.TableRewrites,
+
+		WriteRetries: f.Config.DBWriteRetries,
+	}
+
+	batchWriter.Initialize()
+	return batchWriter
+}
+
+func (f *Ferry) NewBatchWriterWithoutStateTracker() *BatchWriter {
+	batchWriter := f.NewBatchWriter()
+	batchWriter.StateTracker = nil
+	return batchWriter
 }
 
 // Initialize all the components of Ghostferry and connect to the Database
@@ -226,54 +289,10 @@ func (f *Ferry) Initialize() (err error) {
 		f.StateTracker = NewStateTrackerFromSerializedState(f.DataIterationConcurrency*10, f.StateToResumeFrom)
 	}
 
-	f.BinlogStreamer = &BinlogStreamer{
-		Db:           f.SourceDB,
-		Config:       f.Config,
-		ErrorHandler: f.ErrorHandler,
-		Filter:       f.CopyFilter,
-	}
-	err = f.BinlogStreamer.Initialize()
-	if err != nil {
-		return err
-	}
-
-	f.BinlogWriter = &BinlogWriter{
-		DB:               f.TargetDB,
-		DatabaseRewrites: f.Config.DatabaseRewrites,
-		TableRewrites:    f.Config.TableRewrites,
-		Throttler:        f.Throttler,
-
-		BatchSize:    f.Config.BinlogEventBatchSize,
-		WriteRetries: f.Config.DBWriteRetries,
-
-		ErrorHandler: f.ErrorHandler,
-		StateTracker: f.StateTracker,
-	}
-
-	err = f.BinlogWriter.Initialize()
-	if err != nil {
-		return err
-	}
-
-	f.DataIterator, err = f.newDataIterator()
-	if err != nil {
-		return err
-	}
-
-	f.BatchWriter = &BatchWriter{
-		DB:           f.TargetDB,
-		StateTracker: f.StateTracker,
-
-		DatabaseRewrites: f.Config.DatabaseRewrites,
-		TableRewrites:    f.Config.TableRewrites,
-
-		WriteRetries: f.Config.DBWriteRetries,
-	}
-
-	err = f.BatchWriter.Initialize()
-	if err != nil {
-		return err
-	}
+	f.BinlogStreamer = f.NewBinlogStreamer()
+	f.BinlogWriter = f.NewBinlogWriter()
+	f.DataIterator = f.NewDataIterator()
+	f.BatchWriter = f.NewBatchWriter()
 
 	f.logger.Info("ferry initialized")
 	return nil
@@ -420,20 +439,11 @@ func (f *Ferry) RunStandaloneDataCopy(tables []*schema.Table) error {
 		return nil
 	}
 
-	dataIterator, err := f.newDataIterator()
-	if err != nil {
-		return err
-	}
+	dataIterator := f.NewDataIteratorWithoutStateTracker()
 
-	// HACK: This process is not interruptible, so we can override the previous
-	// StateTracker for this instance only as newDataIterator uses the Ferry's
-	// instance of StateTracker.
 	// BUG: if the PanicErrorHandler fires while running the standalone copy, we
 	// will get an error dump even though we should not get one, which could be
 	// misleading.
-	// TODO: refactor this to make it better, possibly have to refactor
-	// newDataIterator.
-	dataIterator.StateTracker = NewStateTracker(f.DataIterationConcurrency * 10)
 
 	dataIterator.Tables = tables
 	dataIterator.AddBatchListener(f.BatchWriter.WriteRowBatch)

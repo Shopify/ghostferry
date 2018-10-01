@@ -2,7 +2,6 @@ package ghostferry
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"math"
 	"sync"
@@ -26,18 +25,17 @@ type DataIterator struct {
 	logger         *logrus.Entry
 }
 
-func (d *DataIterator) Initialize() error {
+func (d *DataIterator) Run() {
 	d.logger = logrus.WithField("tag", "data_iterator")
 	d.targetPKs = &sync.Map{}
 
+	// If a state tracker is not provided, then the caller doesn't care about
+	// tracking state. However, some methods are still useful so we use initialize
+	// a minimal local instance.
 	if d.StateTracker == nil {
-		return errors.New("StateTracker must be defined")
+		d.StateTracker = NewStateTracker(0)
 	}
 
-	return nil
-}
-
-func (d *DataIterator) Run() {
 	d.logger.WithField("tablesCount", len(d.Tables)).Info("starting data iterator run")
 	tablesWithData, emptyTables, err := MaxPrimaryKeys(d.DB, d.Tables, d.logger)
 	if err != nil {

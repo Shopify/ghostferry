@@ -2,7 +2,6 @@ package ghostferry
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"sync"
 
@@ -24,15 +23,9 @@ type BatchWriter struct {
 	logger     *logrus.Entry
 }
 
-func (w *BatchWriter) Initialize() error {
+func (w *BatchWriter) Initialize() {
 	w.statements = make(map[string]*sql.Stmt)
 	w.logger = logrus.WithField("tag", "batch_writer")
-
-	if w.StateTracker == nil {
-		return errors.New("StateTracker must be defined")
-	}
-
-	return nil
 }
 
 func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
@@ -74,7 +67,9 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 
 		// Note that the state tracker expects us the track based on the original
 		// database and table names as opposed to the target ones.
-		w.StateTracker.UpdateLastSuccessfulPK(batch.TableSchema().String(), pkpos)
+		if w.StateTracker != nil {
+			w.StateTracker.UpdateLastSuccessfulPK(batch.TableSchema().String(), pkpos)
+		}
 
 		return nil
 	})
