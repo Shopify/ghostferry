@@ -12,7 +12,6 @@ import (
 
 type DataIterator struct {
 	DB          *sql.DB
-	Tables      []*schema.Table
 	Concurrency int
 
 	ErrorHandler ErrorHandler
@@ -25,7 +24,7 @@ type DataIterator struct {
 	logger         *logrus.Entry
 }
 
-func (d *DataIterator) Run() {
+func (d *DataIterator) Run(tables []*schema.Table) {
 	d.logger = logrus.WithField("tag", "data_iterator")
 	d.targetPKs = &sync.Map{}
 
@@ -36,8 +35,8 @@ func (d *DataIterator) Run() {
 		d.StateTracker = NewStateTracker(0)
 	}
 
-	d.logger.WithField("tablesCount", len(d.Tables)).Info("starting data iterator run")
-	tablesWithData, emptyTables, err := MaxPrimaryKeys(d.DB, d.Tables, d.logger)
+	d.logger.WithField("tablesCount", len(tables)).Info("starting data iterator run")
+	tablesWithData, emptyTables, err := MaxPrimaryKeys(d.DB, tables, d.logger)
 	if err != nil {
 		d.ErrorHandler.Fatal("data_iterator", err)
 	}
