@@ -52,13 +52,9 @@ func (c *CursorConfig) NewCursor(table *schema.Table, startPk, maxPk uint64) *Cu
 
 // returns a new Cursor with an embedded copy of itself
 func (c *CursorConfig) NewCursorWithoutRowLock(table *schema.Table, startPk, maxPk uint64) *Cursor {
-	return &Cursor{
-		CursorConfig:             *c,
-		Table:                    table,
-		MaxPrimaryKey:            maxPk,
-		RowLock:                  false,
-		lastSuccessfulPrimaryKey: startPk,
-	}
+	cursor := c.NewCursor(table, startPk, maxPk)
+	cursor.RowLock = false
+	return cursor
 }
 
 type Cursor struct {

@@ -30,7 +30,7 @@ func (d *DataIterator) Run() {
 	d.targetPKs = &sync.Map{}
 
 	// If a state tracker is not provided, then the caller doesn't care about
-	// tracking state. However, some methods are still useful so we use initialize
+	// tracking state. However, some methods are still useful so we initialize
 	// a minimal local instance.
 	if d.StateTracker == nil {
 		d.StateTracker = NewStateTracker(0)

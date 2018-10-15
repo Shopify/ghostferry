@@ -116,7 +116,7 @@ func (f *Ferry) NewBinlogStreamer() *BinlogStreamer {
 	}
 }
 
-// Even tho this function is identical to NewBinlogStreamer, it is here
+// Even though this function is identical to NewBinlogStreamer, it is here
 // for consistency so it will lead to less confusion.
 func (f *Ferry) NewBinlogStreamerWithoutStateTracker() *BinlogStreamer {
 	return f.NewBinlogStreamer()
