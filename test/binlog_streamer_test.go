@@ -57,7 +57,7 @@ func (this *BinlogStreamerTestSuite) SetupTest() {
 func (this *BinlogStreamerTestSuite) TestConnectWithIdKeepsId() {
 	this.binlogStreamer.MyServerId = 1421
 
-	err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
+	_, err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
 
 	this.Require().Nil(err)
 	this.Require().Equal(uint32(1421), this.binlogStreamer.MyServerId)
@@ -66,7 +66,7 @@ func (this *BinlogStreamerTestSuite) TestConnectWithIdKeepsId() {
 func (this *BinlogStreamerTestSuite) TestConnectWithZeroIdGetsRandomServerId() {
 	this.binlogStreamer.MyServerId = 0
 
-	err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
+	_, err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
 
 	this.Require().Nil(err)
 	this.Require().NotZero(this.binlogStreamer.MyServerId)
@@ -77,14 +77,14 @@ func (this *BinlogStreamerTestSuite) TestConnectErrorsOutIfErrorInServerIdGenera
 
 	this.binlogStreamer.DB.Close()
 
-	err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
+	_, err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
 
 	this.Require().NotNil(err)
 	this.Require().Zero(this.binlogStreamer.MyServerId)
 }
 
 func (this *BinlogStreamerTestSuite) TestBinlogStreamerSetsBinlogPositionOnDMLEvent() {
-	err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
+	_, err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
 	this.Require().Nil(err)
 
 	eventAsserted := false

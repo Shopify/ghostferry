@@ -310,15 +310,21 @@ func (f *Ferry) Start() error {
 	// miss some records that are inserted between the time the
 	// DataIterator determines the range of IDs to copy and the time that
 	// the starting binlog coordinates are determined.
+	var pos siddontangmysql.Position
 	var err error
 	if f.StateToResumeFrom != nil {
-		err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.LastWrittenBinlogPosition)
+		pos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.LastWrittenBinlogPosition)
 	} else {
-		err = f.BinlogStreamer.ConnectBinlogStreamerToMysql()
+		pos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysql()
 	}
 	if err != nil {
 		return err
 	}
+
+	// If we don't set this now, there is a race condition where Ghostferry
+	// is terminated with some rows copied but no binlog events are written.
+	// This guarentees that we are able to restart from a valid location.
+	f.StateTracker.UpdateLastWrittenBinlogPosition(pos)
 
 	// Loads the schema of the tables that are applicable.
 	// We need to do this at the beginning of the run as this is required
