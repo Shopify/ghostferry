@@ -277,7 +277,6 @@ func (v *IterativeVerifier) StartInBackground() error {
 
 	v.backgroundVerificationWg.Add(1)
 	go func() {
-		defer v.backgroundVerificationWg.Done()
 		defer func() {
 			v.backgroundDoneTime = time.Now()
 			v.backgroundVerificationWg.Done()
