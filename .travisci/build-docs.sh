@@ -2,7 +2,8 @@
 
 set -xe
 
-sudo apt-get install python3-pip
+sudo apt-get update
+sudo apt-get install -y python3-pip
 sudo pip3 install sphinx
 cd docs
 make html
