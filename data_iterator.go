@@ -47,7 +47,14 @@ func (d *DataIterator) Run() {
 	}
 
 	for table, maxPk := range tablesWithData {
-		d.targetPKs.Store(table.String(), maxPk)
+		tableName := table.String()
+		if d.StateTracker.IsTableComplete(tableName) {
+			// In a previous run, the table may have been completed.
+			// We don't need to reiterate those tables as it has already been done.
+			delete(tablesWithData, table)
+		} else {
+			d.targetPKs.Store(table.String(), maxPk)
+		}
 	}
 
 	tablesQueue := make(chan *schema.Table)

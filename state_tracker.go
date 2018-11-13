@@ -69,6 +69,13 @@ func (s *StateTracker) MarkTableAsCompleted(table string) {
 	s.completedTables[table] = true
 }
 
+func (s *StateTracker) IsTableComplete(table string) bool {
+	s.tableMutex.Lock()
+	defer s.tableMutex.Unlock()
+
+	return s.completedTables[table]
+}
+
 func (s *StateTracker) UpdateLastWrittenBinlogPosition(pos mysql.Position) {
 	s.binlogMutex.Lock()
 	defer s.binlogMutex.Unlock()
