@@ -40,23 +40,21 @@ type CursorConfig struct {
 }
 
 // returns a new Cursor with an embedded copy of itself
-func (c *CursorConfig) NewCursor(table *schema.Table, maxPk uint64) *Cursor {
+func (c *CursorConfig) NewCursor(table *schema.Table, startPk, maxPk uint64) *Cursor {
 	return &Cursor{
-		CursorConfig:  *c,
-		Table:         table,
-		MaxPrimaryKey: maxPk,
-		RowLock:       true,
+		CursorConfig:             *c,
+		Table:                    table,
+		MaxPrimaryKey:            maxPk,
+		RowLock:                  true,
+		lastSuccessfulPrimaryKey: startPk,
 	}
 }
 
 // returns a new Cursor with an embedded copy of itself
-func (c *CursorConfig) NewCursorWithoutRowLock(table *schema.Table, maxPk uint64) *Cursor {
-	return &Cursor{
-		CursorConfig:  *c,
-		Table:         table,
-		MaxPrimaryKey: maxPk,
-		RowLock:       false,
-	}
+func (c *CursorConfig) NewCursorWithoutRowLock(table *schema.Table, startPk, maxPk uint64) *Cursor {
+	cursor := c.NewCursor(table, startPk, maxPk)
+	cursor.RowLock = false
+	return cursor
 }
 
 type Cursor struct {
@@ -72,7 +70,6 @@ type Cursor struct {
 }
 
 func (c *Cursor) Each(f func(*RowBatch) error) error {
-	c.lastSuccessfulPrimaryKey = 0
 	c.logger = logrus.WithFields(logrus.Fields{
 		"table": c.Table.String(),
 		"tag":   "cursor",

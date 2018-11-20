@@ -237,9 +237,19 @@ type Config struct {
 	// Optional: defaults to false
 	AutomaticCutover bool
 
+	// This specifies whether or not Ferry.Run will handle SIGINT and SIGTERM
+	// by dumping the current state to stdout.
+	// This state can be used to resume Ghostferry.
+	DumpStateToStdoutOnSignal bool
+
 	// Config for the ControlServer
 	ServerBindAddr string
 	WebBasedir     string
+
+	// The state to resume from as dumped by the PanicErrorHandler.
+	// If this is null, a new Ghostferry run will be started. Otherwise, the
+	// reconciliation process will start and Ghostferry will resume after that.
+	StateToResumeFrom *SerializableState
 }
 
 func (c *Config) ValidateConfig() error {
@@ -253,6 +263,10 @@ func (c *Config) ValidateConfig() error {
 
 	if c.TableFilter == nil {
 		return fmt.Errorf("Table filter function must be provided")
+	}
+
+	if c.StateToResumeFrom != nil && c.StateToResumeFrom.GhostferryVersion != VersionString {
+		return fmt.Errorf("StateToResumeFrom version mismatch: resume = %s, current = %s", c.StateToResumeFrom.GhostferryVersion, VersionString)
 	}
 
 	if c.DBWriteRetries == 0 {

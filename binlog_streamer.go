@@ -15,8 +15,9 @@ import (
 const caughtUpThreshold = 10 * time.Second
 
 type BinlogStreamer struct {
-	Db           *sql.DB
-	Config       *Config
+	DB           *sql.DB
+	DBConfig     DatabaseConfig
+	MyServerId   uint32
 	ErrorHandler ErrorHandler
 	Filter       CopyFilter
 
@@ -35,25 +36,25 @@ type BinlogStreamer struct {
 	eventListeners []func([]DMLEvent) error
 }
 
-func (s *BinlogStreamer) Initialize() error {
-	s.logger = logrus.WithField("tag", "binlog_streamer")
-	s.stopRequested = false
-	return nil
+func (s *BinlogStreamer) ensureLogger() {
+	if s.logger == nil {
+		s.logger = logrus.WithField("tag", "binlog_streamer")
+	}
 }
 
 func (s *BinlogStreamer) createBinlogSyncer() error {
 	var err error
 	var tlsConfig *tls.Config
 
-	if s.Config.Source.TLS != nil {
-		tlsConfig, err = s.Config.Source.TLS.BuildConfig()
+	if s.DBConfig.TLS != nil {
+		tlsConfig, err = s.DBConfig.TLS.BuildConfig()
 		if err != nil {
 			return err
 		}
 	}
 
-	if s.Config.MyServerId == 0 {
-		s.Config.MyServerId, err = s.generateNewServerId()
+	if s.MyServerId == 0 {
+		s.MyServerId, err = s.generateNewServerId()
 		if err != nil {
 			s.logger.WithError(err).Error("could not generate unique server_id")
 			return err
@@ -61,11 +62,11 @@ func (s *BinlogStreamer) createBinlogSyncer() error {
 	}
 
 	syncerConfig := replication.BinlogSyncerConfig{
-		ServerID:                s.Config.MyServerId,
-		Host:                    s.Config.Source.Host,
-		Port:                    s.Config.Source.Port,
-		User:                    s.Config.Source.User,
-		Password:                s.Config.Source.Pass,
+		ServerID:                s.MyServerId,
+		Host:                    s.DBConfig.Host,
+		Port:                    s.DBConfig.Port,
+		User:                    s.DBConfig.User,
+		Password:                s.DBConfig.Pass,
 		TLSConfig:               tlsConfig,
 		UseDecimal:              true,
 		TimestampStringLocation: time.UTC,
@@ -76,22 +77,31 @@ func (s *BinlogStreamer) createBinlogSyncer() error {
 }
 
 func (s *BinlogStreamer) ConnectBinlogStreamerToMysql() error {
-	err := s.createBinlogSyncer()
-	if err != nil {
-		return err
-	}
+	s.ensureLogger()
 
-	s.logger.Info("reading current binlog position")
-	s.lastStreamedBinlogPosition, err = ShowMasterStatusBinlogPosition(s.Db)
+	currentPosition, err := ShowMasterStatusBinlogPosition(s.DB)
 	if err != nil {
 		s.logger.WithError(err).Error("failed to read current binlog position")
 		return err
 	}
 
+	return s.ConnectBinlogStreamerToMysqlFrom(currentPosition)
+}
+
+func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFrom(startFromBinlogPosition mysql.Position) error {
+	s.ensureLogger()
+
+	err := s.createBinlogSyncer()
+	if err != nil {
+		return err
+	}
+
+	s.lastStreamedBinlogPosition = startFromBinlogPosition
+
 	s.logger.WithFields(logrus.Fields{
 		"file": s.lastStreamedBinlogPosition.Name,
 		"pos":  s.lastStreamedBinlogPosition.Pos,
-	}).Info("found binlog position, starting synchronization")
+	}).Info("starting binlog streaming")
 
 	s.binlogStreamer, err = s.binlogSyncer.StartSync(s.lastStreamedBinlogPosition)
 	if err != nil {
@@ -103,6 +113,8 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysql() error {
 }
 
 func (s *BinlogStreamer) Run() {
+	s.ensureLogger()
+
 	defer func() {
 		s.logger.Info("exiting binlog streamer")
 		s.binlogSyncer.Close()
@@ -192,7 +204,7 @@ func (s *BinlogStreamer) FlushAndStop() {
 	// passed the initial target position.
 	err := WithRetries(100, 600*time.Millisecond, s.logger, "read current binlog position", func() error {
 		var err error
-		s.targetBinlogPosition, err = ShowMasterStatusBinlogPosition(s.Db)
+		s.targetBinlogPosition, err = ShowMasterStatusBinlogPosition(s.DB)
 		return err
 	})
 
@@ -290,7 +302,7 @@ func (s *BinlogStreamer) generateNewServerId() (uint32, error) {
 	for {
 		id = randomServerId()
 
-		exists, err := idExistsOnServer(id, s.Db)
+		exists, err := idExistsOnServer(id, s.DB)
 		if err != nil {
 			return 0, err
 		}

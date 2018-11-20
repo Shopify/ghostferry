@@ -2,8 +2,8 @@ package ghostferry
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
+	"math"
 	"sync"
 
 	"github.com/siddontang/go-mysql/schema"
@@ -25,20 +25,18 @@ type DataIterator struct {
 	logger         *logrus.Entry
 }
 
-func (d *DataIterator) Initialize() error {
+func (d *DataIterator) Run() {
 	d.logger = logrus.WithField("tag", "data_iterator")
 	d.targetPKs = &sync.Map{}
 
+	// If a state tracker is not provided, then the caller doesn't care about
+	// tracking state. However, some methods are still useful so we initialize
+	// a minimal local instance.
 	if d.StateTracker == nil {
-		return errors.New("StateTracker must be defined")
+		d.StateTracker = NewStateTracker(0)
 	}
 
-	return nil
-}
-
-func (d *DataIterator) Run() {
 	d.logger.WithField("tablesCount", len(d.Tables)).Info("starting data iterator run")
-
 	tablesWithData, emptyTables, err := MaxPrimaryKeys(d.DB, d.Tables, d.logger)
 	if err != nil {
 		d.ErrorHandler.Fatal("data_iterator", err)
@@ -49,7 +47,14 @@ func (d *DataIterator) Run() {
 	}
 
 	for table, maxPk := range tablesWithData {
-		d.targetPKs.Store(table.String(), maxPk)
+		tableName := table.String()
+		if d.StateTracker.IsTableComplete(tableName) {
+			// In a previous run, the table may have been completed.
+			// We don't need to reiterate those tables as it has already been done.
+			delete(tablesWithData, table)
+		} else {
+			d.targetPKs.Store(table.String(), maxPk)
+		}
 	}
 
 	tablesQueue := make(chan *schema.Table)
@@ -76,7 +81,15 @@ func (d *DataIterator) Run() {
 					return
 				}
 
-				cursor := d.CursorConfig.NewCursor(table, targetPKInterface.(uint64))
+				startPk := d.StateTracker.LastSuccessfulPK(table.String())
+				if startPk == math.MaxUint64 {
+					err := fmt.Errorf("%v has been marked as completed but a table iterator has been spawned, this is likely a programmer error which resulted in the inconsistent starting state", table.String())
+					logger.WithError(err).Error("this is definitely a bug")
+					d.ErrorHandler.Fatal("data_iterator", err)
+					return
+				}
+
+				cursor := d.CursorConfig.NewCursor(table, startPk, targetPKInterface.(uint64))
 				err := cursor.Each(func(batch *RowBatch) error {
 					metrics.Count("RowEvent", int64(batch.Size()), []MetricTag{
 						MetricTag{"table", table.Name},

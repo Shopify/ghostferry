@@ -71,6 +71,8 @@ func (t *ShardingUnitTestSuite) SetupTest() {
 	t.setupShardingFerry()
 	t.dropTestDbs()
 
+	testhelpers.SetupTest()
+
 	testhelpers.SeedInitialData(t.Ferry.Ferry.SourceDB, sourceDbName, testTable, 1000)
 	testhelpers.SeedInitialData(t.Ferry.Ferry.TargetDB, targetDbName, testTable, 0)
 

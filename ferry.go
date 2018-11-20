@@ -6,11 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"os/signal"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	siddontanglog "github.com/siddontang/go-log/log"
 	siddontangmysql "github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
@@ -73,7 +77,7 @@ type Ferry struct {
 	rowCopyCompleteCh chan struct{}
 }
 
-func (f *Ferry) newDataIterator() (*DataIterator, error) {
+func (f *Ferry) NewDataIterator() *DataIterator {
 	dataIterator := &DataIterator{
 		DB:          f.SourceDB,
 		Concurrency: f.Config.DataIterationConcurrency,
@@ -93,8 +97,65 @@ func (f *Ferry) newDataIterator() (*DataIterator, error) {
 		dataIterator.CursorConfig.BuildSelect = f.CopyFilter.BuildSelect
 	}
 
-	err := dataIterator.Initialize()
-	return dataIterator, err
+	return dataIterator
+}
+
+func (f *Ferry) NewDataIteratorWithoutStateTracker() *DataIterator {
+	dataIterator := f.NewDataIterator()
+	dataIterator.StateTracker = nil
+	return dataIterator
+}
+
+func (f *Ferry) NewBinlogStreamer() *BinlogStreamer {
+	return &BinlogStreamer{
+		DB:           f.SourceDB,
+		DBConfig:     f.Source,
+		MyServerId:   f.Config.MyServerId,
+		ErrorHandler: f.ErrorHandler,
+		Filter:       f.CopyFilter,
+	}
+}
+
+func (f *Ferry) NewBinlogWriter() *BinlogWriter {
+	return &BinlogWriter{
+		DB:               f.TargetDB,
+		DatabaseRewrites: f.Config.DatabaseRewrites,
+		TableRewrites:    f.Config.TableRewrites,
+		Throttler:        f.Throttler,
+
+		BatchSize:    f.Config.BinlogEventBatchSize,
+		WriteRetries: f.Config.DBWriteRetries,
+
+		ErrorHandler: f.ErrorHandler,
+		StateTracker: f.StateTracker,
+	}
+}
+
+func (f *Ferry) NewBinlogWriterWithoutStateTracker() *BinlogWriter {
+	binlogWriter := f.NewBinlogWriter()
+	binlogWriter.StateTracker = nil
+	return binlogWriter
+}
+
+func (f *Ferry) NewBatchWriter() *BatchWriter {
+	batchWriter := &BatchWriter{
+		DB:           f.TargetDB,
+		StateTracker: f.StateTracker,
+
+		DatabaseRewrites: f.Config.DatabaseRewrites,
+		TableRewrites:    f.Config.TableRewrites,
+
+		WriteRetries: f.Config.DBWriteRetries,
+	}
+
+	batchWriter.Initialize()
+	return batchWriter
+}
+
+func (f *Ferry) NewBatchWriterWithoutStateTracker() *BatchWriter {
+	batchWriter := f.NewBatchWriter()
+	batchWriter.StateTracker = nil
+	return batchWriter
 }
 
 // Initialize all the components of Ghostferry and connect to the Database
@@ -107,7 +168,14 @@ func (f *Ferry) Initialize() (err error) {
 
 	f.logger.Infof("hello world from %s", VersionString)
 
-	// Connect to the database
+	// Suppress siddontang/go-mysql logging as we already log the equivalents.
+	// It also by defaults logs to stdout, which is different from Ghostferry
+	// logging, which all goes to stderr. stdout in Ghostferry is reserved for
+	// dumping states due to an abort.
+	siddontanglog.SetDefaultLogger(siddontanglog.NewDefault(&siddontanglog.NullHandler{}))
+
+	// Connect to the source and target databases and check the validity
+	// of the connections
 	f.SourceDB, err = f.Source.SqlDB(f.logger.WithField("dbname", "source"))
 	if err != nil {
 		f.logger.WithError(err).Error("failed to connect to source database")
@@ -147,6 +215,9 @@ func (f *Ferry) Initialize() (err error) {
 		return fmt.Errorf("@@read_only must be OFF on target db")
 	}
 
+	// Check if we're running from a replica or not and sanity check
+	// the configurations given to Ghostferry as well as the configurations
+	// of the MySQL databases.
 	if f.WaitUntilReplicaIsCaughtUpToMaster != nil {
 		f.WaitUntilReplicaIsCaughtUpToMaster.ReplicaDB = f.SourceDB
 
@@ -195,6 +266,7 @@ func (f *Ferry) Initialize() (err error) {
 		}
 	}
 
+	// Initializing the necessary components of Ghostferry.
 	if f.ErrorHandler == nil {
 		f.ErrorHandler = &PanicErrorHandler{
 			Ferry: f,
@@ -205,56 +277,16 @@ func (f *Ferry) Initialize() (err error) {
 		f.Throttler = &PauserThrottler{}
 	}
 
-	f.StateTracker = NewStateTracker(f.DataIterationConcurrency * 10)
-
-	f.BinlogStreamer = &BinlogStreamer{
-		Db:           f.SourceDB,
-		Config:       f.Config,
-		ErrorHandler: f.ErrorHandler,
-		Filter:       f.CopyFilter,
-	}
-	err = f.BinlogStreamer.Initialize()
-	if err != nil {
-		return err
+	if f.StateToResumeFrom == nil {
+		f.StateTracker = NewStateTracker(f.DataIterationConcurrency * 10)
+	} else {
+		f.StateTracker = NewStateTrackerFromSerializedState(f.DataIterationConcurrency*10, f.StateToResumeFrom)
 	}
 
-	f.BinlogWriter = &BinlogWriter{
-		DB:               f.TargetDB,
-		DatabaseRewrites: f.Config.DatabaseRewrites,
-		TableRewrites:    f.Config.TableRewrites,
-		Throttler:        f.Throttler,
-
-		BatchSize:    f.Config.BinlogEventBatchSize,
-		WriteRetries: f.Config.DBWriteRetries,
-
-		ErrorHandler: f.ErrorHandler,
-		StateTracker: f.StateTracker,
-	}
-
-	err = f.BinlogWriter.Initialize()
-	if err != nil {
-		return err
-	}
-
-	f.DataIterator, err = f.newDataIterator()
-	if err != nil {
-		return err
-	}
-
-	f.BatchWriter = &BatchWriter{
-		DB:           f.TargetDB,
-		StateTracker: f.StateTracker,
-
-		DatabaseRewrites: f.Config.DatabaseRewrites,
-		TableRewrites:    f.Config.TableRewrites,
-
-		WriteRetries: f.Config.DBWriteRetries,
-	}
-
-	err = f.BatchWriter.Initialize()
-	if err != nil {
-		return err
-	}
+	f.BinlogStreamer = f.NewBinlogStreamer()
+	f.BinlogWriter = f.NewBinlogWriter()
+	f.DataIterator = f.NewDataIterator()
+	f.BatchWriter = f.NewBatchWriter()
 
 	f.logger.Info("ferry initialized")
 	return nil
@@ -278,7 +310,12 @@ func (f *Ferry) Start() error {
 	// miss some records that are inserted between the time the
 	// DataIterator determines the range of IDs to copy and the time that
 	// the starting binlog coordinates are determined.
-	err := f.BinlogStreamer.ConnectBinlogStreamerToMysql()
+	var err error
+	if f.StateToResumeFrom != nil {
+		err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.LastWrittenBinlogPosition)
+	} else {
+		err = f.BinlogStreamer.ConnectBinlogStreamerToMysql()
+	}
 	if err != nil {
 		return err
 	}
@@ -288,11 +325,15 @@ func (f *Ferry) Start() error {
 	// in order to determine the PrimaryKey of each table as well as finding
 	// which value in the binlog event correspond to which field in the
 	// table.
-	metrics.Measure("LoadTables", nil, 1.0, func() {
-		f.Tables, err = LoadTables(f.SourceDB, f.TableFilter)
-	})
-	if err != nil {
-		return err
+	if f.StateToResumeFrom != nil {
+		f.Tables = f.StateToResumeFrom.LastKnownTableSchemaCache
+	} else {
+		metrics.Measure("LoadTables", nil, 1.0, func() {
+			f.Tables, err = LoadTables(f.SourceDB, f.TableFilter)
+		})
+		if err != nil {
+			return err
+		}
 	}
 
 	// TODO(pushrax): handle changes to schema during copying and clean this up.
@@ -323,6 +364,26 @@ func (f *Ferry) Run() {
 		defer supportingServicesWg.Done()
 		handleError("throttler", f.Throttler.Run(ctx))
 	}()
+
+	if f.DumpStateToStdoutOnSignal {
+		supportingServicesWg.Add(1)
+
+		go func() {
+			defer supportingServicesWg.Done()
+
+			c := make(chan os.Signal, 1)
+			signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
+
+			select {
+			case <-ctx.Done():
+				f.logger.Debug("shutting down signal monitoring goroutine")
+				return
+			case s := <-c:
+				f.ErrorHandler.Fatal("user", fmt.Errorf("signal received: %v", s.String()))
+			}
+		}()
+
+	}
 
 	binlogWg := &sync.WaitGroup{}
 	binlogWg.Add(2)
@@ -372,14 +433,15 @@ func (f *Ferry) RunStandaloneDataCopy(tables []*schema.Table) error {
 		return nil
 	}
 
-	dataIterator, err := f.newDataIterator()
-	if err != nil {
-		return err
-	}
+	dataIterator := f.NewDataIteratorWithoutStateTracker()
+
+	// BUG: if the PanicErrorHandler fires while running the standalone copy, we
+	// will get an error dump even though we should not get one, which could be
+	// misleading.
 
 	dataIterator.Tables = tables
 	dataIterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
-	f.logger.WithField("tables", tables).Info("starting standalone table copy")
+	f.logger.WithField("tables", tables).Info("starting delta table copy in cutover")
 
 	dataIterator.Run()
 

@@ -45,43 +45,42 @@ func (this *BinlogStreamerTestSuite) SetupTest() {
 	this.Require().Nil(err)
 
 	this.binlogStreamer = &ghostferry.BinlogStreamer{
-		Db:           this.sourceDb,
-		Config:       testFerry.Config,
+		DB:           this.sourceDb,
+		DBConfig:     testFerry.Config.Source,
+		MyServerId:   testFerry.Config.MyServerId,
 		ErrorHandler: testFerry.ErrorHandler,
 		Filter:       testFerry.CopyFilter,
 		TableSchema:  tableSchemaCache,
 	}
-
-	this.Require().Nil(this.binlogStreamer.Initialize())
 }
 
 func (this *BinlogStreamerTestSuite) TestConnectWithIdKeepsId() {
-	this.binlogStreamer.Config.MyServerId = 1421
+	this.binlogStreamer.MyServerId = 1421
 
 	err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
 
 	this.Require().Nil(err)
-	this.Require().Equal(uint32(1421), this.binlogStreamer.Config.MyServerId)
+	this.Require().Equal(uint32(1421), this.binlogStreamer.MyServerId)
 }
 
 func (this *BinlogStreamerTestSuite) TestConnectWithZeroIdGetsRandomServerId() {
-	this.binlogStreamer.Config.MyServerId = 0
+	this.binlogStreamer.MyServerId = 0
 
 	err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
 
 	this.Require().Nil(err)
-	this.Require().NotZero(this.binlogStreamer.Config.MyServerId)
+	this.Require().NotZero(this.binlogStreamer.MyServerId)
 }
 
 func (this *BinlogStreamerTestSuite) TestConnectErrorsOutIfErrorInServerIdGeneration() {
-	this.binlogStreamer.Config.MyServerId = 0
+	this.binlogStreamer.MyServerId = 0
 
-	this.binlogStreamer.Db.Close()
+	this.binlogStreamer.DB.Close()
 
 	err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
 
 	this.Require().NotNil(err)
-	this.Require().Zero(this.binlogStreamer.Config.MyServerId)
+	this.Require().Zero(this.binlogStreamer.MyServerId)
 }
 
 func (this *BinlogStreamerTestSuite) TestBinlogStreamerSetsBinlogPositionOnDMLEvent() {

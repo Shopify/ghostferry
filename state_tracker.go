@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	"container/ring"
+	"math"
 	"sync"
 	"time"
 
@@ -44,11 +45,35 @@ func (s *StateTracker) UpdateLastSuccessfulPK(table string, pk uint64) {
 	s.updateSpeedLog(deltaPK)
 }
 
+func (s *StateTracker) LastSuccessfulPK(table string) uint64 {
+	s.tableMutex.RLock()
+	defer s.tableMutex.RUnlock()
+
+	_, found := s.completedTables[table]
+	if found {
+		return math.MaxUint64
+	}
+
+	pk, found := s.lastSuccessfulPrimaryKeys[table]
+	if !found {
+		return 0
+	}
+
+	return pk
+}
+
 func (s *StateTracker) MarkTableAsCompleted(table string) {
 	s.tableMutex.Lock()
 	defer s.tableMutex.Unlock()
 
 	s.completedTables[table] = true
+}
+
+func (s *StateTracker) IsTableComplete(table string) bool {
+	s.tableMutex.Lock()
+	defer s.tableMutex.Unlock()
+
+	return s.completedTables[table]
 }
 
 func (s *StateTracker) UpdateLastWrittenBinlogPosition(pos mysql.Position) {
@@ -90,6 +115,10 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache) *Se
 // between pk = 0 -> max(pk). It would not be accurate if the distribution is
 // concentrated in a particular region.
 func (s *StateTracker) EstimatedPKCopiedPerSecond() float64 {
+	if s.copySpeedLog == nil {
+		return 0.0
+	}
+
 	s.tableMutex.RLock()
 	defer s.tableMutex.RUnlock()
 
@@ -111,6 +140,10 @@ func (s *StateTracker) EstimatedPKCopiedPerSecond() float64 {
 }
 
 func (s *StateTracker) updateSpeedLog(deltaPK uint64) {
+	if s.copySpeedLog == nil {
+		return
+	}
+
 	currentTotalPK := s.copySpeedLog.Value.(PKPositionLog).Position
 	s.copySpeedLog = s.copySpeedLog.Next()
 	s.copySpeedLog.Value = PKPositionLog{
@@ -124,10 +157,14 @@ func (s *StateTracker) updateSpeedLog(deltaPK uint64) {
 // to calculate the speed is not filled with only data from the last iteration
 // of the cursor and thus would be wildly inaccurate.
 func NewStateTracker(speedLogCount int) *StateTracker {
-	speedLog := ring.New(speedLogCount)
-	speedLog.Value = PKPositionLog{
-		Position: 0,
-		At:       time.Now(),
+	var speedLog *ring.Ring = nil
+
+	if speedLogCount > 0 {
+		speedLog = ring.New(speedLogCount)
+		speedLog.Value = PKPositionLog{
+			Position: 0,
+			At:       time.Now(),
+		}
 	}
 
 	return &StateTracker{

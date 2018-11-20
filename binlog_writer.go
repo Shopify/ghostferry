@@ -2,7 +2,6 @@ package ghostferry
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 
 	"github.com/siddontang/go-mysql/schema"
@@ -25,17 +24,10 @@ type BinlogWriter struct {
 	logger            *logrus.Entry
 }
 
-func (b *BinlogWriter) Initialize() error {
-	if b.StateTracker == nil {
-		return errors.New("must specify StateTracker")
-	}
-
+func (b *BinlogWriter) Run() {
 	b.logger = logrus.WithField("tag", "binlog_writer")
 	b.binlogEventBuffer = make(chan DMLEvent, b.BatchSize)
-	return nil
-}
 
-func (b *BinlogWriter) Run() {
 	batch := make([]DMLEvent, 0, b.BatchSize)
 	for {
 		firstEvent := <-b.binlogEventBuffer
@@ -116,7 +108,9 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 		return fmt.Errorf("exec query (%d bytes): %v", len(query), err)
 	}
 
-	b.StateTracker.UpdateLastWrittenBinlogPosition(events[len(events)-1].BinlogPosition())
+	if b.StateTracker != nil {
+		b.StateTracker.UpdateLastWrittenBinlogPosition(events[len(events)-1].BinlogPosition())
+	}
 
 	return nil
 }
