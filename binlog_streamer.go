@@ -166,7 +166,8 @@ func (s *BinlogStreamer) Run() {
 			// the cached schemas of the tables would be invalidated.
 			// TODO: investigate using this to allow for migrations to occur.
 		case *replication.GenericEvent:
-			// go-mysql don't parse this event, it use GenericEvent instead,
+			// go-mysql don't parse all events and unparsed events are denoted
+			// with empty GenericEvent structs.
 			// so there's no way to handle this for us.
 			continue
 		default:
