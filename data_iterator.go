@@ -99,7 +99,7 @@ func (d *DataIterator) Run() {
 					for _, listener := range d.batchListeners {
 						err := listener(batch)
 						if err != nil {
-							logger.WithError(err).Error("failed to process row batch with listeners")
+							logger.WithError(err).Error("failed to process row batch with listeners batch size %d", batch.Size())
 							return err
 						}
 					}

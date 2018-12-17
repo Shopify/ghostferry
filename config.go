@@ -274,7 +274,7 @@ func (c *Config) ValidateConfig() error {
 	}
 
 	if c.DataIterationBatchSize == 0 {
-		c.DataIterationBatchSize = 200
+		c.DataIterationBatchSize = 5
 	}
 
 	if c.BinlogEventBatchSize == 0 {
@@ -282,7 +282,7 @@ func (c *Config) ValidateConfig() error {
 	}
 
 	if c.DataIterationConcurrency == 0 {
-		c.DataIterationConcurrency = 4
+		c.DataIterationConcurrency = 1
 	}
 
 	if c.DBReadRetries == 0 {

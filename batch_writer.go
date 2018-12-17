@@ -34,6 +34,16 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 			return nil
 		}
 
+		lastRow := batch.Values()[len(batch.Values())-1]
+		startPkpos, err := batch.Values()[0].GetUint64(batch.PkIndex())
+		if err != nil {
+			return fmt.Errorf("trying to get startPkpos", err)
+		}
+ 		endPkpos, err := lastRow.GetUint64(batch.PkIndex())
+		if err != nil {
+			return fmt.Errorf("trying to get endPkpos", err)
+		}
+
 		db := batch.TableSchema().Schema
 		if targetDbName, exists := w.DatabaseRewrites[db]; exists {
 			db = targetDbName
@@ -46,29 +56,23 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 
 		query, args, err := batch.AsSQLQuery(&schema.Table{Schema: db, Name: table})
 		if err != nil {
-			return fmt.Errorf("during generating sql query: %v", err)
+			return fmt.Errorf("during generating sql query at pk %v -> %v: %v", startPkpos, endPkpos, err)
 		}
 
 		stmt, err := w.stmtFor(query)
 		if err != nil {
-			return fmt.Errorf("during preparing query (%s): %v", query, err)
+			return fmt.Errorf("during preparing query near pk %v -> %v (%s): %v", startPkpos, endPkpos, query, err)
 		}
 
 		_, err = stmt.Exec(args...)
 		if err != nil {
-			return fmt.Errorf("during exec query (%s): %v", query, err)
-		}
-
-		lastRow := batch.Values()[len(batch.Values())-1]
-		pkpos, err := lastRow.GetUint64(batch.PkIndex())
-		if err != nil {
-			return err
+			return fmt.Errorf("during exec query near pk %v -> %v (%s): %v", startPkpos, endPkpos, query, err)
 		}
 
 		// Note that the state tracker expects us the track based on the original
 		// database and table names as opposed to the target ones.
 		if w.StateTracker != nil {
-			w.StateTracker.UpdateLastSuccessfulPK(batch.TableSchema().String(), pkpos)
+			w.StateTracker.UpdateLastSuccessfulPK(batch.TableSchema().String(), endPkpos)
 		}
 
 		return nil

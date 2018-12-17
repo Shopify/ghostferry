@@ -22,6 +22,7 @@ func WithRetriesContext(ctx context.Context, maxRetries int, sleep time.Duration
 	try := 1
 
 	if logger == nil {
+		logrus.SetLevel(logrus.DebugLevel)
 		logger = logrus.NewEntry(logrus.StandardLogger())
 	}
 
