@@ -93,7 +93,7 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 
 		sql, err := ev.AsSQLString(&schema.Table{Schema: eventDatabaseName, Name: eventTableName})
 		if err != nil {
-			return fmt.Errorf("generating sql query: %v", err)
+			return fmt.Errorf("generating sql query at pos %v: %v", ev.BinlogPosition(), err)
 		}
 
 		queryBuffer = append(queryBuffer, sql...)
@@ -102,10 +102,14 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 
 	queryBuffer = append(queryBuffer, "COMMIT"...)
 
+	startEv := events[0]
+	endEv := events[len(events)-1]
+
 	query := string(queryBuffer)
 	_, err := b.DB.Exec(query)
 	if err != nil {
-		return fmt.Errorf("exec query (%d bytes): %v", len(query), err)
+		return fmt.Errorf("exec query at pos %v -> %v (%d bytes): %v",
+			startEv.BinlogPosition(), endEv.BinlogPosition(), len(query), err)
 	}
 
 	if b.StateTracker != nil {

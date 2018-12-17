@@ -464,10 +464,10 @@ func (v *IterativeVerifier) verifyStore(sourceTag string, additionalTags []Metri
 
 			metrics.Count("RowEvent", int64(len(reverifyBatch.Pks)), tags, 1.0)
 
-			v.logger.WithFields(logrus.Fields{
-				"table":    table.String(),
-				"len(pks)": len(reverifyBatch.Pks),
-			}).Debug("received pk batch to reverify")
+//			v.logger.WithFields(logrus.Fields{
+//				"table":    table.String(),
+//				"len(pks)": len(reverifyBatch.Pks),
+//			}).Debug("received pk batch to reverify")
 
 			verificationResult, mismatchedPks, err := v.reverifyPks(table, reverifyBatch.Pks)
 			resultAndErr := verificationResultAndError{verificationResult, err}
