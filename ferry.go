@@ -498,6 +498,10 @@ func (f *Ferry) FlushBinlogAndStopStreaming() {
 }
 
 func (f *Ferry) SerializeStateToJSON() (string, error) {
+	if f.StateTracker == nil {
+		err := errors.New("no valid StateTracker")
+		return "", err
+	}
 	serializedState := f.StateTracker.Serialize(f.Tables)
 	stateBytes, err := json.MarshalIndent(serializedState, "", "  ")
 	return string(stateBytes), err
