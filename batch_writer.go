@@ -62,11 +62,13 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 
 		stmt, err := w.stmtFor(query)
 		if err != nil {
+			w.delStmt(query)
 			return fmt.Errorf("during preparing query near pk %v -> %v (%s): %v", startPkpos, endPkpos, query, err)
 		}
 
 		_, err = stmt.Exec(args...)
 		if err != nil {
+			w.delStmt(query)
 			return fmt.Errorf("during exec query near pk %v -> %v (%s): %v", startPkpos, endPkpos, query, err)
 		}
 
@@ -109,4 +111,13 @@ func (w *BatchWriter) getStmt(query string) (*sql.Stmt, bool) {
 	defer w.mut.RUnlock()
 	stmt, exists := w.statements[query]
 	return stmt, exists
+}
+
+func (w *BatchWriter) delStmt(query string) {
+	w.mut.RLock()
+	defer w.mut.RUnlock()
+
+	if _, exists := w.statements[query]; exists {
+		delete(w.statements, query)
+	}
 }
