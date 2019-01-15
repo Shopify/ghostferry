@@ -2,9 +2,10 @@ require "fileutils"
 require "json"
 require "logger"
 require "open3"
-require "socket"
 require "thread"
 require "tmpdir"
+require "webrick"
+require "cgi"
 
 module GhostferryHelper
   GHOSTFERRY_TEMPDIR = File.join(Dir.tmpdir, "ghostferry-integration")
@@ -29,12 +30,8 @@ module GhostferryHelper
     # ghostferry.run
 
     # Keep these in sync with integrationferry.go
-    ENV_KEY_SOCKET_PATH = "GHOSTFERRY_INTEGRATION_SOCKET_PATH"
+    ENV_KEY_PORT = "GHOSTFERRY_INTEGRATION_PORT"
     MAX_MESSAGE_SIZE = 256
-
-    SOCKET_PATH = ENV[ENV_KEY_SOCKET_PATH] || "/tmp/ghostferry-integration.sock"
-
-    CONTINUE = "CONTINUE"
 
     module Status
       # This should be in sync with integrationferry.go
@@ -51,7 +48,7 @@ module GhostferryHelper
 
     attr_reader :stdout, :stderr, :exit_status, :pid
 
-    def initialize(main_path, logger: nil, message_timeout: 30)
+    def initialize(main_path, logger: nil, message_timeout: 30, port: 39393)
       @main_path = main_path
       @message_timeout = message_timeout
       @logger = logger
@@ -70,13 +67,14 @@ module GhostferryHelper
       @compiled_binary_path = File.join(GHOSTFERRY_TEMPDIR, binary_name)
 
       @status_handlers = {}
-      @stop_requested = false
 
       @server_thread = nil
+      @server_watchdog_thread = nil
       @subprocess_thread = nil
 
       @server = nil
-      @server_started_notifier = Queue.new
+      @server_last_error = nil
+      @server_port = port
 
       @pid = 0
       @exit_status = nil
@@ -104,78 +102,62 @@ module GhostferryHelper
     end
 
     def start_server
-      @server_thread = Thread.new do
-        @logger.info("starting integration test server")
-        @server = UNIXServer.new(SOCKET_PATH)
-        @server_started_notifier.push(true)
+      @server_last_error = nil
 
-        reads = [@server]
-        last_message_time = Time.now
+      @last_message_time = Time.now
+      @server = WEBrick::HTTPServer.new(
+        BindAddress: "127.0.0.1",
+        Port: @server_port,
+        Logger: @logger,
+        AccessLog: [],
+      )
 
-        while (!@stop_requested && @exit_status.nil?) do
-          ready = IO.select(reads, nil, nil, 0.2)
-
-          if ready.nil?
-            next if Time.now - last_message_time < @message_timeout
-
-            raise "ghostferry did not report to the integration test server for the last #{@message_timeout}"
+      @server.mount_proc "/" do |req, resp|
+        begin
+          unless req.body
+            @server_last_error = ArgumentError.new("Ghostferry is improperly implemented and did not send form data")
+            resp.status = 400
+            @server.shutdown
           end
 
-          last_message_time = Time.now
+          query = CGI::parse(req.body)
 
-          # Each client should send one message, expects a message back, and
-          # then close the connection.
-          #
-          # This is done because there are many goroutines operating in
-          # parallel and sending messages over a shared connection would result
-          # in multiplexing issues. Using separate connections gets around this
-          # problem.
-          ready[0].each do |socket|
-            if socket == @server
-              # A new message is to be sent by a goroutine
-              client = @server.accept_nonblock
-              reads << client
-            elsif socket.eof?
-              # A message was complete
-              @logger.warn("client disconnected?")
-              socket.close
-              reads.delete(socket)
-            else
-              # Receiving a message
-              data = socket.read_nonblock(MAX_MESSAGE_SIZE)
-              data = data.split("\0")
-              @logger.debug("server received status: #{data}")
+          status = query["status"]
+          data = query["data"]
 
-              status = data.shift
-
-              @status_handlers[status].each { |f| f.call(*data) } unless @status_handlers[status].nil?
-              begin
-                socket.write(CONTINUE)
-              rescue Errno::EPIPE
-                # It is possible for the status handler to kill Ghostferry.
-                # In such scenarios, this write may result in a broken pipe as
-                # the socket is closed.
-                #
-                # We rescue this and move on.
-                @logger.debug("can't send CONTINUE due to broken pipe")
-              end
-
-              reads.delete(socket)
-            end
+          unless status
+            @server_last_error = ArgumentError.new("Ghostferry is improperly implemented and did not send a status")
+            resp.status = 400
+            @server.shutdown
           end
+
+          status = status.first
+
+          @last_message_time = Time.now
+          @status_handlers[status].each { |f| f.call(*data) } unless @status_handlers[status].nil?
+        rescue StandardError => e
+          # errors are not reported from WEBrick but the server should fail early
+          # as this indicates there is likely a programming error.
+          @server_last_error = e
+          @server.shutdown
         end
+      end
 
-        @server.close
+      @server_thread = Thread.new do
+        @logger.info("starting server thread")
+        @server.start
         @logger.info("server thread stopped")
-     end
+      end
     end
 
     def start_ghostferry(resuming_state = nil)
       @subprocess_thread = Thread.new do
+        # No need to spam the logs with Ghostferry interrupted exceptions if
+        # Ghostferry is supposed to be interrupted.
         Thread.current.report_on_exception = false
 
         environment = {
-          ENV_KEY_SOCKET_PATH => SOCKET_PATH
+          ENV_KEY_PORT => @server_port.to_s
         }
 
         @logger.info("starting ghostferry test binary #{@compiled_binary_path}")
@@ -219,16 +201,23 @@ module GhostferryHelper
       end
     end
 
-    def wait_until_server_has_started
-      @server_started_notifier.pop
-      @logger.info("integration test server started and listening for connection")
-    end
+    def start_server_watchdog
+      # If the subprocess hangs or exits abnormally due to a bad implementation
+      # (panic/other unexpected errors) we need to make sure to terminate the
+      # HTTP server to free up the port.
+      @server_watchdog_thread = Thread.new do
+        while @subprocess_thread.alive? do
+          if Time.now - @last_message_time > @message_timeout
+            @server.shutdown
+            raise "ghostferry did not report to the integration test server for the last #{@message_timeout}s"
+          end
 
-    def wait_until_ghostferry_run_is_complete
-      # Server thread should always join first because the loop within it
-      # should exit if @exit_status != nil.
-      @server_thread.join if @server_thread
-      @subprocess_thread.join if @subprocess_thread
+          sleep 1
+        end
+
+        @server.shutdown
+        @logger.info("server watchdog thread stopped")
+      end
     end
 
     def send_signal(signal)
@@ -236,15 +225,19 @@ module GhostferryHelper
     end
 
     def kill
-      @stop_requested = true
+      @server.shutdown unless @server.nil?
       send_signal("KILL")
+
+      # Need to ensure the server shutdown before returning so the port gets
+      # freed and can be reused.
+      @server_thread.join if @server_thread
+      @server_watchdog_thread.join if @server_watchdog_thread
+
       begin
-        wait_until_ghostferry_run_is_complete
+        @subprocess_thread.join if @subprocess_thread
       rescue GhostferryExitFailure
         # ignore
       end
-
-      File.unlink(SOCKET_PATH) if File.exist?(SOCKET_PATH)
     end
 
     def run(resuming_state = nil)
@@ -252,11 +245,15 @@ module GhostferryHelper
 
       compile_binary
       start_server
-      wait_until_server_has_started
       start_ghostferry(resuming_state)
-      wait_until_ghostferry_run_is_complete
+      start_server_watchdog
+
+      @subprocess_thread.join
+      @server_watchdog_thread.join
+      @server_thread.join
     ensure
       kill
+      raise @server_last_error unless @server_last_error.nil?
     end
 
     # When using this method, you need to call it within the block of

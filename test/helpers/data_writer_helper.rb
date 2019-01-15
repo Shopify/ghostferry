@@ -30,7 +30,7 @@ module DataWriterHelper
                    insert_probability: 0.33,
                    update_probability: 0.33,
                    delete_probability: 0.34,
-                   number_of_writers: 2,
+                   number_of_writers: 1,
                    logger: nil
                   )
       @db_config = db_config

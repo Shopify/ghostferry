@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"net"
+	"net/http"
+	"net/url"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -16,13 +16,9 @@ import (
 
 const (
 	// These should be kept in sync with ghostferry.rb
-	socketEnvName  string        = "GHOSTFERRY_INTEGRATION_SOCKET_PATH"
-	socketTimeout  time.Duration = 30 * time.Second
+	portEnvName    string        = "GHOSTFERRY_INTEGRATION_PORT"
+	timeout        time.Duration = 30 * time.Second
 	maxMessageSize int           = 256
-)
-
-const (
-	CommandContinue string = "CONTINUE"
 )
 
 const (
@@ -48,69 +44,31 @@ type IntegrationFerry struct {
 // =========================================
 // Code for integration server communication
 // =========================================
-func (f *IntegrationFerry) connect() (net.Conn, error) {
-	socketAddress := os.Getenv(socketEnvName)
-	if socketAddress == "" {
-		return nil, fmt.Errorf("environment variable %s must be specified", socketEnvName)
+
+func (f *IntegrationFerry) SendStatusAndWaitUntilContinue(status string, data ...string) error {
+	integrationPort := os.Getenv(portEnvName)
+	if integrationPort == "" {
+		return fmt.Errorf("environment variable %s must be specified", portEnvName)
 	}
 
-	return net.DialTimeout("unix", socketAddress, socketTimeout)
-}
-
-func (f *IntegrationFerry) send(conn net.Conn, status string, arguments ...string) error {
-	conn.SetDeadline(time.Now().Add(socketTimeout))
-
-	arguments = append([]string{status}, arguments...)
-	data := []byte(strings.Join(arguments, "\x00"))
-
-	if len(data) > maxMessageSize {
-		return fmt.Errorf("message %v is greater than maxMessageSize %v", arguments, maxMessageSize)
+	client := &http.Client{
+		Timeout: timeout,
 	}
 
-	_, err := conn.Write(data)
-	return err
-}
+	resp, err := client.PostForm(fmt.Sprintf("http://localhost:%s", integrationPort), url.Values{
+		"status": []string{status},
+		"data":   data,
+	})
 
-func (f *IntegrationFerry) receive(conn net.Conn) (string, error) {
-	conn.SetDeadline(time.Now().Add(socketTimeout))
-
-	var buf [maxMessageSize]byte
-
-	n, err := conn.Read(buf[:])
-	if err != nil {
-		return "", err
-	}
-
-	return string(buf[0:n]), nil
-}
-
-// Sends a status string to the integration server and block until we receive
-// "CONTINUE" from the server.
-//
-// We need to establish a new connection to the integration server for each
-// message as there are multiple goroutines sending messages simultaneously.
-func (f *IntegrationFerry) SendStatusAndWaitUntilContinue(status string, arguments ...string) error {
-	conn, err := f.connect()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	err = f.send(conn, status, arguments...)
 	if err != nil {
 		return err
 	}
 
-	command, err := f.receive(conn)
-	if err != nil {
-		return err
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("server returned invalid status: %d", resp.StatusCode)
 	}
 
-	if command == CommandContinue {
-		return nil
-	}
-
-	return fmt.Errorf("unrecognized command %s from integration server", command)
+	return nil
 }
 
 // Method override for Start in order to send status to the integration
