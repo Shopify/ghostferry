@@ -51,7 +51,8 @@ $(GOBIN):
 
 test:
 	@go version
-	go test ./test ./copydb/test ./sharding/test -p 1 -v
+	go test ./test/go ./copydb/test ./sharding/test -p 1 -v
+	bundle install && bundle exec rake test
 
 clean:
 	rm -rf build
