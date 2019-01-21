@@ -53,7 +53,7 @@ func (b *BinlogWriter) Run() {
 		}
 
 		err := WithRetries(b.WriteRetries, 0, b.logger, "write events to target", func() error {
-			return b.writeEvents(batch)
+			return b.WriteEvents(batch)
 		})
 		if err != nil {
 			b.ErrorHandler.Fatal("binlog_writer", err)
@@ -75,7 +75,7 @@ func (b *BinlogWriter) BufferBinlogEvents(events []DMLEvent) error {
 	return nil
 }
 
-func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
+func (b *BinlogWriter) WriteEvents(events []DMLEvent) error {
 	WaitForThrottle(b.Throttler)
 
 	queryBuffer := []byte("BEGIN;\n")
