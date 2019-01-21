@@ -31,7 +31,6 @@ module GhostferryHelper
 
     # Keep these in sync with integrationferry.go
     ENV_KEY_PORT = "GHOSTFERRY_INTEGRATION_PORT"
-    MAX_MESSAGE_SIZE = 256
 
     module Status
       # This should be in sync with integrationferry.go
@@ -49,22 +48,14 @@ module GhostferryHelper
     attr_reader :stdout, :stderr, :exit_status, :pid
 
     def initialize(main_path, logger: nil, message_timeout: 30, port: 39393)
-      @main_path = main_path
-      @message_timeout = message_timeout
       @logger = logger
       if @logger.nil?
         @logger = Logger.new(STDOUT)
         @logger.level = Logger::DEBUG
       end
 
-      FileUtils.mkdir_p(GHOSTFERRY_TEMPDIR, mode: 0700)
-
-      # full name relative to the ghostferry root dir, with / replaced with _
-      # and the extension stripped.
-      full_path = File.absolute_path(@main_path)
-      full_path = full_path.split("/ghostferry/")[-1] # Assuming that ghostferry will show up in the path as its own directory
-      binary_name = File.join(File.dirname(full_path), File.basename(full_path, ".*")).gsub("/", "_")
-      @compiled_binary_path = File.join(GHOSTFERRY_TEMPDIR, binary_name)
+      @main_path = main_path
+      @message_timeout = message_timeout
 
       @status_handlers = {}
 
@@ -80,13 +71,53 @@ module GhostferryHelper
       @exit_status = nil
       @stdout = []
       @stderr = []
+
+      # Setup the directory to the compiled binary under the system temporary
+      # directory.
+      FileUtils.mkdir_p(GHOSTFERRY_TEMPDIR, mode: 0700)
+
+      # To guarentee that the compiled binary will have an unique name, we use
+      # the full path of the file relative to the ghostferry root directory as
+      # the binary name. In order to avoid having / in the binary name all / in
+      # the full path is replaced with _. The .go extension is also stripped to
+      # avoid confusion.
+      full_path = File.absolute_path(@main_path)
+      full_path = full_path.split("/ghostferry/")[-1] # Assuming that ghostferry will show up in the path as its own directory
+      binary_name = File.join(File.dirname(full_path), File.basename(full_path, ".*")).gsub("/", "_")
+      @compiled_binary_path = File.join(GHOSTFERRY_TEMPDIR, binary_name)
     end
 
-    def on_status(status, &block)
-      raise "must specify a block" unless block_given?
-      @status_handlers[status] ||= []
-      @status_handlers[status] << block
+    # The main method to call to run a Ghostferry subprocess.
+    def run(resuming_state = nil)
+      resuming_state = JSON.generate(resuming_state) if resuming_state.is_a?(Hash)
+
+      compile_binary
+      start_server
+      start_ghostferry(resuming_state)
+      start_server_watchdog
+
+      @subprocess_thread.join
+      @server_watchdog_thread.join
+      @server_thread.join
+    ensure
+      kill
+      raise @server_last_error unless @server_last_error.nil?
     end
+
+    # When using this method, you need to ensure that the datawriter has been
+    # stopped properly (if you're using stop_datawriter_during_cutover).
+    def run_expecting_interrupt(resuming_state = nil)
+      run(resuming_state)
+    rescue GhostferryExitFailure
+      dumped_state = @stdout.join("")
+      JSON.parse(dumped_state)
+    else
+      raise "Ghostferry did not get interrupted"
+    end
+
+    ######################################################
+    # Methods representing the different stages of `run` #
+    ######################################################
 
     def compile_binary
       return if File.exist?(@compiled_binary_path)
@@ -220,6 +251,16 @@ module GhostferryHelper
       end
     end
 
+    ###################
+    # Utility methods #
+    ###################
+
+    def on_status(status, &block)
+      raise "must specify a block" unless block_given?
+      @status_handlers[status] ||= []
+      @status_handlers[status] << block
+    end
+
     def send_signal(signal)
       Process.kill(signal, @pid) if @pid != 0
     end
@@ -238,34 +279,6 @@ module GhostferryHelper
       rescue GhostferryExitFailure
         # ignore
       end
-    end
-
-    def run(resuming_state = nil)
-      resuming_state = JSON.generate(resuming_state) if resuming_state.is_a?(Hash)
-
-      compile_binary
-      start_server
-      start_ghostferry(resuming_state)
-      start_server_watchdog
-
-      @subprocess_thread.join
-      @server_watchdog_thread.join
-      @server_thread.join
-    ensure
-      kill
-      raise @server_last_error unless @server_last_error.nil?
-    end
-
-    # When using this method, you need to call it within the block of
-    # GhostferryIntegration::TestCase#with_state_cleanup to ensure that the
-    # integration server is shutdown properly.
-    def run_expecting_interrupt(resuming_state = nil)
-      run(resuming_state)
-    rescue GhostferryExitFailure
-      dumped_state = @stdout.join("")
-      JSON.parse(dumped_state)
-    else
-      raise "Ghostferry did not get interrupted"
     end
   end
 end

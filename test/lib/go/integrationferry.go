@@ -1,4 +1,4 @@
-package integrationferry
+package main
 
 import (
 	"encoding/json"
@@ -12,13 +12,13 @@ import (
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
+	"github.com/sirupsen/logrus"
 )
 
 const (
 	// These should be kept in sync with ghostferry.rb
-	portEnvName    string        = "GHOSTFERRY_INTEGRATION_PORT"
-	timeout        time.Duration = 30 * time.Second
-	maxMessageSize int           = 256
+	portEnvName string        = "GHOSTFERRY_INTEGRATION_PORT"
+	timeout     time.Duration = 30 * time.Second
 )
 
 const (
@@ -193,4 +193,25 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 	}
 
 	return config, config.ValidateConfig()
+}
+
+func main() {
+	logrus.SetFormatter(&logrus.JSONFormatter{})
+	logrus.SetLevel(logrus.DebugLevel)
+
+	config, err := NewStandardConfig()
+	if err != nil {
+		panic(err)
+	}
+
+	f := &IntegrationFerry{
+		Ferry: &ghostferry.Ferry{
+			Config: config,
+		},
+	}
+
+	err = f.Main()
+	if err != nil {
+		panic(err)
+	}
 }

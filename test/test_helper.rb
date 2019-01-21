@@ -19,7 +19,7 @@ class GhostferryTestCase < Minitest::Test
   include DbHelper
   include DataWriterHelper
 
-  MINIMAL_GHOSTFERRY = "minimal.go"
+  MINIMAL_GHOSTFERRY = "integrationferry.go"
 
   def new_ghostferry(filename)
     # Transform path to something ruby understands
@@ -83,13 +83,13 @@ class GhostferryTestCase < Minitest::Test
     assert target[DEFAULT_FULL_TABLE_NAME][:row_count] > 0
 
     assert_equal(
-      source[DEFAULT_FULL_TABLE_NAME][:checksum],
-      target[DEFAULT_FULL_TABLE_NAME][:checksum],
+      source[DEFAULT_FULL_TABLE_NAME][:row_count],
+      target[DEFAULT_FULL_TABLE_NAME][:row_count],
     )
 
     assert_equal(
-      source[DEFAULT_FULL_TABLE_NAME][:sample_row],
-      target[DEFAULT_FULL_TABLE_NAME][:sample_row],
+      source[DEFAULT_FULL_TABLE_NAME][:checksum],
+      target[DEFAULT_FULL_TABLE_NAME][:checksum],
     )
   end
 
