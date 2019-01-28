@@ -18,12 +18,17 @@ func (e IncompleteVerificationError) Error() string {
 }
 
 type VerificationResult struct {
-	DataCorrect bool
-	Message     string
+	DataCorrect     bool
+	Message         string
+	IncorrectTables []string
 }
 
 func (e VerificationResult) Error() string {
 	return e.Message
+}
+
+func NewCorrectVerificationResult() VerificationResult {
+	return VerificationResult{true, "", []string{}}
 }
 
 type VerificationResultAndStatus struct {
@@ -49,6 +54,10 @@ type Verifier interface {
 	// If the Verifier needs to do anything immediately after the DataIterator
 	// finishes copying data and before cutover occurs, implement this function.
 	VerifyBeforeCutover() error
+
+	// This is called during cutover and should give the result of the
+	// verification.
+	VerifyDuringCutover() (VerificationResult, error)
 
 	// The Ferry will use this method to tell the verifier what to check.
 	//
@@ -110,7 +119,7 @@ func (v *ChecksumTableVerifier) SetApplicableTableSchemaCache(t TableSchemaCache
 	v.Tables = t.AsSlice()
 }
 
-func (v *ChecksumTableVerifier) Verify() (VerificationResult, error) {
+func (v *ChecksumTableVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	if v.logger == nil {
 		v.logger = logrus.WithField("tag", "checksum_verifier")
 	}
@@ -179,11 +188,15 @@ func (v *ChecksumTableVerifier) Verify() (VerificationResult, error) {
 			logWithTable.WithFields(logFields).Info("tables on source and target verified to match")
 		} else {
 			logWithTable.WithFields(logFields).Error("tables on source and target DOES NOT MATCH")
-			return VerificationResult{false, fmt.Sprintf("data on table %s (%s) mismatched", sourceTable, targetTable)}, nil
+			return VerificationResult{
+				false,
+				fmt.Sprintf("data on table %s (%s) mismatched", sourceTable, targetTable),
+				[]string{table.String()},
+			}, nil
 		}
 	}
 
-	return VerificationResult{true, ""}, nil
+	return NewCorrectVerificationResult(), nil
 }
 
 func (v *ChecksumTableVerifier) fetchChecksumValueFromRow(row *sql.Row) (int64, error) {
@@ -229,7 +242,7 @@ func (v *ChecksumTableVerifier) StartInBackground() error {
 	go func() {
 		defer v.wg.Done()
 
-		v.verificationResultAndStatus.VerificationResult, v.verificationErr = v.Verify()
+		v.verificationResultAndStatus.VerificationResult, v.verificationErr = v.VerifyDuringCutover()
 		v.verificationResultAndStatus.DoneTime = time.Now()
 		v.started.Set(false)
 	}()

@@ -37,6 +37,8 @@ module GhostferryHelper
       READY = "READY"
       BINLOG_STREAMING_STARTED = "BINLOG_STREAMING_STARTED"
       ROW_COPY_COMPLETED = "ROW_COPY_COMPLETED"
+      VERIFY_DURING_CUTOVER = "VERIFY_DURING_CUTOVER"
+      VERIFIED = "VERIFIED"
       DONE = "DONE"
 
       BEFORE_ROW_COPY = "BEFORE_ROW_COPY"
@@ -47,7 +49,7 @@ module GhostferryHelper
 
     attr_reader :stdout, :stderr, :exit_status, :pid
 
-    def initialize(main_path, logger: nil, message_timeout: 30, port: 39393)
+    def initialize(main_path, config: {}, logger: nil, message_timeout: 30, port: 39393)
       @logger = logger
       if @logger.nil?
         @logger = Logger.new(STDOUT)
@@ -55,6 +57,8 @@ module GhostferryHelper
       end
 
       @main_path = main_path
+      @config = config
+
       @message_timeout = message_timeout
 
       @status_handlers = {}
@@ -188,8 +192,14 @@ module GhostferryHelper
         Thread.current.report_on_exception = false
 
         environment = {
-          ENV_KEY_PORT => @server_port.to_s
+          ENV_KEY_PORT => @server_port.to_s,
         }
+
+        # TODO: maybe in the future we'll have a better way to specify the
+        # configurations.
+        if @config[:enable_iterative_verifier]
+          environment["GHOSTFERRY_ITERATIVE_VERIFIER"] = "1"
+        end
 
         @logger.info("starting ghostferry test binary #{@compiled_binary_path}")
         Open3.popen3(environment, @compiled_binary_path) do |stdin, stdout, stderr, wait_thr|

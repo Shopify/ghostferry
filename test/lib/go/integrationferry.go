@@ -28,6 +28,8 @@ const (
 	StatusReady                  string = "READY"
 	StatusBinlogStreamingStarted string = "BINLOG_STREAMING_STARTED"
 	StatusRowCopyCompleted       string = "ROW_COPY_COMPLETED"
+	StatusVerifyDuringCutover    string = "VERIFY_DURING_CUTOVER"
+	StatusVerified               string = "VERIFIED"
 	StatusDone                   string = "DONE"
 
 	// Could be sent by multiple goroutines in parallel
@@ -143,6 +145,26 @@ func (f *IntegrationFerry) Main() error {
 	f.FlushBinlogAndStopStreaming()
 	wg.Wait()
 
+	if f.Verifier != nil {
+		err := f.SendStatusAndWaitUntilContinue(StatusVerifyDuringCutover)
+		if err != nil {
+			return err
+		}
+
+		result, err := f.Verifier.VerifyDuringCutover()
+		if err != nil {
+			return err
+		}
+
+		// We now send the results back to the integration server as each verifier
+		// might log them differently, making it difficult to assert that the
+		// incorrect table was caught from the logs
+		err = f.SendStatusAndWaitUntilContinue(StatusVerified, result.IncorrectTables...)
+		if err != nil {
+			return err
+		}
+	}
+
 	return f.SendStatusAndWaitUntilContinue(StatusDone)
 }
 
@@ -202,6 +224,13 @@ func main() {
 	config, err := NewStandardConfig()
 	if err != nil {
 		panic(err)
+	}
+
+	if os.Getenv("GHOSTFERRY_ITERATIVE_VERIFIER") != "" {
+		config.VerifierType = ghostferry.VerifierTypeIterative
+		config.IterativeVerifierConfig = ghostferry.IterativeVerifierConfig{
+			Concurrency: 2,
+		}
 	}
 
 	f := &IntegrationFerry{
