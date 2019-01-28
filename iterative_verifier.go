@@ -178,10 +178,6 @@ func (v *IterativeVerifier) SanityCheckParameters() error {
 		return fmt.Errorf("iterative verifier concurrency must be greater than 0, not %d", v.Concurrency)
 	}
 
-	if v.TableSchemaCache == nil {
-		return fmt.Errorf("iterative verifier must be given the table schema cache")
-	}
-
 	return nil
 }
 
@@ -218,6 +214,10 @@ func (v *IterativeVerifier) VerifyOnce() (VerificationResult, error) {
 }
 
 func (v *IterativeVerifier) VerifyBeforeCutover() error {
+	if v.TableSchemaCache == nil {
+		return fmt.Errorf("iterative verifier must be given the table schema cache before starting verify before cutover")
+	}
+
 	v.logger.Info("starting pre-cutover verification")
 
 	v.logger.Debug("attaching binlog event listener")
@@ -242,6 +242,11 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	v.beforeCutoverVerifyDone = true
 
 	return err
+}
+
+func (v *IterativeVerifier) SetApplicableTableSchemaCache(t TableSchemaCache) {
+	v.Tables = t.AsSlice()
+	v.TableSchemaCache = t
 }
 
 func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {

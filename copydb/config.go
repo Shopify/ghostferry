@@ -35,18 +35,6 @@ func (f FilterAndRewriteConfigs) Validate() error {
 	return nil
 }
 
-const (
-	VerifierTypeChecksumTable  = "ChecksumTable"
-	VerifierTypeIterative      = "Iterative"
-	VerifierTypeNoVerification = "NoVerification"
-)
-
-var validVerifierTypes map[string]struct{} = map[string]struct{}{
-	VerifierTypeChecksumTable:  struct{}{},
-	VerifierTypeIterative:      struct{}{},
-	VerifierTypeNoVerification: struct{}{},
-}
-
 type Config struct {
 	*ghostferry.Config
 
@@ -55,12 +43,6 @@ type Config struct {
 
 	// Filter configuration for tables to copy
 	Tables FilterAndRewriteConfigs
-
-	// The verifier to use during the run. Valid choices are:
-	// ChecksumTable
-	// Iterative
-	// NoVerification
-	VerifierType string
 
 	// If you're running Ghostferry from a read only replica, turn this option
 	// on and specify SourceReplicationMaster and ReplicatedMasterPositionQuery.
@@ -83,10 +65,6 @@ type Config struct {
 }
 
 func (c *Config) InitializeAndValidateConfig() error {
-	if _, valid := validVerifierTypes[c.VerifierType]; !valid {
-		return fmt.Errorf("'%s' is not a valid VerifierType", c.VerifierType)
-	}
-
 	if err := c.Databases.Validate(); err != nil {
 		return err
 	}

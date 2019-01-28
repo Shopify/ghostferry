@@ -26,11 +26,12 @@ var (
 )
 
 const (
-	StateStarting          = "starting"
-	StateCopying           = "copying"
-	StateWaitingForCutover = "wait-for-cutover"
-	StateCutover           = "cutover"
-	StateDone              = "done"
+	StateStarting            = "starting"
+	StateCopying             = "copying"
+	StateWaitingForCutover   = "wait-for-cutover"
+	StateVerifyBeforeCutover = "verify-before-cutover"
+	StateCutover             = "cutover"
+	StateDone                = "done"
 )
 
 func quoteField(field string) string {
@@ -59,18 +60,25 @@ type Ferry struct {
 	DataIterator *DataIterator
 	BatchWriter  *BatchWriter
 
-	StateTracker *StateTracker
+	StateTracker                       *StateTracker
+	ErrorHandler                       ErrorHandler
+	Throttler                          Throttler
+	WaitUntilReplicaIsCaughtUpToMaster *WaitUntilReplicaIsCaughtUpToMaster
 
-	ErrorHandler ErrorHandler
-	Throttler    Throttler
+	// This can be specified by the caller. If specified, do not specify
+	// VerifierType in Config (or as an empty string) or an error will be
+	// returned in Initialize.
+	//
+	// If VerifierType is specified and this is nil on Ferry initialization, a
+	// Verifier will be created by Initialize. If an IterativeVerifier is to be
+	// created, IterativeVerifierConfig will be used to create the verifier.
+	Verifier Verifier
 
 	Tables TableSchemaCache
 
 	StartTime    time.Time
 	DoneTime     time.Time
 	OverallState string
-
-	WaitUntilReplicaIsCaughtUpToMaster *WaitUntilReplicaIsCaughtUpToMaster
 
 	logger *logrus.Entry
 
@@ -156,6 +164,70 @@ func (f *Ferry) NewBatchWriterWithoutStateTracker() *BatchWriter {
 	batchWriter := f.NewBatchWriter()
 	batchWriter.StateTracker = nil
 	return batchWriter
+}
+
+func (f *Ferry) NewChecksumTableVerifier() *ChecksumTableVerifier {
+	return &ChecksumTableVerifier{
+		SourceDB:         f.SourceDB,
+		TargetDB:         f.TargetDB,
+		DatabaseRewrites: f.Config.DatabaseRewrites,
+		TableRewrites:    f.Config.TableRewrites,
+	}
+}
+
+func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
+	var err error
+	config := f.Config.IterativeVerifierConfig
+
+	var maxExpectedDowntime time.Duration
+	if config.MaxExpectedDowntime != "" {
+		maxExpectedDowntime, err = time.ParseDuration(config.MaxExpectedDowntime)
+		if err != nil {
+			return nil, fmt.Errorf("invalid MaxExpectedDowntime: %v. this error should have been caught via .Validate()", err)
+		}
+	}
+
+	var compressionVerifier *CompressionVerifier
+	if config.TableColumnCompression != nil {
+		compressionVerifier, err = NewCompressionVerifier(config.TableColumnCompression)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	ignoredColumns := make(map[string]map[string]struct{})
+	for table, columns := range config.IgnoredColumns {
+		ignoredColumns[table] = make(map[string]struct{})
+		for _, column := range columns {
+			ignoredColumns[table][column] = struct{}{}
+		}
+	}
+
+	v := &IterativeVerifier{
+		CursorConfig: &CursorConfig{
+			DB:          f.SourceDB,
+			BatchSize:   f.Config.DataIterationBatchSize,
+			ReadRetries: f.Config.DBReadRetries,
+		},
+
+		BinlogStreamer:      f.BinlogStreamer,
+		SourceDB:            f.SourceDB,
+		TargetDB:            f.TargetDB,
+		CompressionVerifier: compressionVerifier,
+
+		IgnoredTables:       config.IgnoredTables,
+		IgnoredColumns:      ignoredColumns,
+		DatabaseRewrites:    f.Config.DatabaseRewrites,
+		TableRewrites:       f.Config.TableRewrites,
+		Concurrency:         config.Concurrency,
+		MaxExpectedDowntime: maxExpectedDowntime,
+	}
+
+	if f.CopyFilter != nil {
+		v.CursorConfig.BuildSelect = f.CopyFilter.BuildSelect
+	}
+
+	return v, v.Initialize()
 }
 
 // Initialize all the components of Ghostferry and connect to the Database
@@ -288,6 +360,26 @@ func (f *Ferry) Initialize() (err error) {
 	f.DataIterator = f.NewDataIterator()
 	f.BatchWriter = f.NewBatchWriter()
 
+	if f.Config.VerifierType != "" {
+		if f.Verifier != nil {
+			return errors.New("VerifierType specified and Verifier is given. these are mutually exclusive options")
+		}
+
+		switch f.Config.VerifierType {
+		case VerifierTypeIterative:
+			f.Verifier, err = f.NewIterativeVerifier()
+			if err != nil {
+				return err
+			}
+		case VerifierTypeChecksumTable:
+			f.Verifier = f.NewChecksumTableVerifier()
+		case VerifierTypeNoVerification:
+			// skip
+		default:
+			return fmt.Errorf("'%s' is not a known VerifierType", f.Config.VerifierType)
+		}
+	}
+
 	f.logger.Info("ferry initialized")
 	return nil
 }
@@ -344,6 +436,12 @@ func (f *Ferry) Start() error {
 
 	// TODO(pushrax): handle changes to schema during copying and clean this up.
 	f.BinlogStreamer.TableSchema = f.Tables
+
+	// TODO: refactor the TableSchemaCache logic to remove this weird post initialize
+	//       set tables hack
+	if f.Verifier != nil {
+		f.Verifier.SetApplicableTableSchemaCache(f.Tables)
+	}
 
 	return nil
 }
@@ -414,6 +512,19 @@ func (f *Ferry) Run() {
 	}()
 
 	dataIteratorWg.Wait()
+
+	if f.Verifier != nil {
+		f.logger.Info("calling VerifyBeforeCutover")
+		f.OverallState = StateVerifyBeforeCutover
+
+		metrics.Measure("VerifyBeforeCutover", nil, 1.0, func() {
+			err := f.Verifier.VerifyBeforeCutover()
+			if err != nil {
+				f.logger.WithError(err).Error("VerifyBeforeCutover failed")
+				f.ErrorHandler.Fatal("verifier", err)
+			}
+		})
+	}
 
 	f.logger.Info("data copy is complete, waiting for cutover")
 	f.OverallState = StateWaitingForCutover

@@ -21,14 +21,9 @@ type Config struct {
 	CutoverUnlock ghostferry.HTTPCallback
 	ErrorCallback ghostferry.HTTPCallback
 
-	JoinedTables               map[string][]JoinTable
-	IgnoredTables              []string
-	IgnoredVerificationTables  []string
-	IgnoredVerificationColumns map[string][]string
-	PrimaryKeyTables           []string
-
-	VerifierIterationConcurrency int
-	MaxExpectedVerifierDowntime  string
+	JoinedTables     map[string][]JoinTable
+	IgnoredTables    []string
+	PrimaryKeyTables []string
 
 	Throttle *ghostferry.LagThrottlerConfig
 }

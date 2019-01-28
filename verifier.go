@@ -46,6 +46,16 @@ func (r VerificationResultAndStatus) IsDone() bool {
 // the ControlServer. If there is no such need, one does not need to
 // implement this interface.
 type Verifier interface {
+	// If the Verifier needs to do anything immediately after the DataIterator
+	// finishes copying data and before cutover occurs, implement this function.
+	VerifyBeforeCutover() error
+
+	// The Ferry will use this method to tell the verifier what to check.
+	//
+	// TODO: this will be removed once we refactor how the TableSchemaCache is
+	// handled.
+	SetApplicableTableSchemaCache(TableSchemaCache)
+
 	// Start the verifier in the background during the cutover phase.
 	// Traditionally, this is called from within the ControlServer.
 	//
@@ -89,6 +99,15 @@ type ChecksumTableVerifier struct {
 
 	logger *logrus.Entry
 	wg     *sync.WaitGroup
+}
+
+func (v *ChecksumTableVerifier) VerifyBeforeCutover() error {
+	// All verification occurs in cutover for this verifier.
+	return nil
+}
+
+func (v *ChecksumTableVerifier) SetApplicableTableSchemaCache(t TableSchemaCache) {
+	v.Tables = t.AsSlice()
 }
 
 func (v *ChecksumTableVerifier) Verify() (VerificationResult, error) {

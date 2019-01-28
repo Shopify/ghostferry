@@ -26,7 +26,7 @@ func (t *CompressionVerifierTestSuite) TestFailsVerificationForDifferentCompress
 	tableCompressions := make(ghostferry.TableColumnCompressionConfig)
 	tableCompressions[testhelpers.TestCompressedTable1Name] = make(map[string]string)
 	tableCompressions[testhelpers.TestCompressedTable1Name][testhelpers.TestCompressedColumn1Name] = ghostferry.CompressionSnappy
-	t.Config.TableColumnCompression = tableCompressions
+	t.replaceCompressionVerifier(tableCompressions)
 
 	t.Require().NotEqual(testhelpers.TestCompressedData1, testhelpers.TestCompressedData2)
 	t.InsertCompressedRowInDb(43, "gftest1", testhelpers.TestCompressedData1, t.Ferry.Ferry.SourceDB)
@@ -48,7 +48,7 @@ func (t *CompressionVerifierTestSuite) TestCanCopyDifferentCompressedDataButEqua
 	tableCompressions := make(ghostferry.TableColumnCompressionConfig)
 	tableCompressions[testhelpers.TestCompressedTable1Name] = make(map[string]string)
 	tableCompressions[testhelpers.TestCompressedTable1Name][testhelpers.TestCompressedColumn1Name] = ghostferry.CompressionSnappy
-	t.Config.TableColumnCompression = tableCompressions
+	t.replaceCompressionVerifier(tableCompressions)
 
 	t.Require().NotEqual(testhelpers.TestCompressedData3, testhelpers.TestCompressedData4)
 
@@ -64,6 +64,13 @@ func (t *CompressionVerifierTestSuite) TestCanCopyDifferentCompressedDataButEqua
 func (t *CompressionVerifierTestSuite) InsertCompressedRowInDb(id int, schema, data string, db *sql.DB) {
 	tenantId := 2
 	_, err := db.Exec("INSERT INTO "+schema+"."+testhelpers.TestCompressedTable1Name+" VALUES (?,?,?)", id, data, tenantId)
+	t.Require().Nil(err)
+}
+
+func (t *CompressionVerifierTestSuite) replaceCompressionVerifier(tableCompressions ghostferry.TableColumnCompressionConfig) {
+	var err error
+	iterativeVerifier := t.Ferry.Ferry.Verifier.(*ghostferry.IterativeVerifier)
+	iterativeVerifier.CompressionVerifier, err = ghostferry.NewCompressionVerifier(tableCompressions)
 	t.Require().Nil(err)
 }
 
