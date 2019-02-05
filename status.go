@@ -82,8 +82,8 @@ func FetchStatus(f *Ferry, v Verifier) *Status {
 
 	serializedState := f.StateTracker.Serialize(nil)
 
-	lastSuccessfulPKs := serializedState.LastSuccessfulPrimaryKeys
-	completedTables := serializedState.CompletedTables
+	lastSuccessfulPKs := serializedState.CopyStage.LastSuccessfulPrimaryKeys
+	completedTables := serializedState.CopyStage.CompletedTables
 
 	targetPKs := make(map[string]uint64)
 	f.DataIterator.targetPKs.Range(func(k, v interface{}) bool {
@@ -178,7 +178,7 @@ func FetchStatus(f *Ferry, v Verifier) *Status {
 	// ASAP. It's not supposed to be that accurate anyway.
 	var totalPKsToCopy uint64 = 0
 	var completedPKs uint64 = 0
-	estimatedPKsPerSecond := f.StateTracker.EstimatedPKCopiedPerSecond()
+	estimatedPKsPerSecond := f.StateTracker.CopyStage.EstimatedPKsPerSecond()
 	for _, targetPK := range targetPKs {
 		totalPKsToCopy += targetPK
 	}

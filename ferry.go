@@ -90,7 +90,7 @@ func (f *Ferry) NewDataIterator() *DataIterator {
 			BatchSize:   f.Config.DataIterationBatchSize,
 			ReadRetries: f.Config.DBReadRetries,
 		},
-		StateTracker: f.StateTracker,
+		StateTracker: f.StateTracker.CopyStage,
 	}
 
 	if f.CopyFilter != nil {
@@ -127,7 +127,7 @@ func (f *Ferry) NewBinlogWriter() *BinlogWriter {
 		WriteRetries: f.Config.DBWriteRetries,
 
 		ErrorHandler: f.ErrorHandler,
-		StateTracker: f.StateTracker,
+		StateTracker: f.StateTracker.CopyStage,
 	}
 }
 
@@ -140,7 +140,7 @@ func (f *Ferry) NewBinlogWriterWithoutStateTracker() *BinlogWriter {
 func (f *Ferry) NewBatchWriter() *BatchWriter {
 	batchWriter := &BatchWriter{
 		DB:           f.TargetDB,
-		StateTracker: f.StateTracker,
+		StateTracker: f.StateTracker.CopyStage,
 
 		DatabaseRewrites: f.Config.DatabaseRewrites,
 		TableRewrites:    f.Config.TableRewrites,
@@ -313,7 +313,7 @@ func (f *Ferry) Start() error {
 	var pos siddontangmysql.Position
 	var err error
 	if f.StateToResumeFrom != nil {
-		pos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.LastWrittenBinlogPosition)
+		pos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.MinBinlogPosition())
 	} else {
 		pos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysql()
 	}
@@ -324,7 +324,7 @@ func (f *Ferry) Start() error {
 	// If we don't set this now, there is a race condition where Ghostferry
 	// is terminated with some rows copied but no binlog events are written.
 	// This guarentees that we are able to restart from a valid location.
-	f.StateTracker.UpdateLastWrittenBinlogPosition(pos)
+	f.StateTracker.CopyStage.UpdateLastWrittenBinlogPosition(pos)
 
 	// Loads the schema of the tables that are applicable.
 	// We need to do this at the beginning of the run as this is required

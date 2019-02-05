@@ -18,7 +18,7 @@ type BinlogWriter struct {
 	WriteRetries int
 
 	ErrorHandler ErrorHandler
-	StateTracker *StateTracker
+	StateTracker *CopyStateTracker
 
 	binlogEventBuffer chan DMLEvent
 	logger            *logrus.Entry
