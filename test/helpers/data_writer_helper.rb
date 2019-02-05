@@ -59,8 +59,8 @@ module DataWriterHelper
         @threads << Thread.new do
           @logger.info("starting data writer thread #{i}")
 
-          connection = Mysql2::Client.new(@db_config)
           until @stop_requested do
+            connection = Mysql2::Client.new(@db_config)
             write_data(connection, &on_write)
           end
 
