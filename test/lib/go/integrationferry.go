@@ -114,6 +114,11 @@ func (f *IntegrationFerry) Main() error {
 		return err
 	}
 
+	err = f.CatchUpOnMissedBinlogsOnResume()
+	if err != nil {
+		return err
+	}
+
 	err = f.Start()
 	if err != nil {
 		return err

@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/siddontang/go-mysql/schema"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/Shopify/ghostferry"
@@ -16,6 +17,7 @@ type DataIteratorTestSuite struct {
 
 	di           *ghostferry.DataIterator
 	wg           *sync.WaitGroup
+	tables       []*schema.Table
 	receivedRows map[string][]ghostferry.RowData
 }
 
@@ -36,6 +38,8 @@ func (this *DataIteratorTestSuite) SetupTest() {
 	tables, err := ghostferry.LoadTables(sourceDb, tableFilter)
 	this.Require().Nil(err)
 
+	this.tables = tables.AsSlice()
+
 	config.DataIterationBatchSize = 2
 
 	this.di = &ghostferry.DataIterator{
@@ -52,8 +56,6 @@ func (this *DataIteratorTestSuite) SetupTest() {
 			ReadRetries: config.DBReadRetries,
 		},
 		StateTracker: ghostferry.NewStateTracker(config.DataIterationConcurrency * 10),
-
-		Tables: tables.AsSlice(),
 	}
 
 	this.receivedRows = make(map[string][]ghostferry.RowData, 0)
@@ -69,7 +71,7 @@ func (this *DataIteratorTestSuite) TestNoEventsForEmptyTable() {
 	_, err = this.Ferry.SourceDB.Query(fmt.Sprintf("DELETE FROM `%s`.`%s`", testhelpers.TestSchemaName, testhelpers.TestCompressedTable1Name))
 	this.Require().Nil(err)
 
-	this.di.Run()
+	this.di.Run(this.tables)
 
 	this.Require().Equal(0, len(this.receivedRows))
 	this.Require().Equal(
@@ -122,7 +124,7 @@ func (this *DataIteratorTestSuite) TestExistingRowsAreIterated() {
 	this.Require().Equal(0, len(this.receivedRows[testhelpers.TestTable1Name]))
 	this.Require().Equal(0, len(this.receivedRows[testhelpers.TestCompressedTable1Name]))
 
-	this.di.Run()
+	this.di.Run(this.tables)
 
 	this.Require().Equal(5, len(this.receivedRows[testhelpers.TestTable1Name]))
 	this.Require().Equal(5, len(this.receivedRows[testhelpers.TestCompressedTable1Name]))
@@ -154,7 +156,7 @@ func (this *DataIteratorTestSuite) TestDoneListenerGetsNotifiedWhenDone() {
 		return nil
 	})
 
-	this.di.Run()
+	this.di.Run(this.tables)
 
 	this.Require().True(wasNotified)
 }

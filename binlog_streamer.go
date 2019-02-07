@@ -200,6 +200,11 @@ func (s *BinlogStreamer) IsAlmostCaughtUp() bool {
 	return time.Now().Sub(s.lastProcessedEventTime) < caughtUpThreshold
 }
 
+func (s *BinlogStreamer) FlushToTargetBinlogPositionAndStop(target mysql.Position) {
+	s.targetBinlogPosition = target
+	s.stopRequested = true
+}
+
 func (s *BinlogStreamer) FlushAndStop() {
 	s.logger.Info("requesting binlog streamer to stop")
 	// Must first read the binlog position before requesting stop

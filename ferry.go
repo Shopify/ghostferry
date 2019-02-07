@@ -292,6 +292,102 @@ func (f *Ferry) Initialize() (err error) {
 	return nil
 }
 
+func (f *Ferry) CatchUpOnMissedBinlogsOnResume() error {
+	if f.StateToResumeFrom == nil {
+		return nil
+	}
+
+	tableSchemaCache := f.StateToResumeFrom.LastKnownTableSchemaCache
+
+	// Step 1: setup the binlog reconciler
+	binlogReconciler := &BinlogReconciler{
+		BatchSize:        f.Config.BinlogEventBatchSize,
+		TableSchemaCache: tableSchemaCache,
+
+		SourceDB:     f.SourceDB,
+		BinlogWriter: f.BinlogWriter,
+	}
+	binlogReconciler.Initialize()
+
+	// TODO: Step 2: setup the iterative verifier reconciler
+
+	// Step 3: initialize the binlog streamer and the throttler
+	binlogStreamer := f.NewBinlogStreamer()
+	binlogStreamer.TableSchema = tableSchemaCache
+
+	// Step 4: attach the reconcilers' binlog event listeners
+	binlogStreamer.AddEventListener(binlogReconciler.AddRowsToStore)
+	// TODO: attach the iterative verifier reconciler binlog listener
+
+	// Step 5: Connect the binlog streamer from the resuming coordinate
+	binlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.LastWrittenBinlogPosition)
+
+	// Step 6: Start the throttler
+	ctx, shutdown := context.WithCancel(context.Background())
+	throttlerWg := &sync.WaitGroup{}
+	throttlerWg.Add(1)
+	go func() {
+		defer throttlerWg.Done()
+
+		err := f.Throttler.Run(ctx)
+		if err != nil {
+			f.ErrorHandler.Fatal("throttler", err)
+		}
+	}()
+	defer func() {
+		shutdown()
+		throttlerWg.Wait()
+	}()
+
+	// Step 7: run the binlog streamer until the current position
+	currentBinlogPos, err := ShowMasterStatusBinlogPosition(f.SourceDB)
+	if err != nil {
+		return err
+	}
+
+	f.logger.WithFields(logrus.Fields{
+		"from": f.StateToResumeFrom.LastWrittenBinlogPosition,
+		"to":   currentBinlogPos,
+	}).Info("catching up binlogs")
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		binlogStreamer.Run()
+	}()
+
+	binlogStreamer.FlushToTargetBinlogPositionAndStop(currentBinlogPos)
+	wg.Wait()
+
+	f.logger.WithFields(logrus.Fields{
+		"streamed_pos": binlogStreamer.GetLastStreamedBinlogPosition(),
+		"target_pos":   currentBinlogPos,
+	}).Info("binlog catch up completed")
+
+	// defensive programming
+	if binlogStreamer.GetLastStreamedBinlogPosition().Compare(currentBinlogPos) < 0 {
+		return fmt.Errorf("programming error: last streamed position %v is less than target position %v?", binlogStreamer.GetLastStreamedBinlogPosition(), currentBinlogPos)
+	}
+
+	// Step 8: REPLACE rows that have been modified
+	err = binlogReconciler.ReplaceModifiedRowsAfterCatchup()
+	if err != nil {
+		f.logger.WithError(err).Error("failed to replace modified rows")
+		return err
+	}
+
+	// TODO: Step 9: perform iterative verifier catchups
+
+	// Step 10: update the state to resume from so the rest of Ferry can pretend
+	// as if it was interrupted at currentBinlogPos as this method took care of
+	// all possible issues (including schema changes, although this is TODO).
+	f.StateToResumeFrom.LastWrittenBinlogPosition = currentBinlogPos
+	f.StateTracker.UpdateLastWrittenBinlogPosition(currentBinlogPos)
+
+	return nil
+}
+
 // Determine the binlog coordinates, table mapping for the pending
 // Ghostferry run.
 func (f *Ferry) Start() error {
@@ -344,7 +440,6 @@ func (f *Ferry) Start() error {
 
 	// TODO(pushrax): handle changes to schema during copying and clean this up.
 	f.BinlogStreamer.TableSchema = f.Tables
-	f.DataIterator.Tables = f.Tables.AsSlice()
 
 	return nil
 }
@@ -411,7 +506,7 @@ func (f *Ferry) Run() {
 
 	go func() {
 		defer dataIteratorWg.Done()
-		f.DataIterator.Run()
+		f.DataIterator.Run(f.Tables.AsSlice())
 	}()
 
 	dataIteratorWg.Wait()
@@ -445,11 +540,10 @@ func (f *Ferry) RunStandaloneDataCopy(tables []*schema.Table) error {
 	// will get an error dump even though we should not get one, which could be
 	// misleading.
 
-	dataIterator.Tables = tables
 	dataIterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
 	f.logger.WithField("tables", tables).Info("starting delta table copy in cutover")
 
-	dataIterator.Run()
+	dataIterator.Run(tables)
 
 	return nil
 }
