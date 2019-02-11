@@ -51,7 +51,7 @@ func (this *DataIteratorTestSuite) SetupTest() {
 			BatchSize:   config.DataIterationBatchSize,
 			ReadRetries: config.DBReadRetries,
 		},
-		StateTracker: ghostferry.NewStateTracker(config.DataIterationConcurrency * 10),
+		StateTracker: ghostferry.NewCopyStateTracker(config.DataIterationConcurrency * 10),
 
 		Tables: tables.AsSlice(),
 	}
@@ -160,7 +160,7 @@ func (this *DataIteratorTestSuite) TestDoneListenerGetsNotifiedWhenDone() {
 }
 
 func (this *DataIteratorTestSuite) completedTables() map[string]bool {
-	return this.di.StateTracker.Serialize(nil).CompletedTables
+	return this.di.StateTracker.Serialize().CompletedTables
 }
 
 func TestDataIterator(t *testing.T) {

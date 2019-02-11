@@ -25,7 +25,7 @@ class InterruptResumeTest < GhostferryTestCase
     result = target_db.query("SELECT MAX(id) AS max_id FROM #{DEFAULT_FULL_TABLE_NAME}")
     last_successful_id = result.first["max_id"]
     assert last_successful_id > 0
-    assert_equal last_successful_id, dumped_state["LastSuccessfulPrimaryKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]
+    assert_equal last_successful_id, dumped_state["CopyStage"]["LastSuccessfulPrimaryKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]
   end
 
   def test_interrupt_resume_with_writes_to_source

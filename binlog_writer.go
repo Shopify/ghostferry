@@ -18,7 +18,7 @@ type BinlogWriter struct {
 	WriteRetries int
 
 	ErrorHandler ErrorHandler
-	StateTracker *StateTracker
+	StateTracker *CopyStateTracker
 
 	binlogEventBuffer chan DMLEvent
 	logger            *logrus.Entry
@@ -111,7 +111,7 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 	}
 
 	if b.StateTracker != nil {
-		b.StateTracker.UpdateLastWrittenBinlogPosition(events[len(events)-1].BinlogPosition())
+		b.StateTracker.UpdateLastProcessedBinlogPosition(events[len(events)-1].BinlogPosition())
 	}
 
 	return nil

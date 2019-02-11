@@ -11,7 +11,7 @@ import (
 
 type BatchWriter struct {
 	DB           *sql.DB
-	StateTracker *StateTracker
+	StateTracker *CopyStateTracker
 
 	DatabaseRewrites map[string]string
 	TableRewrites    map[string]string

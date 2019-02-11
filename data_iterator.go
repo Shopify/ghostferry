@@ -17,7 +17,7 @@ type DataIterator struct {
 
 	ErrorHandler ErrorHandler
 	CursorConfig *CursorConfig
-	StateTracker *StateTracker
+	StateTracker *CopyStateTracker
 
 	targetPKs      *sync.Map
 	batchListeners []func(*RowBatch) error
@@ -33,7 +33,7 @@ func (d *DataIterator) Run() {
 	// tracking state. However, some methods are still useful so we initialize
 	// a minimal local instance.
 	if d.StateTracker == nil {
-		d.StateTracker = NewStateTracker(0)
+		d.StateTracker = NewCopyStateTracker(0)
 	}
 
 	d.logger.WithField("tablesCount", len(d.Tables)).Info("starting data iterator run")
