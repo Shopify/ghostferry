@@ -324,7 +324,7 @@ func (f *Ferry) Start() error {
 	// If we don't set this now, there is a race condition where Ghostferry
 	// is terminated with some rows copied but no binlog events are written.
 	// This guarentees that we are able to restart from a valid location.
-	f.StateTracker.CopyStage.UpdateLastWrittenBinlogPosition(pos)
+	f.StateTracker.CopyStage.UpdateLastProcessedBinlogPosition(pos)
 
 	// Loads the schema of the tables that are applicable.
 	// We need to do this at the beginning of the run as this is required

@@ -104,6 +104,6 @@ class GhostferryTestCase < Minitest::Test
     refute dumped_state["LastKnownTableSchemaCache"].nil?
     refute dumped_state["CopyStage"]["LastSuccessfulPrimaryKeys"].nil?
     refute dumped_state["CopyStage"]["CompletedTables"].nil?
-    refute dumped_state["CopyStage"]["LastWrittenBinlogPosition"].nil?
+    refute dumped_state["CopyStage"]["LastProcessedBinlogPosition"].nil?
   end
 end
