@@ -145,7 +145,9 @@ loop:
 
 func ShowMasterStatusBinlogPosition(db *sql.DB) (mysql.Position, error) {
 	rows, err := db.Query("SHOW MASTER STATUS")
-	defer rows.Close()
+	if rows != nil {
+		defer rows.Close()
+	}
 	if err != nil {
 		return NewMysqlPosition("", 0, err)
 	}
