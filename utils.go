@@ -145,12 +145,19 @@ loop:
 
 func ShowMasterStatusBinlogPosition(db *sql.DB) (mysql.Position, error) {
 	rows, err := db.Query("SHOW MASTER STATUS")
+	defer rows.Close()
+	if err != nil {
+		return NewMysqlPosition("", 0, err)
+	}
 	var file string
 	var position uint32
 	var binlog_do_db, binlog_ignore_db, executed_gtid_set string
 	var cols []string
 	if rows.Next() {
 		cols, err = rows.Columns()
+		if err != nil {
+			return NewMysqlPosition(file, position, err)
+		}
 		switch len(cols) {
 		case 4:
 			err = rows.Scan(&file, &position, &binlog_do_db, &binlog_ignore_db)
