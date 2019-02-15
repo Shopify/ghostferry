@@ -2,7 +2,6 @@ package copydb
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -217,7 +216,7 @@ func (this *CopydbFerry) createTableOnTarget(database, table string) error {
 	fullTableName = fmt.Sprintf("%s.%s", database, table)
 
 	if _, created := this.CreatedTables[fullTableName]; created {
-		logrus.WithField("table", fullTableName).Warn("Table already created. Skipping")
+		logrus.WithField("table", fullTableName).Warn("Table already created in this session. Skipping")
 		return nil
 	}
 
@@ -274,8 +273,7 @@ func (this *CopydbFerry) createReferencedTablesIfAny(database, table string) err
 	stmt, err := this.Ferry.SourceDB.Prepare(constraintsSql)
 
 	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "error preparing constraints sql : %s\n", constraintsSql)
-		return err
+		return fmt.Errorf("error preparing constraints sql : %s", constraintsSql)
 	}
 
 	rows, err := stmt.Query(table, database)
@@ -283,8 +281,8 @@ func (this *CopydbFerry) createReferencedTablesIfAny(database, table string) err
 		defer rows.Close()
 	}
 	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "error executing constraints sql : %s\n", constraintsSql)
-		return err
+		return fmt.Errorf("error executing constraints sql : %s", constraintsSql)
+
 	}
 
 	for rows.Next() {
