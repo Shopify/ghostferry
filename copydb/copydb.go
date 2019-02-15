@@ -2,6 +2,7 @@ package copydb
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ type CopydbFerry struct {
 	controlServer *ghostferry.ControlServer
 	config        *Config
 	verifier      ghostferry.Verifier
+	CreatedTables map[string]int
 }
 
 func NewFerry(config *Config) *CopydbFerry {
@@ -32,6 +34,7 @@ func NewFerry(config *Config) *CopydbFerry {
 		Ferry:         ferry,
 		controlServer: controlServer,
 		config:        config,
+		CreatedTables: make(map[string]int),
 	}
 }
 
@@ -118,6 +121,7 @@ func (this *CopydbFerry) CreateDatabasesAndTables() error {
 			logrus.WithError(err).WithField("table", tableName).Error("cannot create table, this may leave the target database in an insane state")
 			return err
 		}
+
 	}
 
 	return nil
@@ -190,8 +194,8 @@ func (this *CopydbFerry) initializeWaitUntilReplicaIsCaughtUpToMasterConnection(
 	}
 
 	this.Ferry.WaitUntilReplicaIsCaughtUpToMaster = &ghostferry.WaitUntilReplicaIsCaughtUpToMaster{
-		MasterDB: masterDB,
-		Timeout:  timeout,
+		MasterDB:                        masterDB,
+		Timeout:                         timeout,
 		ReplicatedMasterPositionFetcher: positionFetcher,
 	}
 	return nil
@@ -208,10 +212,21 @@ func (this *CopydbFerry) createDatabaseIfExistsOnTarget(database string) error {
 }
 
 func (this *CopydbFerry) createTableOnTarget(database, table string) error {
-	var tableNameAgain, createTableQuery string
+	var tableNameAgain, createTableQuery, fullTableName string
 
+	fullTableName = fmt.Sprintf("%s.%s", database, table)
+
+	if _, created := this.CreatedTables[fullTableName]; created {
+		logrus.WithField("table", fullTableName).Warn("Table already created. Skipping")
+		return nil
+	}
+
+	err := this.createReferencedTablesIfAny(database, table)
+	if err != nil {
+		return fmt.Errorf("failed to create referenced tables for %s.%s", database, table)
+	}
 	r := this.Ferry.SourceDB.QueryRow(fmt.Sprintf("SHOW CREATE TABLE `%s`.`%s`", database, table))
-	err := r.Scan(&tableNameAgain, &createTableQuery)
+	err = r.Scan(&tableNameAgain, &createTableQuery)
 	if err != nil {
 		logrus.WithFields(logrus.Fields{
 			"error":    err,
@@ -241,5 +256,50 @@ func (this *CopydbFerry) createTableOnTarget(database, table string) error {
 	}
 
 	_, err = this.Ferry.TargetDB.Exec(createTableQueryReplaced)
+	if err == nil {
+		this.CreatedTables[fullTableName] = 1
+	}
+	return err
+}
+
+func (this *CopydbFerry) createReferencedTablesIfAny(database, table string) error {
+	constraintsSql := `SELECT CONSTRAINT_NAME,REFERENCED_TABLE_SCHEMA,REFERENCED_TABLE_NAME 
+	FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
+	WHERE TABLE_NAME = ? 
+	AND TABLE_SCHEMA = ? 
+	AND REFERENCED_TABLE_NAME IS NOT NULL`
+
+	var err error
+
+	stmt, err := this.Ferry.SourceDB.Prepare(constraintsSql)
+
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "error preparing constraints sql : %s\n", constraintsSql)
+		return err
+	}
+
+	rows, err := stmt.Query(table, database)
+	if rows != nil {
+		defer rows.Close()
+	}
+	if err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "error executing constraints sql : %s\n", constraintsSql)
+		return err
+	}
+
+	for rows.Next() {
+		var constraintName, referencedTableSchema, referencedTableName string
+		err = rows.Scan(&constraintName, &referencedTableSchema, &referencedTableName)
+		if err != nil {
+			return err
+		}
+		var loggerFiled = fmt.Sprintf("%s.%s", referencedTableSchema, referencedTableName)
+		logrus.WithField("referenced_table", loggerFiled).Info("Creating referenced table")
+		err = this.createTableOnTarget(referencedTableSchema, referencedTableName)
+		if err != nil {
+			logrus.WithField("referenced_table", loggerFiled).WithError(err).Error("Failed creating table")
+			return err
+		}
+	}
 	return err
 }
