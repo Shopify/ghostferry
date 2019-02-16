@@ -97,15 +97,14 @@ func (e *BinlogInsertEvent) NewValues() RowData {
 }
 
 func (e *BinlogInsertEvent) AsSQLString(target *schema.Table) (string, error) {
-	columns, err := loadColumnsForTable(&e.table, e.newValues)
-	if err != nil {
+	if err := verifyValuesHasTheSameLengthAsColumns(&e.table, e.newValues); err != nil {
 		return "", err
 	}
 
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(target.Schema, target.Name) +
-		" (" + strings.Join(columns, ",") + ")" +
-		" VALUES (" + buildStringListForValues(e.newValues) + ")"
+		" (" + strings.Join(quotedColumnNames(&e.table), ",") + ")" +
+		" VALUES (" + buildStringListForValues(e.table.Columns, e.newValues) + ")"
 
 	return query, nil
 }
@@ -152,14 +151,13 @@ func (e *BinlogUpdateEvent) NewValues() RowData {
 }
 
 func (e *BinlogUpdateEvent) AsSQLString(target *schema.Table) (string, error) {
-	columns, err := loadColumnsForTable(&e.table, e.oldValues, e.newValues)
-	if err != nil {
+	if err := verifyValuesHasTheSameLengthAsColumns(&e.table, e.oldValues, e.newValues); err != nil {
 		return "", err
 	}
 
 	query := "UPDATE " + QuotedTableNameFromString(target.Schema, target.Name) +
-		" SET " + buildStringMapForSet(columns, e.newValues) +
-		" WHERE " + buildStringMapForWhere(columns, e.oldValues)
+		" SET " + buildStringMapForSet(e.table.Columns, e.newValues) +
+		" WHERE " + buildStringMapForWhere(e.table.Columns, e.oldValues)
 
 	return query, nil
 }
@@ -195,13 +193,12 @@ func NewBinlogDeleteEvents(table *schema.Table, rowsEvent *replication.RowsEvent
 }
 
 func (e *BinlogDeleteEvent) AsSQLString(target *schema.Table) (string, error) {
-	columns, err := loadColumnsForTable(&e.table, e.oldValues)
-	if err != nil {
+	if err := verifyValuesHasTheSameLengthAsColumns(&e.table, e.oldValues); err != nil {
 		return "", err
 	}
 
 	query := "DELETE FROM " + QuotedTableNameFromString(target.Schema, target.Name) +
-		" WHERE " + buildStringMapForWhere(columns, e.oldValues)
+		" WHERE " + buildStringMapForWhere(e.table.Columns, e.oldValues)
 
 	return query, nil
 }
@@ -253,38 +250,31 @@ func NewBinlogDMLEvents(table *schema.Table, ev *replication.BinlogEvent, pos my
 	}
 }
 
-func loadColumnsForTable(table *schema.Table, valuesToVerify ...RowData) ([]string, error) {
-	for _, values := range valuesToVerify {
-		if err := verifyValuesHasTheSameLengthAsColumns(table, values); err != nil {
-			return nil, err
-		}
-	}
-
-	return quotedColumnNames(table), nil
-}
-
 func quotedColumnNames(table *schema.Table) []string {
 	cols := make([]string, len(table.Columns))
 	for i, column := range table.Columns {
 		cols[i] = quoteField(column.Name)
 	}
+
 	return cols
 }
 
-func verifyValuesHasTheSameLengthAsColumns(table *schema.Table, values RowData) error {
-	if len(table.Columns) != len(values) {
-		return fmt.Errorf(
-			"table %s.%s has %d columns but event has %d columns instead",
-			table.Schema,
-			table.Name,
-			len(table.Columns),
-			len(values),
-		)
+func verifyValuesHasTheSameLengthAsColumns(table *schema.Table, values ...RowData) error {
+	for _, v := range values {
+		if len(table.Columns) != len(v) {
+			return fmt.Errorf(
+				"table %s.%s has %d columns but event has %d columns instead",
+				table.Schema,
+				table.Name,
+				len(table.Columns),
+				len(v),
+			)
+		}
 	}
 	return nil
 }
 
-func buildStringListForValues(values []interface{}) string {
+func buildStringListForValues(columns []schema.TableColumn, values []interface{}) string {
 	var buffer []byte
 
 	for i, value := range values {
@@ -292,13 +282,13 @@ func buildStringListForValues(values []interface{}) string {
 			buffer = append(buffer, ',')
 		}
 
-		buffer = appendEscapedValue(buffer, value)
+		buffer = appendEscapedValue(buffer, value, columns[i])
 	}
 
 	return string(buffer)
 }
 
-func buildStringMapForWhere(columns []string, values []interface{}) string {
+func buildStringMapForWhere(columns []schema.TableColumn, values []interface{}) string {
 	var buffer []byte
 
 	for i, value := range values {
@@ -306,21 +296,21 @@ func buildStringMapForWhere(columns []string, values []interface{}) string {
 			buffer = append(buffer, " AND "...)
 		}
 
-		buffer = append(buffer, columns[i]...)
+		buffer = append(buffer, quoteField(columns[i].Name)...)
 
 		if isNilValue(value) {
 			// "WHERE value = NULL" will never match rows.
 			buffer = append(buffer, " IS NULL"...)
 		} else {
 			buffer = append(buffer, '=')
-			buffer = appendEscapedValue(buffer, value)
+			buffer = appendEscapedValue(buffer, value, columns[i])
 		}
 	}
 
 	return string(buffer)
 }
 
-func buildStringMapForSet(columns []string, values []interface{}) string {
+func buildStringMapForSet(columns []schema.TableColumn, values []interface{}) string {
 	var buffer []byte
 
 	for i, value := range values {
@@ -328,9 +318,9 @@ func buildStringMapForSet(columns []string, values []interface{}) string {
 			buffer = append(buffer, ',')
 		}
 
-		buffer = append(buffer, columns[i]...)
+		buffer = append(buffer, quoteField(columns[i].Name)...)
 		buffer = append(buffer, '=')
-		buffer = appendEscapedValue(buffer, value)
+		buffer = appendEscapedValue(buffer, value, columns[i])
 	}
 
 	return string(buffer)
@@ -345,7 +335,7 @@ func isNilValue(value interface{}) bool {
 	return false
 }
 
-func appendEscapedValue(buffer []byte, value interface{}) []byte {
+func appendEscapedValue(buffer []byte, value interface{}, column schema.TableColumn) []byte {
 	if isNilValue(value) {
 		return append(buffer, "NULL"...)
 	}
@@ -362,7 +352,7 @@ func appendEscapedValue(buffer []byte, value interface{}) []byte {
 	case string:
 		return appendEscapedString(buffer, v)
 	case []byte:
-		return appendEscapedBuffer(buffer, v)
+		return appendEscapedBuffer(buffer, v, column.Type != schema.TYPE_JSON)
 	case bool:
 		if v {
 			return append(buffer, '1')
@@ -433,8 +423,12 @@ func appendEscapedString(buffer []byte, value string) []byte {
 	return append(buffer, '\'')
 }
 
-func appendEscapedBuffer(buffer, value []byte) []byte {
-	buffer = append(buffer, "_binary'"...)
+func appendEscapedBuffer(buffer, value []byte, binary bool) []byte {
+	if binary {
+		buffer = append(buffer, "_binary"...)
+	}
+
+	buffer = append(buffer, '\'')
 
 	for i := 0; i < len(value); i++ {
 		c := value[i]
