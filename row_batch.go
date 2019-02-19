@@ -41,10 +41,11 @@ func (e *RowBatch) TableSchema() *schema.Table {
 }
 
 func (e *RowBatch) AsSQLQuery(target *schema.Table) (string, []interface{}, error) {
-	columns, err := loadColumnsForTable(&e.table, e.values...)
-	if err != nil {
+	if err := verifyValuesHasTheSameLengthAsColumns(&e.table, e.values...); err != nil {
 		return "", nil, err
 	}
+
+	columns := quotedColumnNames(&e.table)
 
 	valuesStr := "(" + strings.Repeat("?,", len(columns)-1) + "?)"
 	valuesStr = strings.Repeat(valuesStr+",", len(e.values)-1) + valuesStr
