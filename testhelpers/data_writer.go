@@ -85,6 +85,46 @@ func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows int) {
 	PanicIfError(tx.Commit())
 }
 
+func SeedInitialForeignKeyData(db *sql.DB, dbname, parent_tablename string, numberOfRows int) {
+	var query, tablename string
+	var err error
+
+	tablename = fmt.Sprintf("children_of_%s", parent_tablename)
+
+	query = "CREATE DATABASE IF NOT EXISTS %s"
+	query = fmt.Sprintf(query, dbname)
+	_, err = db.Exec(query)
+	PanicIfError(err)
+
+	query = "CREATE TABLE %s.%s (id bigint(20) not null auto_increment, data TEXT, parent_id bigint(20) not null,  primary key(id), FOREIGN KEY (parent_id) REFERENCES %s(id))"
+	query = fmt.Sprintf(query, dbname, tablename, parent_tablename)
+
+	_, err = db.Exec(query)
+	PanicIfError(err)
+
+	tx, err := db.Begin()
+	PanicIfError(err)
+
+	query = "SELECT id FROM %s.%s LIMIT ?"
+	query = fmt.Sprintf(query, dbname, parent_tablename)
+	rows, err := db.Query(query, numberOfRows)
+	PanicIfError(err)
+	defer rows.Close()
+
+	var i int64
+	for rows.Next() {
+		err = rows.Scan(&i)
+		PanicIfError(err)
+		query = "INSERT INTO %s.%s (id, data,parent_id) VALUES (?, ?, ?)"
+		query = fmt.Sprintf(query, dbname, tablename)
+		_, err = tx.Exec(query, nil, RandData(), i)
+		PanicIfError(err)
+	}
+
+	PanicIfError(tx.Commit())
+
+}
+
 func AddTenantID(db *sql.DB, dbName, tableName string, numberOfTenants int) {
 	query := "ALTER TABLE %s.%s ADD tenant_id bigint(20)"
 	query = fmt.Sprintf(query, dbName, tableName)

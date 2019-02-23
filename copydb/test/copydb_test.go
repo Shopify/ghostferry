@@ -56,6 +56,7 @@ func (t *CopydbTestSuite) SetupTest() {
 	t.ferry = t.copydbFerry.Ferry
 
 	testhelpers.SeedInitialData(t.ferry.SourceDB, testSchemaName, testTableName, 10)
+	testhelpers.SeedInitialForeignKeyData(t.ferry.SourceDB, testSchemaName,  testTableName, 10)
 }
 
 func (t *CopydbTestSuite) TearDownTest() {
