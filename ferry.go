@@ -173,6 +173,7 @@ func (f *Ferry) NewChecksumTableVerifier() *ChecksumTableVerifier {
 		TargetDB:         f.TargetDB,
 		DatabaseRewrites: f.Config.DatabaseRewrites,
 		TableRewrites:    f.Config.TableRewrites,
+		Tables:           f.Tables.AsSlice(),
 	}
 }
 
@@ -216,6 +217,8 @@ func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
 		TargetDB:            f.TargetDB,
 		CompressionVerifier: compressionVerifier,
 
+		Tables:              f.Tables.AsSlice(),
+		TableSchemaCache:    f.Tables,
 		IgnoredTables:       config.IgnoredTables,
 		IgnoredColumns:      ignoredColumns,
 		DatabaseRewrites:    f.Config.DatabaseRewrites,
@@ -398,8 +401,11 @@ func (f *Ferry) Initialize() (err error) {
 	return nil
 }
 
-// Determine the binlog coordinates, table mapping for the pending
-// Ghostferry run.
+// Attach event listeners for Ghostferry components and connect the binlog
+// streamer to the source shard
+//
+// Note: Binlog streaming doesn't start until Run. Here we simply connect to
+// MySQL.
 func (f *Ferry) Start() error {
 	// Event listeners for the BinlogStreamer and DataIterator are called
 	// in the order they are registered.
@@ -431,12 +437,6 @@ func (f *Ferry) Start() error {
 	// is terminated with some rows copied but no binlog events are written.
 	// This guarentees that we are able to restart from a valid location.
 	f.StateTracker.CopyStage.UpdateLastProcessedBinlogPosition(pos)
-
-	// TODO: refactor the TableSchemaCache logic to remove this weird post initialize
-	//       set tables hack
-	if f.Verifier != nil {
-		f.Verifier.SetApplicableTableSchemaCache(f.Tables)
-	}
 
 	return nil
 }
