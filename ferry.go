@@ -121,6 +121,7 @@ func (f *Ferry) NewBinlogStreamer() *BinlogStreamer {
 		MyServerId:   f.Config.MyServerId,
 		ErrorHandler: f.ErrorHandler,
 		Filter:       f.CopyFilter,
+		TableSchema:  f.Tables,
 	}
 }
 
@@ -351,8 +352,21 @@ func (f *Ferry) Initialize() (err error) {
 
 	if f.StateToResumeFrom == nil {
 		f.StateTracker = NewStateTracker(f.DataIterationConcurrency * 10)
+
+		// Loads the schema of the tables that are applicable.
+		// We need to do this at the beginning of the run as this is required
+		// in order to determine the PrimaryKey of each table as well as finding
+		// which value in the binlog event correspond to which field in the
+		// table.
+		metrics.Measure("LoadTables", nil, 1.0, func() {
+			f.Tables, err = LoadTables(f.SourceDB, f.TableFilter)
+		})
+		if err != nil {
+			return err
+		}
 	} else {
 		f.StateTracker = NewStateTrackerFromSerializedState(f.DataIterationConcurrency*10, f.StateToResumeFrom)
+		f.Tables = f.StateToResumeFrom.LastKnownTableSchemaCache
 	}
 
 	f.BinlogStreamer = f.NewBinlogStreamer()
@@ -417,25 +431,6 @@ func (f *Ferry) Start() error {
 	// is terminated with some rows copied but no binlog events are written.
 	// This guarentees that we are able to restart from a valid location.
 	f.StateTracker.CopyStage.UpdateLastProcessedBinlogPosition(pos)
-
-	// Loads the schema of the tables that are applicable.
-	// We need to do this at the beginning of the run as this is required
-	// in order to determine the PrimaryKey of each table as well as finding
-	// which value in the binlog event correspond to which field in the
-	// table.
-	if f.StateToResumeFrom != nil {
-		f.Tables = f.StateToResumeFrom.LastKnownTableSchemaCache
-	} else {
-		metrics.Measure("LoadTables", nil, 1.0, func() {
-			f.Tables, err = LoadTables(f.SourceDB, f.TableFilter)
-		})
-		if err != nil {
-			return err
-		}
-	}
-
-	// TODO(pushrax): handle changes to schema during copying and clean this up.
-	f.BinlogStreamer.TableSchema = f.Tables
 
 	// TODO: refactor the TableSchemaCache logic to remove this weird post initialize
 	//       set tables hack

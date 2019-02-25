@@ -1,6 +1,7 @@
 package testhelpers
 
 import (
+	"database/sql"
 	"fmt"
 	"sync"
 	"testing"
@@ -12,15 +13,17 @@ import (
 type IntegrationTestCase struct {
 	T *testing.T
 
-	SetupAction                   func(*TestFerry)
-	AfterStartBinlogStreaming     func(*TestFerry)
-	AfterRowCopyIsComplete        func(*TestFerry)
-	BeforeStoppingBinlogStreaming func(*TestFerry)
-	AfterStoppedBinlogStreaming   func(*TestFerry)
-	CustomVerifyAction            func(*TestFerry)
+	SetupAction                   func(*TestFerry, *sql.DB, *sql.DB)
+	AfterStartBinlogStreaming     func(*TestFerry, *sql.DB, *sql.DB)
+	AfterRowCopyIsComplete        func(*TestFerry, *sql.DB, *sql.DB)
+	BeforeStoppingBinlogStreaming func(*TestFerry, *sql.DB, *sql.DB)
+	AfterStoppedBinlogStreaming   func(*TestFerry, *sql.DB, *sql.DB)
+	CustomVerifyAction            func(*TestFerry, *sql.DB, *sql.DB)
 
 	DisableChecksumVerifier bool
 
+	SourceDB   *sql.DB
+	TargetDB   *sql.DB
 	DataWriter DataWriter
 	Ferry      *TestFerry
 	Verifier   *ghostferry.ChecksumTableVerifier
@@ -45,9 +48,15 @@ func (this *IntegrationTestCase) CopyData() {
 func (this *IntegrationTestCase) Setup() {
 	SetupTest()
 
-	PanicIfError(this.Ferry.Initialize())
+	var err error
+	this.SourceDB, err = this.Ferry.Source.SqlDB(nil)
+	PanicIfError(err)
+
+	this.TargetDB, err = this.Ferry.Target.SqlDB(nil)
+	PanicIfError(err)
 
 	this.callCustomAction(this.SetupAction)
+	PanicIfError(this.Ferry.Initialize())
 }
 
 func (this *IntegrationTestCase) StartFerryAndDataWriter() {
@@ -126,26 +135,20 @@ func (this *IntegrationTestCase) Teardown() {
 		logrus.Error("you might see an unrelated panic as we delete the db, if there are background processes operating on the db")
 	}
 
-	if this.Ferry.SourceDB != nil {
-		_, err := this.Ferry.SourceDB.Exec("SET GLOBAL read_only = OFF")
-		if err != nil {
-			logrus.WithError(err).Error("cannot set global read_only = OFF at the source db")
-		}
+	_, err := this.SourceDB.Exec("SET GLOBAL read_only = OFF")
+	if err != nil {
+		logrus.WithError(err).Error("cannot set global read_only = OFF at the source db")
 	}
 
 	for _, dbname := range ApplicableTestDbs {
-		if this.Ferry.SourceDB != nil {
-			_, err := this.Ferry.SourceDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbname))
-			if err != nil {
-				logrus.WithError(err).Errorf("failed to drop database %s on the source db as a part of the test cleanup", dbname)
-			}
+		_, err = this.SourceDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbname))
+		if err != nil {
+			logrus.WithError(err).Errorf("failed to drop database %s on the source db as a part of the test cleanup", dbname)
 		}
 
-		if this.Ferry.TargetDB != nil {
-			_, err := this.Ferry.TargetDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbname))
-			if err != nil {
-				logrus.WithError(err).Errorf("failed to drop database %s on the target db as a part of the test cleanup", dbname)
-			}
+		_, err = this.TargetDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbname))
+		if err != nil {
+			logrus.WithError(err).Errorf("failed to drop database %s on the target db as a part of the test cleanup", dbname)
 		}
 	}
 
@@ -158,14 +161,14 @@ func (this *IntegrationTestCase) verifyTableChecksum() (ghostferry.VerificationR
 	return this.Verifier.VerifyDuringCutover()
 }
 
-func (this *IntegrationTestCase) callCustomAction(f func(*TestFerry)) {
+func (this *IntegrationTestCase) callCustomAction(f func(*TestFerry, *sql.DB, *sql.DB)) {
 	if f != nil {
-		f(this.Ferry)
+		f(this.Ferry, this.SourceDB, this.TargetDB)
 	}
 }
 
 func (this *IntegrationTestCase) AssertOnlyDataOnSourceAndTargetIs(data string) {
-	row := this.Ferry.SourceDB.QueryRow("SELECT id, data FROM gftest.table1")
+	row := this.SourceDB.QueryRow("SELECT id, data FROM gftest.table1")
 	var id int64
 	var d string
 	PanicIfError(row.Scan(&id, &d))
@@ -175,7 +178,7 @@ func (this *IntegrationTestCase) AssertOnlyDataOnSourceAndTargetIs(data string) 
 	}
 
 	d = ""
-	row = this.Ferry.TargetDB.QueryRow("SELECT id, data FROM gftest.table1")
+	row = this.TargetDB.QueryRow("SELECT id, data FROM gftest.table1")
 	PanicIfError(row.Scan(&id, &d))
 
 	if d != data {
