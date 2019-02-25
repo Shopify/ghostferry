@@ -13,10 +13,9 @@ import (
 )
 
 type ShardingFerry struct {
-	Ferry    *ghostferry.Ferry
-	verifier *ghostferry.IterativeVerifier
-	config   *Config
-	logger   *logrus.Entry
+	Ferry  *ghostferry.Ferry
+	config *Config
+	logger *logrus.Entry
 }
 
 func NewFerry(config *Config) (*ShardingFerry, error) {
@@ -91,8 +90,6 @@ func (r *ShardingFerry) Initialize() error {
 		return err
 	}
 
-	r.verifier = r.Ferry.Verifier.(*ghostferry.IterativeVerifier)
-
 	return nil
 }
 
@@ -148,7 +145,7 @@ func (r *ShardingFerry) Run() {
 
 	var verificationResult ghostferry.VerificationResult
 	metrics.Measure("VerifyCutover", nil, 1.0, func() {
-		verificationResult, err = r.verifier.VerifyDuringCutover()
+		verificationResult, err = r.Ferry.Verifier.VerifyDuringCutover()
 	})
 	if err != nil {
 		r.logger.WithField("error", err).Errorf("verification encountered an error, aborting run")
