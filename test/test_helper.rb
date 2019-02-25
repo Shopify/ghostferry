@@ -21,10 +21,10 @@ class GhostferryTestCase < Minitest::Test
 
   MINIMAL_GHOSTFERRY = "integrationferry.go"
 
-  def new_ghostferry(filename)
+  def new_ghostferry(filename, config: {})
     # Transform path to something ruby understands
     path = File.join(GO_CODE_PATH, filename)
-    g = Ghostferry.new(path, logger: @logger)
+    g = Ghostferry.new(path, config: config, logger: @logger)
     @ghostferry_instances << g
     g
   end

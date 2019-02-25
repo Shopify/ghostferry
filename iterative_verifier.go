@@ -178,10 +178,6 @@ func (v *IterativeVerifier) SanityCheckParameters() error {
 		return fmt.Errorf("iterative verifier concurrency must be greater than 0, not %d", v.Concurrency)
 	}
 
-	if v.TableSchemaCache == nil {
-		return fmt.Errorf("iterative verifier must be given the table schema cache")
-	}
-
 	return nil
 }
 
@@ -202,8 +198,9 @@ func (v *IterativeVerifier) VerifyOnce() (VerificationResult, error) {
 
 	err := v.iterateAllTables(func(pk uint64, tableSchema *schema.Table) error {
 		return VerificationResult{
-			DataCorrect: false,
-			Message:     fmt.Sprintf("verification failed on table: %s for pk: %d", tableSchema.String(), pk),
+			DataCorrect:     false,
+			Message:         fmt.Sprintf("verification failed on table: %s for pk: %d", tableSchema.String(), pk),
+			IncorrectTables: []string{tableSchema.String()},
 		}
 	})
 
@@ -213,11 +210,15 @@ func (v *IterativeVerifier) VerifyOnce() (VerificationResult, error) {
 	case VerificationResult:
 		return e, nil
 	default:
-		return VerificationResult{true, ""}, e
+		return NewCorrectVerificationResult(), e
 	}
 }
 
 func (v *IterativeVerifier) VerifyBeforeCutover() error {
+	if v.TableSchemaCache == nil {
+		return fmt.Errorf("iterative verifier must be given the table schema cache before starting verify before cutover")
+	}
+
 	v.logger.Info("starting pre-cutover verification")
 
 	v.logger.Debug("attaching binlog event listener")
@@ -242,6 +243,11 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	v.beforeCutoverVerifyDone = true
 
 	return err
+}
+
+func (v *IterativeVerifier) SetApplicableTableSchemaCache(t TableSchemaCache) {
+	v.Tables = t.AsSlice()
+	v.TableSchemaCache = t
 }
 
 func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {
@@ -446,7 +452,7 @@ func (v *IterativeVerifier) verifyStore(sourceTag string, additionalTags []Metri
 	v.logger.WithField("batches", len(allBatches)).Debug("reverifying")
 
 	if len(allBatches) == 0 {
-		return VerificationResult{true, ""}, nil
+		return NewCorrectVerificationResult(), nil
 	}
 
 	erroredOrFailed := errors.New("verification of store errored or failed")
@@ -480,7 +486,7 @@ func (v *IterativeVerifier) verifyStore(sourceTag string, additionalTags []Metri
 					v.reverifyStore.Add(ReverifyEntry{Pk: pk, Table: table})
 				}
 
-				resultAndErr.Result = VerificationResult{true, ""}
+				resultAndErr.Result = NewCorrectVerificationResult()
 			}
 
 			if resultAndErr.ErroredOrFailed() {
@@ -527,7 +533,7 @@ func (v *IterativeVerifier) reverifyPks(table *schema.Table, pks []uint64) (Veri
 	}
 
 	if len(mismatchedPks) == 0 {
-		return VerificationResult{true, ""}, mismatchedPks, nil
+		return NewCorrectVerificationResult(), mismatchedPks, nil
 	}
 
 	pkStrings := make([]string, len(mismatchedPks))
@@ -536,8 +542,9 @@ func (v *IterativeVerifier) reverifyPks(table *schema.Table, pks []uint64) (Veri
 	}
 
 	return VerificationResult{
-		DataCorrect: false,
-		Message:     fmt.Sprintf("verification failed on table: %s for pks: %s", table.String(), strings.Join(pkStrings, ",")),
+		DataCorrect:     false,
+		Message:         fmt.Sprintf("verification failed on table: %s for pks: %s", table.String(), strings.Join(pkStrings, ",")),
+		IncorrectTables: []string{table.String()},
 	}, mismatchedPks, nil
 }
 

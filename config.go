@@ -7,9 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"time"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
+)
+
+const (
+	VerifierTypeChecksumTable  = "ChecksumTable"
+	VerifierTypeIterative      = "Iterative"
+	VerifierTypeNoVerification = "NoVerification"
 )
 
 type TLSConfig struct {
@@ -134,6 +141,54 @@ func (c DatabaseConfig) assertParamSet(param, value string) error {
 	return nil
 }
 
+type IterativeVerifierConfig struct {
+	// List of tables that should be ignored by the IterativeVerifier.
+	IgnoredTables []string
+
+	// List of columns that should be ignored by the IterativeVerifier.
+	// This is in the format of table_name -> [list of column names]
+	IgnoredColumns map[string][]string
+
+	// The number of concurrent verifiers. Note that a single table can only be
+	// assigned to one goroutine and currently multiple goroutines per table
+	// is not supported.
+	Concurrency int
+
+	// The maximum expected downtime during cutover, in the format of
+	// time.ParseDuration.
+	MaxExpectedDowntime string
+
+	// Map of the table and column identifying the compression type
+	// (if any) of the column. This is used during verification to ensure
+	// the data was successfully copied as some compression algorithms can
+	// output different compressed data with the same input data.
+	//
+	// The data structure is a map of table names to a map of column names
+	// to the compression algorithm.
+	// ex: {books: {contents: snappy}}
+	//
+	// Currently supported compression algorithms are:
+	//	1. Snappy (https://google.github.io/snappy/) as "SNAPPY"
+	//
+	// Optional: defaults to empty map/no compression
+	TableColumnCompression TableColumnCompressionConfig
+}
+
+func (c *IterativeVerifierConfig) Validate() error {
+	if c.MaxExpectedDowntime != "" {
+		_, err := time.ParseDuration(c.MaxExpectedDowntime)
+		if err != nil {
+			return err
+		}
+	}
+
+	if c.Concurrency == 0 {
+		c.Concurrency = 4
+	}
+
+	return nil
+}
+
 type Config struct {
 	// Source database connection configuration
 	//
@@ -158,20 +213,6 @@ type Config struct {
 	//
 	// Optional: defaults to empty map/no rewrites
 	TableRewrites map[string]string
-
-	// Map of the table and column identifying the compression type
-	// (if any) of the column. This is used during verification to ensure
-	// the data was successfully copied as it must be manually verified.
-	//
-	// Note that the IterativeVerifier must be used and the
-	// CompressionVerifiers for the configuration below will be instantiated
-	// to handle the decompression before verification
-	//
-	// Currently supported compression algorithms are:
-	//	1. Snappy (https://google.github.io/snappy/) as "SNAPPY"
-	//
-	// Optional: defaults to empty map/no compression
-	TableColumnCompression TableColumnCompressionConfig
 
 	// The maximum number of retries for writes if the writes failed on
 	// the target database.
@@ -250,6 +291,19 @@ type Config struct {
 	// If this is null, a new Ghostferry run will be started. Otherwise, the
 	// reconciliation process will start and Ghostferry will resume after that.
 	StateToResumeFrom *SerializableState
+
+	// The verifier to use during the run. Valid choices are:
+	// ChecksumTable
+	// Iterative
+	// NoVerification
+	//
+	// If it is left blank, the Verifier member variable on the Ferry will be
+	// used. If that member variable is nil, no verification will be done.
+	VerifierType string
+
+	// Only useful if VerifierType == Iterative.
+	// This specifies the configurations to the IterativeVerifier.
+	IterativeVerifierConfig IterativeVerifierConfig
 }
 
 func (c *Config) ValidateConfig() error {
@@ -267,6 +321,12 @@ func (c *Config) ValidateConfig() error {
 
 	if c.StateToResumeFrom != nil && c.StateToResumeFrom.GhostferryVersion != VersionString {
 		return fmt.Errorf("StateToResumeFrom version mismatch: resume = %s, current = %s", c.StateToResumeFrom.GhostferryVersion, VersionString)
+	}
+
+	if c.VerifierType == VerifierTypeIterative {
+		if err := c.IterativeVerifierConfig.Validate(); err != nil {
+			return fmt.Errorf("IterativeVerifierConfig invalid: %v", err)
+		}
 	}
 
 	if c.DBWriteRetries == 0 {

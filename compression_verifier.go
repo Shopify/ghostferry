@@ -21,12 +21,10 @@ const (
 )
 
 type (
-	columnCompressionConfig map[string]string
-
 	// TableColumnCompressionConfig represents compression configuration for a
 	// column in a table as table -> column -> compression-type
 	// ex: books -> contents -> snappy
-	TableColumnCompressionConfig map[string]columnCompressionConfig
+	TableColumnCompressionConfig map[string]map[string]string
 )
 
 // UnsupportedCompressionError is used to identify errors resulting

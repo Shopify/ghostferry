@@ -13,10 +13,9 @@ import (
 )
 
 type ShardingFerry struct {
-	Ferry    *ghostferry.Ferry
-	verifier *ghostferry.IterativeVerifier
-	config   *Config
-	logger   *logrus.Entry
+	Ferry  *ghostferry.Ferry
+	config *Config
+	logger *logrus.Entry
 }
 
 func NewFerry(config *Config) (*ShardingFerry, error) {
@@ -29,6 +28,8 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 		ShardingValue: config.ShardingValue,
 		JoinedTables:  config.JoinedTables,
 	}
+
+	config.VerifierType = ghostferry.VerifierTypeIterative
 
 	ignored, err := compileRegexps(config.IgnoredTables)
 	if err != nil {
@@ -88,80 +89,12 @@ func (r *ShardingFerry) Initialize() error {
 		r.Ferry.ErrorHandler.ReportError("ferry.initialize", err)
 		return err
 	}
+
 	return nil
 }
 
-func (r *ShardingFerry) newIterativeVerifier() (*ghostferry.IterativeVerifier, error) {
-	verifierConcurrency := r.config.VerifierIterationConcurrency
-	if verifierConcurrency == 0 {
-		verifierConcurrency = r.config.DataIterationConcurrency
-	}
-
-	var maxExpectedDowntime time.Duration
-	if r.config.MaxExpectedVerifierDowntime != "" {
-		var err error
-		maxExpectedDowntime, err = time.ParseDuration(r.config.MaxExpectedVerifierDowntime)
-		if err != nil {
-			return nil, fmt.Errorf("invalid MaxExpectedVerifierDowntime: %s", err)
-		}
-	}
-
-	var compressionVerifier *ghostferry.CompressionVerifier
-	if r.config.TableColumnCompression != nil {
-		var err error
-		compressionVerifier, err = ghostferry.NewCompressionVerifier(r.config.TableColumnCompression)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	ignoredColumns := make(map[string]map[string]struct{})
-	for table, columns := range r.config.IgnoredVerificationColumns {
-		ignoredColumns[table] = make(map[string]struct{})
-		for _, column := range columns {
-			ignoredColumns[table][column] = struct{}{}
-		}
-	}
-
-	return &ghostferry.IterativeVerifier{
-		CursorConfig: &ghostferry.CursorConfig{
-			DB:          r.Ferry.SourceDB,
-			BatchSize:   r.config.DataIterationBatchSize,
-			ReadRetries: r.config.DBReadRetries,
-			BuildSelect: r.config.CopyFilter.BuildSelect,
-		},
-
-		BinlogStreamer:      r.Ferry.BinlogStreamer,
-		CompressionVerifier: compressionVerifier,
-
-		TableSchemaCache: r.Ferry.Tables,
-		Tables:           r.Ferry.Tables.AsSlice(),
-
-		SourceDB: r.Ferry.SourceDB,
-		TargetDB: r.Ferry.TargetDB,
-
-		DatabaseRewrites: r.config.DatabaseRewrites,
-		TableRewrites:    r.config.TableRewrites,
-
-		IgnoredTables:       r.config.IgnoredVerificationTables,
-		IgnoredColumns:      ignoredColumns,
-		Concurrency:         verifierConcurrency,
-		MaxExpectedDowntime: maxExpectedDowntime,
-	}, nil
-}
-
 func (r *ShardingFerry) Start() error {
-	err := r.Ferry.Start()
-	if err != nil {
-		return err
-	}
-
-	r.verifier, err = r.newIterativeVerifier()
-	if err != nil {
-		return err
-	}
-
-	return r.verifier.Initialize()
+	return r.Ferry.Start()
 }
 
 func (r *ShardingFerry) Run() {
@@ -173,14 +106,6 @@ func (r *ShardingFerry) Run() {
 	}()
 
 	r.Ferry.WaitUntilRowCopyIsComplete()
-
-	metrics.Measure("VerifyBeforeCutover", nil, 1.0, func() {
-		err := r.verifier.VerifyBeforeCutover()
-		if err != nil {
-			r.logger.WithField("error", err).Errorf("pre-cutover verification encountered an error, aborting run")
-			r.Ferry.ErrorHandler.Fatal("sharding", err)
-		}
-	})
 
 	ghostferry.WaitForThrottle(r.Ferry.Throttler)
 
@@ -220,7 +145,7 @@ func (r *ShardingFerry) Run() {
 
 	var verificationResult ghostferry.VerificationResult
 	metrics.Measure("VerifyCutover", nil, 1.0, func() {
-		verificationResult, err = r.verifier.VerifyDuringCutover()
+		verificationResult, err = r.Ferry.Verifier.VerifyDuringCutover()
 	})
 	if err != nil {
 		r.logger.WithField("error", err).Errorf("verification encountered an error, aborting run")
@@ -266,17 +191,12 @@ func (r *ShardingFerry) deltaCopyJoinedTables() error {
 		return err
 	}
 
-	verifier, err := r.newIterativeVerifier()
+	verifier, err := r.Ferry.NewIterativeVerifier()
 	if err != nil {
 		return err
 	}
 
 	verifier.Tables = tables
-
-	err = verifier.Initialize()
-	if err != nil {
-		return err
-	}
 
 	verificationResult, err := verifier.VerifyOnce()
 	if err != nil {
@@ -326,18 +246,13 @@ func (r *ShardingFerry) copyPrimaryKeyTables() error {
 		return err
 	}
 
-	verifier, err := r.newIterativeVerifier()
+	verifier, err := r.Ferry.NewIterativeVerifier()
 	if err != nil {
 		return err
 	}
 
 	verifier.TableSchemaCache = sourceDbTables
 	verifier.Tables = tables
-
-	err = verifier.Initialize()
-	if err != nil {
-		return err
-	}
 
 	verificationResult, err := verifier.VerifyOnce()
 	if err != nil {
