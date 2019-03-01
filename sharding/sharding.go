@@ -113,14 +113,20 @@ func (r *ShardingFerry) Run() {
 
 	r.AbortIfTargetDbNoLongerWriteable()
 
-	var err error
-	client := &http.Client{}
+	var (
+		err          error
+		client       http.Client
+		cutoverStart time.Time
+	)
 
-	cutoverStart := time.Now()
 	// The callback must ensure that all in-flight transactions are complete and
 	// there will be no more writes to the database after it returns.
-	metrics.Measure("CutoverLock", nil, 1.0, func() {
-		err = r.config.CutoverLock.Post(client)
+	err = ghostferry.WithRetries(r.config.MaxCutoverRetries, time.Duration(r.config.CutoverRetryWaitSeconds)*time.Second, r.logger, "get cutover lock", func() (err error) {
+		metrics.Measure("CutoverLock", nil, 1.0, func() {
+			cutoverStart = time.Now()
+			err = r.config.CutoverLock.Post(&client)
+		})
+		return err
 	})
 	if err != nil {
 		r.logger.WithField("error", err).Errorf("locking failed, aborting run")
@@ -167,7 +173,7 @@ func (r *ShardingFerry) Run() {
 	r.Ferry.Throttler.SetDisabled(false)
 
 	metrics.Measure("CutoverUnlock", nil, 1.0, func() {
-		err = r.config.CutoverUnlock.Post(client)
+		err = r.config.CutoverUnlock.Post(&client)
 	})
 	if err != nil {
 		r.logger.WithField("error", err).Errorf("unlocking failed, aborting run")

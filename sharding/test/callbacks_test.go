@@ -47,6 +47,62 @@ func (t *CallbacksTestSuite) TestFailsRunOnUnlockError() {
 	t.Require().Equal("callback returned 500 Internal Server Error", t.errHandler.LastError.Error())
 }
 
+func (t *CallbacksTestSuite) TestRetriesOnLockError() {
+	t.Config.MaxCutoverRetries = 3
+
+	callbacksReceived := 0
+	t.CutoverLock = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callbacksReceived++
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	t.Ferry.Run()
+
+	t.Require().Equal(callbacksReceived, t.Config.MaxCutoverRetries)
+
+	t.Require().NotNil(t.errHandler.LastError)
+	t.Require().Equal("callback returned 500 Internal Server Error", t.errHandler.LastError.Error())
+}
+
+func (t *CallbacksTestSuite) TestSucceedsOnLockRetry() {
+	t.Config.MaxCutoverRetries = 3
+
+	unlockReceived := false
+	t.CutoverUnlock = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		unlockReceived = true
+		resp := t.requestMap(r)
+		t.Require().Equal("test_unlock", resp["Payload"])
+	})
+
+	lockReceived := false
+	lockCallbacksReceived := 0
+	t.CutoverLock = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		lockCallbacksReceived++
+		if lockCallbacksReceived > 1 {
+			lockReceived = true
+
+			resp := t.requestMap(r)
+			t.Require().Equal("test_lock", resp["Payload"])
+
+			w.WriteHeader(http.StatusOK)
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	})
+
+	t.Ferry.Run()
+
+	t.Require().Equal(lockCallbacksReceived, 2)
+
+	t.Require().NotNil(t.errHandler.LastError)
+	t.Require().Equal("callback returned 500 Internal Server Error", t.errHandler.LastError.Error())
+
+	t.Require().True(lockReceived)
+	t.Require().True(unlockReceived)
+
+	t.AssertTenantCopied()
+}
+
 func (t *CallbacksTestSuite) TestFailsRunOnLockError() {
 	callbackReceived := false
 	t.CutoverLock = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
