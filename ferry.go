@@ -86,6 +86,8 @@ type Ferry struct {
 }
 
 func (f *Ferry) NewDataIterator() *DataIterator {
+	f.ensureInitialized()
+
 	dataIterator := &DataIterator{
 		DB:          f.SourceDB,
 		Concurrency: f.Config.DataIterationConcurrency,
@@ -115,6 +117,8 @@ func (f *Ferry) NewDataIteratorWithoutStateTracker() *DataIterator {
 }
 
 func (f *Ferry) NewBinlogStreamer() *BinlogStreamer {
+	f.ensureInitialized()
+
 	return &BinlogStreamer{
 		DB:           f.SourceDB,
 		DBConfig:     f.Source,
@@ -126,6 +130,8 @@ func (f *Ferry) NewBinlogStreamer() *BinlogStreamer {
 }
 
 func (f *Ferry) NewBinlogWriter() *BinlogWriter {
+	f.ensureInitialized()
+
 	return &BinlogWriter{
 		DB:               f.TargetDB,
 		DatabaseRewrites: f.Config.DatabaseRewrites,
@@ -147,6 +153,8 @@ func (f *Ferry) NewBinlogWriterWithoutStateTracker() *BinlogWriter {
 }
 
 func (f *Ferry) NewBatchWriter() *BatchWriter {
+	f.ensureInitialized()
+
 	batchWriter := &BatchWriter{
 		DB:           f.TargetDB,
 		StateTracker: f.StateTracker.CopyStage,
@@ -168,6 +176,8 @@ func (f *Ferry) NewBatchWriterWithoutStateTracker() *BatchWriter {
 }
 
 func (f *Ferry) NewChecksumTableVerifier() *ChecksumTableVerifier {
+	f.ensureInitialized()
+
 	return &ChecksumTableVerifier{
 		SourceDB:         f.SourceDB,
 		TargetDB:         f.TargetDB,
@@ -178,6 +188,8 @@ func (f *Ferry) NewChecksumTableVerifier() *ChecksumTableVerifier {
 }
 
 func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
+	f.ensureInitialized()
+
 	var err error
 	config := f.Config.IterativeVerifierConfig
 
@@ -615,6 +627,16 @@ func (f *Ferry) waitUntilAutomaticCutoverIsTrue() {
 	for !f.AutomaticCutover {
 		time.Sleep(1 * time.Second)
 		f.logger.Debug("waiting for AutomaticCutover to become true before signaling for row copy complete")
+	}
+}
+
+func (f *Ferry) ensureInitialized() {
+	// TODO: refactor Ferry.Initialize to a constructor.
+	// Note: the constructor shouldn't have a large amount of positional argument
+	//       so it is more readable.
+	//
+	if f.OverallState == "" {
+		panic("ferry has not been initialized")
 	}
 }
 
