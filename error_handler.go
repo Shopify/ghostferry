@@ -43,6 +43,7 @@ func (this *PanicErrorHandler) ReportError(from string, err error) {
 		errorData := make(map[string]string)
 		errorData["ErrFrom"] = from
 		errorData["ErrMessage"] = err.Error()
+		errorData["StateDump"] = stateJSON
 
 		errorDataBytes, jsonErr := json.MarshalIndent(errorData, "", "  ")
 		if jsonErr != nil {

@@ -121,9 +121,11 @@ func main() {
 		return
 	}
 
-	err = ferry.CreateDatabasesAndTables()
-	if err != nil {
-		errorAndExit(fmt.Sprintf("failed to create databases and tables: %v", err))
+	if resumeState == nil {
+		err = ferry.CreateDatabasesAndTables()
+		if err != nil {
+			errorAndExit(fmt.Sprintf("failed to create databases and tables: %v", err))
+		}
 	}
 
 	ferry.Run()

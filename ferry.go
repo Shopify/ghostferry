@@ -475,7 +475,7 @@ func (f *Ferry) Run() {
 		handleError("throttler", f.Throttler.Run(ctx))
 	}()
 
-	if f.DumpStateToStdoutOnSignal {
+	if f.DumpStateOnSignal {
 		supportingServicesWg.Add(1)
 
 		go func() {

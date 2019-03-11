@@ -69,12 +69,12 @@ func (t *CallbacksTestSuite) TestFailsRunOnPanicError() {
 
 		resp := t.requestMap(r)
 		errorData := make(map[string]string)
-		errorData["ErrFrom"] = "test_error"
-		errorData["ErrMessage"] = "test error"
-
-		errorDataBytes, jsonErr := json.MarshalIndent(errorData, "", "  ")
+		jsonErr := json.Unmarshal([]byte(resp["Payload"]), &errorData)
 		t.Require().Nil(jsonErr)
-		t.Require().Equal(string(errorDataBytes), resp["Payload"])
+
+		t.Require().Equal("test_error", errorData["ErrFrom"])
+		t.Require().Equal("test error", errorData["ErrMessage"])
+		t.Require().True(errorData["StateDump"] != "")
 
 		w.WriteHeader(http.StatusInternalServerError)
 	})

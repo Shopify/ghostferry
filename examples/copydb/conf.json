@@ -29,5 +29,7 @@
     "Blacklist": ["schema_migrations"]
   },
 
+  "DumpStateOnSignal": true,
+
   "VerifierType": "ChecksumTable"
 }
