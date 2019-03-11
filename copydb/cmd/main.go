@@ -19,10 +19,12 @@ func usage() {
 
 var verbose bool
 var dryrun bool
+var stateFilePath string
 
 func init() {
 	flag.BoolVar(&verbose, "verbose", false, "Show verbose logging output")
 	flag.BoolVar(&dryrun, "dryrun", false, "Do not actually perform the move, just connect and check settings")
+	flag.StringVar(&stateFilePath, "resumestate", "", "Path to the state dump JSON file to resume Ghostferry with")
 }
 
 func errorAndExit(msg string) {
@@ -46,6 +48,26 @@ func main() {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
+	var resumeState *ghostferry.SerializableState = nil
+
+	if stateFilePath != "" {
+		if _, err := os.Stat(stateFilePath); os.IsNotExist(err) {
+			errorAndExit(fmt.Sprintf("%s does not exist", stateFilePath))
+		}
+
+		f, err := os.Open(stateFilePath)
+		if err != nil {
+			errorAndExit(fmt.Sprintf("failed to open state file: %v", err))
+		}
+
+		resumeState = &ghostferry.SerializableState{}
+		parser := json.NewDecoder(f)
+		err = parser.Decode(&resumeState)
+		if err != nil {
+			errorAndExit(fmt.Sprintf("failed to parse state file: %v", err))
+		}
+	}
+
 	// Default values for configurations
 	config := &copydb.Config{
 		Config: &ghostferry.Config{
@@ -59,15 +81,16 @@ func main() {
 				User: "ghostferry",
 			},
 
-			MyServerId:       99399,
-			AutomaticCutover: false,
+			MyServerId:        99399,
+			AutomaticCutover:  false,
+			StateToResumeFrom: resumeState,
 		},
 	}
 
 	// Open and parse configurations
 	f, err := os.Open(configFilePath)
 	if err != nil {
-		errorAndExit(fmt.Sprintf("failed to open file: %v", err))
+		errorAndExit(fmt.Sprintf("failed to open config file: %v", err))
 	}
 
 	parser := json.NewDecoder(f)
