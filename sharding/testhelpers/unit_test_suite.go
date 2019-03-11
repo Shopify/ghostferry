@@ -31,8 +31,10 @@ type ShardingUnitTestSuite struct {
 	metricsSink chan interface{}
 	metrics     *ghostferry.Metrics
 
-	Ferry  *sharding.ShardingFerry
-	Config *sharding.Config
+	SourceDB *sql.DB
+	TargetDB *sql.DB
+	Ferry    *sharding.ShardingFerry
+	Config   *sharding.Config
 
 	CutoverLock   func(http.ResponseWriter, *http.Request)
 	CutoverUnlock func(http.ResponseWriter, *http.Request)
@@ -68,40 +70,48 @@ func (t *ShardingUnitTestSuite) SetupTest() {
 	t.metricsSink = make(chan interface{}, 1024)
 	sharding.SetGlobalMetrics("sharding_test", t.metricsSink)
 
-	t.setupShardingFerry()
-	t.dropTestDbs()
+	var err error
+	ghostferryConfig := testhelpers.NewTestConfig()
+	t.SourceDB, err = ghostferryConfig.Source.SqlDB(nil)
+	testhelpers.PanicIfError(err)
 
+	t.TargetDB, err = ghostferryConfig.Target.SqlDB(nil)
+	testhelpers.PanicIfError(err)
+
+	t.dropTestDbs()
 	testhelpers.SetupTest()
 
-	testhelpers.SeedInitialData(t.Ferry.Ferry.SourceDB, sourceDbName, testTable, 1000)
-	testhelpers.SeedInitialData(t.Ferry.Ferry.TargetDB, targetDbName, testTable, 0)
+	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, testTable, 1000)
+	testhelpers.SeedInitialData(t.TargetDB, targetDbName, testTable, 0)
 
-	testhelpers.SeedInitialData(t.Ferry.Ferry.SourceDB, sourceDbName, joinedTableName, 100)
-	testhelpers.SeedInitialData(t.Ferry.Ferry.TargetDB, targetDbName, joinedTableName, 0)
+	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, joinedTableName, 100)
+	testhelpers.SeedInitialData(t.TargetDB, targetDbName, joinedTableName, 0)
 
-	testhelpers.SeedInitialData(t.Ferry.Ferry.SourceDB, sourceDbName, joinTableName, 100)
-	testhelpers.SeedInitialData(t.Ferry.Ferry.TargetDB, targetDbName, joinTableName, 0)
+	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, joinTableName, 100)
+	testhelpers.SeedInitialData(t.TargetDB, targetDbName, joinTableName, 0)
 
-	testhelpers.AddTenantID(t.Ferry.Ferry.SourceDB, sourceDbName, testTable, 3)
-	testhelpers.AddTenantID(t.Ferry.Ferry.TargetDB, targetDbName, testTable, 3)
+	testhelpers.AddTenantID(t.SourceDB, sourceDbName, testTable, 3)
+	testhelpers.AddTenantID(t.TargetDB, targetDbName, testTable, 3)
 
-	testhelpers.AddTenantID(t.Ferry.Ferry.SourceDB, sourceDbName, joinTableName, 3)
-	testhelpers.AddTenantID(t.Ferry.Ferry.TargetDB, targetDbName, joinTableName, 3)
+	testhelpers.AddTenantID(t.SourceDB, sourceDbName, joinTableName, 3)
+	testhelpers.AddTenantID(t.TargetDB, targetDbName, joinTableName, 3)
 
-	addJoinID(t.Ferry.Ferry.SourceDB, sourceDbName, joinTableName)
-	addJoinID(t.Ferry.Ferry.TargetDB, targetDbName, joinTableName)
+	addJoinID(t.SourceDB, sourceDbName, joinTableName)
+	addJoinID(t.TargetDB, targetDbName, joinTableName)
 
-	testhelpers.SeedInitialData(t.Ferry.Ferry.SourceDB, sourceDbName, primaryKeyTable, 3)
-	testhelpers.SeedInitialData(t.Ferry.Ferry.TargetDB, targetDbName, primaryKeyTable, 0)
+	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, primaryKeyTable, 3)
+	testhelpers.SeedInitialData(t.TargetDB, targetDbName, primaryKeyTable, 0)
 
-	testhelpers.SeedInitialData(t.Ferry.Ferry.SourceDB, sourceDbName, testhelpers.TestCompressedTable1Name, 0)
-	testhelpers.SeedInitialData(t.Ferry.Ferry.TargetDB, targetDbName, testhelpers.TestCompressedTable1Name, 0)
+	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, testhelpers.TestCompressedTable1Name, 0)
+	testhelpers.SeedInitialData(t.TargetDB, targetDbName, testhelpers.TestCompressedTable1Name, 0)
 
-	setColumnType(t.Ferry.Ferry.SourceDB, sourceDbName, testhelpers.TestCompressedTable1Name, testhelpers.TestCompressedColumn1Name, "MEDIUMBLOB")
-	setColumnType(t.Ferry.Ferry.TargetDB, targetDbName, testhelpers.TestCompressedTable1Name, testhelpers.TestCompressedColumn1Name, "MEDIUMBLOB")
+	setColumnType(t.SourceDB, sourceDbName, testhelpers.TestCompressedTable1Name, testhelpers.TestCompressedColumn1Name, "MEDIUMBLOB")
+	setColumnType(t.TargetDB, targetDbName, testhelpers.TestCompressedTable1Name, testhelpers.TestCompressedColumn1Name, "MEDIUMBLOB")
 
-	testhelpers.AddTenantID(t.Ferry.Ferry.SourceDB, sourceDbName, testhelpers.TestCompressedTable1Name, 3)
-	testhelpers.AddTenantID(t.Ferry.Ferry.TargetDB, targetDbName, testhelpers.TestCompressedTable1Name, 3)
+	testhelpers.AddTenantID(t.SourceDB, sourceDbName, testhelpers.TestCompressedTable1Name, 3)
+	testhelpers.AddTenantID(t.TargetDB, targetDbName, testhelpers.TestCompressedTable1Name, 3)
+
+	t.setupShardingFerry()
 }
 
 func (t *ShardingUnitTestSuite) TearDownTest() {
@@ -164,10 +174,10 @@ func (t *ShardingUnitTestSuite) setupShardingFerry() {
 }
 
 func (t *ShardingUnitTestSuite) dropTestDbs() {
-	_, err := t.Ferry.Ferry.SourceDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", sourceDbName))
+	_, err := t.SourceDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", sourceDbName))
 	t.Require().Nil(err)
 
-	_, err = t.Ferry.Ferry.TargetDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", targetDbName))
+	_, err = t.TargetDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", targetDbName))
 	t.Require().Nil(err)
 }
 

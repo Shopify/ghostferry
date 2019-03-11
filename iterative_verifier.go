@@ -245,11 +245,6 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	return err
 }
 
-func (v *IterativeVerifier) SetApplicableTableSchemaCache(t TableSchemaCache) {
-	v.Tables = t.AsSlice()
-	v.TableSchemaCache = t
-}
-
 func (v *IterativeVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	v.logger.Info("starting verification during cutover")
 	v.verifyDuringCutoverStarted.Set(true)

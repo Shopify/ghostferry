@@ -95,13 +95,13 @@ func TestCopyDataWhileRenamingDatabaseAndTable(t *testing.T) {
 		T:     t,
 		Ferry: testhelpers.NewTestFerry(),
 		DisableChecksumVerifier: true,
-		SetupAction: func(f *testhelpers.TestFerry) {
-			testhelpers.SeedInitialData(f.SourceDB, sourceDatabaseName, sourceTableName, 1111)
-			testhelpers.SeedInitialData(f.TargetDB, targetDatabaseName, targetTableName, 0)
+		SetupAction: func(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+			testhelpers.SeedInitialData(sourceDB, sourceDatabaseName, sourceTableName, 1111)
+			testhelpers.SeedInitialData(targetDB, targetDatabaseName, targetTableName, 0)
 		},
 	}
 
-	testcase.CustomVerifyAction = func(f *testhelpers.TestFerry) {
+	testcase.CustomVerifyAction = func(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 		sourceQuery := fmt.Sprintf("CHECKSUM TABLE `%s`.`%s` EXTENDED", sourceDatabaseName, sourceTableName)
 		targetQuery := fmt.Sprintf("CHECKSUM TABLE `%s`.`%s` EXTENDED", targetDatabaseName, targetTableName)
 
@@ -175,29 +175,29 @@ func useUnsignedPK(db *sql.DB) {
 	testhelpers.PanicIfError(err)
 }
 
-func setupSingleTableDatabase(f *testhelpers.TestFerry) {
+func setupSingleTableDatabase(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 	maxId := 1111
-	testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", maxId)
+	testhelpers.SeedInitialData(sourceDB, "gftest", "table1", maxId)
 
 	for i := 0; i < 140; i++ {
 		query := "DELETE FROM gftest.table1 WHERE id = ?"
-		_, err := f.SourceDB.Exec(query, rand.Intn(maxId-1)+1)
+		_, err := sourceDB.Exec(query, rand.Intn(maxId-1)+1)
 		testhelpers.PanicIfError(err)
 	}
 
-	testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
+	testhelpers.SeedInitialData(targetDB, "gftest", "table1", 0)
 }
 
-func setupSingleTableDatabaseWithHighBitUint64PKs(f *testhelpers.TestFerry) {
-	setupSingleTableDatabase(f)
+func setupSingleTableDatabaseWithHighBitUint64PKs(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+	setupSingleTableDatabase(f, sourceDB, targetDB)
 
-	_, err := f.SourceDB.Exec("TRUNCATE gftest.table1")
+	_, err := sourceDB.Exec("TRUNCATE gftest.table1")
 	testhelpers.PanicIfError(err)
 
-	useUnsignedPK(f.SourceDB)
-	useUnsignedPK(f.TargetDB)
+	useUnsignedPK(sourceDB)
+	useUnsignedPK(targetDB)
 
-	stmt, err := f.SourceDB.Prepare("INSERT INTO gftest.table1 (id, data) VALUES (?, ?)")
+	stmt, err := sourceDB.Prepare("INSERT INTO gftest.table1 (id, data) VALUES (?, ?)")
 	testhelpers.PanicIfError(err)
 
 	for i := uint64(0); i < 100; i++ {
@@ -206,12 +206,12 @@ func setupSingleTableDatabaseWithHighBitUint64PKs(f *testhelpers.TestFerry) {
 	}
 }
 
-func setupSingleTableDatabaseWithExtraNullColumn(f *testhelpers.TestFerry) {
-	setupSingleTableDatabase(f)
+func setupSingleTableDatabaseWithExtraNullColumn(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+	setupSingleTableDatabase(f, sourceDB, targetDB)
 
-	testhelpers.AddTenantID(f.SourceDB, "gftest", "table1", 1)
-	testhelpers.AddTenantID(f.TargetDB, "gftest", "table1", 1)
+	testhelpers.AddTenantID(sourceDB, "gftest", "table1", 1)
+	testhelpers.AddTenantID(targetDB, "gftest", "table1", 1)
 
-	_, err := f.SourceDB.Exec("UPDATE gftest.table1 SET tenant_id = NULL")
+	_, err := sourceDB.Exec("UPDATE gftest.table1 SET tenant_id = NULL")
 	testhelpers.PanicIfError(err)
 }

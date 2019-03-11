@@ -38,14 +38,14 @@ func addTypesToTable(db *sql.DB, dbName, tableName string) {
 	testhelpers.PanicIfError(err)
 }
 
-func setupMultiTypeTable(f *testhelpers.TestFerry) {
-	testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 0)
-	testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
+func setupMultiTypeTable(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+	testhelpers.SeedInitialData(sourceDB, "gftest", "table1", 0)
+	testhelpers.SeedInitialData(targetDB, "gftest", "table1", 0)
 
-	addTypesToTable(f.SourceDB, "gftest", "table1")
-	addTypesToTable(f.TargetDB, "gftest", "table1")
+	addTypesToTable(sourceDB, "gftest", "table1")
+	addTypesToTable(targetDB, "gftest", "table1")
 
-	tx, err := f.SourceDB.Begin()
+	tx, err := sourceDB.Begin()
 	testhelpers.PanicIfError(err)
 
 	for i := 0; i < 100; i++ {
@@ -69,17 +69,17 @@ func setupMultiTypeTable(f *testhelpers.TestFerry) {
 	testhelpers.PanicIfError(tx.Commit())
 }
 
-func setupFixedPointDecimalTypeTable(f *testhelpers.TestFerry) {
-	testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 0)
-	testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
+func setupFixedPointDecimalTypeTable(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+	testhelpers.SeedInitialData(sourceDB, "gftest", "table1", 0)
+	testhelpers.SeedInitialData(targetDB, "gftest", "table1", 0)
 
 	query := "ALTER TABLE gftest.table1 " +
 		"ADD decimal_col DECIMAL(18, 14)"
 
-	_, err := f.SourceDB.Exec(query)
+	_, err := sourceDB.Exec(query)
 	testhelpers.PanicIfError(err)
 
-	_, err = f.TargetDB.Exec(query)
+	_, err = targetDB.Exec(query)
 	testhelpers.PanicIfError(err)
 }
 
@@ -107,8 +107,8 @@ func TestCopyDataWithFixedPointDecimalTypes(t *testing.T) {
 		T:           t,
 		SetupAction: setupFixedPointDecimalTypeTable,
 		DataWriter:  nil,
-		AfterRowCopyIsComplete: func(f *testhelpers.TestFerry) {
-			_, err := f.SourceDB.Exec("INSERT INTO gftest.table1 (id, decimal_col) values (null,-96.78850375986021)")
+		AfterRowCopyIsComplete: func(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+			_, err := sourceDB.Exec("INSERT INTO gftest.table1 (id, decimal_col) values (null,-96.78850375986021)")
 			testhelpers.PanicIfError(err)
 		},
 		Ferry: testhelpers.NewTestFerry(),

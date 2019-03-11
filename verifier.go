@@ -59,12 +59,6 @@ type Verifier interface {
 	// verification.
 	VerifyDuringCutover() (VerificationResult, error)
 
-	// The Ferry will use this method to tell the verifier what to check.
-	//
-	// TODO: this will be removed once we refactor how the TableSchemaCache is
-	// handled.
-	SetApplicableTableSchemaCache(TableSchemaCache)
-
 	// Start the verifier in the background during the cutover phase.
 	// Traditionally, this is called from within the ControlServer.
 	//
@@ -113,10 +107,6 @@ type ChecksumTableVerifier struct {
 func (v *ChecksumTableVerifier) VerifyBeforeCutover() error {
 	// All verification occurs in cutover for this verifier.
 	return nil
-}
-
-func (v *ChecksumTableVerifier) SetApplicableTableSchemaCache(t TableSchemaCache) {
-	v.Tables = t.AsSlice()
 }
 
 func (v *ChecksumTableVerifier) VerifyDuringCutover() (VerificationResult, error) {

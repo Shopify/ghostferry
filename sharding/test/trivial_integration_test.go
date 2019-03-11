@@ -10,12 +10,12 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func setupSingleTableDatabase(f *testhelpers.TestFerry) {
-	testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 1000)
-	testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
+func setupSingleTableDatabase(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+	testhelpers.SeedInitialData(sourceDB, "gftest", "table1", 1000)
+	testhelpers.SeedInitialData(targetDB, "gftest", "table1", 0)
 
-	testhelpers.AddTenantID(f.SourceDB, "gftest", "table1", 3)
-	testhelpers.AddTenantID(f.TargetDB, "gftest", "table1", 3)
+	testhelpers.AddTenantID(sourceDB, "gftest", "table1", 3)
+	testhelpers.AddTenantID(targetDB, "gftest", "table1", 3)
 }
 
 func selectiveFerry(tenantId interface{}) *testhelpers.TestFerry {

@@ -1,6 +1,7 @@
 package test
 
 import (
+	"database/sql"
 	"testing"
 
 	"github.com/Shopify/ghostferry"
@@ -31,7 +32,7 @@ func TestVerificationFailsDeletedRow(t *testing.T) {
 	testcase := &testhelpers.IntegrationTestCase{
 		T:           t,
 		SetupAction: setupSingleTableDatabase,
-		AfterRowCopyIsComplete: func(ferry *testhelpers.TestFerry) {
+		AfterRowCopyIsComplete: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 			setupIterativeVerifierFromFerry(iterativeVerifier, ferry.Ferry)
 
 			err := iterativeVerifier.Initialize()
@@ -40,10 +41,10 @@ func TestVerificationFailsDeletedRow(t *testing.T) {
 			err = iterativeVerifier.VerifyBeforeCutover()
 			testhelpers.PanicIfError(err)
 		},
-		BeforeStoppingBinlogStreaming: func(ferry *testhelpers.TestFerry) {
+		BeforeStoppingBinlogStreaming: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 			ensureTestRowsAreReverified(ferry)
 		},
-		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry) {
+		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 			deleteTestRowsToTriggerFailure(ferry)
 			result, err := iterativeVerifier.VerifyDuringCutover()
 			assert.Nil(t, err)
@@ -74,7 +75,7 @@ func TestVerificationFailsUpdatedRow(t *testing.T) {
 	testcase := &testhelpers.IntegrationTestCase{
 		T:           t,
 		SetupAction: setupSingleTableDatabase,
-		AfterRowCopyIsComplete: func(ferry *testhelpers.TestFerry) {
+		AfterRowCopyIsComplete: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 			setupIterativeVerifierFromFerry(iterativeVerifier, ferry.Ferry)
 
 			err := iterativeVerifier.Initialize()
@@ -83,10 +84,10 @@ func TestVerificationFailsUpdatedRow(t *testing.T) {
 			err = iterativeVerifier.VerifyBeforeCutover()
 			testhelpers.PanicIfError(err)
 		},
-		BeforeStoppingBinlogStreaming: func(ferry *testhelpers.TestFerry) {
+		BeforeStoppingBinlogStreaming: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 			ensureTestRowsAreReverified(ferry)
 		},
-		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry) {
+		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 			modifyDataColumnInSourceDB(ferry)
 			result, err := iterativeVerifier.VerifyDuringCutover()
 			assert.Nil(t, err)
@@ -116,11 +117,11 @@ func TestIgnoresColumns(t *testing.T) {
 
 	testcase := &testhelpers.IntegrationTestCase{
 		T: t,
-		SetupAction: func(ferry *testhelpers.TestFerry) {
-			setupSingleTableDatabase(ferry)
+		SetupAction: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+			setupSingleTableDatabase(ferry, sourceDB, targetDB)
 			iterativeVerifier.IgnoredColumns = map[string]map[string]struct{}{"table1": {"data": struct{}{}}}
 		},
-		AfterRowCopyIsComplete: func(ferry *testhelpers.TestFerry) {
+		AfterRowCopyIsComplete: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 			setupIterativeVerifierFromFerry(iterativeVerifier, ferry.Ferry)
 
 			err := iterativeVerifier.Initialize()
@@ -129,10 +130,10 @@ func TestIgnoresColumns(t *testing.T) {
 			err = iterativeVerifier.VerifyBeforeCutover()
 			testhelpers.PanicIfError(err)
 		},
-		BeforeStoppingBinlogStreaming: func(ferry *testhelpers.TestFerry) {
+		BeforeStoppingBinlogStreaming: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 			ensureTestRowsAreReverified(ferry)
 		},
-		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry) {
+		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 			modifyDataColumnInSourceDB(ferry)
 
 			result, err := iterativeVerifier.VerifyDuringCutover()
@@ -163,11 +164,11 @@ func TestIgnoresTables(t *testing.T) {
 
 	testcase := &testhelpers.IntegrationTestCase{
 		T: t,
-		SetupAction: func(ferry *testhelpers.TestFerry) {
-			setupSingleTableDatabase(ferry)
+		SetupAction: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+			setupSingleTableDatabase(ferry, sourceDB, targetDB)
 			iterativeVerifier.IgnoredTables = []string{"table1"}
 		},
-		AfterRowCopyIsComplete: func(ferry *testhelpers.TestFerry) {
+		AfterRowCopyIsComplete: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 			setupIterativeVerifierFromFerry(iterativeVerifier, ferry.Ferry)
 
 			err := iterativeVerifier.Initialize()
@@ -176,10 +177,10 @@ func TestIgnoresTables(t *testing.T) {
 			err = iterativeVerifier.VerifyBeforeCutover()
 			testhelpers.PanicIfError(err)
 		},
-		BeforeStoppingBinlogStreaming: func(ferry *testhelpers.TestFerry) {
+		BeforeStoppingBinlogStreaming: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 			ensureTestRowsAreReverified(ferry)
 		},
-		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry) {
+		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 			modifyAllRows(ferry)
 			result, err := iterativeVerifier.VerifyDuringCutover()
 			assert.Nil(t, err)
@@ -209,7 +210,7 @@ func TestVerificationPasses(t *testing.T) {
 	testcase := &testhelpers.IntegrationTestCase{
 		T:           t,
 		SetupAction: setupSingleTableDatabase,
-		AfterRowCopyIsComplete: func(ferry *testhelpers.TestFerry) {
+		AfterRowCopyIsComplete: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 			setupIterativeVerifierFromFerry(iterativeVerifier, ferry.Ferry)
 
 			err := iterativeVerifier.Initialize()
@@ -218,7 +219,7 @@ func TestVerificationPasses(t *testing.T) {
 			err = iterativeVerifier.VerifyBeforeCutover()
 			testhelpers.PanicIfError(err)
 		},
-		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry) {
+		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 			result, err := iterativeVerifier.VerifyDuringCutover()
 			assert.Nil(t, err)
 			assert.True(t, result.DataCorrect)

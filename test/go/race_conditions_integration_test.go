@@ -1,6 +1,7 @@
 package test
 
 import (
+	"database/sql"
 	"fmt"
 	"testing"
 	"time"
@@ -10,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setupSingleEntryTable(f *testhelpers.TestFerry) {
-	testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 1)
-	testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
+func setupSingleEntryTable(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+	testhelpers.SeedInitialData(sourceDB, "gftest", "table1", 1)
+	testhelpers.SeedInitialData(targetDB, "gftest", "table1", 0)
 }
 
 func TestSelectUpdateBinlogCopy(t *testing.T) {
@@ -45,7 +46,7 @@ func TestSelectUpdateBinlogCopy(t *testing.T) {
 		return nil
 	}
 
-	testcase.CustomVerifyAction = func(f *testhelpers.TestFerry) {
+	testcase.CustomVerifyAction = func(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 		testcase.AssertOnlyDataOnSourceAndTargetIs("changed")
 	}
 
@@ -59,12 +60,12 @@ func TestUpdateBinlogSelectCopy(t *testing.T) {
 		Ferry:       testhelpers.NewTestFerry(),
 	}
 
-	testcase.AfterStartBinlogStreaming = func(f *testhelpers.TestFerry) {
+	testcase.AfterStartBinlogStreaming = func(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 		_, err := f.SourceDB.Exec("UPDATE gftest.table1 SET data = 'changed' LIMIT 1")
 		testhelpers.PanicIfError(err)
 	}
 
-	testcase.CustomVerifyAction = func(f *testhelpers.TestFerry) {
+	testcase.CustomVerifyAction = func(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 		testcase.AssertOnlyDataOnSourceAndTargetIs("changed")
 	}
 
@@ -94,7 +95,7 @@ func TestMasterChangingBeforeStoppingBinlogStreaming(t *testing.T) {
 		Ferry:       ferry,
 	}
 
-	testcase.BeforeStoppingBinlogStreaming = func(f *testhelpers.TestFerry) {
+	testcase.BeforeStoppingBinlogStreaming = func(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 		_, err := sourceDB.Exec("SET GLOBAL read_only = ON")
 		testhelpers.PanicIfError(err)
 	}
@@ -112,12 +113,12 @@ func TestSelectCopyUpdateBinlog(t *testing.T) {
 		Ferry:       testhelpers.NewTestFerry(),
 	}
 
-	testcase.BeforeStoppingBinlogStreaming = func(f *testhelpers.TestFerry) {
+	testcase.BeforeStoppingBinlogStreaming = func(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 		_, err := f.SourceDB.Exec("UPDATE gftest.table1 SET data = 'changed' LIMIT 1")
 		testhelpers.PanicIfError(err)
 	}
 
-	testcase.CustomVerifyAction = func(f *testhelpers.TestFerry) {
+	testcase.CustomVerifyAction = func(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 		testcase.AssertOnlyDataOnSourceAndTargetIs("changed")
 	}
 
@@ -127,9 +128,9 @@ func TestSelectCopyUpdateBinlog(t *testing.T) {
 func TestOnlyDeleteRowWithMaxPrimaryKey(t *testing.T) {
 	testcase := &testhelpers.IntegrationTestCase{
 		T: t,
-		SetupAction: func(f *testhelpers.TestFerry) {
-			testhelpers.SeedInitialData(f.SourceDB, "gftest", "table1", 2)
-			testhelpers.SeedInitialData(f.TargetDB, "gftest", "table1", 0)
+		SetupAction: func(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+			testhelpers.SeedInitialData(sourceDB, "gftest", "table1", 2)
+			testhelpers.SeedInitialData(targetDB, "gftest", "table1", 0)
 		},
 		Ferry: testhelpers.NewTestFerry(),
 	}
