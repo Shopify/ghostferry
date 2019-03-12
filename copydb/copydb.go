@@ -2,11 +2,8 @@ package copydb
 
 import (
 	"fmt"
-	"os"
-	"os/signal"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/Shopify/ghostferry"
@@ -114,17 +111,6 @@ func (this *CopydbFerry) Run() {
 
 	// This is where you cutover from using the source database to
 	// using the target database.
-
-	// We have to listen to signals because the Ghostferry builtin signal handler
-	// has quit but this process is still alive
-	go func() {
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
-
-		<-c
-		os.Exit(0)
-	}()
-
 	logrus.Info("ghostferry main operations has terminated but the control server remains online")
 	logrus.Info("press CTRL+C or send an interrupt to stop the control server and end this process")
 
