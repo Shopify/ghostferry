@@ -299,3 +299,7 @@ the target database.
 
 The control server UI will stay up indefinitely, to stop it, simply press
 CTRL+C to interrupt the ghostferry-copydb process.
+
+To run Ghostferry in production, you should read through :ref:`copydbinprod`.
+If you need to interrupt and resume Ghostferry, you should also read through
+:ref:`copydbinterruptresume`.
