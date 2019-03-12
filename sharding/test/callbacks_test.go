@@ -74,7 +74,12 @@ func (t *CallbacksTestSuite) TestFailsRunOnPanicError() {
 
 		t.Require().Equal("test_error", errorData["ErrFrom"])
 		t.Require().Equal("test error", errorData["ErrMessage"])
-		t.Require().True(errorData["StateDump"] != "")
+
+		stateDump := &ghostferry.SerializableState{}
+		jsonErr = json.Unmarshal([]byte(errorData["StateDump"]), stateDump)
+		t.Require().Nil(jsonErr)
+		t.Require().NotNil(stateDump.CopyStage)
+		t.Require().True(len(stateDump.LastKnownTableSchemaCache) > 0)
 
 		w.WriteHeader(http.StatusInternalServerError)
 	})
