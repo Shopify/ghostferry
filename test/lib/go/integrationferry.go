@@ -198,7 +198,7 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 			TablesFunc: nil,
 		},
 
-		DumpStateToStdoutOnSignal: true,
+		DumpStateOnSignal: true,
 	}
 
 	resumeStateJSON, err := ioutil.ReadAll(os.Stdin)

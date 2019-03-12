@@ -475,21 +475,18 @@ func (f *Ferry) Run() {
 		handleError("throttler", f.Throttler.Run(ctx))
 	}()
 
-	if f.DumpStateToStdoutOnSignal {
-		supportingServicesWg.Add(1)
-
+	if f.DumpStateOnSignal {
 		go func() {
-			defer supportingServicesWg.Done()
-
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
 
-			select {
-			case <-ctx.Done():
-				f.logger.Debug("shutting down signal monitoring goroutine")
-				return
-			case s := <-c:
+			s := <-c
+			if ctx.Err() == nil {
+				// Ghostferry is still running
 				f.ErrorHandler.Fatal("user", fmt.Errorf("signal received: %v", s.String()))
+			} else {
+				// shutdown() has been called and Ghostferry is done.
+				os.Exit(0)
 			}
 		}()
 

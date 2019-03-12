@@ -279,9 +279,9 @@ type Config struct {
 	AutomaticCutover bool
 
 	// This specifies whether or not Ferry.Run will handle SIGINT and SIGTERM
-	// by dumping the current state to stdout.
-	// This state can be used to resume Ghostferry.
-	DumpStateToStdoutOnSignal bool
+	// by dumping the current state to stdout and the error HTTP callback.
+	// The dumped state can be used to resume Ghostferry.
+	DumpStateOnSignal bool
 
 	// Config for the ControlServer
 	ServerBindAddr string
