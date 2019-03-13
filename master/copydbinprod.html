@@ -16,7 +16,7 @@
     <script type="text/javascript" src="_static/language_data.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Verifiers" href="verifiers.html" />
+    <link rel="next" title="Interrupt and resuming ghostferry-copydb" href="copydbinterruptresume.html" />
     <link rel="prev" title="Tutorial for ghostferry-copydb" href="tutorialcopydb.html" />
    
   <link rel="stylesheet" href="_static/custom.css" type="text/css" />
@@ -81,7 +81,7 @@ condition causing some binlog entries to be missed.<ul>
 </ul>
 </div>
 <div class="section" id="testing-ghostferry-with-production-data">
-<h2>Testing Ghostferry with Production Data<a class="headerlink" href="#testing-ghostferry-with-production-data" title="Permalink to this headline">¶</a></h2>
+<span id="prodtesting"></span><h2>Testing Ghostferry with Production Data<a class="headerlink" href="#testing-ghostferry-with-production-data" title="Permalink to this headline">¶</a></h2>
 <p>You can run Ghostferry without running the cutover to test the entire flow
 without actually moving your database. This allows you to verify that the move
 will indeed work with your setup. Additionally, the target location where you
@@ -134,14 +134,14 @@ issues after the fact:</p>
 </div>
 <div class="section" id="dealing-with-errors-and-restarting-runs">
 <h2>Dealing with Errors and Restarting Runs<a class="headerlink" href="#dealing-with-errors-and-restarting-runs" title="Permalink to this headline">¶</a></h2>
-<p>It is possible for Ghostferry to encounter an error and exit. In these
-scenarios, the target will be left alone and Ghostferry will stop
-selecting/tailing data from the source database. For the time being, there is
-no support for resuming a run from a previously saved coordinate. See
-<a class="reference external" href="https://github.com/Shopify/ghostferry/issues/17">https://github.com/Shopify/ghostferry/issues/17</a>.</p>
-<p>Starting another Ghostferry run is perfectly fine. For copydb specifically, you
-need to drop the databases created by copydb on the target as it will try to
-recreate it.</p>
+<p>It is possible for Ghostferry to encounter an unrecoverable error (such as a
+network partition with the database). In these scenarios, the target will be
+left alone as the Ghostferry process panics and quits. It may be possible to
+resume these runs using the experimental interrupt &amp; resume feature. See
+<a class="reference internal" href="copydbinterruptresume.html#copydbinterruptresume"><span class="std std-ref">Interrupt and resuming ghostferry-copydb</span></a>.</p>
+<p>If the resume doesn’t work, starting a brand new Ghostferry run is perfectly
+fine.  For copydb specifically, you need to drop the databases created by
+copydb on the target as it will try to recreate it.</p>
 </div>
 <div class="section" id="configuration-for-ghostferry-copydb">
 <h2>Configuration for <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code><a class="headerlink" href="#configuration-for-ghostferry-copydb" title="Permalink to this headline">¶</a></h2>
@@ -199,6 +199,7 @@ verifier.</p>
 <li class="toctree-l2"><a class="reference internal" href="#configuration-for-ghostferry-copydb">Configuration for <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code></a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="copydbinterruptresume.html">Interrupt and resuming <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code></a></li>
 <li class="toctree-l1"><a class="reference internal" href="verifiers.html">Verifiers</a></li>
 <li class="toctree-l1"><a class="reference internal" href="howtousecustom.html">Using Ghostferry in Custom Applications</a></li>
 </ul>
@@ -208,7 +209,7 @@ verifier.</p>
 <ul>
   <li><a href="index.html">Documentation overview</a><ul>
       <li>Previous: <a href="tutorialcopydb.html" title="previous chapter">Tutorial for ghostferry-copydb</a></li>
-      <li>Next: <a href="verifiers.html" title="next chapter">Verifiers</a></li>
+      <li>Next: <a href="copydbinterruptresume.html" title="next chapter">Interrupt and resuming <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code></a></li>
   </ul></li>
 </ul>
 </div>
