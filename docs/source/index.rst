@@ -14,6 +14,7 @@ Welcome to Ghostferry's documentation!
    technicaloverview
    tutorialcopydb
    copydbinprod
+   copydbinterruptresume
    verifiers
    howtousecustom
 

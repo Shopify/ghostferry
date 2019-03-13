@@ -51,6 +51,8 @@ to consider about this are:
 .. _`FULL image`: https://dev.mysql.com/doc/refman/5.7/en/replication-options-binary-log.html#sysvar_binlog_row_image
 .. _`ROW based replication`: https://dev.mysql.com/doc/refman/5.6/en/replication-options-binary-log.html#sysvar_binlog_format
 
+.. _prodtesting:
+
 Testing Ghostferry with Production Data
 ---------------------------------------
 
@@ -110,15 +112,15 @@ issues after the fact:
 Dealing with Errors and Restarting Runs
 ---------------------------------------
 
-It is possible for Ghostferry to encounter an error and exit. In these
-scenarios, the target will be left alone and Ghostferry will stop
-selecting/tailing data from the source database. For the time being, there is
-no support for resuming a run from a previously saved coordinate. See
-`<https://github.com/Shopify/ghostferry/issues/17>`_.
+It is possible for Ghostferry to encounter an unrecoverable error (such as a
+network partition with the database). In these scenarios, the target will be
+left alone as the Ghostferry process panics and quits. It may be possible to
+resume these runs using the experimental interrupt & resume feature. See
+:ref:`copydbinterruptresume`.
 
-Starting another Ghostferry run is perfectly fine. For copydb specifically, you
-need to drop the databases created by copydb on the target as it will try to
-recreate it.
+If the resume doesn't work, starting a brand new Ghostferry run is perfectly
+fine.  For copydb specifically, you need to drop the databases created by
+copydb on the target as it will try to recreate it.
 
 Configuration for ``ghostferry-copydb``
 ---------------------------------------
