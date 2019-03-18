@@ -483,7 +483,7 @@ func (f *Ferry) Run() {
 			s := <-c
 			if ctx.Err() == nil {
 				// Ghostferry is still running
-				f.ErrorHandler.Fatal("user", fmt.Errorf("signal received: %v", s.String()))
+				f.ErrorHandler.Fatal("user_interrupt", fmt.Errorf("signal received: %v", s.String()))
 			} else {
 				// shutdown() has been called and Ghostferry is done.
 				os.Exit(0)
