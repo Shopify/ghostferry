@@ -367,12 +367,20 @@ func (f *Ferry) Initialize() (err error) {
 
 	if f.StateToResumeFrom == nil {
 		f.StateTracker = NewStateTracker(f.DataIterationConcurrency * 10)
+	} else {
+		f.StateTracker = NewStateTrackerFromSerializedState(f.DataIterationConcurrency*10, f.StateToResumeFrom)
+	}
 
-		// Loads the schema of the tables that are applicable.
-		// We need to do this at the beginning of the run as this is required
-		// in order to determine the PrimaryKey of each table as well as finding
-		// which value in the binlog event correspond to which field in the
-		// table.
+	// Loads the schema of the tables that are applicable.
+	// We need to do this at the beginning of the run as this is required
+	// in order to determine the PrimaryKey of each table as well as finding
+	// which value in the binlog event correspond to which field in the
+	// table.
+	//
+	// If this is a resuming run and the last known table schema cache is not given
+	// we'll regenerate it from the source database, assuming it has not been
+	// changed.
+	if f.StateToResumeFrom == nil || f.StateToResumeFrom.LastKnownTableSchemaCache == nil {
 		metrics.Measure("LoadTables", nil, 1.0, func() {
 			f.Tables, err = LoadTables(f.SourceDB, f.TableFilter)
 		})
@@ -380,7 +388,6 @@ func (f *Ferry) Initialize() (err error) {
 			return err
 		}
 	} else {
-		f.StateTracker = NewStateTrackerFromSerializedState(f.DataIterationConcurrency*10, f.StateToResumeFrom)
 		f.Tables = f.StateToResumeFrom.LastKnownTableSchemaCache
 	}
 
