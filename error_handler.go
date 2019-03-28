@@ -13,7 +13,7 @@ import (
 type ErrorHandler interface {
 	// Usually called from Fatal. When called from Fatal, if this method returns
 	// true, Fatal should panic, otherwise it should not.
-	ReportError(from string, err error) bool
+	ReportError(from string, err error)
 	Fatal(from string, err error)
 }
 
@@ -23,13 +23,8 @@ type PanicErrorHandler struct {
 	ErrorCallback HTTPCallback
 }
 
-func (this *PanicErrorHandler) ReportError(from string, err error) bool {
+func (this *PanicErrorHandler) ReportError(from string, err error) {
 	logger := logrus.WithField("tag", "error_handler")
-
-	if atomic.AddInt32(&this.errorCount, 1) > 1 {
-		logger.WithError(err).WithField("errfrom", from).Error("multiple fatal errors detected, not reporting again")
-		return false
-	}
 
 	stateJSON, jsonErr := this.Ferry.SerializeStateToJSON()
 	if jsonErr != nil {
@@ -62,11 +57,14 @@ func (this *PanicErrorHandler) ReportError(from string, err error) bool {
 
 	// Print error to STDERR
 	logger.WithError(err).WithField("errfrom", from).Error("fatal error detected, state dump in stdout")
-	return true
 }
 
 func (this *PanicErrorHandler) Fatal(from string, err error) {
-	if this.ReportError(from, err) {
-		panic("fatal error detected, see logs for details")
+	if atomic.AddInt32(&this.errorCount, 1) > 1 {
+		logrus.WithField("tag", "error_handler").WithError(err).WithField("errfrom", from).Error("multiple fatal errors detected, not reporting again")
+		return
 	}
+
+	this.ReportError(from, err)
+	panic("fatal error detected, see logs for details")
 }
