@@ -682,6 +682,10 @@ func (f *Ferry) checkConnectionForBinlogFormat(db *sql.DB) error {
 
 	row = db.QueryRow("SHOW VARIABLES LIKE 'binlog_row_image'")
 	err = row.Scan(&name, &value)
+	if err == sql.ErrNoRows {
+		f.logger.Warning("binlog_row_image not found, assuming old version and OK!")
+		return nil
+	}
 	if err != nil {
 		return err
 	}
