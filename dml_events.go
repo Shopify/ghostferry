@@ -25,6 +25,9 @@ func (r RowData) GetUint64(colIdx int) (res uint64, err error) {
 		if err != nil {
 			return 0, err
 		}
+	} else if valueUint32, ok := r[colIdx].(uint32); ok {
+		res = uint64(valueUint32)
+		return
 	} else {
 		signedInt := reflect.ValueOf(r[colIdx]).Int()
 		if signedInt < 0 {
