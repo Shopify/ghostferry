@@ -15,17 +15,23 @@ import (
 
 type RowData []interface{}
 
-// The mysql driver never actually gives you a uint64 from Scan, instead you
-// get an int64 for values that fit in int64 or a byte slice decimal string
-// with the uint64 value in it.
+// The mysql driver never actually gives you a uint64 from Scan,
+// instead you get an int64 for values that fit in int64 or a byte slice
+// decimal string with the uint64 value in it.
+// But go-mysql gives right unsigned type.
 func (r RowData) GetUint64(colIdx int) (res uint64, err error) {
-	if valueByteSlice, ok := r[colIdx].([]byte); ok {
-		valueString := string(valueByteSlice)
+	switch value := r[colIdx].(type) {
+	case uint64:
+		res = value
+	case uint32:
+		res = uint64(value)
+	case []byte:
+		valueString := string(value)
 		res, err = strconv.ParseUint(valueString, 10, 64)
 		if err != nil {
 			return 0, err
 		}
-	} else {
+	default:
 		signedInt := reflect.ValueOf(r[colIdx]).Int()
 		if signedInt < 0 {
 			return 0, fmt.Errorf("expected position %d in row to contain an unsigned number", colIdx)
