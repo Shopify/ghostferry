@@ -58,7 +58,7 @@ type DatabaseConfig struct {
 	TLS *TLSConfig
 }
 
-func (c DatabaseConfig) MySQLConfig() (*mysql.Config, error) {
+func (c *DatabaseConfig) MySQLConfig() (*mysql.Config, error) {
 	cfg := &mysql.Config{
 		User:      c.User,
 		Passwd:    c.Pass,
@@ -89,7 +89,7 @@ func (c DatabaseConfig) MySQLConfig() (*mysql.Config, error) {
 	return cfg, nil
 }
 
-func (c DatabaseConfig) Validate() error {
+func (c *DatabaseConfig) Validate() error {
 	if c.Host == "" {
 		return fmt.Errorf("host is empty")
 	}
@@ -111,11 +111,10 @@ func (c DatabaseConfig) Validate() error {
 	if err != nil {
 		return err
 	}
-
 	return nil
 }
 
-func (c DatabaseConfig) SqlDB(logger *logrus.Entry) (*sql.DB, error) {
+func (c *DatabaseConfig) SqlDB(logger *logrus.Entry) (*sql.DB, error) {
 	dbCfg, err := c.MySQLConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build database config: %s", err)
@@ -128,7 +127,7 @@ func (c DatabaseConfig) SqlDB(logger *logrus.Entry) (*sql.DB, error) {
 	return sql.Open("mysql", dbCfg.FormatDSN())
 }
 
-func (c DatabaseConfig) assertParamSet(param, value string) error {
+func (c *DatabaseConfig) assertParamSet(param, value string) error {
 	if c.Params == nil {
 		c.Params = make(map[string]string)
 	}

@@ -77,6 +77,22 @@ func (this *ConfigTestSuite) TestRequireTargetPort() {
 	this.Require().EqualError(err, "target: port is not specified")
 }
 
+func (this *ConfigTestSuite) TestRequireTimezoneUTC() {
+	this.config.Target.Params = map[string]string{
+		"time_zone": "'+08:00'",
+	}
+	err := this.config.ValidateConfig()
+	this.Require().EqualError(err, "target: time_zone must be set to '+00:00'")
+}
+
+func (this *ConfigTestSuite) TestRequireSQLmode() {
+	this.config.Target.Params = map[string]string{
+		"sql_mode": "'NO_BACKSLASH_ESCAPES'",
+	}
+	err := this.config.ValidateConfig()
+	this.Require().EqualError(err, "target: sql_mode must be set to 'STRICT_ALL_TABLES,NO_BACKSLASH_ESCAPES'")
+}
+
 func (this *ConfigTestSuite) TestRequireTargetUser() {
 	this.config.Target.User = ""
 	err := this.config.ValidateConfig()
@@ -122,12 +138,16 @@ func (this *ConfigTestSuite) TestParamsAndCollationGetsPassedToMysqlConfig() {
 	this.config.Source.Params = map[string]string{
 		"charset": "utf8mb4",
 	}
+	err := this.config.ValidateConfig()
+	this.Require().Nil(err)
 
 	mysqlConfig, err := this.config.Source.MySQLConfig()
 	this.Require().Nil(err)
 
 	this.Require().Equal("utf8mb4", mysqlConfig.Params["charset"])
 	this.Require().Equal("utf8mb4_general_ci", mysqlConfig.Collation)
+	this.Require().Equal("'+00:00'", mysqlConfig.Params["time_zone"])
+	this.Require().Equal("'STRICT_ALL_TABLES,NO_BACKSLASH_ESCAPES'", mysqlConfig.Params["sql_mode"])
 }
 
 func TestConfig(t *testing.T) {
