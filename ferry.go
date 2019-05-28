@@ -357,7 +357,8 @@ func (f *Ferry) Initialize() (err error) {
 	// Initializing the necessary components of Ghostferry.
 	if f.ErrorHandler == nil {
 		f.ErrorHandler = &PanicErrorHandler{
-			Ferry: f,
+			Ferry:             f,
+			DumpStateToStdout: true,
 		}
 	}
 
