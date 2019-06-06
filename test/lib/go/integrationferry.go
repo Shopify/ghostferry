@@ -236,17 +236,33 @@ func main() {
 		panic(err)
 	}
 
-	if os.Getenv("GHOSTFERRY_ITERATIVE_VERIFIER") != "" {
+	verifierType := os.Getenv("GHOSTFERRY_VERIFIER_TYPE")
+	if verifierType == ghostferry.VerifierTypeIterative {
 		config.VerifierType = ghostferry.VerifierTypeIterative
 		config.IterativeVerifierConfig = ghostferry.IterativeVerifierConfig{
 			Concurrency: 2,
 		}
+	} else if verifierType != "" {
+		config.VerifierType = verifierType
 	}
 
 	f := &IntegrationFerry{
 		Ferry: &ghostferry.Ferry{
 			Config: config,
 		},
+	}
+
+	integrationPort := os.Getenv(portEnvName)
+	if integrationPort == "" {
+		panic(fmt.Sprintf("environment variable %s must be specified", portEnvName))
+	}
+
+	f.ErrorHandler = &ghostferry.PanicErrorHandler{
+		Ferry: f.Ferry,
+		ErrorCallback: ghostferry.HTTPCallback{
+			URI: fmt.Sprintf("http://localhost:%s/callbacks/error", integrationPort),
+		},
+		DumpStateToStdout: true,
 	}
 
 	err = f.Main()

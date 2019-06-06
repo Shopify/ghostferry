@@ -4,6 +4,7 @@ require "minitest/autorun"
 require "minitest/hooks/test"
 
 GO_CODE_PATH = File.join(File.absolute_path(File.dirname(__FILE__)), "lib", "go")
+FIXTURE_PATH = File.join(File.absolute_path(File.dirname(__FILE__)), "fixtures")
 
 require "db_helper"
 require "ghostferry_helper"
@@ -33,6 +34,10 @@ class GhostferryTestCase < Minitest::Test
     dw = DataWriter.new(source_db_config, *args, logger: @logger)
     @datawriter_instances << dw
     dw
+  end
+
+  def load_fixture(filename)
+    File.read(File.join(FIXTURE_PATH, filename))
   end
 
   ##############
