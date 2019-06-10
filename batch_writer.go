@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -55,7 +54,7 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 			table = targetTableName
 		}
 
-		query, args, err := batch.AsSQLQuery(&schema.Table{Schema: db, Name: table})
+		query, args, err := batch.AsSQLQuery(db, table)
 		if err != nil {
 			return fmt.Errorf("during generating sql query at pk %v -> %v: %v", startPkpos, endPkpos, err)
 		}

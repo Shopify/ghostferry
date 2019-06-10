@@ -16,9 +16,16 @@ var ignoredDatabases = map[string]bool{
 	"sys":                true,
 }
 
-type TableSchemaCache map[string]*schema.Table
+// This is a wrapper on schema.Table with some custom information we need.
+type TableSchema struct {
+	*schema.Table
 
-func QuotedTableName(table *schema.Table) string {
+	CompressedColumns map[string]string // Map of column name => compression type
+}
+
+type TableSchemaCache map[string]*TableSchema
+
+func QuotedTableName(table *TableSchema) string {
 	return QuotedTableNameFromString(table.Schema, table.Name)
 }
 
@@ -26,9 +33,9 @@ func QuotedTableNameFromString(database, table string) string {
 	return fmt.Sprintf("`%s`.`%s`", database, table)
 }
 
-func MaxPrimaryKeys(db *sql.DB, tables []*schema.Table, logger *logrus.Entry) (map[*schema.Table]uint64, []*schema.Table, error) {
-	tablesWithData := make(map[*schema.Table]uint64)
-	emptyTables := make([]*schema.Table, 0, len(tables))
+func MaxPrimaryKeys(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) (map[*TableSchema]uint64, []*TableSchema, error) {
+	tablesWithData := make(map[*TableSchema]uint64)
+	emptyTables := make([]*TableSchema, 0, len(tables))
 
 	for _, table := range tables {
 		logger := logger.WithField("table", table.String())
@@ -78,7 +85,7 @@ func LoadTables(db *sql.DB, tableFilter TableFilter) (TableSchemaCache, error) {
 			return tableSchemaCache, err
 		}
 
-		var tableSchemas []*schema.Table
+		var tableSchemas []*TableSchema
 
 		for _, table := range tableNames {
 			tableLog := dbLog.WithField("table", table)
@@ -88,7 +95,9 @@ func LoadTables(db *sql.DB, tableFilter TableFilter) (TableSchemaCache, error) {
 				tableLog.WithError(err).Error("cannot fetch table schema from source db")
 				return tableSchemaCache, err
 			}
-			tableSchemas = append(tableSchemas, tableSchema)
+			tableSchemas = append(tableSchemas, &TableSchema{
+				Table: tableSchema,
+			})
 		}
 
 		tableSchemas, err = tableFilter.ApplicableTables(tableSchemas)
@@ -123,7 +132,7 @@ func LoadTables(db *sql.DB, tableFilter TableFilter) (TableSchemaCache, error) {
 	return tableSchemaCache, nil
 }
 
-func (c TableSchemaCache) AsSlice() (tables []*schema.Table) {
+func (c TableSchemaCache) AsSlice() (tables []*TableSchema) {
 	for _, tableSchema := range c {
 		tables = append(tables, tableSchema)
 	}
@@ -139,7 +148,7 @@ func (c TableSchemaCache) AllTableNames() (tableNames []string) {
 	return
 }
 
-func (c TableSchemaCache) Get(database, table string) *schema.Table {
+func (c TableSchemaCache) Get(database, table string) *TableSchema {
 	fullTableName := fmt.Sprintf("%s.%s", database, table)
 	return c[fullTableName]
 }
@@ -191,7 +200,7 @@ func showTablesFrom(c *sql.DB, dbname string) ([]string, error) {
 	return tables, nil
 }
 
-func maxPk(db *sql.DB, table *schema.Table) (uint64, bool, error) {
+func maxPk(db *sql.DB, table *TableSchema) (uint64, bool, error) {
 	primaryKeyColumn := table.GetPKColumn(0)
 	pkName := quoteField(primaryKeyColumn.Name)
 

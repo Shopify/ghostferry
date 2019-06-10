@@ -21,10 +21,12 @@ func (this *ChecksumTableVerifierTestSuite) SetupTest() {
 	this.GhostferryUnitTestSuite.SetupTest()
 
 	this.verifier = &ghostferry.ChecksumTableVerifier{
-		Tables: []*schema.Table{
-			&schema.Table{
-				Name:   testhelpers.TestTable1Name,
-				Schema: testhelpers.TestSchemaName,
+		Tables: []*ghostferry.TableSchema{
+			&ghostferry.TableSchema{
+				Table: &schema.Table{
+					Name:   testhelpers.TestTable1Name,
+					Schema: testhelpers.TestSchemaName,
+				},
 			},
 		},
 

@@ -16,7 +16,6 @@ import (
 	"github.com/go-sql-driver/mysql"
 	siddontanglog "github.com/siddontang/go-log/log"
 	siddontangmysql "github.com/siddontang/go-mysql/mysql"
-	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -556,7 +555,7 @@ func (f *Ferry) Run() {
 	supportingServicesWg.Wait()
 }
 
-func (f *Ferry) RunStandaloneDataCopy(tables []*schema.Table) error {
+func (f *Ferry) RunStandaloneDataCopy(tables []*TableSchema) error {
 	if len(tables) == 0 {
 		return nil
 	}

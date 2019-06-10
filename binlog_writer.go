@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -91,7 +90,7 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 			eventTableName = targetTableName
 		}
 
-		sql, err := ev.AsSQLString(&schema.Table{Schema: eventDatabaseName, Name: eventTableName})
+		sql, err := ev.AsSQLString(eventDatabaseName, eventTableName)
 		if err != nil {
 			return fmt.Errorf("generating sql query at pos %v: %v", ev.BinlogPosition(), err)
 		}

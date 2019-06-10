@@ -5,7 +5,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/siddontang/go-mysql/schema"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/Shopify/ghostferry"
@@ -17,7 +16,7 @@ type DataIteratorTestSuite struct {
 
 	di           *ghostferry.DataIterator
 	wg           *sync.WaitGroup
-	tables       []*schema.Table
+	tables       []*ghostferry.TableSchema
 	receivedRows map[string][]ghostferry.RowData
 }
 

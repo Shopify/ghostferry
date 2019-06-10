@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/Shopify/ghostferry"
-	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -185,7 +184,7 @@ func (r *ShardingFerry) Run() {
 }
 
 func (r *ShardingFerry) deltaCopyJoinedTables() error {
-	tables := []*schema.Table{}
+	tables := []*ghostferry.TableSchema{}
 
 	for _, table := range r.Ferry.Tables {
 		if _, exists := r.config.JoinedTables[table.Name]; exists {
@@ -234,7 +233,7 @@ func (r *ShardingFerry) copyPrimaryKeyTables() error {
 		return err
 	}
 
-	tables := []*schema.Table{}
+	tables := []*ghostferry.TableSchema{}
 	for _, table := range sourceDbTables.AsSlice() {
 		if _, exists := pkTables[table.Name]; exists {
 			if len(table.PKColumns) != 1 {

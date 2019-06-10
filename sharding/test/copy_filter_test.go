@@ -19,7 +19,7 @@ type CopyFilterTestSuite struct {
 	shardingValue int64
 	pkCursor      uint64
 
-	normalTable, joinedTable, pkTable *schema.Table
+	normalTable, joinedTable, pkTable *ghostferry.TableSchema
 
 	filter *sharding.ShardedCopyFilter
 }
@@ -28,31 +28,37 @@ func (t *CopyFilterTestSuite) SetupTest() {
 	t.shardingValue = int64(1)
 	t.pkCursor = uint64(12345)
 
-	t.normalTable = &schema.Table{
-		Schema:    "shard_1",
-		Name:      "normaltable",
-		Columns:   []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}, {Name: "data"}},
-		PKColumns: []int{0},
-		Indexes: []*schema.Index{
-			{Name: "unrelated_index", Columns: []string{"tenant_id", "data"}},
-			{Name: "less_good_sharding_index", Columns: []string{"tenant_id"}},
-			{Name: "good_sharding_index", Columns: []string{"tenant_id", "id"}},
-			{Name: "unrelated_index2", Columns: []string{"data"}},
+	t.normalTable = &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema:    "shard_1",
+			Name:      "normaltable",
+			Columns:   []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}, {Name: "data"}},
+			PKColumns: []int{0},
+			Indexes: []*schema.Index{
+				{Name: "unrelated_index", Columns: []string{"tenant_id", "data"}},
+				{Name: "less_good_sharding_index", Columns: []string{"tenant_id"}},
+				{Name: "good_sharding_index", Columns: []string{"tenant_id", "id"}},
+				{Name: "unrelated_index2", Columns: []string{"data"}},
+			},
 		},
 	}
 
-	t.joinedTable = &schema.Table{
-		Schema:    "shard_1",
-		Name:      "joinedtable",
-		Columns:   []schema.TableColumn{{Name: "joined_pk"}},
-		PKColumns: []int{0},
+	t.joinedTable = &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema:    "shard_1",
+			Name:      "joinedtable",
+			Columns:   []schema.TableColumn{{Name: "joined_pk"}},
+			PKColumns: []int{0},
+		},
 	}
 
-	t.pkTable = &schema.Table{
-		Schema:    "shard_1",
-		Name:      "pktable",
-		Columns:   []schema.TableColumn{{Name: "tenant_id"}},
-		PKColumns: []int{0},
+	t.pkTable = &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema:    "shard_1",
+			Name:      "pktable",
+			Columns:   []schema.TableColumn{{Name: "tenant_id"}},
+			PKColumns: []int{0},
+		},
 	}
 
 	t.filter = &sharding.ShardedCopyFilter{

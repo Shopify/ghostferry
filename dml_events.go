@@ -38,8 +38,8 @@ func (r RowData) GetUint64(colIdx int) (res uint64, err error) {
 type DMLEvent interface {
 	Database() string
 	Table() string
-	TableSchema() *schema.Table
-	AsSQLString(target *schema.Table) (string, error)
+	TableSchema() *TableSchema
+	AsSQLString(string, string) (string, error)
 	OldValues() RowData
 	NewValues() RowData
 	PK() (uint64, error)
@@ -47,10 +47,8 @@ type DMLEvent interface {
 }
 
 // The base of DMLEvent to provide the necessary methods.
-// This desires a copy of the struct in case we want to deal with schema
-// changes in the future.
 type DMLEventBase struct {
-	table schema.Table
+	table *TableSchema
 	pos   mysql.Position
 }
 
@@ -62,8 +60,8 @@ func (e *DMLEventBase) Table() string {
 	return e.table.Name
 }
 
-func (e *DMLEventBase) TableSchema() *schema.Table {
-	return &e.table
+func (e *DMLEventBase) TableSchema() *TableSchema {
+	return e.table
 }
 
 func (e *DMLEventBase) BinlogPosition() mysql.Position {
@@ -75,13 +73,13 @@ type BinlogInsertEvent struct {
 	*DMLEventBase
 }
 
-func NewBinlogInsertEvents(table *schema.Table, rowsEvent *replication.RowsEvent, pos mysql.Position) ([]DMLEvent, error) {
+func NewBinlogInsertEvents(table *TableSchema, rowsEvent *replication.RowsEvent, pos mysql.Position) ([]DMLEvent, error) {
 	insertEvents := make([]DMLEvent, len(rowsEvent.Rows))
 
 	for i, row := range rowsEvent.Rows {
 		insertEvents[i] = &BinlogInsertEvent{
 			newValues:    row,
-			DMLEventBase: &DMLEventBase{table: *table, pos: pos},
+			DMLEventBase: &DMLEventBase{table: table, pos: pos},
 		}
 	}
 
@@ -96,21 +94,21 @@ func (e *BinlogInsertEvent) NewValues() RowData {
 	return e.newValues
 }
 
-func (e *BinlogInsertEvent) AsSQLString(target *schema.Table) (string, error) {
-	if err := verifyValuesHasTheSameLengthAsColumns(&e.table, e.newValues); err != nil {
+func (e *BinlogInsertEvent) AsSQLString(schemaName, tableName string) (string, error) {
+	if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.newValues); err != nil {
 		return "", err
 	}
 
 	query := "INSERT IGNORE INTO " +
-		QuotedTableNameFromString(target.Schema, target.Name) +
-		" (" + strings.Join(quotedColumnNames(&e.table), ",") + ")" +
+		QuotedTableNameFromString(schemaName, tableName) +
+		" (" + strings.Join(quotedColumnNames(e.table), ",") + ")" +
 		" VALUES (" + buildStringListForValues(e.table.Columns, e.newValues) + ")"
 
 	return query, nil
 }
 
 func (e *BinlogInsertEvent) PK() (uint64, error) {
-	return pkFromEventData(&e.table, e.newValues)
+	return pkFromEventData(e.table, e.newValues)
 }
 
 type BinlogUpdateEvent struct {
@@ -119,7 +117,7 @@ type BinlogUpdateEvent struct {
 	*DMLEventBase
 }
 
-func NewBinlogUpdateEvents(table *schema.Table, rowsEvent *replication.RowsEvent, pos mysql.Position) ([]DMLEvent, error) {
+func NewBinlogUpdateEvents(table *TableSchema, rowsEvent *replication.RowsEvent, pos mysql.Position) ([]DMLEvent, error) {
 	// UPDATE events have two rows in the RowsEvent. The first row is the
 	// entries of the old record (for WHERE) and the second row is the
 	// entries of the new record (for SET).
@@ -135,7 +133,7 @@ func NewBinlogUpdateEvents(table *schema.Table, rowsEvent *replication.RowsEvent
 		updateEvents[i/2] = &BinlogUpdateEvent{
 			oldValues:    row,
 			newValues:    rowsEvent.Rows[i+1],
-			DMLEventBase: &DMLEventBase{table: *table, pos: pos},
+			DMLEventBase: &DMLEventBase{table: table, pos: pos},
 		}
 	}
 
@@ -150,12 +148,12 @@ func (e *BinlogUpdateEvent) NewValues() RowData {
 	return e.newValues
 }
 
-func (e *BinlogUpdateEvent) AsSQLString(target *schema.Table) (string, error) {
-	if err := verifyValuesHasTheSameLengthAsColumns(&e.table, e.oldValues, e.newValues); err != nil {
+func (e *BinlogUpdateEvent) AsSQLString(schemaName, tableName string) (string, error) {
+	if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.oldValues, e.newValues); err != nil {
 		return "", err
 	}
 
-	query := "UPDATE " + QuotedTableNameFromString(target.Schema, target.Name) +
+	query := "UPDATE " + QuotedTableNameFromString(schemaName, tableName) +
 		" SET " + buildStringMapForSet(e.table.Columns, e.newValues) +
 		" WHERE " + buildStringMapForWhere(e.table.Columns, e.oldValues)
 
@@ -163,7 +161,7 @@ func (e *BinlogUpdateEvent) AsSQLString(target *schema.Table) (string, error) {
 }
 
 func (e *BinlogUpdateEvent) PK() (uint64, error) {
-	return pkFromEventData(&e.table, e.newValues)
+	return pkFromEventData(e.table, e.newValues)
 }
 
 type BinlogDeleteEvent struct {
@@ -179,35 +177,35 @@ func (e *BinlogDeleteEvent) NewValues() RowData {
 	return nil
 }
 
-func NewBinlogDeleteEvents(table *schema.Table, rowsEvent *replication.RowsEvent, pos mysql.Position) ([]DMLEvent, error) {
+func NewBinlogDeleteEvents(table *TableSchema, rowsEvent *replication.RowsEvent, pos mysql.Position) ([]DMLEvent, error) {
 	deleteEvents := make([]DMLEvent, len(rowsEvent.Rows))
 
 	for i, row := range rowsEvent.Rows {
 		deleteEvents[i] = &BinlogDeleteEvent{
 			oldValues:    row,
-			DMLEventBase: &DMLEventBase{table: *table, pos: pos},
+			DMLEventBase: &DMLEventBase{table: table, pos: pos},
 		}
 	}
 
 	return deleteEvents, nil
 }
 
-func (e *BinlogDeleteEvent) AsSQLString(target *schema.Table) (string, error) {
-	if err := verifyValuesHasTheSameLengthAsColumns(&e.table, e.oldValues); err != nil {
+func (e *BinlogDeleteEvent) AsSQLString(schemaName, tableName string) (string, error) {
+	if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.oldValues); err != nil {
 		return "", err
 	}
 
-	query := "DELETE FROM " + QuotedTableNameFromString(target.Schema, target.Name) +
+	query := "DELETE FROM " + QuotedTableNameFromString(schemaName, tableName) +
 		" WHERE " + buildStringMapForWhere(e.table.Columns, e.oldValues)
 
 	return query, nil
 }
 
 func (e *BinlogDeleteEvent) PK() (uint64, error) {
-	return pkFromEventData(&e.table, e.oldValues)
+	return pkFromEventData(e.table, e.oldValues)
 }
 
-func NewBinlogDMLEvents(table *schema.Table, ev *replication.BinlogEvent, pos mysql.Position) ([]DMLEvent, error) {
+func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos mysql.Position) ([]DMLEvent, error) {
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
 	for _, row := range rowsEvent.Rows {
@@ -250,7 +248,7 @@ func NewBinlogDMLEvents(table *schema.Table, ev *replication.BinlogEvent, pos my
 	}
 }
 
-func quotedColumnNames(table *schema.Table) []string {
+func quotedColumnNames(table *TableSchema) []string {
 	cols := make([]string, len(table.Columns))
 	for i, column := range table.Columns {
 		cols[i] = quoteField(column.Name)
@@ -259,7 +257,7 @@ func quotedColumnNames(table *schema.Table) []string {
 	return cols
 }
 
-func verifyValuesHasTheSameLengthAsColumns(table *schema.Table, values ...RowData) error {
+func verifyValuesHasTheSameLengthAsColumns(table *TableSchema, values ...RowData) error {
 	for _, v := range values {
 		if len(table.Columns) != len(v) {
 			return fmt.Errorf(
@@ -442,7 +440,7 @@ func appendEscapedBuffer(buffer, value []byte, binary bool) []byte {
 	return append(buffer, '\'')
 }
 
-func pkFromEventData(table *schema.Table, rowData RowData) (uint64, error) {
+func pkFromEventData(table *TableSchema, rowData RowData) (uint64, error) {
 	if err := verifyValuesHasTheSameLengthAsColumns(table, rowData); err != nil {
 		return 0, err
 	}
