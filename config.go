@@ -171,6 +171,10 @@ type IterativeVerifierConfig struct {
 	//	1. Snappy (https://google.github.io/snappy/) as "SNAPPY"
 	//
 	// Optional: defaults to empty map/no compression
+	//
+	// Note that the IterativeVerifier is in the process of being deprecated.
+	// If this is specified, ColumnCompressionConfig should also be filled out in
+	// the main Config.
 	TableColumnCompression TableColumnCompressionConfig
 }
 
@@ -187,6 +191,25 @@ func (c *IterativeVerifierConfig) Validate() error {
 	}
 
 	return nil
+}
+
+// SchemaName => TableName => ColumnName => CompressionAlgorithm
+// Example: blog1 => articles => body => snappy
+//          (SELECT body FROM blog1.articles => returns compressed blob)
+type ColumnCompressionConfig map[string]map[string]map[string]string
+
+func (c ColumnCompressionConfig) CompressedColumnsFor(schemaName, tableName string) map[string]string {
+	t1, found := c[schemaName]
+	if !found {
+		return nil
+	}
+
+	t2, found := t1[tableName]
+	if !found {
+		return nil
+	}
+
+	return t2
 }
 
 type Config struct {
@@ -309,11 +332,35 @@ type Config struct {
 
 	// Only useful if VerifierType == Iterative.
 	// This specifies the configurations to the IterativeVerifier.
+	//
+	// This option is being in the processing of being deprecated.
 	IterativeVerifierConfig IterativeVerifierConfig
 
 	// For old versions mysql<5.6.2, MariaDB<10.1.6 which has no related var
 	// Make sure you have binlog_row_image=FULL when turning on this
 	SkipBinlogRowImageCheck bool
+
+	// This config is necessary for a special case of Ghostferry:
+	//
+	// - If you are copying a table where the data is already partially on the
+	//   target through some other means.
+	//   - In this case, for an applicable row: the PK on both the source and the
+	//     target are the same. INSERT IGNORE will simply skip copying that row.
+	//     This leaves the target data without modifications.
+	//   - While this is not a supported use case, careful examination of your
+	//     data may reveal that Ghostferry will not cause a data corruption.
+	//     This is left as an exercise for the reader.
+	// - In this case, the InlineVerifier will verify the data to be correct.
+	// - However, if this data is compressed with a non-determinstic algorithm
+	//   such as snappy, the compressed blob may not be equal even when the
+	//   uncompressed data is equal.
+	// - This column signals to the InlineVerifier that it needs to decompress
+	//   the data to compare identity.
+	//
+	// Note: a similar option exists in IterativeVerifier. However, the
+	// IterativeVerifier is being deprecated and this will be the correct place
+	// to specify it if you don't need the IterativeVerifier.
+	ColumnCompressionConfig ColumnCompressionConfig
 }
 
 func (c *Config) ValidateConfig() error {

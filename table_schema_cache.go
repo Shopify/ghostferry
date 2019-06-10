@@ -71,7 +71,7 @@ func MaxPrimaryKeys(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) (ma
 	return tablesWithData, emptyTables, nil
 }
 
-func LoadTables(db *sql.DB, tableFilter TableFilter) (TableSchemaCache, error) {
+func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig ColumnCompressionConfig) (TableSchemaCache, error) {
 	logger := logrus.WithField("tag", "table_schema_cache")
 
 	tableSchemaCache := make(TableSchemaCache)
@@ -108,8 +108,10 @@ func LoadTables(db *sql.DB, tableFilter TableFilter) (TableSchemaCache, error) {
 				tableLog.WithError(err).Error("cannot fetch table schema from source db")
 				return tableSchemaCache, err
 			}
+
 			tableSchemas = append(tableSchemas, &TableSchema{
-				Table: tableSchema,
+				Table:             tableSchema,
+				CompressedColumns: columnCompressionConfig.CompressedColumnsFor(dbname, table),
 			})
 		}
 
