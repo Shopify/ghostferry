@@ -3,7 +3,6 @@ package ghostferry
 import (
 	"database/sql"
 	"fmt"
-	"sync"
 
 	"github.com/sirupsen/logrus"
 )
@@ -17,13 +16,12 @@ type BatchWriter struct {
 
 	WriteRetries int
 
-	mut        sync.RWMutex
-	statements map[string]*sql.Stmt
-	logger     *logrus.Entry
+	stmtCache *StmtCache
+	logger    *logrus.Entry
 }
 
 func (w *BatchWriter) Initialize() {
-	w.statements = make(map[string]*sql.Stmt)
+	w.stmtCache = NewStmtCache()
 	w.logger = logrus.WithField("tag", "batch_writer")
 }
 
@@ -59,9 +57,9 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 			return fmt.Errorf("during generating sql query at pk %v -> %v: %v", startPkpos, endPkpos, err)
 		}
 
-		stmt, err := w.stmtFor(query)
+		stmt, err := w.stmtCache.StmtFor(w.DB, query)
 		if err != nil {
-			return fmt.Errorf("during preparing query near pk %v -> %v (%s): %v", startPkpos, endPkpos, query, err)
+			return fmt.Errorf("during prepare query near pk %v -> %v (%s): %v", startPkpos, endPkpos, query, err)
 		}
 
 		_, err = stmt.Exec(args...)
@@ -77,35 +75,4 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 
 		return nil
 	})
-}
-
-func (w *BatchWriter) stmtFor(query string) (*sql.Stmt, error) {
-	stmt, exists := w.getStmt(query)
-	if !exists {
-		return w.newStmtFor(query)
-	}
-	return stmt, nil
-}
-
-func (w *BatchWriter) newStmtFor(query string) (*sql.Stmt, error) {
-	stmt, err := w.DB.Prepare(query)
-	if err != nil {
-		return nil, err
-	}
-
-	w.storeStmt(query, stmt)
-	return stmt, nil
-}
-
-func (w *BatchWriter) storeStmt(query string, stmt *sql.Stmt) {
-	w.mut.Lock()
-	defer w.mut.Unlock()
-	w.statements[query] = stmt
-}
-
-func (w *BatchWriter) getStmt(query string) (*sql.Stmt, bool) {
-	w.mut.RLock()
-	defer w.mut.RUnlock()
-	stmt, exists := w.statements[query]
-	return stmt, exists
 }

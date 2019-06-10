@@ -143,6 +143,48 @@ loop:
 	return results, err
 }
 
+type StmtCache struct {
+	mut        sync.RWMutex
+	statements map[string]*sql.Stmt
+}
+
+func NewStmtCache() *StmtCache {
+	return &StmtCache{
+		statements: make(map[string]*sql.Stmt),
+	}
+}
+
+func (c *StmtCache) StmtFor(p SqlPreparer, query string) (*sql.Stmt, error) {
+	stmt, exists := c.getStmt(query)
+	if !exists {
+		return c.newStmtFor(p, query)
+	}
+	return stmt, nil
+}
+
+func (c *StmtCache) newStmtFor(p SqlPreparer, query string) (*sql.Stmt, error) {
+	stmt, err := p.Prepare(query)
+	if err != nil {
+		return nil, err
+	}
+
+	c.storeStmt(query, stmt)
+	return stmt, nil
+}
+
+func (c *StmtCache) storeStmt(query string, stmt *sql.Stmt) {
+	c.mut.Lock()
+	defer c.mut.Unlock()
+	c.statements[query] = stmt
+}
+
+func (c *StmtCache) getStmt(query string) (*sql.Stmt, bool) {
+	c.mut.RLock()
+	defer c.mut.RUnlock()
+	stmt, exists := c.statements[query]
+	return stmt, exists
+}
+
 func ShowMasterStatusBinlogPosition(db *sql.DB) (mysql.Position, error) {
 	rows, err := db.Query("SHOW MASTER STATUS")
 	if err != nil {
