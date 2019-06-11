@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -89,7 +88,7 @@ type Verifier interface {
 }
 
 type ChecksumTableVerifier struct {
-	Tables           []*schema.Table
+	Tables           []*TableSchema
 	DatabaseRewrites map[string]string
 	TableRewrites    map[string]string
 	SourceDB         *sql.DB

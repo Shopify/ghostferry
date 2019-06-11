@@ -6,7 +6,6 @@ import (
 	"math"
 	"sync"
 
-	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -24,7 +23,7 @@ type DataIterator struct {
 	logger         *logrus.Entry
 }
 
-func (d *DataIterator) Run(tables []*schema.Table) {
+func (d *DataIterator) Run(tables []*TableSchema) {
 	d.logger = logrus.WithField("tag", "data_iterator")
 	d.targetPKs = &sync.Map{}
 
@@ -56,7 +55,7 @@ func (d *DataIterator) Run(tables []*schema.Table) {
 		}
 	}
 
-	tablesQueue := make(chan *schema.Table)
+	tablesQueue := make(chan *TableSchema)
 	wg := &sync.WaitGroup{}
 	wg.Add(d.Concurrency)
 

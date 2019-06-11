@@ -1,10 +1,10 @@
 package testhelpers
 
-import "github.com/siddontang/go-mysql/schema"
+import "github.com/Shopify/ghostferry"
 
 type TestTableFilter struct {
 	DbsFunc    func([]string) []string
-	TablesFunc func([]*schema.Table) []*schema.Table
+	TablesFunc func([]*ghostferry.TableSchema) []*ghostferry.TableSchema
 }
 
 func (t *TestTableFilter) ApplicableDatabases(dbs []string) ([]string, error) {
@@ -15,7 +15,7 @@ func (t *TestTableFilter) ApplicableDatabases(dbs []string) ([]string, error) {
 	return dbs, nil
 }
 
-func (t *TestTableFilter) ApplicableTables(tables []*schema.Table) ([]*schema.Table, error) {
+func (t *TestTableFilter) ApplicableTables(tables []*ghostferry.TableSchema) ([]*ghostferry.TableSchema, error) {
 	if t.TablesFunc != nil {
 		return t.TablesFunc(tables), nil
 	}

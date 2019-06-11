@@ -18,7 +18,7 @@ type IterativeVerifierTestSuite struct {
 
 	verifier *ghostferry.IterativeVerifier
 	db       *sql.DB
-	table    *schema.Table
+	table    *ghostferry.TableSchema
 }
 
 func (t *IterativeVerifierTestSuite) SetupTest() {
@@ -393,12 +393,12 @@ func (t *ReverifyStoreTestSuite) SetupTest() {
 func (t *ReverifyStoreTestSuite) TestAddEntryIntoReverifyStoreWillDeduplicate() {
 	pk1 := uint64(100)
 	pk2 := uint64(101)
-	// different references to schema.Table shouldn't cause an issue.
-	t.store.Add(ghostferry.ReverifyEntry{Pk: pk1, Table: &schema.Table{Schema: "gftest", Name: "table1"}})
-	t.store.Add(ghostferry.ReverifyEntry{Pk: pk1, Table: &schema.Table{Schema: "gftest", Name: "table1"}})
-	t.store.Add(ghostferry.ReverifyEntry{Pk: pk1, Table: &schema.Table{Schema: "gftest", Name: "table1"}})
-	t.store.Add(ghostferry.ReverifyEntry{Pk: pk2, Table: &schema.Table{Schema: "gftest", Name: "table1"}})
-	t.store.Add(ghostferry.ReverifyEntry{Pk: pk2, Table: &schema.Table{Schema: "gftest", Name: "table1"}})
+	table1 := &ghostferry.TableSchema{Table: &schema.Table{Schema: "gftest", Name: "table1"}}
+	t.store.Add(ghostferry.ReverifyEntry{Pk: pk1, Table: table1})
+	t.store.Add(ghostferry.ReverifyEntry{Pk: pk1, Table: table1})
+	t.store.Add(ghostferry.ReverifyEntry{Pk: pk1, Table: table1})
+	t.store.Add(ghostferry.ReverifyEntry{Pk: pk2, Table: table1})
+	t.store.Add(ghostferry.ReverifyEntry{Pk: pk2, Table: table1})
 
 	t.Require().Equal(uint64(2), t.store.RowCount)
 	t.Require().Equal(1, len(t.store.MapStore))
@@ -413,14 +413,16 @@ func (t *ReverifyStoreTestSuite) TestAddEntryIntoReverifyStoreWillDeduplicate() 
 
 func (t *ReverifyStoreTestSuite) TestFlushAndBatchByTableWillCreateReverifyBatchesAndClearTheMapStore() {
 	expectedTable1Pks := make([]uint64, 0, 55)
+	table1 := &ghostferry.TableSchema{Table: &schema.Table{Schema: "gftest", Name: "table1"}}
+	table2 := &ghostferry.TableSchema{Table: &schema.Table{Schema: "gftest", Name: "table2"}}
 	for i := uint64(100); i < 155; i++ {
-		t.store.Add(ghostferry.ReverifyEntry{Pk: i, Table: &schema.Table{Schema: "gftest", Name: "table1"}})
+		t.store.Add(ghostferry.ReverifyEntry{Pk: i, Table: table1})
 		expectedTable1Pks = append(expectedTable1Pks, i)
 	}
 
 	expectedTable2Pks := make([]uint64, 0, 45)
 	for i := uint64(200); i < 245; i++ {
-		t.store.Add(ghostferry.ReverifyEntry{Pk: i, Table: &schema.Table{Schema: "gftest", Name: "table2"}})
+		t.store.Add(ghostferry.ReverifyEntry{Pk: i, Table: table2})
 		expectedTable2Pks = append(expectedTable2Pks, i)
 	}
 

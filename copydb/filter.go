@@ -1,8 +1,6 @@
 package copydb
 
-import (
-	"github.com/siddontang/go-mysql/schema"
-)
+import "github.com/Shopify/ghostferry"
 
 type StaticTableFilter struct {
 	Dbs            []string
@@ -64,8 +62,8 @@ func (s *StaticTableFilter) ApplicableDatabases(dbs []string) ([]string, error) 
 	return applicableDbs, nil
 }
 
-func (s *StaticTableFilter) ApplicableTables(tables []*schema.Table) ([]*schema.Table, error) {
-	applicableTables := make([]*schema.Table, 0, len(tables))
+func (s *StaticTableFilter) ApplicableTables(tables []*ghostferry.TableSchema) ([]*ghostferry.TableSchema, error) {
+	applicableTables := make([]*ghostferry.TableSchema, 0, len(tables))
 
 	for _, tableSchema := range tables {
 		var applicable bool

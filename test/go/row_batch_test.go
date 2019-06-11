@@ -14,8 +14,8 @@ type RowBatchTestSuite struct {
 
 	tableMapEvent    *replication.TableMapEvent
 	tableSchemaCache ghostferry.TableSchemaCache
-	sourceTable      *schema.Table
-	targetTable      *schema.Table
+	sourceTable      *ghostferry.TableSchema
+	targetTable      *ghostferry.TableSchema
 }
 
 func (this *RowBatchTestSuite) SetupTest() {
@@ -30,19 +30,23 @@ func (this *RowBatchTestSuite) SetupTest() {
 		{Name: "col3"},
 	}
 
-	this.sourceTable = &schema.Table{
-		Schema:  "test_schema",
-		Name:    "test_table",
-		Columns: columns,
+	this.sourceTable = &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema:  "test_schema",
+			Name:    "test_table",
+			Columns: columns,
+		},
 	}
 
-	this.targetTable = &schema.Table{
-		Schema:  "target_schema",
-		Name:    "target_table",
-		Columns: columns,
+	this.targetTable = &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema:  "target_schema",
+			Name:    "target_table",
+			Columns: columns,
+		},
 	}
 
-	this.tableSchemaCache = map[string]*schema.Table{
+	this.tableSchemaCache = map[string]*ghostferry.TableSchema{
 		"test_schema.test_table": this.sourceTable,
 	}
 }
@@ -56,7 +60,7 @@ func (this *RowBatchTestSuite) TestRowBatchGeneratesInsertQuery() {
 	batch := ghostferry.NewRowBatch(this.sourceTable, vals, 0)
 	this.Require().Equal(vals, batch.Values())
 
-	q1, v1, err := batch.AsSQLQuery(this.targetTable)
+	q1, v1, err := batch.AsSQLQuery(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().Nil(err)
 	this.Require().Equal("INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col2`,`col3`) VALUES (?,?,?),(?,?,?),(?,?,?)", q1)
 
@@ -77,7 +81,7 @@ func (this *RowBatchTestSuite) TestRowBatchWithWrongColumnsReturnsError() {
 	}
 	batch := ghostferry.NewRowBatch(this.sourceTable, vals, 0)
 
-	_, _, err := batch.AsSQLQuery(this.targetTable)
+	_, _, err := batch.AsSQLQuery(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().NotNil(err)
 	this.Require().Contains(err.Error(), "test_table has 3 columns but event has 1 column")
 }

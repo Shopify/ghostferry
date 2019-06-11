@@ -2,7 +2,6 @@ package ghostferry
 
 import (
 	sq "github.com/Masterminds/squirrel"
-	"github.com/siddontang/go-mysql/schema"
 )
 
 // CopyFilter provides an interface for restricting the copying to a subset of
@@ -16,7 +15,7 @@ type CopyFilter interface {
 	// the columns to be selected, table being copied, the last primary key value
 	// from the previous batch, and the batch size. Call DefaultBuildSelect to
 	// generate the default query, which may be used as a starting point.
-	BuildSelect([]string, *schema.Table, uint64, uint64) (sq.SelectBuilder, error)
+	BuildSelect([]string, *TableSchema, uint64, uint64) (sq.SelectBuilder, error)
 
 	// ApplicableEvent is used to filter events for rows that have been
 	// filtered in ConstrainSelect. ApplicableEvent should return true if the
@@ -27,6 +26,6 @@ type CopyFilter interface {
 }
 
 type TableFilter interface {
-	ApplicableTables([]*schema.Table) ([]*schema.Table, error)
+	ApplicableTables([]*TableSchema) ([]*TableSchema, error)
 	ApplicableDatabases([]string) ([]string, error)
 }

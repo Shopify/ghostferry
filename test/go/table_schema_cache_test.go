@@ -98,7 +98,7 @@ func (this *TableSchemaCacheTestSuite) TestAllTableNames() {
 func (this *TableSchemaCacheTestSuite) TestAllTableNamesEmpty() {
 	tableFilter := &testhelpers.TestTableFilter{
 		DbsFunc:    testhelpers.DbApplicabilityFilter([]string{testhelpers.TestSchemaName}),
-		TablesFunc: func(tables []*sqlSchema.Table) []*sqlSchema.Table { return []*sqlSchema.Table{} },
+		TablesFunc: func(tables []*ghostferry.TableSchema) []*ghostferry.TableSchema { return []*ghostferry.TableSchema{} },
 	}
 
 	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, tableFilter)
@@ -125,7 +125,7 @@ func (this *TableSchemaCacheTestSuite) TestAsSlice() {
 func (this *TableSchemaCacheTestSuite) TestAsSliceEmpty() {
 	tableFilter := &testhelpers.TestTableFilter{
 		DbsFunc:    testhelpers.DbApplicabilityFilter([]string{testhelpers.TestSchemaName}),
-		TablesFunc: func(tables []*sqlSchema.Table) []*sqlSchema.Table { return []*sqlSchema.Table{} },
+		TablesFunc: func(tables []*ghostferry.TableSchema) []*ghostferry.TableSchema { return []*ghostferry.TableSchema{} },
 	}
 
 	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, tableFilter)
@@ -137,12 +137,11 @@ func (this *TableSchemaCacheTestSuite) TestAsSliceEmpty() {
 }
 
 func (this *TableSchemaCacheTestSuite) TestQuotedTableName() {
-	table := &sqlSchema.Table{}
-	this.Require().Equal("``.``", ghostferry.QuotedTableName(table))
-
-	table = &sqlSchema.Table{
-		Schema: "schema",
-		Name:   "table",
+	table := &ghostferry.TableSchema{
+		Table: &sqlSchema.Table{
+			Schema: "schema",
+			Name:   "table",
+		},
 	}
 	this.Require().Equal("`schema`.`table`", ghostferry.QuotedTableName(table))
 }

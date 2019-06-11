@@ -34,13 +34,13 @@ type CursorConfig struct {
 	Throttler Throttler
 
 	ColumnsToSelect []string
-	BuildSelect     func([]string, *schema.Table, uint64, uint64) (squirrel.SelectBuilder, error)
+	BuildSelect     func([]string, *TableSchema, uint64, uint64) (squirrel.SelectBuilder, error)
 	BatchSize       uint64
 	ReadRetries     int
 }
 
 // returns a new Cursor with an embedded copy of itself
-func (c *CursorConfig) NewCursor(table *schema.Table, startPk, maxPk uint64) *Cursor {
+func (c *CursorConfig) NewCursor(table *TableSchema, startPk, maxPk uint64) *Cursor {
 	return &Cursor{
 		CursorConfig:             *c,
 		Table:                    table,
@@ -51,7 +51,7 @@ func (c *CursorConfig) NewCursor(table *schema.Table, startPk, maxPk uint64) *Cu
 }
 
 // returns a new Cursor with an embedded copy of itself
-func (c *CursorConfig) NewCursorWithoutRowLock(table *schema.Table, startPk, maxPk uint64) *Cursor {
+func (c *CursorConfig) NewCursorWithoutRowLock(table *TableSchema, startPk, maxPk uint64) *Cursor {
 	cursor := c.NewCursor(table, startPk, maxPk)
 	cursor.RowLock = false
 	return cursor
@@ -60,7 +60,7 @@ func (c *CursorConfig) NewCursorWithoutRowLock(table *schema.Table, startPk, max
 type Cursor struct {
 	CursorConfig
 
-	Table         *schema.Table
+	Table         *TableSchema
 	MaxPrimaryKey uint64
 	RowLock       bool
 
@@ -267,7 +267,7 @@ func ScanByteRow(rows *sql.Rows, columnCount int) ([][]byte, error) {
 	return values, err
 }
 
-func DefaultBuildSelect(columns []string, table *schema.Table, lastPk, batchSize uint64) squirrel.SelectBuilder {
+func DefaultBuildSelect(columns []string, table *TableSchema, lastPk, batchSize uint64) squirrel.SelectBuilder {
 	quotedPK := quoteField(table.GetPKColumn(0).Name)
 
 	return squirrel.Select(columns...).

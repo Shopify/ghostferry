@@ -125,9 +125,11 @@ func (this *FilterTestSuite) assertBothFilters(expected []string, filter copydb.
 	this.Require().Nil(err)
 	this.Require().Equal(expected, actual)
 
-	var schemas []*sqlSchema.Table
+	var schemas []*ghostferry.TableSchema
 	for _, table := range list {
-		schemas = append(schemas, &sqlSchema.Table{Name: table})
+		schemas = append(schemas, &ghostferry.TableSchema{
+			Table: &sqlSchema.Table{Name: table},
+		})
 	}
 
 	filtered, err := tableFilter.ApplicableTables(schemas)

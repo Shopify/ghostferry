@@ -9,7 +9,6 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/Shopify/ghostferry"
-	"github.com/siddontang/go-mysql/schema"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -26,7 +25,7 @@ type ShardedCopyFilter struct {
 	missingShardingKeyIndexLogged sync.Map
 }
 
-func (f *ShardedCopyFilter) BuildSelect(columns []string, table *schema.Table, lastPk, batchSize uint64) (sq.SelectBuilder, error) {
+func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.TableSchema, lastPk, batchSize uint64) (sq.SelectBuilder, error) {
 	quotedPK := "`" + table.GetPKColumn(0).Name + "`"
 	quotedShardingKey := "`" + f.ShardingKey + "`"
 	quotedTable := ghostferry.QuotedTableName(table)
@@ -118,7 +117,7 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *schema.Table, l
 		OrderBy(quotedPK), nil // LIMIT comes from the subquery.
 }
 
-func (f *ShardedCopyFilter) shardingKeyIndexHint(table *schema.Table) string {
+func (f *ShardedCopyFilter) shardingKeyIndexHint(table *ghostferry.TableSchema) string {
 	if indexName := f.shardingKeyIndexName(table); indexName != "" {
 		return "USE INDEX (`" + indexName + "`)"
 	} else {
@@ -131,7 +130,7 @@ func (f *ShardedCopyFilter) shardingKeyIndexHint(table *schema.Table) string {
 	}
 }
 
-func (f *ShardedCopyFilter) shardingKeyIndexName(table *schema.Table) string {
+func (f *ShardedCopyFilter) shardingKeyIndexName(table *ghostferry.TableSchema) string {
 	indexName := ""
 	pkName := table.GetPKColumn(0).Name
 
@@ -198,7 +197,7 @@ func (s *ShardedTableFilter) ApplicableDatabases(dbs []string) ([]string, error)
 	return []string{s.SourceShard}, nil
 }
 
-func (s *ShardedTableFilter) ApplicableTables(tables []*schema.Table) (applicable []*schema.Table, err error) {
+func (s *ShardedTableFilter) ApplicableTables(tables []*ghostferry.TableSchema) (applicable []*ghostferry.TableSchema, err error) {
 	for _, table := range tables {
 		if s.isIgnored(table) {
 			continue
@@ -226,7 +225,7 @@ func (s *ShardedTableFilter) ApplicableTables(tables []*schema.Table) (applicabl
 	return
 }
 
-func (s *ShardedTableFilter) isIgnored(table *schema.Table) bool {
+func (s *ShardedTableFilter) isIgnored(table *ghostferry.TableSchema) bool {
 	for _, re := range s.IgnoredTables {
 		if re.Match([]byte(table.Name)) {
 			return true

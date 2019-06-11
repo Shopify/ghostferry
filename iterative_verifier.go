@@ -22,7 +22,7 @@ type TableIdentifier struct {
 	TableName  string
 }
 
-func NewTableIdentifierFromSchemaTable(table *schema.Table) TableIdentifier {
+func NewTableIdentifierFromSchemaTable(table *TableSchema) TableIdentifier {
 	return TableIdentifier{
 		SchemaName: table.Schema,
 		TableName:  table.Name,
@@ -36,7 +36,7 @@ type ReverifyBatch struct {
 
 type ReverifyEntry struct {
 	Pk    uint64
-	Table *schema.Table
+	Table *TableSchema
 }
 
 type ReverifyStore struct {
@@ -135,7 +135,7 @@ type IterativeVerifier struct {
 	SourceDB            *sql.DB
 	TargetDB            *sql.DB
 
-	Tables              []*schema.Table
+	Tables              []*TableSchema
 	IgnoredTables       []string
 	IgnoredColumns      map[string]map[string]struct{}
 	DatabaseRewrites    map[string]string
@@ -196,7 +196,7 @@ func (v *IterativeVerifier) Initialize() error {
 func (v *IterativeVerifier) VerifyOnce() (VerificationResult, error) {
 	v.logger.Info("starting one-off verification of all tables")
 
-	err := v.iterateAllTables(func(pk uint64, tableSchema *schema.Table) error {
+	err := v.iterateAllTables(func(pk uint64, tableSchema *TableSchema) error {
 		return VerificationResult{
 			DataCorrect:     false,
 			Message:         fmt.Sprintf("verification failed on table: %s for pk: %d", tableSchema.String(), pk),
@@ -225,7 +225,7 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	v.BinlogStreamer.AddEventListener(v.binlogEventListener)
 
 	v.logger.Debug("verifying all tables")
-	err := v.iterateAllTables(func(pk uint64, tableSchema *schema.Table) error {
+	err := v.iterateAllTables(func(pk uint64, tableSchema *TableSchema) error {
 		v.reverifyStore.Add(ReverifyEntry{Pk: pk, Table: tableSchema})
 		return nil
 	})
@@ -371,7 +371,7 @@ func (v *IterativeVerifier) reverifyUntilStoreIsSmallEnough(maxIterations int) e
 	return nil
 }
 
-func (v *IterativeVerifier) iterateAllTables(mismatchedPkFunc func(uint64, *schema.Table) error) error {
+func (v *IterativeVerifier) iterateAllTables(mismatchedPkFunc func(uint64, *TableSchema) error) error {
 	pool := &WorkerPool{
 		Concurrency: v.Concurrency,
 		Process: func(tableIndex int) (interface{}, error) {
@@ -394,7 +394,7 @@ func (v *IterativeVerifier) iterateAllTables(mismatchedPkFunc func(uint64, *sche
 	return err
 }
 
-func (v *IterativeVerifier) iterateTableFingerprints(table *schema.Table, mismatchedPkFunc func(uint64, *schema.Table) error) error {
+func (v *IterativeVerifier) iterateTableFingerprints(table *TableSchema, mismatchedPkFunc func(uint64, *TableSchema) error) error {
 	// The cursor will stop iterating when it cannot find anymore rows,
 	// so it will not iterate until MaxUint64.
 	cursor := v.CursorConfig.NewCursorWithoutRowLock(table, 0, math.MaxUint64)
@@ -521,7 +521,7 @@ func (v *IterativeVerifier) verifyStore(sourceTag string, additionalTags []Metri
 	return result, err
 }
 
-func (v *IterativeVerifier) reverifyPks(table *schema.Table, pks []uint64) (VerificationResult, []uint64, error) {
+func (v *IterativeVerifier) reverifyPks(table *TableSchema, pks []uint64) (VerificationResult, []uint64, error) {
 	mismatchedPks, err := v.compareFingerprints(pks, table)
 	if err != nil {
 		return VerificationResult{}, mismatchedPks, err
@@ -564,7 +564,7 @@ func (v *IterativeVerifier) binlogEventListener(evs []DMLEvent) error {
 	return nil
 }
 
-func (v *IterativeVerifier) tableIsIgnored(table *schema.Table) bool {
+func (v *IterativeVerifier) tableIsIgnored(table *TableSchema) bool {
 	for _, ignored := range v.IgnoredTables {
 		if table.Name == ignored {
 			return true
@@ -574,7 +574,7 @@ func (v *IterativeVerifier) tableIsIgnored(table *schema.Table) bool {
 	return false
 }
 
-func (v *IterativeVerifier) columnsToVerify(table *schema.Table) []schema.TableColumn {
+func (v *IterativeVerifier) columnsToVerify(table *TableSchema) []schema.TableColumn {
 	ignoredColsSet, containsIgnoredColumns := v.IgnoredColumns[table.Name]
 	if !containsIgnoredColumns {
 		return table.Columns
@@ -590,7 +590,7 @@ func (v *IterativeVerifier) columnsToVerify(table *schema.Table) []schema.TableC
 	return columns
 }
 
-func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Table) ([]uint64, error) {
+func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *TableSchema) ([]uint64, error) {
 	targetDb := table.Schema
 	if targetDbName, exists := v.DatabaseRewrites[targetDb]; exists {
 		targetDb = targetDbName
@@ -640,7 +640,7 @@ func (v *IterativeVerifier) compareFingerprints(pks []uint64, table *schema.Tabl
 	return mismatches, nil
 }
 
-func (v *IterativeVerifier) compareCompressedHashes(targetDb, targetTable string, table *schema.Table, pks []uint64) ([]uint64, error) {
+func (v *IterativeVerifier) compareCompressedHashes(targetDb, targetTable string, table *TableSchema, pks []uint64) ([]uint64, error) {
 	sourceHashes, err := v.CompressionVerifier.GetCompressedHashes(v.SourceDB, table.Schema, table.Name, table.GetPKColumn(0).Name, v.columnsToVerify(table), pks)
 	if err != nil {
 		return nil, err
