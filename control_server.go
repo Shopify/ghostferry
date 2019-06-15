@@ -83,7 +83,7 @@ func (this *ControlServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
-	status := FetchStatus(this.F, this.Verifier)
+	status := FetchStatusDeprecated(this.F, this.Verifier)
 
 	err := this.templates.ExecuteTemplate(w, "index.html", status)
 	if err != nil {

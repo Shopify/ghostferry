@@ -9,7 +9,10 @@ import (
 	"github.com/siddontang/go-mysql/mysql"
 )
 
-type TableStatus struct {
+// NOTE: This file is only used for the ControlServer for now.
+// TODO: merge this back with the Status object.
+
+type TableStatusDeprecated struct {
 	TableName        string
 	PrimaryKeyName   string
 	Status           string
@@ -17,7 +20,7 @@ type TableStatus struct {
 	TargetPK         uint64
 }
 
-type Status struct {
+type StatusDeprecated struct {
 	GhostferryVersion string
 
 	SourceHostPort string
@@ -40,7 +43,7 @@ type Status struct {
 
 	CompletedTableCount int
 	TotalTableCount     int
-	TableStatuses       []*TableStatus
+	TableStatuses       []*TableStatusDeprecated
 	AllTableNames       []string
 	AllDatabaseNames    []string
 
@@ -52,8 +55,8 @@ type Status struct {
 	VerificationErr     error
 }
 
-func FetchStatus(f *Ferry, v Verifier) *Status {
-	status := &Status{}
+func FetchStatusDeprecated(f *Ferry, v Verifier) *StatusDeprecated {
+	status := &StatusDeprecated{}
 
 	status.GhostferryVersion = VersionString
 
@@ -78,7 +81,7 @@ func FetchStatus(f *Ferry, v Verifier) *Status {
 	status.Throttled = f.Throttler.Throttled()
 
 	// Getting all table statuses
-	status.TableStatuses = make([]*TableStatus, 0, len(f.Tables))
+	status.TableStatuses = make([]*TableStatusDeprecated, 0, len(f.Tables))
 
 	serializedState := f.StateTracker.Serialize(nil)
 
@@ -144,7 +147,7 @@ func FetchStatus(f *Ferry, v Verifier) *Status {
 	sort.Strings(waitingTableNames)
 
 	for _, tableName := range completedTableNames {
-		status.TableStatuses = append(status.TableStatuses, &TableStatus{
+		status.TableStatuses = append(status.TableStatuses, &TableStatusDeprecated{
 			TableName:        tableName,
 			PrimaryKeyName:   f.Tables[tableName].GetPKColumn(0).Name,
 			Status:           "complete",
@@ -154,7 +157,7 @@ func FetchStatus(f *Ferry, v Verifier) *Status {
 	}
 
 	for _, tableName := range copyingTableNames {
-		status.TableStatuses = append(status.TableStatuses, &TableStatus{
+		status.TableStatuses = append(status.TableStatuses, &TableStatusDeprecated{
 			TableName:        tableName,
 			PrimaryKeyName:   f.Tables[tableName].GetPKColumn(0).Name,
 			Status:           "copying",
@@ -164,7 +167,7 @@ func FetchStatus(f *Ferry, v Verifier) *Status {
 	}
 
 	for _, tableName := range waitingTableNames {
-		status.TableStatuses = append(status.TableStatuses, &TableStatus{
+		status.TableStatuses = append(status.TableStatuses, &TableStatusDeprecated{
 			TableName:        tableName,
 			PrimaryKeyName:   f.Tables[tableName].GetPKColumn(0).Name,
 			Status:           "waiting",
