@@ -201,6 +201,16 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 		DumpStateOnSignal: true,
 	}
 
+	integrationPort := os.Getenv(portEnvName)
+	if integrationPort == "" {
+		return nil, fmt.Errorf("environment variable %s must be specified", portEnvName)
+	}
+
+	config.ProgressCallback = ghostferry.HTTPCallback{
+		URI: fmt.Sprintf("http://localhost:%s/callbacks/progress", integrationPort),
+	}
+	config.ProgressReportFrequency = 500
+
 	resumeStateJSON, err := ioutil.ReadAll(os.Stdin)
 	if err != nil {
 		return nil, err

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -482,6 +484,24 @@ func (f *Ferry) Run() {
 		handleError("throttler", f.Throttler.Run(ctx))
 	}()
 
+	if f.Config.ProgressCallback.URI != "" {
+		supportingServicesWg.Add(1)
+		go func() {
+			defer supportingServicesWg.Done()
+
+			frequency := time.Duration(f.Config.ProgressReportFrequency) * time.Millisecond
+
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(frequency):
+					f.ReportProgress()
+				}
+			}
+		}()
+	}
+
 	if f.DumpStateOnSignal {
 		go func() {
 			c := make(chan os.Signal, 1)
@@ -496,7 +516,6 @@ func (f *Ferry) Run() {
 				os.Exit(0)
 			}
 		}()
-
 	}
 
 	binlogWg := &sync.WaitGroup{}
@@ -545,6 +564,16 @@ func (f *Ferry) Run() {
 	f.OverallState = StateCutover
 	f.notifyRowCopyComplete()
 
+	// Cutover is a cooperative activity between the Ghostferry library and
+	// applications built on Ghostferry:
+	//
+	// 1. At this point, the application should prepare to cutover, such as
+	//    setting the source database to READONLY.
+	// 2. Once that is complete, trigger the cutover by requesting the
+	//    BinlogStreamer to stop.
+	// 3. Once the binlog stops, this function will return and the cutover will
+	//    be completed.
+
 	binlogWg.Wait()
 
 	f.logger.Info("ghostferry run is complete, shutting down auxiliary services")
@@ -553,6 +582,10 @@ func (f *Ferry) Run() {
 
 	shutdown()
 	supportingServicesWg.Wait()
+
+	if f.Config.ProgressCallback.URI != "" {
+		f.ReportProgress()
+	}
 }
 
 func (f *Ferry) RunStandaloneDataCopy(tables []*TableSchema) error {
@@ -625,6 +658,86 @@ func (f *Ferry) SerializeStateToJSON() (string, error) {
 	serializedState := f.StateTracker.Serialize(f.Tables)
 	stateBytes, err := json.MarshalIndent(serializedState, "", "  ")
 	return string(stateBytes), err
+}
+
+func (f *Ferry) Progress() *Progress {
+	s := &Progress{
+		CurrentState:  f.OverallState,
+		CustomPayload: f.Config.ProgressCallback.Payload,
+		VerifierType:  f.VerifierType,
+	}
+
+	s.Throttled = f.Throttler.Throttled()
+
+	// Binlog Progress
+	s.LastSuccessfulBinlogPos = f.BinlogStreamer.lastStreamedBinlogPosition
+	s.BinlogStreamerLag = time.Now().Sub(f.BinlogStreamer.lastProcessedEventTime).Seconds()
+	s.FinalBinlogPos = f.BinlogStreamer.targetBinlogPosition
+
+	// Table Progress
+	serializedState := f.StateTracker.CopyStage.Serialize()
+	s.Tables = make(map[string]TableProgress)
+	targetPKs := make(map[string]uint64)
+	f.DataIterator.targetPKs.Range(func(k, v interface{}) bool {
+		targetPKs[k.(string)] = v.(uint64)
+		return true
+	})
+
+	tables := f.Tables.AsSlice()
+
+	for _, table := range tables {
+		var currentAction string
+		tableName := table.String()
+		lastSuccessfulPK, foundInProgress := serializedState.LastSuccessfulPrimaryKeys[tableName]
+
+		if serializedState.CompletedTables[tableName] {
+			currentAction = TableActionCompleted
+		} else if foundInProgress {
+			currentAction = TableActionCopying
+		} else {
+			currentAction = TableActionWaiting
+		}
+
+		s.Tables[tableName] = TableProgress{
+			LastSuccessfulPK: lastSuccessfulPK,
+			TargetPK:         targetPKs[tableName],
+			CurrentAction:    currentAction,
+		}
+	}
+
+	// ETA
+	var totalPKsToCopy uint64 = 0
+	var completedPKs uint64 = 0
+	estimatedPKsPerSecond := f.StateTracker.CopyStage.EstimatedPKsPerSecond()
+	for _, targetPK := range targetPKs {
+		totalPKsToCopy += targetPK
+	}
+
+	for _, completedPK := range serializedState.LastSuccessfulPrimaryKeys {
+		completedPKs += completedPK
+	}
+
+	s.ETA = (time.Duration(math.Ceil(float64(totalPKsToCopy-completedPKs)/estimatedPKsPerSecond)) * time.Second).Seconds()
+	s.PKsPerSecond = uint64(estimatedPKsPerSecond)
+	s.TimeTaken = time.Now().Sub(f.StartTime).Seconds()
+
+	return s
+}
+
+func (f *Ferry) ReportProgress() {
+	callback := f.Config.ProgressCallback // make a copy as we need to set the Payload.
+	progress := f.Progress()
+	data, err := json.Marshal(progress)
+	if err != nil {
+		f.logger.WithError(err).Error("failed to Marshal progress struct?")
+		return
+	}
+
+	callback.Payload = string(data)
+	err = callback.Post(&http.Client{})
+	if err != nil {
+		f.logger.WithError(err).Warn("failed to post status, but that's probably okay")
+	}
 }
 
 func (f *Ferry) waitUntilAutomaticCutoverIsTrue() {

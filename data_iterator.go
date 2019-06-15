@@ -111,6 +111,10 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 				}
 
 				logger.Debug("table iteration completed")
+
+				// Right now the BatchWriter.WriteRowBatch happens synchronously in
+				// this method. If it ever becomes async, this MarkTableAsCompleted
+				// call MUST be done in WriteRowBatch somehow.
 				d.StateTracker.MarkTableAsCompleted(table.String())
 			}
 		}()

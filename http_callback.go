@@ -34,11 +34,11 @@ func postCallback(client *http.Client, uri string, body interface{}) error {
 	}
 
 	logger := logrus.WithFields(logrus.Fields{
-		"tag": "sharding-http",
+		"tag": "http-callback",
 		"uri": uri,
 	})
 
-	logger.Infof("sending callback")
+	logger.Debug("sending callback")
 
 	res, err := client.Post(uri, "application/json", &buf)
 	if err != nil {

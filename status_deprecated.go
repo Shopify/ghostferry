@@ -10,7 +10,7 @@ import (
 )
 
 // NOTE: This file is only used for the ControlServer for now.
-// TODO: merge this back with the Status object.
+// TODO: eventually merge this into the ControlServer and use the Progress struct.
 
 type TableStatusDeprecated struct {
 	TableName        string
