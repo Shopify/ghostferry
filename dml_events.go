@@ -40,6 +40,7 @@ type DMLEvent interface {
 	Table() string
 	TableSchema() *TableSchema
 	AsSQLString(string, string) (string, error)
+	BuildDMLQuery(string, string) (string, []interface{}, error)
 	OldValues() RowData
 	NewValues() RowData
 	PK() (uint64, error)
@@ -107,6 +108,25 @@ func (e *BinlogInsertEvent) AsSQLString(schemaName, tableName string) (string, e
 	return query, nil
 }
 
+func (e *BinlogInsertEvent) BuildDMLQuery(schemaName, tableName string) (string, []interface{}, error) {
+	args := []interface{}{}
+
+	if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.newValues); err != nil {
+		return "", args, err
+	}
+
+	query := "INSERT IGNORE INTO " +
+		QuotedTableNameFromString(schemaName, tableName) +
+		" (" + strings.Join(quotedColumnNames(e.table), ",") + ")" +
+		" VALUES (" + buildListForPreparedValues(len(e.newValues)) + ")"
+
+	for _, v := range e.newValues {
+		args = append(args, escapeUint64(v))
+	}
+
+	return query, args, nil
+}
+
 func (e *BinlogInsertEvent) PK() (uint64, error) {
 	return pkFromEventData(e.table, e.newValues)
 }
@@ -160,6 +180,30 @@ func (e *BinlogUpdateEvent) AsSQLString(schemaName, tableName string) (string, e
 	return query, nil
 }
 
+func (e *BinlogUpdateEvent) BuildDMLQuery(schemaName, tableName string) (string, []interface{}, error) {
+	args := []interface{}{}
+
+	if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.oldValues, e.newValues); err != nil {
+		return "", args, err
+	}
+
+	query := "UPDATE " + QuotedTableNameFromString(schemaName, tableName) +
+		" SET " + buildStringMapForPreparedSet(e.table.Columns) +
+		" WHERE " + buildStringMapForPreparedWhere(e.table.Columns, e.oldValues)
+
+	for _, v := range e.newValues {
+		args = append(args, escapeUint64(v))
+	}
+	for _, v := range e.oldValues {
+		if isNilValue(v) {
+			continue
+		}
+		args = append(args, escapeUint64(v))
+	}
+
+	return query, args, nil
+}
+
 func (e *BinlogUpdateEvent) PK() (uint64, error) {
 	return pkFromEventData(e.table, e.newValues)
 }
@@ -199,6 +243,26 @@ func (e *BinlogDeleteEvent) AsSQLString(schemaName, tableName string) (string, e
 		" WHERE " + buildStringMapForWhere(e.table.Columns, e.oldValues)
 
 	return query, nil
+}
+
+func (e *BinlogDeleteEvent) BuildDMLQuery(schemaName, tableName string) (string, []interface{}, error) {
+	args := []interface{}{}
+
+	if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.oldValues); err != nil {
+		return "", args, err
+	}
+
+	query := "DELETE FROM " + QuotedTableNameFromString(schemaName, tableName) +
+		" WHERE " + buildStringMapForPreparedWhere(e.table.Columns, e.oldValues)
+
+	for _, v := range e.oldValues {
+		if isNilValue(v) {
+			continue
+		}
+		args = append(args, escapeUint64(v))
+	}
+
+	return query, args, nil
 }
 
 func (e *BinlogDeleteEvent) PK() (uint64, error) {
@@ -286,6 +350,17 @@ func buildStringListForValues(columns []schema.TableColumn, values []interface{}
 	return string(buffer)
 }
 
+func buildListForPreparedValues(length int) string {
+	var result string
+	for i := 0; i < length; i++ {
+		if i > 0 {
+			result += ","
+		}
+		result += "?"
+	}
+	return result
+}
+
 func buildStringMapForWhere(columns []schema.TableColumn, values []interface{}) string {
 	var buffer []byte
 
@@ -308,6 +383,25 @@ func buildStringMapForWhere(columns []schema.TableColumn, values []interface{}) 
 	return string(buffer)
 }
 
+func buildStringMapForPreparedWhere(columns []schema.TableColumn, values []interface{}) string {
+	var result string
+
+	for i, column := range columns {
+		if i > 0 {
+			result += " AND "
+		}
+		result += quoteField(column.Name)
+
+		if isNilValue(values[i]) {
+			// "WHERE value = NULL" will never match rows.
+			result += " IS NULL"
+		} else {
+			result += "=?"
+		}
+	}
+	return result
+}
+
 func buildStringMapForSet(columns []schema.TableColumn, values []interface{}) string {
 	var buffer []byte
 
@@ -324,6 +418,19 @@ func buildStringMapForSet(columns []schema.TableColumn, values []interface{}) st
 	return string(buffer)
 }
 
+func buildStringMapForPreparedSet(columns []schema.TableColumn) string {
+	var result string
+
+	for i, column := range columns {
+		if i > 0 {
+			result += ","
+		}
+		result += quoteField(column.Name)
+		result += "=?"
+	}
+	return result
+}
+
 func isNilValue(value interface{}) bool {
 	if value == nil {
 		return true
@@ -331,6 +438,15 @@ func isNilValue(value interface{}) bool {
 		return true
 	}
 	return false
+}
+
+func escapeUint64(value interface{}) interface{} {
+	switch v := value.(type) {
+	case uint64:
+		return strconv.FormatUint(v, 10)
+	default:
+		return value
+	}
 }
 
 func appendEscapedValue(buffer []byte, value interface{}, column schema.TableColumn) []byte {
