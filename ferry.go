@@ -680,7 +680,7 @@ func (f *Ferry) checkConnectionForBinlogFormat(db *sql.DB) error {
 		return fmt.Errorf("binlog_format must be ROW, not %s", value)
 	}
 
-	if !f.SkipBinlogRowImageCheck {
+	if !f.Config.SkipBinlogRowImageCheck {
 		row = db.QueryRow("SHOW VARIABLES LIKE 'binlog_row_image'")
 		err = row.Scan(&name, &value)
 		if err != nil {
