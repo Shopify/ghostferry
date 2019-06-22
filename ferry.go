@@ -680,18 +680,15 @@ func (f *Ferry) checkConnectionForBinlogFormat(db *sql.DB) error {
 		return fmt.Errorf("binlog_format must be ROW, not %s", value)
 	}
 
-	row = db.QueryRow("SHOW VARIABLES LIKE 'binlog_row_image'")
-	err = row.Scan(&name, &value)
-	if err == sql.ErrNoRows {
-		f.logger.Warning("binlog_row_image not found, indicating old version and default to FULL!")
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-
-	if strings.ToUpper(value) != "FULL" {
-		return fmt.Errorf("binlog_row_image must be FULL, not %s", value)
+	if !f.SkipBinlogRowImageCheck {
+		row = db.QueryRow("SHOW VARIABLES LIKE 'binlog_row_image'")
+		err = row.Scan(&name, &value)
+		if err != nil {
+			return err
+		}
+		if strings.ToUpper(value) != "FULL" {
+			return fmt.Errorf("binlog_row_image must be FULL, not %s", value)
+		}
 	}
 
 	return nil
