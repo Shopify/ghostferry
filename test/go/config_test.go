@@ -18,13 +18,13 @@ type ConfigTestSuite struct {
 
 func (this *ConfigTestSuite) SetupTest() {
 	this.config = ghostferry.Config{
-		Source: ghostferry.DatabaseConfig{
+		Source: &ghostferry.DatabaseConfig{
 			Host: "example.com/host",
 			Port: 3306,
 			User: "ghostferry",
 		},
 
-		Target: ghostferry.DatabaseConfig{
+		Target: &ghostferry.DatabaseConfig{
 			Host: "example.com/target",
 			Port: 3306,
 			User: "ghostferry",

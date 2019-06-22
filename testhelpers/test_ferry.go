@@ -28,7 +28,7 @@ var (
 
 func NewTestConfig() *ghostferry.Config {
 	config := &ghostferry.Config{
-		Source: ghostferry.DatabaseConfig{
+		Source: &ghostferry.DatabaseConfig{
 			Host:      "127.0.0.1",
 			Port:      uint16(TestSourcePort),
 			User:      "root",
@@ -39,7 +39,7 @@ func NewTestConfig() *ghostferry.Config {
 			},
 		},
 
-		Target: ghostferry.DatabaseConfig{
+		Target: &ghostferry.DatabaseConfig{
 			Host:      "127.0.0.1",
 			Port:      uint16(TestTargetPort),
 			User:      "root",

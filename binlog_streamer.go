@@ -16,7 +16,7 @@ const caughtUpThreshold = 10 * time.Second
 
 type BinlogStreamer struct {
 	DB           *sql.DB
-	DBConfig     DatabaseConfig
+	DBConfig     *DatabaseConfig
 	MyServerId   uint32
 	ErrorHandler ErrorHandler
 	Filter       CopyFilter

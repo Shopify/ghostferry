@@ -300,7 +300,7 @@ func (r *ShardingFerry) initializeWaitUntilReplicaIsCaughtUpToMasterConnection()
 	return nil
 }
 
-func (r *ShardingFerry) dbConfigIsForReplica(dbConfig ghostferry.DatabaseConfig) (bool, error) {
+func (r *ShardingFerry) dbConfigIsForReplica(dbConfig *ghostferry.DatabaseConfig) (bool, error) {
 	conn, err := dbConfig.SqlDB(r.logger)
 	defer conn.Close()
 	if err != nil {

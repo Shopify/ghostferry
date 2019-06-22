@@ -58,7 +58,7 @@ type DatabaseConfig struct {
 	TLS *TLSConfig
 }
 
-func (c DatabaseConfig) MySQLConfig() (*mysql.Config, error) {
+func (c *DatabaseConfig) MySQLConfig() (*mysql.Config, error) {
 	cfg := &mysql.Config{
 		User:      c.User,
 		Passwd:    c.Pass,
@@ -115,7 +115,7 @@ func (c *DatabaseConfig) Validate() error {
 	return nil
 }
 
-func (c DatabaseConfig) SqlDB(logger *logrus.Entry) (*sql.DB, error) {
+func (c *DatabaseConfig) SqlDB(logger *logrus.Entry) (*sql.DB, error) {
 	dbCfg, err := c.MySQLConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build database config: %s", err)
@@ -193,12 +193,12 @@ type Config struct {
 	// Source database connection configuration
 	//
 	// Required
-	Source DatabaseConfig
+	Source *DatabaseConfig
 
 	// Target database connection configuration
 	//
 	// Required
-	Target DatabaseConfig
+	Target *DatabaseConfig
 
 	// Map database name on the source database (key of the map) to a
 	// different name on the target database (value of the associated key).
