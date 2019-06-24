@@ -98,8 +98,9 @@ func (f *Ferry) NewDataIterator() *DataIterator {
 			DB:        f.SourceDB,
 			Throttler: f.Throttler,
 
-			BatchSize:   f.Config.DataIterationBatchSize,
-			ReadRetries: f.Config.DBReadRetries,
+			BatchSize:         f.Config.DataIterationBatchSize,
+			ReadRetries:       f.Config.DBReadRetries,
+			SelectFingerprint: f.Config.VerifierType == VerifierTypeInline,
 		},
 		StateTracker: f.StateTracker.CopyStage,
 	}
@@ -185,6 +186,19 @@ func (f *Ferry) NewChecksumTableVerifier() *ChecksumTableVerifier {
 		DatabaseRewrites: f.Config.DatabaseRewrites,
 		TableRewrites:    f.Config.TableRewrites,
 		Tables:           f.Tables.AsSlice(),
+	}
+}
+
+func (f *Ferry) NewInlineVerifier() *InlineVerifier {
+	f.ensureInitialized()
+
+	return &InlineVerifier{
+		SourceDB: f.SourceDB,
+		TargetDB: f.TargetDB,
+
+		sourceStmtCache: NewStmtCache(),
+		targetStmtCache: NewStmtCache(),
+		logger:          logrus.WithField("tag", "inline-verifier"),
 	}
 }
 
@@ -411,6 +425,8 @@ func (f *Ferry) Initialize() (err error) {
 			}
 		case VerifierTypeChecksumTable:
 			f.Verifier = f.NewChecksumTableVerifier()
+		case VerifierTypeInline:
+			f.Verifier = f.NewInlineVerifier()
 		case VerifierTypeNoVerification:
 			// skip
 		default:

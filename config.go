@@ -16,6 +16,7 @@ import (
 const (
 	VerifierTypeChecksumTable  = "ChecksumTable"
 	VerifierTypeIterative      = "Iterative"
+	VerifierTypeInline         = "Inline"
 	VerifierTypeNoVerification = "NoVerification"
 )
 

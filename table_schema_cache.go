@@ -3,6 +3,7 @@ package ghostferry
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/siddontang/go-mysql/schema"
@@ -34,6 +35,57 @@ type TableSchema struct {
 	*schema.Table
 
 	CompressedColumns map[string]string // Map of column name => compression type
+
+	rowMd5Query string
+}
+
+// This query returns the MD5 hash for a row on this table. This query is valid
+// for both the source and the target shard.
+//
+// Any compressed columns specified via CompressedColumns are excluded in
+// this checksum and the raw data is returned directly.
+//
+// Note that the MD5 hash should consists of at least 1 column: the pk column.
+// This is to say that there should never be a case where the MD5 hash is
+// derived from an empty string.
+func (t *TableSchema) FingerprintQuery(schemaName, tableName string, numRows int) string {
+	columnsToSelect := make([]string, 2+len(t.CompressedColumns))
+	columnsToSelect[0] = quoteField(t.GetPKColumn(0).Name)
+	columnsToSelect[1] = t.RowMd5Query()
+	i := 2
+	for columnName, _ := range t.CompressedColumns {
+		columnsToSelect[i] = columnName
+		i += 1
+	}
+
+	return fmt.Sprintf(
+		"SELECT %s FROM %s WHERE %s IN (%s)",
+		strings.Join(columnsToSelect, ","),
+		QuotedTableNameFromString(schemaName, tableName),
+		columnsToSelect[0],
+		strings.Repeat("?,", numRows-1)+"?",
+	)
+}
+
+func (t *TableSchema) RowMd5Query() string {
+	if t.rowMd5Query != "" {
+		return t.rowMd5Query
+	}
+
+	columns := make([]schema.TableColumn, 0, len(t.Columns))
+	for _, column := range t.Columns {
+		if _, exists := t.CompressedColumns[column.Name]; !exists {
+			columns = append(columns, column)
+		}
+	}
+
+	hashStrs := make([]string, len(columns))
+	for i, column := range columns {
+		hashStrs[i] = fmt.Sprintf("MD5(COALESCE(%s, 'NULL'))", normalizeAndQuoteColumn(column))
+	}
+
+	t.rowMd5Query = fmt.Sprintf("MD5(CONCAT(%s)) AS __ghostferry_row_md5", strings.Join(hashStrs, ","))
+	return t.rowMd5Query
 }
 
 type TableSchemaCache map[string]*TableSchema

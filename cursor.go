@@ -33,10 +33,11 @@ type CursorConfig struct {
 	DB        *sql.DB
 	Throttler Throttler
 
-	ColumnsToSelect []string
-	BuildSelect     func([]string, *TableSchema, uint64, uint64) (squirrel.SelectBuilder, error)
-	BatchSize       uint64
-	ReadRetries     int
+	ColumnsToSelect   []string
+	BuildSelect       func([]string, *TableSchema, uint64, uint64) (squirrel.SelectBuilder, error)
+	BatchSize         uint64
+	ReadRetries       int
+	SelectFingerprint bool
 }
 
 // returns a new Cursor with an embedded copy of itself
