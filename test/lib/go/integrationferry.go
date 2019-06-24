@@ -246,6 +246,19 @@ func main() {
 		config.VerifierType = verifierType
 	}
 
+	// This is currently a hack to customize the Ghostferry configuration.
+	// TODO: allow Ghostferry config to be specified by the ruby test directly.
+	compressedDataColumn := os.Getenv("GHOSTFERRY_DATA_COLUMN_SNAPPY")
+	if compressedDataColumn != "" {
+		config.ColumnCompressionConfig = map[string]map[string]map[string]string{
+			"gftest": map[string]map[string]string{
+				"test_table_1": map[string]string{
+					"data": "SNAPPY",
+				},
+			},
+		}
+	}
+
 	f := &IntegrationFerry{
 		Ferry: &ghostferry.Ferry{
 			Config: config,

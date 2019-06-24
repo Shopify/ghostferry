@@ -8,8 +8,9 @@ import (
 )
 
 type BatchWriter struct {
-	DB           *sql.DB
-	StateTracker *CopyStateTracker
+	DB             *sql.DB
+	InlineVerifier *InlineVerifier
+	StateTracker   *CopyStateTracker
 
 	DatabaseRewrites map[string]string
 	TableRewrites    map[string]string
@@ -62,9 +63,34 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 			return fmt.Errorf("during prepare query near pk %v -> %v (%s): %v", startPkpos, endPkpos, query, err)
 		}
 
-		_, err = stmt.Exec(args...)
+		tx, err := w.DB.Begin()
 		if err != nil {
+			return fmt.Errorf("unable to begin transaction in BatchWriter: %v", err)
+		}
+
+		_, err = tx.Stmt(stmt).Exec(args...)
+		if err != nil {
+			tx.Rollback()
 			return fmt.Errorf("during exec query near pk %v -> %v (%s): %v", startPkpos, endPkpos, query, err)
+		}
+
+		if w.InlineVerifier != nil {
+			mismatches, err := w.InlineVerifier.CheckFingerprintInline(tx, db, table, batch)
+			if err != nil {
+				tx.Rollback()
+				return fmt.Errorf("during fingerprint checking for pk %v -> %v (%s): %v", startPkpos, endPkpos, query, err)
+			}
+
+			if len(mismatches) > 0 {
+				tx.Rollback()
+				return fmt.Errorf("row fingerprints for pks %v do not match", mismatches)
+			}
+		}
+
+		err = tx.Commit()
+		if err != nil {
+			tx.Rollback()
+			return fmt.Errorf("during commit near pk %v -> %v (%s): %v", startPkpos, endPkpos, query, err)
 		}
 
 		// Note that the state tracker expects us the track based on the original

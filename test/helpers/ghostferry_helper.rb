@@ -221,6 +221,10 @@ module GhostferryHelper
           environment["GHOSTFERRY_VERIFIER_TYPE"] = @config[:verifier_type]
         end
 
+        if @config[:compressed_data]
+          environment["GHOSTFERRY_DATA_COLUMN_SNAPPY"] = "1"
+        end
+
         @logger.info("starting ghostferry test binary #{@compiled_binary_path}")
         Open3.popen3(environment, @compiled_binary_path) do |stdin, stdout, stderr, wait_thr|
           stdin.puts(resuming_state) unless resuming_state.nil?
