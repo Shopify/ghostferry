@@ -287,6 +287,12 @@ type Config struct {
 	ServerBindAddr string
 	WebBasedir     string
 
+	// Report progress via an HTTP callback. The Payload field of the callback
+	// will be sent to the server as the CustomPayload field in the Progress
+	// struct The unit of ProgressReportFrequency is in milliseconds.
+	ProgressCallback        HTTPCallback
+	ProgressReportFrequency int
+
 	// The state to resume from as dumped by the PanicErrorHandler.
 	// If this is null, a new Ghostferry run will be started. Otherwise, the
 	// reconciliation process will start and Ghostferry will resume after that.

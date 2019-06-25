@@ -108,7 +108,7 @@ module DbHelper
     # Create some holes in the data.
     delete_statement = source_db.prepare("DELETE FROM #{full_table_name(DEFAULT_DB, DEFAULT_TABLE)} WHERE id = ?")
     140.times do
-      delete_statement.execute(Random.rand(max_id) + 1)
+      delete_statement.execute(Random.rand(max_id))
     end
 
     # Setup the target database with no data but the correct schema.

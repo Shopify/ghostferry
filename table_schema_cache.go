@@ -16,6 +16,19 @@ var ignoredDatabases = map[string]bool{
 	"sys":                true,
 }
 
+// A comparable and lightweight type that stores the schema and table name.
+type TableIdentifier struct {
+	SchemaName string
+	TableName  string
+}
+
+func NewTableIdentifierFromSchemaTable(table *TableSchema) TableIdentifier {
+	return TableIdentifier{
+		SchemaName: table.Schema,
+		TableName:  table.Name,
+	}
+}
+
 // This is a wrapper on schema.Table with some custom information we need.
 type TableSchema struct {
 	*schema.Table

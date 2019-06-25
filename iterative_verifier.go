@@ -16,19 +16,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// A comparable and lightweight type that stores the schema and table name.
-type TableIdentifier struct {
-	SchemaName string
-	TableName  string
-}
-
-func NewTableIdentifierFromSchemaTable(table *TableSchema) TableIdentifier {
-	return TableIdentifier{
-		SchemaName: table.Schema,
-		TableName:  table.Name,
-	}
-}
-
 type ReverifyBatch struct {
 	Pks   []uint64
 	Table TableIdentifier

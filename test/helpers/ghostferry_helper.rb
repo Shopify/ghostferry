@@ -62,6 +62,7 @@ module GhostferryHelper
       @message_timeout = message_timeout
 
       @status_handlers = {}
+      @callback_handlers = {}
 
       @server_thread = nil
       @server_watchdog_thread = nil
@@ -178,6 +179,20 @@ module GhostferryHelper
         end
       end
 
+      @server.mount_proc "/callbacks/progress" do |req, resp|
+        begin
+          unless req.body
+            @server_last_error = ArgumentError.new("Ghostferry is improperly implemented and did not send data")
+            resp.status = 400
+            @server.shutdown
+          end
+
+          data = JSON.parse(JSON.parse(req.body)["Payload"])
+          @callback_handlers["progress"].each { |f| f.call(data) } unless @callback_handlers["progress"].nil?
+        rescue StandardError => e
+        end
+      end
+
       @server_thread = Thread.new do
         @logger.info("starting server thread")
         @server.start
@@ -265,10 +280,19 @@ module GhostferryHelper
     # Utility methods #
     ###################
 
+    # TODO: eventually we should merge status and callback into a callback
+    # system within Ghostferry. Right now the "status" is sent by
+    # integrationferry, where as callback is sent by the Ghostferry library.
     def on_status(status, &block)
       raise "must specify a block" unless block_given?
       @status_handlers[status] ||= []
       @status_handlers[status] << block
+    end
+
+    def on_callback(callback, &block)
+      raise "must specify a block" unless block_given?
+      @callback_handlers[callback] ||= []
+      @callback_handlers[callback] << block
     end
 
     def send_signal(signal)
