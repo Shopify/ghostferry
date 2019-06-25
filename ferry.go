@@ -73,8 +73,7 @@ type Ferry struct {
 	// If VerifierType is specified and this is nil on Ferry initialization, a
 	// Verifier will be created by Initialize. If an IterativeVerifier is to be
 	// created, IterativeVerifierConfig will be used to create the verifier.
-	Verifier       Verifier
-	inlineVerifier *InlineVerifier
+	Verifier Verifier
 
 	Tables TableSchemaCache
 
@@ -159,9 +158,8 @@ func (f *Ferry) NewBatchWriter() *BatchWriter {
 	f.ensureInitialized()
 
 	batchWriter := &BatchWriter{
-		DB:             f.TargetDB,
-		InlineVerifier: f.inlineVerifier,
-		StateTracker:   f.StateTracker.CopyStage,
+		DB:           f.TargetDB,
+		StateTracker: f.StateTracker.CopyStage,
 
 		DatabaseRewrites: f.Config.DatabaseRewrites,
 		TableRewrites:    f.Config.TableRewrites,
@@ -412,6 +410,9 @@ func (f *Ferry) Initialize() (err error) {
 	// The iterative verifier needs the binlog streamer so this has to be first.
 	// Eventually this can be moved below the verifier initialization.
 	f.BinlogStreamer = f.NewBinlogStreamer()
+	f.BinlogWriter = f.NewBinlogWriter()
+	f.DataIterator = f.NewDataIterator()
+	f.BatchWriter = f.NewBatchWriter()
 
 	if f.Config.VerifierType != "" {
 		if f.Verifier != nil {
@@ -427,27 +428,18 @@ func (f *Ferry) Initialize() (err error) {
 		case VerifierTypeChecksumTable:
 			f.Verifier = f.NewChecksumTableVerifier()
 		case VerifierTypeInline:
-			// need a private copy as the BatchWriter and the Reverifier will
-			// need this.
-			//
-			// In the future, the inlineVerifier might be an "always on" component,
-			// so f.Verifier can be set to the checksum table verifier.
-			f.inlineVerifier = f.NewInlineVerifier()
-			f.Verifier = f.inlineVerifier
+			inlineVerifier := f.NewInlineVerifier()
+			f.Verifier = inlineVerifier
+
+			// TODO: eventually we should have the inlineVerifier as an "always on"
+			// component. That will allow us to remove this line.
+			f.BatchWriter.InlineVerifier = inlineVerifier
 		case VerifierTypeNoVerification:
 			// skip
 		default:
 			return fmt.Errorf("'%s' is not a known VerifierType", f.Config.VerifierType)
 		}
 	}
-
-	// TODO: evaluate if this is the best strategy. Maybe we should always
-	// initialize the InlineVerifier even now.
-	// Since the InlineVerifier is passed to some components, the components are
-	// initialized after the verifiers.
-	f.BinlogWriter = f.NewBinlogWriter()
-	f.DataIterator = f.NewDataIterator()
-	f.BatchWriter = f.NewBatchWriter()
 
 	f.logger.Info("ferry initialized")
 	return nil

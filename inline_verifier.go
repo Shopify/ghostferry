@@ -48,22 +48,22 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetDb, targetTabl
 	table := sourceBatch.TableSchema()
 
 	fingerprintQuery := table.FingerprintQuery(targetDb, targetTable, sourceBatch.Size())
-	stmt, err := v.targetStmtCache.StmtFor(v.TargetDB, fingerprintQuery)
+	fingerprintStmt, err := v.targetStmtCache.StmtFor(v.TargetDB, fingerprintQuery)
 	if err != nil {
 		return nil, err
 	}
 
-	args := make([]interface{}, len(sourceBatch.Values()))
+	pks := make([]interface{}, len(sourceBatch.Values()))
 	for i, row := range sourceBatch.Values() {
 		pk, err := row.GetUint64(sourceBatch.PkIndex())
 		if err != nil {
 			return nil, err
 		}
 
-		args[i] = pk
+		pks[i] = pk
 	}
 
-	rows, err := tx.Stmt(stmt).Query(args...)
+	rows, err := tx.Stmt(fingerprintStmt).Query(pks...)
 	if err != nil {
 		return nil, err
 	}

@@ -11,7 +11,7 @@ class InlineVerifierTest < GhostferryTestCase
     seed_random_data(source_db, number_of_rows: 3)
     seed_random_data(target_db, number_of_rows: 0)
 
-    result = source_db.query("SELECT id FROM #{DEFAULT_FULL_TABLE_NAME} LIMIT 1")
+    result = source_db.query("SELECT id FROM #{DEFAULT_FULL_TABLE_NAME} ORDER BY RAND() LIMIT 1")
     corrupting_id = result.first["id"]
 
     enable_corrupting_insert_trigger(corrupting_id)
