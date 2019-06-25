@@ -72,7 +72,7 @@ func (t *PauserThrottler) Run(ctx context.Context) error {
 }
 
 type LagThrottlerConfig struct {
-	Connection     DatabaseConfig
+	Connection     *DatabaseConfig
 	MaxLag         int
 	Query          string
 	UpdateInterval string

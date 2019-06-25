@@ -100,7 +100,7 @@ func TestThrottlerMultipleServerIDs(t *testing.T) {
 }
 
 func TestNewThrottlerConfigErrors(t *testing.T) {
-	connConfig := ghostferry.DatabaseConfig{
+	connConfig := &ghostferry.DatabaseConfig{
 		Host: "foo",
 		Port: 42,
 		User: "hunter2",

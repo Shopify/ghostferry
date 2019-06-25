@@ -51,7 +51,7 @@ type Config struct {
 	// This is the configuration to connect to the master writer of the source DB.
 	// This is only used if the source db is a replica and RunFerryFromReplica
 	// is on.
-	SourceReplicationMaster ghostferry.DatabaseConfig
+	SourceReplicationMaster *ghostferry.DatabaseConfig
 
 	// This is the SQL query used to read the position of the master binlog that
 	// has been replicated to the Source. As an example, you can query the

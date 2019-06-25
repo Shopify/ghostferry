@@ -170,7 +170,7 @@ func (f *IntegrationFerry) Main() error {
 
 func NewStandardConfig() (*ghostferry.Config, error) {
 	config := &ghostferry.Config{
-		Source: ghostferry.DatabaseConfig{
+		Source: &ghostferry.DatabaseConfig{
 			Host:      "127.0.0.1",
 			Port:      uint16(29291),
 			User:      "root",
@@ -181,7 +181,7 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 			},
 		},
 
-		Target: ghostferry.DatabaseConfig{
+		Target: &ghostferry.DatabaseConfig{
 			Host:      "127.0.0.1",
 			Port:      uint16(29292),
 			User:      "root",

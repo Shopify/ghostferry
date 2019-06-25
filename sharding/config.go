@@ -12,7 +12,7 @@ type Config struct {
 	SourceDB      string
 	TargetDB      string
 
-	SourceReplicationMaster       ghostferry.DatabaseConfig
+	SourceReplicationMaster       *ghostferry.DatabaseConfig
 	ReplicatedMasterPositionQuery string
 	RunFerryFromReplica           bool
 
