@@ -310,6 +310,10 @@ type Config struct {
 	// Only useful if VerifierType == Iterative.
 	// This specifies the configurations to the IterativeVerifier.
 	IterativeVerifierConfig IterativeVerifierConfig
+
+	// For old versions mysql<5.6.2, MariaDB<10.1.6 which has no related var
+	// Make sure you have binlog_row_image=FULL when turning on this
+	SkipBinlogRowImageCheck bool
 }
 
 func (c *Config) ValidateConfig() error {
