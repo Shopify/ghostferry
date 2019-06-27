@@ -85,11 +85,13 @@ class GhostferryTestCase < Minitest::Test
     assert_equal(
       source[DEFAULT_FULL_TABLE_NAME][:row_count],
       target[DEFAULT_FULL_TABLE_NAME][:row_count],
+      "source and target row count don't match",
     )
 
     assert_equal(
       source[DEFAULT_FULL_TABLE_NAME][:checksum],
       target[DEFAULT_FULL_TABLE_NAME][:checksum],
+      "source and target checksum don't match",
     )
   end
 
