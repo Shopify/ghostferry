@@ -73,7 +73,8 @@ type Ferry struct {
 	// If VerifierType is specified and this is nil on Ferry initialization, a
 	// Verifier will be created by Initialize. If an IterativeVerifier is to be
 	// created, IterativeVerifierConfig will be used to create the verifier.
-	Verifier Verifier
+	Verifier       Verifier
+	inlineVerifier *InlineVerifier
 
 	Tables TableSchemaCache
 
@@ -189,17 +190,38 @@ func (f *Ferry) NewChecksumTableVerifier() *ChecksumTableVerifier {
 	}
 }
 
-func (f *Ferry) NewInlineVerifier() *InlineVerifier {
+func (f *Ferry) NewInlineVerifier() (*InlineVerifier, error) {
 	f.ensureInitialized()
 
-	return &InlineVerifier{
-		SourceDB: f.SourceDB,
-		TargetDB: f.TargetDB,
-
-		sourceStmtCache: NewStmtCache(),
-		targetStmtCache: NewStmtCache(),
-		logger:          logrus.WithField("tag", "inline-verifier"),
+	var maxExpectedDowntime time.Duration
+	var err error
+	if f.Config.IterativeVerifierConfig.MaxExpectedDowntime != "" {
+		maxExpectedDowntime, err = time.ParseDuration(f.Config.IterativeVerifierConfig.MaxExpectedDowntime)
+		if err != nil {
+			return nil, fmt.Errorf("invalid MaxExpectedDowntime: %v. this error should have been caught via .Validate()", err)
+		}
 	}
+
+	return &InlineVerifier{
+		SourceDB:                   f.SourceDB,
+		TargetDB:                   f.TargetDB,
+		DatabaseRewrites:           f.Config.DatabaseRewrites,
+		TableRewrites:              f.Config.TableRewrites,
+		TableSchemaCache:           f.Tables,
+		BatchSize:                  f.Config.BinlogEventBatchSize,
+		Concurrency:                4,               // TODO: make this configurable
+		VerifyBinlogEventsInterval: 1 * time.Second, // TODO: make this configurable
+		FinalReverifyMaxIterations: 30,
+		MaxExpectedDowntime:        maxExpectedDowntime,
+
+		ErrorHandler: f.ErrorHandler,
+
+		reverifyStore:         NewBinlogVerifyStore(),
+		periodicVerifyStopped: false,
+		sourceStmtCache:       NewStmtCache(),
+		targetStmtCache:       NewStmtCache(),
+		logger:                logrus.WithField("tag", "inline-verifier"),
+	}, nil
 }
 
 func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
@@ -428,12 +450,15 @@ func (f *Ferry) Initialize() (err error) {
 		case VerifierTypeChecksumTable:
 			f.Verifier = f.NewChecksumTableVerifier()
 		case VerifierTypeInline:
-			inlineVerifier := f.NewInlineVerifier()
-			f.Verifier = inlineVerifier
+			f.inlineVerifier, err = f.NewInlineVerifier()
+			if err != nil {
+				return err
+			}
+			f.Verifier = f.inlineVerifier
 
 			// TODO: eventually we should have the inlineVerifier as an "always on"
 			// component. That will allow us to remove this line.
-			f.BatchWriter.InlineVerifier = inlineVerifier
+			f.BatchWriter.InlineVerifier = f.inlineVerifier
 		case VerifierTypeNoVerification:
 			// skip
 		default:
@@ -460,6 +485,10 @@ func (f *Ferry) Start() error {
 	// and after the data gets written to the target database.
 	f.BinlogStreamer.AddEventListener(f.BinlogWriter.BufferBinlogEvents)
 	f.DataIterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
+
+	if f.inlineVerifier != nil {
+		f.BinlogStreamer.AddEventListener(f.inlineVerifier.binlogEventListener)
+	}
 
 	// The starting binlog coordinates must be determined first. If it is
 	// determined after the DataIterator starts, the DataIterator might
@@ -541,6 +570,15 @@ func (f *Ferry) Run() {
 		}()
 	}
 
+	inlineVerifierWg := &sync.WaitGroup{}
+	if f.inlineVerifier != nil {
+		inlineVerifierWg.Add(1)
+		go func() {
+			defer inlineVerifierWg.Done()
+			f.inlineVerifier.PeriodicallyVerifyBinlogEvents()
+		}()
+	}
+
 	binlogWg := &sync.WaitGroup{}
 	binlogWg.Add(2)
 
@@ -565,6 +603,11 @@ func (f *Ferry) Run() {
 	}()
 
 	dataIteratorWg.Wait()
+
+	if f.inlineVerifier != nil {
+		f.inlineVerifier.StopPeriodicallyVerifyBinlogEvents()
+		inlineVerifierWg.Wait()
+	}
 
 	if f.Verifier != nil {
 		f.logger.Info("calling VerifyBeforeCutover")
