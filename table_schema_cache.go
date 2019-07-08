@@ -54,7 +54,7 @@ func (t *TableSchema) FingerprintQuery(schemaName, tableName string, numRows int
 	columnsToSelect[1] = t.RowMd5Query()
 	i := 2
 	for columnName, _ := range t.CompressedColumns {
-		columnsToSelect[i] = columnName
+		columnsToSelect[i] = quoteField(columnName)
 		i += 1
 	}
 

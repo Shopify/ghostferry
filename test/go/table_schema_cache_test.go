@@ -137,6 +137,29 @@ func (this *TableSchemaCacheTestSuite) TestAsSliceEmpty() {
 	this.Require().Nil(tables.AsSlice())
 }
 
+func (this *TableSchemaCacheTestSuite) TestFingerprintQuery() {
+	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil)
+	this.Require().Nil(err)
+
+	table := tables.AsSlice()[0]
+	query := table.FingerprintQuery("s", "t", 10)
+	this.Require().Equal("SELECT `id`,MD5(CONCAT(MD5(COALESCE(`id`, 'NULL')),MD5(COALESCE(`data`, 'NULL')))) AS __ghostferry_row_md5 FROM `s`.`t` WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
+
+	table = tables.AsSlice()[1]
+	table.CompressedColumns = map[string]string{"data": "SNAPPY"}
+	query = table.FingerprintQuery("s", "t", 10)
+	this.Require().Equal("SELECT `id`,MD5(CONCAT(MD5(COALESCE(`id`, 'NULL')))) AS __ghostferry_row_md5,`data` FROM `s`.`t` WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
+}
+
+func (this *TableSchemaCacheTestSuite) TestTableRowMd5Query() {
+	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil)
+	this.Require().Nil(err)
+
+	table := tables.AsSlice()[0]
+	query := table.RowMd5Query()
+	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`id`, 'NULL')),MD5(COALESCE(`data`, 'NULL')))) AS __ghostferry_row_md5", query)
+}
+
 func (this *TableSchemaCacheTestSuite) TestQuotedTableName() {
 	table := &ghostferry.TableSchema{
 		Table: &sqlSchema.Table{
