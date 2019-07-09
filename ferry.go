@@ -90,8 +90,9 @@ func (f *Ferry) NewDataIterator() *DataIterator {
 	f.ensureInitialized()
 
 	dataIterator := &DataIterator{
-		DB:          f.SourceDB,
-		Concurrency: f.Config.DataIterationConcurrency,
+		DB:                f.SourceDB,
+		Concurrency:       f.Config.DataIterationConcurrency,
+		SelectFingerprint: f.Config.VerifierType == VerifierTypeInline,
 
 		ErrorHandler: f.ErrorHandler,
 		CursorConfig: &CursorConfig{
@@ -185,6 +186,19 @@ func (f *Ferry) NewChecksumTableVerifier() *ChecksumTableVerifier {
 		DatabaseRewrites: f.Config.DatabaseRewrites,
 		TableRewrites:    f.Config.TableRewrites,
 		Tables:           f.Tables.AsSlice(),
+	}
+}
+
+func (f *Ferry) NewInlineVerifier() *InlineVerifier {
+	f.ensureInitialized()
+
+	return &InlineVerifier{
+		SourceDB: f.SourceDB,
+		TargetDB: f.TargetDB,
+
+		sourceStmtCache: NewStmtCache(),
+		targetStmtCache: NewStmtCache(),
+		logger:          logrus.WithField("tag", "inline-verifier"),
 	}
 }
 
@@ -384,7 +398,7 @@ func (f *Ferry) Initialize() (err error) {
 	// changed.
 	if f.StateToResumeFrom == nil || f.StateToResumeFrom.LastKnownTableSchemaCache == nil {
 		metrics.Measure("LoadTables", nil, 1.0, func() {
-			f.Tables, err = LoadTables(f.SourceDB, f.TableFilter)
+			f.Tables, err = LoadTables(f.SourceDB, f.TableFilter, f.ColumnCompressionConfig)
 		})
 		if err != nil {
 			return err
@@ -393,6 +407,8 @@ func (f *Ferry) Initialize() (err error) {
 		f.Tables = f.StateToResumeFrom.LastKnownTableSchemaCache
 	}
 
+	// The iterative verifier needs the binlog streamer so this has to be first.
+	// Eventually this can be moved below the verifier initialization.
 	f.BinlogStreamer = f.NewBinlogStreamer()
 	f.BinlogWriter = f.NewBinlogWriter()
 	f.DataIterator = f.NewDataIterator()
@@ -411,6 +427,13 @@ func (f *Ferry) Initialize() (err error) {
 			}
 		case VerifierTypeChecksumTable:
 			f.Verifier = f.NewChecksumTableVerifier()
+		case VerifierTypeInline:
+			inlineVerifier := f.NewInlineVerifier()
+			f.Verifier = inlineVerifier
+
+			// TODO: eventually we should have the inlineVerifier as an "always on"
+			// component. That will allow us to remove this line.
+			f.BatchWriter.InlineVerifier = inlineVerifier
 		case VerifierTypeNoVerification:
 			// skip
 		default:

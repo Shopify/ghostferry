@@ -236,7 +236,11 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, pkpos uint64, err error
 		}
 	}
 
-	batch = NewRowBatch(c.Table, batchData, pkIndex)
+	batch = &RowBatch{
+		values:  batchData,
+		pkIndex: pkIndex,
+		table:   c.Table,
+	}
 
 	logger.Debugf("found %d rows", batch.Size())
 

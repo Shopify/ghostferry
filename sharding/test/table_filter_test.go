@@ -34,18 +34,18 @@ func TestShardedTableFilterRejectsIgnoredTables(t *testing.T) {
 	}
 
 	tables := []*ghostferry.TableSchema{
-		{&schema.Table{Schema: "shard_42", Name: "_table_name_new", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}, nil},
-		{&schema.Table{Schema: "shard_42", Name: "_table_name_old", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}, nil},
-		{&schema.Table{Schema: "shard_42", Name: "_table_name_gho", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}, nil},
-		{&schema.Table{Schema: "shard_42", Name: "lhma_1234_table_name", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}, nil},
-		{&schema.Table{Schema: "shard_42", Name: "lhmn_1234_table_name", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}, nil},
-		{&schema.Table{Schema: "shard_42", Name: "new", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}, nil},
-		{&schema.Table{Schema: "shard_42", Name: "old", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}, nil},
-		{&schema.Table{Schema: "shard_42", Name: "table_new", Columns: []schema.TableColumn{{Name: "foo"}, {Name: "tenant_id"}}}, nil},
-		{&schema.Table{Schema: "shard_42", Name: "ghost", Columns: []schema.TableColumn{{Name: "foo"}, {Name: "tenant_id"}}}, nil},
-		{&schema.Table{Schema: "shard_42", Name: "lhm_test", Columns: []schema.TableColumn{{Name: "foo"}, {Name: "tenant_id"}}}, nil},
-		{&schema.Table{Schema: "shard_42", Name: "x_lhmn_table_name", Columns: []schema.TableColumn{{Name: "bar"}, {Name: "tenant_id"}}}, nil},
-		{&schema.Table{Schema: "shard_42", Name: "table_name", Columns: []schema.TableColumn{{Name: "bar"}, {Name: "tenant_id"}}}, nil},
+		{Table: &schema.Table{Schema: "shard_42", Name: "_table_name_new", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "_table_name_old", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "_table_name_gho", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "lhma_1234_table_name", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "lhmn_1234_table_name", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "new", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "old", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "table_new", Columns: []schema.TableColumn{{Name: "foo"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "ghost", Columns: []schema.TableColumn{{Name: "foo"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "lhm_test", Columns: []schema.TableColumn{{Name: "foo"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "x_lhmn_table_name", Columns: []schema.TableColumn{{Name: "bar"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "table_name", Columns: []schema.TableColumn{{Name: "bar"}, {Name: "tenant_id"}}}},
 	}
 
 	applicable, err := filter.ApplicableTables(tables)
@@ -57,10 +57,10 @@ func TestShardedTableFilterSelectsTablesWithShardingKey(t *testing.T) {
 	filter := &sharding.ShardedTableFilter{SourceShard: "shard_42", ShardingKey: "tenant_id"}
 
 	tables := []*ghostferry.TableSchema{
-		{&schema.Table{Schema: "shard_42", Name: "table1", Columns: []schema.TableColumn{{Name: "id"}}}, nil},
-		{&schema.Table{Schema: "shard_42", Name: "table2", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}, nil},
-		{&schema.Table{Schema: "shard_42", Name: "table3", Columns: []schema.TableColumn{{Name: "foo"}, {Name: "tenant_id"}}}, nil},
-		{&schema.Table{Schema: "shard_42", Name: "table4", Columns: []schema.TableColumn{{Name: "bar"}}}, nil},
+		{Table: &schema.Table{Schema: "shard_42", Name: "table1", Columns: []schema.TableColumn{{Name: "id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "table2", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "table3", Columns: []schema.TableColumn{{Name: "foo"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "table4", Columns: []schema.TableColumn{{Name: "bar"}}}},
 	}
 
 	applicable, err := filter.ApplicableTables(tables)
@@ -76,8 +76,8 @@ func TestShardedTableFilterSelectsJoinedTables(t *testing.T) {
 	}
 
 	tables := []*ghostferry.TableSchema{
-		{&schema.Table{Schema: "shard_42", Name: "table1", Columns: []schema.TableColumn{{Name: "id"}}}, nil},
-		{&schema.Table{Schema: "shard_42", Name: "table2", Columns: []schema.TableColumn{{Name: "id"}}}, nil},
+		{Table: &schema.Table{Schema: "shard_42", Name: "table1", Columns: []schema.TableColumn{{Name: "id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "table2", Columns: []schema.TableColumn{{Name: "id"}}}},
 	}
 
 	applicable, err := filter.ApplicableTables(tables)

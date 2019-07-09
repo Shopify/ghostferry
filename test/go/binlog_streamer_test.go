@@ -41,6 +41,7 @@ func (this *BinlogStreamerTestSuite) SetupTest() {
 			DbsFunc:    testhelpers.DbApplicabilityFilter([]string{testhelpers.TestSchemaName}),
 			TablesFunc: nil,
 		},
+		nil,
 	)
 	this.Require().Nil(err)
 

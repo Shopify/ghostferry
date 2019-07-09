@@ -7,7 +7,7 @@ class IterativeVerifierTest < GhostferryTestCase
 
   def test_iterative_verifier_succeeds_in_normal_run
     datawriter = new_source_datawriter
-    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { enable_iterative_verifier: true })
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Iterative" })
 
     start_datawriter_with_ghostferry(datawriter, ghostferry)
     stop_datawriter_during_cutover(datawriter, ghostferry)
@@ -25,7 +25,7 @@ class IterativeVerifierTest < GhostferryTestCase
 
   def test_iterative_verifier_fails_if_binlog_streamer_incorrectly_copies_data
     datawriter = new_source_datawriter
-    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { enable_iterative_verifier: true })
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Iterative" })
 
     table_name = DEFAULT_FULL_TABLE_NAME
 

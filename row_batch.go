@@ -5,9 +5,10 @@ import (
 )
 
 type RowBatch struct {
-	values  []RowData
-	pkIndex int
-	table   *TableSchema
+	values       []RowData
+	pkIndex      int
+	table        *TableSchema
+	fingerprints map[uint64][]byte
 }
 
 func NewRowBatch(table *TableSchema, values []RowData, pkIndex int) *RowBatch {
@@ -36,6 +37,10 @@ func (e *RowBatch) Size() int {
 
 func (e *RowBatch) TableSchema() *TableSchema {
 	return e.table
+}
+
+func (e *RowBatch) Fingerprints() map[uint64][]byte {
+	return e.fingerprints
 }
 
 func (e *RowBatch) AsSQLQuery(schemaName, tableName string) (string, []interface{}, error) {

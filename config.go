@@ -16,6 +16,7 @@ import (
 const (
 	VerifierTypeChecksumTable  = "ChecksumTable"
 	VerifierTypeIterative      = "Iterative"
+	VerifierTypeInline         = "Inline"
 	VerifierTypeNoVerification = "NoVerification"
 )
 
@@ -171,6 +172,10 @@ type IterativeVerifierConfig struct {
 	//	1. Snappy (https://google.github.io/snappy/) as "SNAPPY"
 	//
 	// Optional: defaults to empty map/no compression
+	//
+	// Note that the IterativeVerifier is in the process of being deprecated.
+	// If this is specified, ColumnCompressionConfig should also be filled out in
+	// the main Config.
 	TableColumnCompression TableColumnCompressionConfig
 }
 
@@ -187,6 +192,25 @@ func (c *IterativeVerifierConfig) Validate() error {
 	}
 
 	return nil
+}
+
+// SchemaName => TableName => ColumnName => CompressionAlgorithm
+// Example: blog1 => articles => body => snappy
+//          (SELECT body FROM blog1.articles => returns compressed blob)
+type ColumnCompressionConfig map[string]map[string]map[string]string
+
+func (c ColumnCompressionConfig) CompressedColumnsFor(schemaName, tableName string) map[string]string {
+	tableConfig, found := c[schemaName]
+	if !found {
+		return nil
+	}
+
+	columnsConfig, found := tableConfig[tableName]
+	if !found {
+		return nil
+	}
+
+	return columnsConfig
 }
 
 type Config struct {
@@ -309,11 +333,34 @@ type Config struct {
 
 	// Only useful if VerifierType == Iterative.
 	// This specifies the configurations to the IterativeVerifier.
+	//
+	// This option is in the process of being deprecated.
 	IterativeVerifierConfig IterativeVerifierConfig
 
 	// For old versions mysql<5.6.2, MariaDB<10.1.6 which has no related var
 	// Make sure you have binlog_row_image=FULL when turning on this
 	SkipBinlogRowImageCheck bool
+
+	// This config is necessary for inline verification for a special case of
+	// Ghostferry:
+	//
+	// - If you are copying a table where the data is already partially on the
+	//   target through some other means.
+	//   - Specifically, the PK of this row on both the source and the target are
+	//     the same. Thus, INSERT IGNORE will skip copying this row, leaving the
+	//     data on the target unchanged.
+	//   - If the data on the target is already identical to the source, then
+	//     verification will pass and all is well.
+	// - However, if this data is compressed with a non-determinstic algorithm
+	//   such as snappy, the compressed blob may not be equal even when the
+	//   uncompressed data is equal.
+	// - This column signals to the InlineVerifier that it needs to decompress
+	//   the data to compare identity.
+	//
+	// Note: a similar option exists in IterativeVerifier. However, the
+	// IterativeVerifier is being deprecated and this will be the correct place
+	// to specify it if you don't need the IterativeVerifier.
+	ColumnCompressionConfig ColumnCompressionConfig
 }
 
 func (c *Config) ValidateConfig() error {

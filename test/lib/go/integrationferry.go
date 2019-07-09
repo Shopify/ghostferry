@@ -236,10 +236,26 @@ func main() {
 		panic(err)
 	}
 
-	if os.Getenv("GHOSTFERRY_ITERATIVE_VERIFIER") != "" {
+	verifierType := os.Getenv("GHOSTFERRY_VERIFIER_TYPE")
+	if verifierType == ghostferry.VerifierTypeIterative {
 		config.VerifierType = ghostferry.VerifierTypeIterative
 		config.IterativeVerifierConfig = ghostferry.IterativeVerifierConfig{
 			Concurrency: 2,
+		}
+	} else if verifierType != "" {
+		config.VerifierType = verifierType
+	}
+
+	// This is currently a hack to customize the Ghostferry configuration.
+	// TODO: allow Ghostferry config to be specified by the ruby test directly.
+	compressedDataColumn := os.Getenv("GHOSTFERRY_DATA_COLUMN_SNAPPY")
+	if compressedDataColumn != "" {
+		config.ColumnCompressionConfig = map[string]map[string]map[string]string{
+			"gftest": map[string]map[string]string{
+				"test_table_1": map[string]string{
+					"data": "SNAPPY",
+				},
+			},
 		}
 	}
 
@@ -247,6 +263,19 @@ func main() {
 		Ferry: &ghostferry.Ferry{
 			Config: config,
 		},
+	}
+
+	integrationPort := os.Getenv(portEnvName)
+	if integrationPort == "" {
+		panic(fmt.Sprintf("environment variable %s must be specified", portEnvName))
+	}
+
+	f.ErrorHandler = &ghostferry.PanicErrorHandler{
+		Ferry: f.Ferry,
+		ErrorCallback: ghostferry.HTTPCallback{
+			URI: fmt.Sprintf("http://localhost:%s/callbacks/error", integrationPort),
+		},
+		DumpStateToStdout: true,
 	}
 
 	err = f.Main()

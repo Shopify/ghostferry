@@ -10,8 +10,9 @@ import (
 )
 
 type DataIterator struct {
-	DB          *sql.DB
-	Concurrency int
+	DB                *sql.DB
+	Concurrency       int
+	SelectFingerprint bool
 
 	ErrorHandler ErrorHandler
 	CursorConfig *CursorConfig
@@ -88,11 +89,42 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 				}
 
 				cursor := d.CursorConfig.NewCursor(table, startPk, targetPKInterface.(uint64))
+				if d.SelectFingerprint {
+					if len(cursor.ColumnsToSelect) == 0 {
+						cursor.ColumnsToSelect = []string{"*"}
+					}
+
+					cursor.ColumnsToSelect = append(cursor.ColumnsToSelect, table.RowMd5Query())
+				}
+
 				err := cursor.Each(func(batch *RowBatch) error {
 					metrics.Count("RowEvent", int64(batch.Size()), []MetricTag{
 						MetricTag{"table", table.Name},
 						MetricTag{"source", "table"},
 					}, 1.0)
+
+					if d.SelectFingerprint {
+						fingerprints := make(map[uint64][]byte)
+						rows := make([]RowData, batch.Size())
+
+						for i, rowData := range batch.Values() {
+							pk, err := rowData.GetUint64(batch.PkIndex())
+							if err != nil {
+								logger.WithError(err).Error("failed to get pk data")
+								return err
+							}
+
+							fingerprints[pk] = rowData[len(rowData)-1].([]byte)
+							rows[i] = rowData[:len(rowData)-1]
+						}
+
+						batch = &RowBatch{
+							values:       rows,
+							pkIndex:      batch.PkIndex(),
+							table:        table,
+							fingerprints: fingerprints,
+						}
+					}
 
 					for _, listener := range d.batchListeners {
 						err := listener(batch)

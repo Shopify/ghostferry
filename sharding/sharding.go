@@ -228,7 +228,7 @@ func (r *ShardingFerry) copyPrimaryKeyTables() error {
 	r.config.TableFilter.(*ShardedTableFilter).PrimaryKeyTables = pkTables
 	r.config.CopyFilter.(*ShardedCopyFilter).PrimaryKeyTables = pkTables
 
-	sourceDbTables, err := ghostferry.LoadTables(r.Ferry.SourceDB, r.config.TableFilter)
+	sourceDbTables, err := ghostferry.LoadTables(r.Ferry.SourceDB, r.config.TableFilter, r.config.ColumnCompressionConfig)
 	if err != nil {
 		return err
 	}

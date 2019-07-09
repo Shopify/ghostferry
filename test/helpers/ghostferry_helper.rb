@@ -47,7 +47,7 @@ module GhostferryHelper
       AFTER_BINLOG_APPLY = "AFTER_BINLOG_APPLY"
     end
 
-    attr_reader :stdout, :stderr, :exit_status, :pid
+    attr_reader :stdout, :stderr, :exit_status, :pid, :error
 
     def initialize(main_path, config: {}, logger: nil, message_timeout: 30, port: 39393)
       @logger = logger
@@ -76,6 +76,7 @@ module GhostferryHelper
       @exit_status = nil
       @stdout = []
       @stderr = []
+      @error = nil
 
       # Setup the directory to the compiled binary under the system temporary
       # directory.
@@ -193,6 +194,10 @@ module GhostferryHelper
         end
       end
 
+      @server.mount_proc "/callbacks/error" do |req, resp|
+        @error = JSON.parse(JSON.parse(req.body)["Payload"])
+      end
+
       @server_thread = Thread.new do
         @logger.info("starting server thread")
         @server.start
@@ -212,8 +217,12 @@ module GhostferryHelper
 
         # TODO: maybe in the future we'll have a better way to specify the
         # configurations.
-        if @config[:enable_iterative_verifier]
-          environment["GHOSTFERRY_ITERATIVE_VERIFIER"] = "1"
+        if @config[:verifier_type]
+          environment["GHOSTFERRY_VERIFIER_TYPE"] = @config[:verifier_type]
+        end
+
+        if @config[:compressed_data]
+          environment["GHOSTFERRY_DATA_COLUMN_SNAPPY"] = "1"
         end
 
         @logger.info("starting ghostferry test binary #{@compiled_binary_path}")
