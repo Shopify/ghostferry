@@ -90,17 +90,17 @@ func (f *Ferry) NewDataIterator() *DataIterator {
 	f.ensureInitialized()
 
 	dataIterator := &DataIterator{
-		DB:          f.SourceDB,
-		Concurrency: f.Config.DataIterationConcurrency,
+		DB:                f.SourceDB,
+		Concurrency:       f.Config.DataIterationConcurrency,
+		SelectFingerprint: f.Config.VerifierType == VerifierTypeInline,
 
 		ErrorHandler: f.ErrorHandler,
 		CursorConfig: &CursorConfig{
 			DB:        f.SourceDB,
 			Throttler: f.Throttler,
 
-			BatchSize:         f.Config.DataIterationBatchSize,
-			ReadRetries:       f.Config.DBReadRetries,
-			SelectFingerprint: f.Config.VerifierType == VerifierTypeInline,
+			BatchSize:   f.Config.DataIterationBatchSize,
+			ReadRetries: f.Config.DBReadRetries,
 		},
 		StateTracker: f.StateTracker.CopyStage,
 	}

@@ -91,6 +91,9 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetDb, targetTabl
 		targetFingerprints[pk] = rowData[1]
 		targetDecompressedData[pk] = make(map[string][]byte)
 
+		// Note that the FingerprintQuery returns the columns: pk, fingerprint,
+		// compressedData1, compressedData2, ...
+		// If there are no compressed data, only 2 columns are returned.
 		for i := 2; i < len(columns); i++ {
 			targetDecompressedData[pk][columns[i]], err = v.DecompressData(table, columns[i], rowData[i])
 			if err != nil {

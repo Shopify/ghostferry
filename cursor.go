@@ -33,11 +33,10 @@ type CursorConfig struct {
 	DB        *sql.DB
 	Throttler Throttler
 
-	ColumnsToSelect   []string
-	BuildSelect       func([]string, *TableSchema, uint64, uint64) (squirrel.SelectBuilder, error)
-	BatchSize         uint64
-	ReadRetries       int
-	SelectFingerprint bool
+	ColumnsToSelect []string
+	BuildSelect     func([]string, *TableSchema, uint64, uint64) (squirrel.SelectBuilder, error)
+	BatchSize       uint64
+	ReadRetries     int
 }
 
 // returns a new Cursor with an embedded copy of itself
@@ -79,10 +78,6 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 
 	if len(c.ColumnsToSelect) == 0 {
 		c.ColumnsToSelect = []string{"*"}
-	}
-
-	if c.SelectFingerprint {
-		c.ColumnsToSelect = append(c.ColumnsToSelect, c.Table.RowMd5Query())
 	}
 
 	for c.lastSuccessfulPrimaryKey < c.MaxPrimaryKey {
@@ -217,26 +212,12 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, pkpos uint64, err error
 
 	var rowData RowData
 	var batchData []RowData
-	fingerprints := make(map[uint64][]byte)
 
 	for rows.Next() {
 		rowData, err = ScanGenericRow(rows, len(columns))
 		if err != nil {
 			logger.WithError(err).Error("failed to scan row")
 			return
-		}
-
-		if c.SelectFingerprint {
-			var pk uint64
-			pk, err = rowData.GetUint64(pkIndex)
-			if err != nil {
-				logger.WithError(err).Error("failed to get pk data")
-				return
-			}
-
-			fingerprint := rowData[len(rowData)-1].([]byte)
-			rowData = rowData[:len(rowData)-1]
-			fingerprints[pk] = fingerprint
 		}
 
 		batchData = append(batchData, rowData)
@@ -256,10 +237,9 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, pkpos uint64, err error
 	}
 
 	batch = &RowBatch{
-		values:       batchData,
-		pkIndex:      pkIndex,
-		table:        c.Table,
-		fingerprints: fingerprints,
+		values:  batchData,
+		pkIndex: pkIndex,
+		table:   c.Table,
 	}
 
 	logger.Debugf("found %d rows", batch.Size())
