@@ -88,6 +88,7 @@ class InlineVerifierTest < GhostferryTestCase
 
     ghostferry.run
     assert verification_ran
+    assert_equal "cutover verification failed for: gftest.test_table_1 [pks: #{corrupting_id} ] ", ghostferry.error_lines.last["msg"]
   end
 
   private

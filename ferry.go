@@ -193,6 +193,13 @@ func (f *Ferry) NewChecksumTableVerifier() *ChecksumTableVerifier {
 func (f *Ferry) NewInlineVerifier() *InlineVerifier {
 	f.ensureInitialized()
 
+	var binlogVerifyStore *BinlogVerifyStore
+	if f.StateToResumeFrom != nil && f.StateToResumeFrom.BinlogVerifyStore != nil {
+		binlogVerifyStore = NewBinlogVerifyStoreFromSerialized(f.StateToResumeFrom.BinlogVerifyStore)
+	} else {
+		binlogVerifyStore = NewBinlogVerifyStore()
+	}
+
 	return &InlineVerifier{
 		SourceDB:                   f.SourceDB,
 		TargetDB:                   f.TargetDB,
@@ -203,9 +210,10 @@ func (f *Ferry) NewInlineVerifier() *InlineVerifier {
 		VerifyBinlogEventsInterval: f.Config.InlineVerifierConfig.verifyBinlogEventsInterval,
 		MaxExpectedDowntime:        f.Config.InlineVerifierConfig.maxExpectedDowntime,
 
+		StateTracker: f.StateTracker,
 		ErrorHandler: f.ErrorHandler,
 
-		reverifyStore:   NewBinlogVerifyStore(),
+		reverifyStore:   binlogVerifyStore,
 		sourceStmtCache: NewStmtCache(),
 		targetStmtCache: NewStmtCache(),
 		logger:          logrus.WithField("tag", "inline-verifier"),
@@ -708,7 +716,12 @@ func (f *Ferry) SerializeStateToJSON() (string, error) {
 		return "", err
 	}
 	serializedState := f.StateTracker.Serialize(f.Tables)
-	stateBytes, err := json.MarshalIndent(serializedState, "", "  ")
+
+	if f.inlineVerifier != nil {
+		serializedState.BinlogVerifyStore = f.inlineVerifier.reverifyStore.Serialize()
+	}
+
+	stateBytes, err := json.MarshalIndent(serializedState, "", " ")
 	return string(stateBytes), err
 }
 

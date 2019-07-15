@@ -79,6 +79,22 @@ func NewBinlogVerifyStore() *BinlogVerifyStore {
 	}
 }
 
+func NewBinlogVerifyStoreFromSerialized(serialized BinlogVerifySerializedStore) *BinlogVerifyStore {
+	s := NewBinlogVerifyStore()
+
+	s.store = serialized
+	for db, _ := range s.store {
+		for table, _ := range s.store[db] {
+			for _, count := range s.store[db][table] {
+				s.currentRowCount += uint64(count)
+			}
+		}
+	}
+
+	s.totalRowCount = s.currentRowCount
+	return s
+}
+
 func (s *BinlogVerifyStore) Add(table *TableSchema, pk uint64) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -175,6 +191,25 @@ func (s *BinlogVerifyStore) Batches(batchsize int) []BinlogVerifyBatch {
 	return batches
 }
 
+func (s *BinlogVerifyStore) Serialize() BinlogVerifySerializedStore {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	serializedStore := make(BinlogVerifySerializedStore)
+
+	for db, _ := range s.store {
+		serializedStore[db] = make(map[string]map[uint64]int)
+		for table, _ := range s.store[db] {
+			serializedStore[db][table] = make(map[uint64]int)
+			for pk, count := range s.store[db][table] {
+				serializedStore[db][table][pk] = count
+			}
+		}
+	}
+
+	return BinlogVerifySerializedStore(s.store)
+}
+
 type InlineVerifier struct {
 	SourceDB                   *sql.DB
 	TargetDB                   *sql.DB
@@ -185,6 +220,7 @@ type InlineVerifier struct {
 	VerifyBinlogEventsInterval time.Duration
 	MaxExpectedDowntime        time.Duration
 
+	StateTracker *StateTracker
 	ErrorHandler ErrorHandler
 
 	reverifyStore              *BinlogVerifyStore
@@ -532,6 +568,11 @@ func (v *InlineVerifier) binlogEventListener(evs []DMLEvent) error {
 		v.reverifyStore.Add(ev.TableSchema(), pk)
 	}
 
+	if v.StateTracker != nil {
+		ev := evs[len(evs)-1]
+		v.StateTracker.UpdateLastStoredBinlogPositionForInlineVerifier(ev.BinlogPosition())
+	}
+
 	return nil
 }
 
@@ -556,7 +597,7 @@ func (v *InlineVerifier) verifyAllEventsInStore() (bool, map[string]map[string][
 		return mismatchFound, mismatches, nil
 	}
 
-	v.logger.WithField("batches", len(allBatches)).Debug("reverifying")
+	v.logger.WithField("batches", len(allBatches)).Debug("verifyAllEventsInStore")
 
 	for _, batch := range allBatches {
 		if _, exists := mismatches[batch.SchemaName]; !exists {

@@ -38,6 +38,7 @@ type SerializableState struct {
 	CompletedTables                           map[string]bool
 	LastWrittenBinlogPosition                 mysql.Position
 	LastStoredBinlogPositionForInlineVerifier mysql.Position
+	BinlogVerifyStore                         BinlogVerifySerializedStore
 }
 
 func (s *SerializableState) MinBinlogPosition() mysql.Position {
@@ -222,7 +223,6 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache) *Se
 		CompletedTables:                           make(map[string]bool),
 		LastWrittenBinlogPosition:                 s.lastWrittenBinlogPosition,
 		LastStoredBinlogPositionForInlineVerifier: s.lastStoredBinlogPositionForInlineVerifier,
-		// TODO: BinlogVerifySerializedStore
 	}
 
 	// Need a copy because lastSuccessfulPrimaryKeys may change after Serialize
