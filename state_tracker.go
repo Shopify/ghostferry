@@ -17,126 +17,43 @@ import (
 //
 // The state tracker keeps track of the progress of Ghostferry so it can be
 // interrupted and resumed. The state tracker is supposed to be initialized and
-// managed by the Ferry. Each Ghostferry components, such as the `BatchWriter`
-// and `IterativeVerifier` will get passed an instance of either the
-// `CopyStateTracker` or the `VerificationStateTracker`. During the run, these
+// managed by the Ferry. Each Ghostferry components, such as the `BatchWriter`,
+// will get passed an instance of the StateTracker. During the run, the
 // components will update their last successful components to the state tracker
-// instances given via the state tracker API defined here.
+// instance given via the state tracker API defined here.
 //
-// The states stored in the state tracker can be copied into a serialization
-// friendly struct (`SerializableState`), which can then be dumped using
-// something like JSON. Assuming the rest of Ghostferry used the API of the
-// state tracker correctly, this can be done at any point during the Ghostferry
-// run and the resulting state is can be resumed from without incurring data
-// loss. The same `SerializableState` can be used as an input to `Ferry`, which
-// if specified will instruct to `Ferry` to start from a particular location.
-//
-// Code Design
-// -----------
-//
-// In a Ghostferry run, there are two "stages" of operation: the copy stage and
-// the verification stage. Both stages must emit their states to the state
-// tracker in order for them to be interruptible and resumable. These two
-// stages are very similar: they both iterate over the data and tail the
-// binlog. However, there are some minor differences. Example: the verifier
-// stage needs to keep track of the reverify store while the copy stage
-// doesn't.
-//
-// Note that the copy stage is always active during a run as we need to copy
-// binlog data to the target. This means both the copy and the verification
-// stage can be active at the same time.
-//
-// In order to not repeat code, "base structs" are created for the state
-// tracker and the serializable state: `BinlogStateTracker`,
-// `BinlogSerializableState`, `IterationStateTracker`,
-// `IterationSerializableState`. These are internal structs that are used to
-// share code and definitions for the `CopyStateTracker` and the
-// `VerificationStateTracker`. The state trackers and serializable states for
-// the actual stages contain a minor amount of customized code in order to
-// implement the distinct behaviours required by the stages.
-//
-// These two stages of state tracker (and serializable states) are owned by a
-// "global" `StateTracker`. This struct keeps two member variables pointing to
-// the state tracker of each stage and that's it. The Ferry creates a new
-// instance of the global `StateTracker` and passes out references of the
-// applicable stage of state tracker to components like `BatchWriter` and
-// `IterativeVerifier`.
-//
-// To summarize, what we have is (arrows point from member variables to owner
-// structs):
-//
-//  BinlogStateTracker       BinlogStateTracker
-// IterationStateTracker   IterationStateTracker
-//          |                        |
-//          v                        v
-//   CopyStateTracker       VerifierStateTracker
-//          |                        |
-//          +-----------+------------+
-//                      |
-//                      v
-//                 StateTracker
-//                      |
-//                      v
-//                    Ferry
-//
-// The same relationship exists for the serializable states.
+// The states stored in the state tracker can be copied into a
+// serialization-friendly struct (`SerializableState`), which can then be
+// dumped using something like JSON. Assuming the rest of Ghostferry used the
+// API of the state tracker correctlym this can be done at any point during the
+// Ghostferry run and the resulting state can be resumed from without data
+// loss.  The same `SerializableState` is used as an input to `Ferry`, which
+// will instruct the `Ferry` to resume a previously interrupted run.
 
-type BinlogSerializableState struct {
-	LastProcessedBinlogPosition mysql.Position
-}
-
-type IterationSerializableState struct {
-	LastSuccessfulPrimaryKeys map[string]uint64
-	CompletedTables           map[string]bool
-}
-
-type CopySerializableState struct {
-	*BinlogSerializableState
-	*IterationSerializableState
-}
-
-type VerificationSerializableState struct {
-	*BinlogSerializableState
-	*IterationSerializableState
-
-	// This is not efficient because we have to build this map of a different
-	// type from the original ReverifyStore struct.
-	//
-	// TODO: address this inefficiency later.
-	ReverifyStore map[string][]uint64
-}
-
-const (
-	StageCopy         = "COPY"
-	StageVerification = "VERIFICATION"
-)
-
-// This is the struct that is dumped by Ghostferry when it is interrupted. It
-// is the same struct that is given to Ghostferry when it is resumed.
 type SerializableState struct {
 	GhostferryVersion         string
 	LastKnownTableSchemaCache TableSchemaCache
 
-	CurrentStage  string
-	CopyStage     *CopySerializableState
-	VerifierStage *VerificationSerializableState
+	LastSuccessfulPrimaryKeys                 map[string]uint64
+	CompletedTables                           map[string]bool
+	LastWrittenBinlogPosition                 mysql.Position
+	LastStoredBinlogPositionForInlineVerifier mysql.Position
 }
 
-// The binlog writer and the verify binlog positions are different because the
-// binlog writer is buffered in a background go routine. Its position can race
-// with respect to the verifier binlog position. The minimum position between
-// the two are always safe to resume from.
 func (s *SerializableState) MinBinlogPosition() mysql.Position {
-	if s.VerifierStage == nil {
-		return s.CopyStage.LastProcessedBinlogPosition
+	nilPosition := mysql.Position{}
+	if s.LastWrittenBinlogPosition == nilPosition {
+		return s.LastStoredBinlogPositionForInlineVerifier
 	}
 
-	c := s.CopyStage.LastProcessedBinlogPosition.Compare(s.VerifierStage.LastProcessedBinlogPosition)
+	if s.LastStoredBinlogPositionForInlineVerifier == nilPosition {
+		return s.LastWrittenBinlogPosition
+	}
 
-	if c >= 0 {
-		return s.CopyStage.LastProcessedBinlogPosition
+	if s.LastWrittenBinlogPosition.Compare(s.LastStoredBinlogPositionForInlineVerifier) >= 0 {
+		return s.LastStoredBinlogPositionForInlineVerifier
 	} else {
-		return s.VerifierStage.LastProcessedBinlogPosition
+		return s.LastWrittenBinlogPosition
 	}
 }
 
@@ -160,36 +77,12 @@ func newSpeedLogRing(speedLogCount int) *ring.Ring {
 	return speedLog
 }
 
-type BinlogStateTracker struct {
-	*sync.RWMutex
-	lastProcessedBinlogPosition mysql.Position
-}
+type StateTracker struct {
+	BinlogRWMutex *sync.RWMutex
+	CopyRWMutex   *sync.RWMutex
 
-func NewBinlogStateTracker() *BinlogStateTracker {
-	return &BinlogStateTracker{
-		RWMutex:                     &sync.RWMutex{},
-		lastProcessedBinlogPosition: mysql.Position{},
-	}
-}
-
-func (s *BinlogStateTracker) UpdateLastProcessedBinlogPosition(pos mysql.Position) {
-	s.Lock()
-	defer s.Unlock()
-
-	s.lastProcessedBinlogPosition = pos
-}
-
-func (s *BinlogStateTracker) Serialize() *BinlogSerializableState {
-	s.RLock()
-	defer s.RUnlock()
-
-	return &BinlogSerializableState{
-		LastProcessedBinlogPosition: s.lastProcessedBinlogPosition,
-	}
-}
-
-type IterationStateTracker struct {
-	*sync.RWMutex
+	lastWrittenBinlogPosition                 mysql.Position
+	lastStoredBinlogPositionForInlineVerifier mysql.Position
 
 	lastSuccessfulPrimaryKeys map[string]uint64
 	completedTables           map[string]bool
@@ -197,18 +90,45 @@ type IterationStateTracker struct {
 	iterationSpeedLog *ring.Ring
 }
 
-func NewIterationStateTracker(speedLogCount int) *IterationStateTracker {
-	return &IterationStateTracker{
-		RWMutex:                   &sync.RWMutex{},
+func NewStateTracker(speedLogCount int) *StateTracker {
+	return &StateTracker{
+		BinlogRWMutex: &sync.RWMutex{},
+		CopyRWMutex:   &sync.RWMutex{},
+
 		lastSuccessfulPrimaryKeys: make(map[string]uint64),
 		completedTables:           make(map[string]bool),
 		iterationSpeedLog:         newSpeedLogRing(speedLogCount),
 	}
 }
 
-func (s *IterationStateTracker) UpdateLastSuccessfulPK(table string, pk uint64) {
-	s.Lock()
-	defer s.Unlock()
+// serializedState is a state the tracker should start from, as opposed to
+// starting from the beginning.
+func NewStateTrackerFromSerializedState(speedLogCount int, serializedState *SerializableState) *StateTracker {
+	s := NewStateTracker(speedLogCount)
+	s.lastSuccessfulPrimaryKeys = serializedState.LastSuccessfulPrimaryKeys
+	s.completedTables = serializedState.CompletedTables
+	s.lastWrittenBinlogPosition = serializedState.LastWrittenBinlogPosition
+	s.lastStoredBinlogPositionForInlineVerifier = serializedState.LastStoredBinlogPositionForInlineVerifier
+	return s
+}
+
+func (s *StateTracker) UpdateLastWrittenBinlogPosition(pos mysql.Position) {
+	s.BinlogRWMutex.Lock()
+	defer s.BinlogRWMutex.Unlock()
+
+	s.lastWrittenBinlogPosition = pos
+}
+
+func (s *StateTracker) UpdateLastStoredBinlogPositionForInlineVerifier(pos mysql.Position) {
+	s.BinlogRWMutex.Lock()
+	defer s.BinlogRWMutex.Unlock()
+
+	s.lastStoredBinlogPositionForInlineVerifier = pos
+}
+
+func (s *StateTracker) UpdateLastSuccessfulPK(table string, pk uint64) {
+	s.CopyRWMutex.Lock()
+	defer s.CopyRWMutex.Unlock()
 
 	deltaPK := pk - s.lastSuccessfulPrimaryKeys[table]
 	s.lastSuccessfulPrimaryKeys[table] = pk
@@ -216,9 +136,9 @@ func (s *IterationStateTracker) UpdateLastSuccessfulPK(table string, pk uint64) 
 	s.updateSpeedLog(deltaPK)
 }
 
-func (s *IterationStateTracker) LastSuccessfulPK(table string) uint64 {
-	s.RLock()
-	defer s.RUnlock()
+func (s *StateTracker) LastSuccessfulPK(table string) uint64 {
+	s.CopyRWMutex.RLock()
+	defer s.CopyRWMutex.RUnlock()
 
 	_, found := s.completedTables[table]
 	if found {
@@ -233,50 +153,30 @@ func (s *IterationStateTracker) LastSuccessfulPK(table string) uint64 {
 	return pk
 }
 
-func (s *IterationStateTracker) MarkTableAsCompleted(table string) {
-	s.Lock()
-	defer s.Unlock()
+func (s *StateTracker) MarkTableAsCompleted(table string) {
+	s.CopyRWMutex.Lock()
+	defer s.CopyRWMutex.Unlock()
 
 	s.completedTables[table] = true
 }
 
-func (s *IterationStateTracker) IsTableComplete(table string) bool {
-	s.RLock()
-	defer s.RUnlock()
+func (s *StateTracker) IsTableComplete(table string) bool {
+	s.CopyRWMutex.RLock()
+	defer s.CopyRWMutex.RUnlock()
 
 	return s.completedTables[table]
-}
-
-func (s *IterationStateTracker) Serialize() *IterationSerializableState {
-	s.RLock()
-	defer s.RUnlock()
-
-	state := &IterationSerializableState{
-		LastSuccessfulPrimaryKeys: make(map[string]uint64),
-		CompletedTables:           make(map[string]bool),
-	}
-
-	for k, v := range s.lastSuccessfulPrimaryKeys {
-		state.LastSuccessfulPrimaryKeys[k] = v
-	}
-
-	for k, v := range s.completedTables {
-		state.CompletedTables[k] = v
-	}
-
-	return state
 }
 
 // This is reasonably accurate if the rows copied are distributed uniformly
 // between pk = 0 -> max(pk). It would not be accurate if the distribution is
 // concentrated in a particular region.
-func (s *IterationStateTracker) EstimatedPKsPerSecond() float64 {
+func (s *StateTracker) EstimatedPKsPerSecond() float64 {
 	if s.iterationSpeedLog == nil {
 		return 0.0
 	}
 
-	s.RLock()
-	defer s.RUnlock()
+	s.CopyRWMutex.RLock()
+	defer s.CopyRWMutex.RUnlock()
 
 	if s.iterationSpeedLog.Value.(PKPositionLog).Position == 0 {
 		return 0.0
@@ -295,7 +195,7 @@ func (s *IterationStateTracker) EstimatedPKsPerSecond() float64 {
 	return float64(deltaPK) / deltaT
 }
 
-func (s *IterationStateTracker) updateSpeedLog(deltaPK uint64) {
+func (s *StateTracker) updateSpeedLog(deltaPK uint64) {
 	if s.iterationSpeedLog == nil {
 		return
 	}
@@ -308,73 +208,33 @@ func (s *IterationStateTracker) updateSpeedLog(deltaPK uint64) {
 	}
 }
 
-type CopyStateTracker struct {
-	*BinlogStateTracker
-	*IterationStateTracker
-}
-
-func (s *CopyStateTracker) Serialize() *CopySerializableState {
-	return &CopySerializableState{
-		BinlogSerializableState:    s.BinlogStateTracker.Serialize(),
-		IterationSerializableState: s.IterationStateTracker.Serialize(),
-	}
-}
-
-func NewCopyStateTracker(speedLogCount int) *CopyStateTracker {
-	return &CopyStateTracker{
-		BinlogStateTracker:    NewBinlogStateTracker(),
-		IterationStateTracker: NewIterationStateTracker(speedLogCount),
-	}
-}
-
-type VerificationStateTracker struct {
-	*BinlogStateTracker
-	*IterationStateTracker
-	// TODO: this struct needs to keep track of the reverify store and dump it
-	//       with Serialize.
-}
-
-func (s *VerificationStateTracker) Serialize() *VerificationSerializableState {
-	// TODO: this method needs to dump the reverify store.
-	return &VerificationSerializableState{
-		BinlogSerializableState:    s.BinlogStateTracker.Serialize(),
-		IterationSerializableState: s.IterationStateTracker.Serialize(),
-	}
-}
-
-type StateTracker struct {
-	CopyStage *CopyStateTracker
-	// TODO: implement this
-	// VerificationStage *VerifierStateTracker
-}
-
-// speedLogCount should be a number that is an order of magnitude or so larger
-// than the number of table iterators. This is to ensure the ring buffer used
-// to calculate the speed is not filled with only data from the last iteration
-// of the cursor and thus would be wildly inaccurate.
-func NewStateTracker(speedLogCount int) *StateTracker {
-	return &StateTracker{
-		CopyStage: NewCopyStateTracker(speedLogCount),
-	}
-}
-
-// serializedState is a state the tracker should start from, as opposed to
-// starting from the beginning.
-func NewStateTrackerFromSerializedState(speedLogCount int, serializedState *SerializableState) *StateTracker {
-	s := NewStateTracker(speedLogCount)
-	s.CopyStage.lastSuccessfulPrimaryKeys = serializedState.CopyStage.LastSuccessfulPrimaryKeys
-	s.CopyStage.completedTables = serializedState.CopyStage.CompletedTables
-	s.CopyStage.lastProcessedBinlogPosition = serializedState.CopyStage.LastProcessedBinlogPosition
-	return s
-}
-
 func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache) *SerializableState {
-	return &SerializableState{
-		GhostferryVersion:         VersionString,
-		LastKnownTableSchemaCache: lastKnownTableSchemaCache,
+	s.BinlogRWMutex.RLock()
+	defer s.BinlogRWMutex.RUnlock()
 
-		// TODO: implement verifier stage
-		CurrentStage: StageCopy,
-		CopyStage:    s.CopyStage.Serialize(),
+	s.CopyRWMutex.RLock()
+	defer s.CopyRWMutex.RUnlock()
+
+	state := &SerializableState{
+		GhostferryVersion:                         VersionString,
+		LastKnownTableSchemaCache:                 lastKnownTableSchemaCache,
+		LastSuccessfulPrimaryKeys:                 make(map[string]uint64),
+		CompletedTables:                           make(map[string]bool),
+		LastWrittenBinlogPosition:                 s.lastWrittenBinlogPosition,
+		LastStoredBinlogPositionForInlineVerifier: s.lastStoredBinlogPositionForInlineVerifier,
+		// TODO: BinlogVerifySerializedStore
 	}
+
+	// Need a copy because lastSuccessfulPrimaryKeys may change after Serialize
+	// returns. This would inaccurately reflect the state of Ghostferry when
+	// Serialize is called.
+	for k, v := range s.lastSuccessfulPrimaryKeys {
+		state.LastSuccessfulPrimaryKeys[k] = v
+	}
+
+	for k, v := range s.completedTables {
+		state.CompletedTables[k] = v
+	}
+
+	return state
 }
