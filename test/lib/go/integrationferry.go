@@ -224,6 +224,16 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 		}
 	}
 
+	verifierType := os.Getenv("GHOSTFERRY_VERIFIER_TYPE")
+	if verifierType == ghostferry.VerifierTypeIterative {
+		config.VerifierType = ghostferry.VerifierTypeIterative
+		config.IterativeVerifierConfig = ghostferry.IterativeVerifierConfig{
+			Concurrency: 2,
+		}
+	} else if verifierType != "" {
+		config.VerifierType = verifierType
+	}
+
 	return config, config.ValidateConfig()
 }
 
@@ -234,16 +244,6 @@ func main() {
 	config, err := NewStandardConfig()
 	if err != nil {
 		panic(err)
-	}
-
-	verifierType := os.Getenv("GHOSTFERRY_VERIFIER_TYPE")
-	if verifierType == ghostferry.VerifierTypeIterative {
-		config.VerifierType = ghostferry.VerifierTypeIterative
-		config.IterativeVerifierConfig = ghostferry.IterativeVerifierConfig{
-			Concurrency: 2,
-		}
-	} else if verifierType != "" {
-		config.VerifierType = verifierType
 	}
 
 	// This is currently a hack to customize the Ghostferry configuration.

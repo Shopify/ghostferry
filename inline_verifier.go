@@ -140,7 +140,6 @@ type InlineVerifier struct {
 	DatabaseRewrites           map[string]string
 	TableRewrites              map[string]string
 	TableSchemaCache           TableSchemaCache
-	Concurrency                int
 	BatchSize                  int
 	VerifyBinlogEventsInterval time.Duration
 	FinalReverifyMaxIterations int
@@ -223,7 +222,7 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, target
 func (v *InlineVerifier) PeriodicallyVerifyBinlogEvents() {
 	v.logger.Info("starting periodic reverifier")
 
-	for !v.periodicVerifyStopped || v.reverifyStore.currentRowCount > 0 {
+	for !v.periodicVerifyStopped {
 		time.Sleep(v.VerifyBinlogEventsInterval)
 		_, mismatches, err := v.verifyAllEventsInStore()
 		if err != nil {

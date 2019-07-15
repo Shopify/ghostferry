@@ -142,6 +142,47 @@ func (c *DatabaseConfig) assertParamSet(param, value string) error {
 	return nil
 }
 
+type InlineVerifierConfig struct {
+	// The maximum expected downtime during cutover, in the format of
+	// time.ParseDuration.
+	MaxExpectedDowntime string
+
+	// The interval at which the periodic binlog reverification occurs, in the
+	// format of time.ParseDuration.
+	VerifyBinlogEventsInterval string
+
+	// The maximum number of iterations to perform reverify in VerifyBeforeCutover
+	FinalReverifyMaxIterations int
+
+	verifyBinlogEventsInterval time.Duration
+	maxExpectedDowntime        time.Duration
+}
+
+func (c *InlineVerifierConfig) Validate() error {
+	var err error
+	if c.MaxExpectedDowntime != "" {
+		c.maxExpectedDowntime, err = time.ParseDuration(c.MaxExpectedDowntime)
+		if err != nil {
+			return err
+		}
+	}
+
+	if c.VerifyBinlogEventsInterval == "" {
+		c.VerifyBinlogEventsInterval = "1s"
+	}
+
+	c.verifyBinlogEventsInterval, err = time.ParseDuration(c.VerifyBinlogEventsInterval)
+	if err != nil {
+		return err
+	}
+
+	if c.FinalReverifyMaxIterations == 0 {
+		c.FinalReverifyMaxIterations = 30
+	}
+
+	return nil
+}
+
 type IterativeVerifierConfig struct {
 	// List of tables that should be ignored by the IterativeVerifier.
 	IgnoredTables []string
@@ -337,6 +378,10 @@ type Config struct {
 	// This option is in the process of being deprecated.
 	IterativeVerifierConfig IterativeVerifierConfig
 
+	// Only useful if VerifierType == Inline.
+	// This specifies the configurations to the InlineVerifierConfig.
+	InlineVerifierConfig InlineVerifierConfig
+
 	// For old versions mysql<5.6.2, MariaDB<10.1.6 which has no related var
 	// Make sure you have binlog_row_image=FULL when turning on this
 	SkipBinlogRowImageCheck bool
@@ -383,6 +428,10 @@ func (c *Config) ValidateConfig() error {
 	if c.VerifierType == VerifierTypeIterative {
 		if err := c.IterativeVerifierConfig.Validate(); err != nil {
 			return fmt.Errorf("IterativeVerifierConfig invalid: %v", err)
+		}
+	} else if c.VerifierType == VerifierTypeInline {
+		if err := c.InlineVerifierConfig.Validate(); err != nil {
+			return fmt.Errorf("InlineVerifierConfig invalid: %v", err)
 		}
 	}
 

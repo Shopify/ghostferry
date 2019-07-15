@@ -190,17 +190,8 @@ func (f *Ferry) NewChecksumTableVerifier() *ChecksumTableVerifier {
 	}
 }
 
-func (f *Ferry) NewInlineVerifier() (*InlineVerifier, error) {
+func (f *Ferry) NewInlineVerifier() *InlineVerifier {
 	f.ensureInitialized()
-
-	var maxExpectedDowntime time.Duration
-	var err error
-	if f.Config.IterativeVerifierConfig.MaxExpectedDowntime != "" {
-		maxExpectedDowntime, err = time.ParseDuration(f.Config.IterativeVerifierConfig.MaxExpectedDowntime)
-		if err != nil {
-			return nil, fmt.Errorf("invalid MaxExpectedDowntime: %v. this error should have been caught via .Validate()", err)
-		}
-	}
 
 	return &InlineVerifier{
 		SourceDB:                   f.SourceDB,
@@ -209,10 +200,9 @@ func (f *Ferry) NewInlineVerifier() (*InlineVerifier, error) {
 		TableRewrites:              f.Config.TableRewrites,
 		TableSchemaCache:           f.Tables,
 		BatchSize:                  f.Config.BinlogEventBatchSize,
-		Concurrency:                4,               // TODO: make this configurable
-		VerifyBinlogEventsInterval: 1 * time.Second, // TODO: make this configurable
-		FinalReverifyMaxIterations: 30,
-		MaxExpectedDowntime:        maxExpectedDowntime,
+		VerifyBinlogEventsInterval: f.Config.InlineVerifierConfig.verifyBinlogEventsInterval,
+		FinalReverifyMaxIterations: f.Config.InlineVerifierConfig.FinalReverifyMaxIterations,
+		MaxExpectedDowntime:        f.Config.InlineVerifierConfig.maxExpectedDowntime,
 
 		ErrorHandler: f.ErrorHandler,
 
@@ -221,7 +211,7 @@ func (f *Ferry) NewInlineVerifier() (*InlineVerifier, error) {
 		sourceStmtCache:       NewStmtCache(),
 		targetStmtCache:       NewStmtCache(),
 		logger:                logrus.WithField("tag", "inline-verifier"),
-	}, nil
+	}
 }
 
 func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
@@ -450,10 +440,7 @@ func (f *Ferry) Initialize() (err error) {
 		case VerifierTypeChecksumTable:
 			f.Verifier = f.NewChecksumTableVerifier()
 		case VerifierTypeInline:
-			f.inlineVerifier, err = f.NewInlineVerifier()
-			if err != nil {
-				return err
-			}
+			f.inlineVerifier = f.NewInlineVerifier()
 			f.Verifier = f.inlineVerifier
 
 			// TODO: eventually we should have the inlineVerifier as an "always on"
