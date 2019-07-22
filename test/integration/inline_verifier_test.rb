@@ -83,8 +83,7 @@ class InlineVerifierTest < GhostferryTestCase
     verification_ran = false
     ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*incorrect_tables|
       verification_ran = true
-      assert_equal 1, incorrect_tables.length
-      assert_equal "gftest.test_table_1", incorrect_tables.first
+      assert_equal ["gftest.test_table_1"], incorrect_tables
     end
 
     ghostferry.run

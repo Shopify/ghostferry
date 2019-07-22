@@ -201,16 +201,14 @@ func (f *Ferry) NewInlineVerifier() *InlineVerifier {
 		TableSchemaCache:           f.Tables,
 		BatchSize:                  f.Config.BinlogEventBatchSize,
 		VerifyBinlogEventsInterval: f.Config.InlineVerifierConfig.verifyBinlogEventsInterval,
-		FinalReverifyMaxIterations: f.Config.InlineVerifierConfig.FinalReverifyMaxIterations,
 		MaxExpectedDowntime:        f.Config.InlineVerifierConfig.maxExpectedDowntime,
 
 		ErrorHandler: f.ErrorHandler,
 
-		reverifyStore:         NewBinlogVerifyStore(),
-		periodicVerifyStopped: false,
-		sourceStmtCache:       NewStmtCache(),
-		targetStmtCache:       NewStmtCache(),
-		logger:                logrus.WithField("tag", "inline-verifier"),
+		reverifyStore:   NewBinlogVerifyStore(),
+		sourceStmtCache: NewStmtCache(),
+		targetStmtCache: NewStmtCache(),
+		logger:          logrus.WithField("tag", "inline-verifier"),
 	}
 }
 
@@ -440,11 +438,10 @@ func (f *Ferry) Initialize() (err error) {
 		case VerifierTypeChecksumTable:
 			f.Verifier = f.NewChecksumTableVerifier()
 		case VerifierTypeInline:
+			// TODO: eventually we should have the inlineVerifier as an "always on"
+			// component. That will allow us to clean this up.
 			f.inlineVerifier = f.NewInlineVerifier()
 			f.Verifier = f.inlineVerifier
-
-			// TODO: eventually we should have the inlineVerifier as an "always on"
-			// component. That will allow us to remove this line.
 			f.BatchWriter.InlineVerifier = f.inlineVerifier
 		case VerifierTypeNoVerification:
 			// skip
@@ -558,11 +555,12 @@ func (f *Ferry) Run() {
 	}
 
 	inlineVerifierWg := &sync.WaitGroup{}
+	inlineVerifierContext, stopInlineVerifier := context.WithCancel(ctx)
 	if f.inlineVerifier != nil {
 		inlineVerifierWg.Add(1)
 		go func() {
 			defer inlineVerifierWg.Done()
-			f.inlineVerifier.PeriodicallyVerifyBinlogEvents()
+			f.inlineVerifier.PeriodicallyVerifyBinlogEvents(inlineVerifierContext)
 		}()
 	}
 
@@ -592,7 +590,7 @@ func (f *Ferry) Run() {
 	dataIteratorWg.Wait()
 
 	if f.inlineVerifier != nil {
-		f.inlineVerifier.StopPeriodicallyVerifyBinlogEvents()
+		stopInlineVerifier()
 		inlineVerifierWg.Wait()
 	}
 

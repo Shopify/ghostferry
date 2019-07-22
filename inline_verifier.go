@@ -2,8 +2,8 @@ package ghostferry
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -115,23 +115,9 @@ func (s *BinlogVerifyStore) FlushAndBatchByTable(batchsize int) []BinlogVerifyBa
 		}
 	}
 
-	s.flushWithoutLock()
-	return batches
-}
-
-func (s *BinlogVerifyStore) Serialize() BinlogVerifySerializedStore {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-
-	return BinlogVerifySerializedStore{
-		Store:    s.store,
-		RowCount: s.currentRowCount,
-	}
-}
-
-func (s *BinlogVerifyStore) flushWithoutLock() {
 	s.store = make(map[string]map[string]map[uint64]struct{})
 	s.currentRowCount = 0
+	return batches
 }
 
 type InlineVerifier struct {
@@ -142,13 +128,11 @@ type InlineVerifier struct {
 	TableSchemaCache           TableSchemaCache
 	BatchSize                  int
 	VerifyBinlogEventsInterval time.Duration
-	FinalReverifyMaxIterations int
 	MaxExpectedDowntime        time.Duration
 
 	ErrorHandler ErrorHandler
 
 	reverifyStore              *BinlogVerifyStore
-	periodicVerifyStopped      bool
 	verifyDuringCutoverStarted AtomicBoolean
 
 	sourceStmtCache *StmtCache
@@ -184,7 +168,7 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, target
 	}
 
 	// Fetch target data
-	targetFingerprints, targetDecompressedData, err := v.getFingerprintDataFromDb("target", targetSchema, targetTable, tx, table, pks)
+	targetFingerprints, targetDecompressedData, err := v.getFingerprintDataFromTargetDb(targetSchema, targetTable, tx, table, pks)
 	if err != nil {
 		return nil, err
 	}
@@ -219,35 +203,37 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, target
 	return v.compareHashesAndData(sourceFingerprints, targetFingerprints, sourceDecompressedData, targetDecompressedData), nil
 }
 
-func (v *InlineVerifier) PeriodicallyVerifyBinlogEvents() {
+func (v *InlineVerifier) PeriodicallyVerifyBinlogEvents(ctx context.Context) {
 	v.logger.Info("starting periodic reverifier")
+	ticker := time.NewTicker(v.VerifyBinlogEventsInterval)
+	defer ticker.Stop()
 
-	for !v.periodicVerifyStopped {
-		time.Sleep(v.VerifyBinlogEventsInterval)
-		_, mismatches, err := v.verifyAllEventsInStore()
-		if err != nil {
-			v.ErrorHandler.Fatal("inline_verifier", err)
+	for {
+		select {
+		case <-ticker.C:
+			_, mismatches, err := v.verifyAllEventsInStore()
+			if err != nil {
+				v.ErrorHandler.Fatal("inline_verifier", err)
+			}
+
+			v.readdMismatchedPKsToBeVerifiedAgain(mismatches)
+
+			v.logger.WithFields(logrus.Fields{
+				"remainingRowCount": v.reverifyStore.currentRowCount,
+			}).Debug("reverified")
+		case <-ctx.Done():
+			v.logger.Info("shutdown periodic reverifier")
+			return
 		}
-
-		v.readdMismatchedPKsToBeVerifiedAgain(mismatches)
-
-		v.logger.WithFields(logrus.Fields{
-			"remainingRowCount": v.reverifyStore.currentRowCount,
-		}).Debug("reverified")
 	}
 
-	v.logger.Info("shutdown periodic reverifier")
-}
-
-func (v *InlineVerifier) StopPeriodicallyVerifyBinlogEvents() {
-	v.periodicVerifyStopped = true
-	v.logger.Info("request shutdown of periodic reverifier")
 }
 
 func (v *InlineVerifier) VerifyBeforeCutover() error {
 	var timeToVerify time.Duration
 	// Iterate until the reverify queue is small enough
-	for i := 0; i < v.FinalReverifyMaxIterations; i++ {
+	// Maximum 30 iterations.
+	for i := 0; i < 30; i++ {
 		before := v.reverifyStore.currentRowCount
 		start := time.Now()
 
@@ -279,6 +265,7 @@ func (v *InlineVerifier) VerifyBeforeCutover() error {
 }
 
 func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
+	v.verifyDuringCutoverStarted.Set(true)
 	mismatchFound, mismatches, err := v.verifyAllEventsInStore()
 	if err != nil {
 		v.logger.WithError(err).Error("failed to VerifyDuringCutover")
@@ -291,6 +278,7 @@ func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 		}, nil
 	}
 
+	// Build error message for display
 	var messageBuf bytes.Buffer
 	messageBuf.WriteString("cutover verification failed for: ")
 	incorrectTables := make([]string, 0)
@@ -319,19 +307,15 @@ func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	}, nil
 }
 
-func (v *InlineVerifier) getFingerprintDataFromDb(whichDB, schemaName, tableName string, tx *sql.Tx, table *TableSchema, pks []uint64) (map[uint64][]byte, map[uint64]map[string][]byte, error) {
-	var db *sql.DB
-	var stmtCache *StmtCache
-	if whichDB == "source" {
-		db = v.SourceDB
-		stmtCache = v.sourceStmtCache
-	} else if whichDB == "target" {
-		db = v.TargetDB
-		stmtCache = v.targetStmtCache
-	} else {
-		return nil, nil, errors.New("programming error: whichDB must be either source or target")
-	}
+func (v *InlineVerifier) getFingerprintDataFromSourceDb(schemaName, tableName string, tx *sql.Tx, table *TableSchema, pks []uint64) (map[uint64][]byte, map[uint64]map[string][]byte, error) {
+	return v.getFingerprintDataFromDb(v.SourceDB, v.sourceStmtCache, schemaName, tableName, tx, table, pks)
+}
 
+func (v *InlineVerifier) getFingerprintDataFromTargetDb(schemaName, tableName string, tx *sql.Tx, table *TableSchema, pks []uint64) (map[uint64][]byte, map[uint64]map[string][]byte, error) {
+	return v.getFingerprintDataFromDb(v.TargetDB, v.targetStmtCache, schemaName, tableName, tx, table, pks)
+}
+
+func (v *InlineVerifier) getFingerprintDataFromDb(db *sql.DB, stmtCache *StmtCache, schemaName, tableName string, tx *sql.Tx, table *TableSchema, pks []uint64) (map[uint64][]byte, map[uint64]map[string][]byte, error) {
 	fingerprintQuery := table.FingerprintQuery(schemaName, tableName, len(pks))
 	fingerprintStmt, err := stmtCache.StmtFor(db, fingerprintQuery)
 	if err != nil {
@@ -571,8 +555,8 @@ func (v *InlineVerifier) verifyBinlogBatch(batch BinlogVerifyBatch) ([]uint64, e
 	go func() {
 		defer wg.Done()
 		sourceErr = WithRetries(5, 0, v.logger, "get fingerprints from source db", func() (err error) {
-			sourceFingerprints, sourceDecompressedData, err = v.getFingerprintDataFromDb(
-				"source", batch.SchemaName, batch.TableName,
+			sourceFingerprints, sourceDecompressedData, err = v.getFingerprintDataFromSourceDb(
+				batch.SchemaName, batch.TableName,
 				nil, // No transaction
 				sourceTableSchema,
 				batch.Pks,
@@ -587,8 +571,8 @@ func (v *InlineVerifier) verifyBinlogBatch(batch BinlogVerifyBatch) ([]uint64, e
 	go func() {
 		defer wg.Done()
 		targetErr = WithRetries(5, 0, v.logger, "get fingerprints from target db", func() (err error) {
-			targetFingerprints, targetDecompressedData, err = v.getFingerprintDataFromDb(
-				"target", targetSchema, targetTable,
+			targetFingerprints, targetDecompressedData, err = v.getFingerprintDataFromTargetDb(
+				targetSchema, targetTable,
 				nil, // No transaction
 				sourceTableSchema,
 				batch.Pks,

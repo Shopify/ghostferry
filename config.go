@@ -144,15 +144,13 @@ func (c *DatabaseConfig) assertParamSet(param, value string) error {
 
 type InlineVerifierConfig struct {
 	// The maximum expected downtime during cutover, in the format of
-	// time.ParseDuration.
+	// time.ParseDuration. If nothing is specified, the InlineVerifier will not
+	// try to estimate the downtime and will always allow cutover.
 	MaxExpectedDowntime string
 
 	// The interval at which the periodic binlog reverification occurs, in the
-	// format of time.ParseDuration.
+	// format of time.ParseDuration. Default: 1s.
 	VerifyBinlogEventsInterval string
-
-	// The maximum number of iterations to perform reverify in VerifyBeforeCutover
-	FinalReverifyMaxIterations int
 
 	verifyBinlogEventsInterval time.Duration
 	maxExpectedDowntime        time.Duration
@@ -165,6 +163,8 @@ func (c *InlineVerifierConfig) Validate() error {
 		if err != nil {
 			return err
 		}
+	} else {
+		c.maxExpectedDowntime = time.Duration(0)
 	}
 
 	if c.VerifyBinlogEventsInterval == "" {
@@ -174,10 +174,6 @@ func (c *InlineVerifierConfig) Validate() error {
 	c.verifyBinlogEventsInterval, err = time.ParseDuration(c.VerifyBinlogEventsInterval)
 	if err != nil {
 		return err
-	}
-
-	if c.FinalReverifyMaxIterations == 0 {
-		c.FinalReverifyMaxIterations = 30
 	}
 
 	return nil
