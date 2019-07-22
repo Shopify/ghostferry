@@ -21,7 +21,7 @@ class InlineVerifierTest < GhostferryTestCase
 
     refute_nil ghostferry.error
     err_msg = ghostferry.error["ErrMessage"]
-    assert err_msg.include?("row fingerprints for pks [#{corrupting_id}] do not match"), message: err_msg
+    assert err_msg.include?("row fingerprints for pks [#{corrupting_id}] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
 
     # Make sure it is not inserted into the target
     results = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{corrupting_id}")
@@ -45,7 +45,7 @@ class InlineVerifierTest < GhostferryTestCase
 
     refute_nil ghostferry.error
     err_msg = ghostferry.error["ErrMessage"]
-    assert err_msg.include?("row fingerprints for pks [1] do not match"), message: err_msg
+    assert err_msg.include?("row fingerprints for pks [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
   end
 
   def test_same_decompressed_data_different_compressed_test_passes_inline_verification

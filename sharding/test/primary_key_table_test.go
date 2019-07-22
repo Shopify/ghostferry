@@ -90,7 +90,7 @@ func (t *PrimaryKeyTableTestSuite) TestPrimaryKeyTableVerificationFailure() {
 	t.Ferry.Run()
 
 	t.Require().NotNil(errHandler.LastError)
-	t.Require().Equal("primary key tables verifier detected data discrepancy: verification failed on table: gftest1.tenants_table for pk: 2", errHandler.LastError.Error())
+	t.Require().Equal("row fingerprints for pks [2] on gftest1.tenants_table do not match", errHandler.LastError.Error())
 }
 
 func TestPrimaryKeyTableTestSuite(t *testing.T) {

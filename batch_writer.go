@@ -83,7 +83,7 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 
 			if len(mismatches) > 0 {
 				tx.Rollback()
-				return fmt.Errorf("row fingerprints for pks %v do not match", mismatches)
+				return fmt.Errorf("row fingerprints for pks %v on %v do not match", mismatches, batch.TableSchema().String())
 			}
 		}
 

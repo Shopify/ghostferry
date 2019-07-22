@@ -220,6 +220,12 @@ func (f *Ferry) NewInlineVerifier() *InlineVerifier {
 	}
 }
 
+func (f *Ferry) NewInlineVerifierWithoutStateTracker() *InlineVerifier {
+	v := f.NewInlineVerifier()
+	v.StateTracker = nil
+	return v
+}
+
 func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
 	f.ensureInitialized()
 
@@ -654,12 +660,17 @@ func (f *Ferry) RunStandaloneDataCopy(tables []*TableSchema) error {
 	}
 
 	dataIterator := f.NewDataIteratorWithoutStateTracker()
+	batchWriter := f.NewBatchWriterWithoutStateTracker()
+
+	// Always use the InlineVerifier to verify the copied data here.
+	dataIterator.SelectFingerprint = true
+	batchWriter.InlineVerifier = f.NewInlineVerifierWithoutStateTracker()
 
 	// BUG: if the PanicErrorHandler fires while running the standalone copy, we
 	// will get an error dump even though we should not get one, which could be
 	// misleading.
 
-	dataIterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
+	dataIterator.AddBatchListener(batchWriter.WriteRowBatch)
 	f.logger.WithField("tables", tables).Info("starting delta table copy in cutover")
 
 	dataIterator.Run(tables)
