@@ -85,8 +85,8 @@ func FetchStatusDeprecated(f *Ferry, v Verifier) *StatusDeprecated {
 
 	serializedState := f.StateTracker.Serialize(nil)
 
-	lastSuccessfulPKs := serializedState.CopyStage.LastSuccessfulPrimaryKeys
-	completedTables := serializedState.CopyStage.CompletedTables
+	lastSuccessfulPKs := serializedState.LastSuccessfulPrimaryKeys
+	completedTables := serializedState.CompletedTables
 
 	targetPKs := make(map[string]uint64)
 	f.DataIterator.targetPKs.Range(func(k, v interface{}) bool {
@@ -181,7 +181,7 @@ func FetchStatusDeprecated(f *Ferry, v Verifier) *StatusDeprecated {
 	// ASAP. It's not supposed to be that accurate anyway.
 	var totalPKsToCopy uint64 = 0
 	var completedPKs uint64 = 0
-	estimatedPKsPerSecond := f.StateTracker.CopyStage.EstimatedPKsPerSecond()
+	estimatedPKsPerSecond := f.StateTracker.EstimatedPKsPerSecond()
 	for _, targetPK := range targetPKs {
 		totalPKsToCopy += targetPK
 	}

@@ -10,7 +10,7 @@ import (
 type BatchWriter struct {
 	DB             *sql.DB
 	InlineVerifier *InlineVerifier
-	StateTracker   *CopyStateTracker
+	StateTracker   *StateTracker
 
 	DatabaseRewrites map[string]string
 	TableRewrites    map[string]string

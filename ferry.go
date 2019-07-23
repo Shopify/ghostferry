@@ -102,7 +102,7 @@ func (f *Ferry) NewDataIterator() *DataIterator {
 			BatchSize:   f.Config.DataIterationBatchSize,
 			ReadRetries: f.Config.DBReadRetries,
 		},
-		StateTracker: f.StateTracker.CopyStage,
+		StateTracker: f.StateTracker,
 	}
 
 	if f.CopyFilter != nil {
@@ -144,7 +144,7 @@ func (f *Ferry) NewBinlogWriter() *BinlogWriter {
 		WriteRetries: f.Config.DBWriteRetries,
 
 		ErrorHandler: f.ErrorHandler,
-		StateTracker: f.StateTracker.CopyStage,
+		StateTracker: f.StateTracker,
 	}
 }
 
@@ -159,7 +159,7 @@ func (f *Ferry) NewBatchWriter() *BatchWriter {
 
 	batchWriter := &BatchWriter{
 		DB:           f.TargetDB,
-		StateTracker: f.StateTracker.CopyStage,
+		StateTracker: f.StateTracker,
 
 		DatabaseRewrites: f.Config.DatabaseRewrites,
 		TableRewrites:    f.Config.TableRewrites,
@@ -480,7 +480,7 @@ func (f *Ferry) Start() error {
 	// If we don't set this now, there is a race condition where Ghostferry
 	// is terminated with some rows copied but no binlog events are written.
 	// This guarentees that we are able to restart from a valid location.
-	f.StateTracker.CopyStage.UpdateLastProcessedBinlogPosition(pos)
+	f.StateTracker.UpdateLastWrittenBinlogPosition(pos)
 
 	return nil
 }
@@ -698,7 +698,7 @@ func (f *Ferry) Progress() *Progress {
 	s.FinalBinlogPos = f.BinlogStreamer.targetBinlogPosition
 
 	// Table Progress
-	serializedState := f.StateTracker.CopyStage.Serialize()
+	serializedState := f.StateTracker.Serialize(nil)
 	s.Tables = make(map[string]TableProgress)
 	targetPKs := make(map[string]uint64)
 	f.DataIterator.targetPKs.Range(func(k, v interface{}) bool {
@@ -731,7 +731,7 @@ func (f *Ferry) Progress() *Progress {
 	// ETA
 	var totalPKsToCopy uint64 = 0
 	var completedPKs uint64 = 0
-	estimatedPKsPerSecond := f.StateTracker.CopyStage.EstimatedPKsPerSecond()
+	estimatedPKsPerSecond := f.StateTracker.EstimatedPKsPerSecond()
 	for _, targetPK := range targetPKs {
 		totalPKsToCopy += targetPK
 	}
