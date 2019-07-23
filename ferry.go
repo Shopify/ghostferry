@@ -481,7 +481,6 @@ func (f *Ferry) Start() error {
 	// is terminated with some rows copied but no binlog events are written.
 	// This guarentees that we are able to restart from a valid location.
 	f.StateTracker.UpdateLastWrittenBinlogPosition(pos)
-	f.StateTracker.UpdateLastStoredBinlogPositionForInlineVerifier(pos)
 
 	return nil
 }

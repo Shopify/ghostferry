@@ -34,27 +34,13 @@ type SerializableState struct {
 	GhostferryVersion         string
 	LastKnownTableSchemaCache TableSchemaCache
 
-	LastSuccessfulPrimaryKeys                 map[string]uint64
-	CompletedTables                           map[string]bool
-	LastWrittenBinlogPosition                 mysql.Position
-	LastStoredBinlogPositionForInlineVerifier mysql.Position
+	LastSuccessfulPrimaryKeys map[string]uint64
+	CompletedTables           map[string]bool
+	LastWrittenBinlogPosition mysql.Position
 }
 
 func (s *SerializableState) MinBinlogPosition() mysql.Position {
-	nilPosition := mysql.Position{}
-	if s.LastWrittenBinlogPosition == nilPosition {
-		return s.LastStoredBinlogPositionForInlineVerifier
-	}
-
-	if s.LastStoredBinlogPositionForInlineVerifier == nilPosition {
-		return s.LastWrittenBinlogPosition
-	}
-
-	if s.LastWrittenBinlogPosition.Compare(s.LastStoredBinlogPositionForInlineVerifier) >= 0 {
-		return s.LastStoredBinlogPositionForInlineVerifier
-	} else {
-		return s.LastWrittenBinlogPosition
-	}
+	return s.LastWrittenBinlogPosition
 }
 
 // For tracking the speed of the copy
@@ -81,8 +67,7 @@ type StateTracker struct {
 	BinlogRWMutex *sync.RWMutex
 	CopyRWMutex   *sync.RWMutex
 
-	lastWrittenBinlogPosition                 mysql.Position
-	lastStoredBinlogPositionForInlineVerifier mysql.Position
+	lastWrittenBinlogPosition mysql.Position
 
 	lastSuccessfulPrimaryKeys map[string]uint64
 	completedTables           map[string]bool
@@ -108,7 +93,6 @@ func NewStateTrackerFromSerializedState(speedLogCount int, serializedState *Seri
 	s.lastSuccessfulPrimaryKeys = serializedState.LastSuccessfulPrimaryKeys
 	s.completedTables = serializedState.CompletedTables
 	s.lastWrittenBinlogPosition = serializedState.LastWrittenBinlogPosition
-	s.lastStoredBinlogPositionForInlineVerifier = serializedState.LastStoredBinlogPositionForInlineVerifier
 	return s
 }
 
@@ -117,13 +101,6 @@ func (s *StateTracker) UpdateLastWrittenBinlogPosition(pos mysql.Position) {
 	defer s.BinlogRWMutex.Unlock()
 
 	s.lastWrittenBinlogPosition = pos
-}
-
-func (s *StateTracker) UpdateLastStoredBinlogPositionForInlineVerifier(pos mysql.Position) {
-	s.BinlogRWMutex.Lock()
-	defer s.BinlogRWMutex.Unlock()
-
-	s.lastStoredBinlogPositionForInlineVerifier = pos
 }
 
 func (s *StateTracker) UpdateLastSuccessfulPK(table string, pk uint64) {
@@ -216,12 +193,12 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache) *Se
 	defer s.CopyRWMutex.RUnlock()
 
 	state := &SerializableState{
-		GhostferryVersion:                         VersionString,
-		LastKnownTableSchemaCache:                 lastKnownTableSchemaCache,
-		LastSuccessfulPrimaryKeys:                 make(map[string]uint64),
-		CompletedTables:                           make(map[string]bool),
-		LastWrittenBinlogPosition:                 s.lastWrittenBinlogPosition,
-		LastStoredBinlogPositionForInlineVerifier: s.lastStoredBinlogPositionForInlineVerifier,
+		GhostferryVersion:         VersionString,
+		LastKnownTableSchemaCache: lastKnownTableSchemaCache,
+		LastSuccessfulPrimaryKeys: make(map[string]uint64),
+		CompletedTables:           make(map[string]bool),
+		LastWrittenBinlogPosition: s.lastWrittenBinlogPosition,
+		// TODO: LastVerifiedBinlogPosition
 		// TODO: BinlogVerifySerializedStore
 	}
 
