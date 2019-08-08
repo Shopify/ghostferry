@@ -22,6 +22,9 @@ up:
       meet: echo 'mysql failed to start'; false
       down: docker-compose stop mysql-1 mysql-2
 
+env:
+  GOFLAGS: '-mod=vendor'
+
 commands:
   test:
     desc: Run the test suite.

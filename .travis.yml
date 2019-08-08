@@ -10,7 +10,7 @@ services:
   - docker
 
 env:
-  - DOCKER_COMPOSE_VERSION=1.21.2 RELEASE_BRANCH=master
+  - DOCKER_COMPOSE_VERSION=1.21.2 RELEASE_BRANCH=master GO111MODULE=on GOFLAGS=-mod=vendor
 
 install:
   # Installing Docker Compose
