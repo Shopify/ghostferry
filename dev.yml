@@ -2,20 +2,20 @@ name: ghostferry
 
 up:
   - homebrew:
-    - glide
     - mysql
   - ruby: 2.5.1
   - bundler
   - go:
-      version: 1.10.3
+      version: 1.12.7
+      modules: true
   - custom:
       name: Docker for Mac
       met?: test -e /Applications/Docker.app
       meet: echo "Docker not found. Install from https://docs.docker.com/docker-for-mac/"; false
   - custom:
       name: Go Dependencies
-      met?: dep ensure
-      meet: echo 'dep failed to ensure dependencies'; false
+      met?: go mod verify
+      meet: echo 'go mod failed to verify dependencies'; false
   - custom:
       name: MySQL
       met?: docker-compose up -d mysql-1 mysql-2
