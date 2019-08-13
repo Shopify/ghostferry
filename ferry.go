@@ -73,7 +73,8 @@ type Ferry struct {
 	// If VerifierType is specified and this is nil on Ferry initialization, a
 	// Verifier will be created by Initialize. If an IterativeVerifier is to be
 	// created, IterativeVerifierConfig will be used to create the verifier.
-	Verifier Verifier
+	Verifier       Verifier
+	inlineVerifier *InlineVerifier
 
 	Tables TableSchemaCache
 
@@ -193,9 +194,18 @@ func (f *Ferry) NewInlineVerifier() *InlineVerifier {
 	f.ensureInitialized()
 
 	return &InlineVerifier{
-		SourceDB: f.SourceDB,
-		TargetDB: f.TargetDB,
+		SourceDB:                   f.SourceDB,
+		TargetDB:                   f.TargetDB,
+		DatabaseRewrites:           f.Config.DatabaseRewrites,
+		TableRewrites:              f.Config.TableRewrites,
+		TableSchemaCache:           f.Tables,
+		BatchSize:                  f.Config.BinlogEventBatchSize,
+		VerifyBinlogEventsInterval: f.Config.InlineVerifierConfig.verifyBinlogEventsInterval,
+		MaxExpectedDowntime:        f.Config.InlineVerifierConfig.maxExpectedDowntime,
 
+		ErrorHandler: f.ErrorHandler,
+
+		reverifyStore:   NewBinlogVerifyStore(),
 		sourceStmtCache: NewStmtCache(),
 		targetStmtCache: NewStmtCache(),
 		logger:          logrus.WithField("tag", "inline-verifier"),
@@ -428,12 +438,11 @@ func (f *Ferry) Initialize() (err error) {
 		case VerifierTypeChecksumTable:
 			f.Verifier = f.NewChecksumTableVerifier()
 		case VerifierTypeInline:
-			inlineVerifier := f.NewInlineVerifier()
-			f.Verifier = inlineVerifier
-
 			// TODO: eventually we should have the inlineVerifier as an "always on"
-			// component. That will allow us to remove this line.
-			f.BatchWriter.InlineVerifier = inlineVerifier
+			// component. That will allow us to clean this up.
+			f.inlineVerifier = f.NewInlineVerifier()
+			f.Verifier = f.inlineVerifier
+			f.BatchWriter.InlineVerifier = f.inlineVerifier
 		case VerifierTypeNoVerification:
 			// skip
 		default:
@@ -460,6 +469,10 @@ func (f *Ferry) Start() error {
 	// and after the data gets written to the target database.
 	f.BinlogStreamer.AddEventListener(f.BinlogWriter.BufferBinlogEvents)
 	f.DataIterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
+
+	if f.inlineVerifier != nil {
+		f.BinlogStreamer.AddEventListener(f.inlineVerifier.binlogEventListener)
+	}
 
 	// The starting binlog coordinates must be determined first. If it is
 	// determined after the DataIterator starts, the DataIterator might
@@ -541,6 +554,16 @@ func (f *Ferry) Run() {
 		}()
 	}
 
+	inlineVerifierWg := &sync.WaitGroup{}
+	inlineVerifierContext, stopInlineVerifier := context.WithCancel(ctx)
+	if f.inlineVerifier != nil {
+		inlineVerifierWg.Add(1)
+		go func() {
+			defer inlineVerifierWg.Done()
+			f.inlineVerifier.PeriodicallyVerifyBinlogEvents(inlineVerifierContext)
+		}()
+	}
+
 	binlogWg := &sync.WaitGroup{}
 	binlogWg.Add(2)
 
@@ -565,6 +588,11 @@ func (f *Ferry) Run() {
 	}()
 
 	dataIteratorWg.Wait()
+
+	if f.inlineVerifier != nil {
+		stopInlineVerifier()
+		inlineVerifierWg.Wait()
+	}
 
 	if f.Verifier != nil {
 		f.logger.Info("calling VerifyBeforeCutover")

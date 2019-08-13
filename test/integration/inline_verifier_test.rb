@@ -66,6 +66,30 @@ class InlineVerifierTest < GhostferryTestCase
     assert_nil ghostferry.error
   end
 
+  def test_catches_binlog_streamer_corruption
+    seed_random_data(source_db, number_of_rows: 1)
+    seed_random_data(target_db, number_of_rows: 0)
+
+    result = source_db.query("SELECT id FROM #{DEFAULT_FULL_TABLE_NAME} LIMIT 1")
+    corrupting_id = result.first["id"] + 1
+    enable_corrupting_insert_trigger(corrupting_id)
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+
+    ghostferry.on_status(Ghostferry::Status::ROW_COPY_COMPLETED) do
+      source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (#{corrupting_id}, 'data')")
+    end
+
+    verification_ran = false
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*incorrect_tables|
+      verification_ran = true
+      assert_equal ["gftest.test_table_1"], incorrect_tables
+    end
+
+    ghostferry.run
+    assert verification_ran
+  end
+
   private
 
   def enable_corrupting_insert_trigger(corrupting_id)
