@@ -31,9 +31,16 @@ type BinlogVerifyStore struct {
 	currentRowCount uint64 // The number of rows in store currently.
 }
 
-type BinlogVerifySerializedStore struct {
-	Store    map[string]map[string]map[uint64]struct{}
-	RowCount uint64
+type BinlogVerifySerializedStore map[string]map[string]map[uint64]struct{}
+
+func (s BinlogVerifySerializedStore) RowCount() uint64 {
+	var v uint64 = 0
+	for _, dbStore := range s {
+		for _, tableStore := range dbStore {
+			v += uint64(len(tableStore))
+		}
+	}
+	return v
 }
 
 type BinlogVerifyBatch struct {
