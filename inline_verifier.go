@@ -91,7 +91,29 @@ func (s *BinlogVerifyStore) Add(table *TableSchema, pk uint64) {
 	}
 }
 
-func (s *BinlogVerifyStore) FlushAndBatchByTable(batchsize int) []BinlogVerifyBatch {
+func (s *BinlogVerifyStore) RemoveVerifiedBatch(batch BinlogVerifyBatch) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	dbStore, exists := s.store[batch.SchemaName]
+	if !exists {
+		return
+	}
+
+	tableStore, exists := dbStore[batch.TableName]
+	if !exists {
+		return
+	}
+
+	for _, pk := range batch.Pks {
+		if _, exists = tableStore[pk]; exists {
+			delete(tableStore, pk)
+			s.currentRowCount--
+		}
+	}
+}
+
+func (s *BinlogVerifyStore) Batches(batchsize int) []BinlogVerifyBatch {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
@@ -122,8 +144,6 @@ func (s *BinlogVerifyStore) FlushAndBatchByTable(batchsize int) []BinlogVerifyBa
 		}
 	}
 
-	s.store = make(map[string]map[string]map[uint64]struct{})
-	s.currentRowCount = 0
 	return batches
 }
 
@@ -502,7 +522,7 @@ func (v *InlineVerifier) readdMismatchedPKsToBeVerifiedAgain(mismatches map[stri
 func (v *InlineVerifier) verifyAllEventsInStore() (bool, map[string]map[string][]uint64, error) {
 	mismatchFound := false
 	mismatches := make(map[string]map[string][]uint64)
-	allBatches := v.reverifyStore.FlushAndBatchByTable(v.BatchSize)
+	allBatches := v.reverifyStore.Batches(v.BatchSize)
 
 	if len(allBatches) == 0 {
 		return mismatchFound, mismatches, nil
@@ -523,6 +543,7 @@ func (v *InlineVerifier) verifyAllEventsInStore() (bool, map[string]map[string][
 		if err != nil {
 			return false, nil, err
 		}
+		v.reverifyStore.RemoveVerifiedBatch(batch)
 
 		if len(batchMismatches) > 0 {
 			mismatchFound = true
