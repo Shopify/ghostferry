@@ -22,7 +22,27 @@ type BinlogVerifyStore struct {
 	EmitLogPerRowsAdded uint64
 
 	mutex *sync.Mutex
-	store map[string]map[string]map[uint64]struct{} // db => table => (pk set)
+	// db => table => pk => number of times it changed.
+	//
+	// We need to store the number of times the row has changed because of the
+	// following series of events:
+	//
+	// 1. A row changed.
+	// 2. The row gets verified in a batch.
+	// 3. Still while verifying the same batch, the row verified in step 2 gets
+	//    changed on the source databse. This should cause the row to be requeued
+	//    to into the BinlogVerifyStore.
+	// 4. The batch verification finishes and we need to delete the rows in that
+	//    batch from the BinlogVerifyStore. But we cannot lose the row verified
+	//    and subsequently changed in step 2 and step 3.
+	//
+	// Storing the number of times the row has changed means that step 4 will
+	// simply decrement this number.
+	//
+	// We may waste some CPU cycles by verify a row multiple times unnecessarily,
+	// but at least this approach is correct for now without major rework of the
+	// BinlogVerifyStore data structure and any code that manipulates this store.
+	store map[string]map[string]map[uint64]int
 
 	// The total number of rows added to the reverify store, ever.  Does not
 	// include the rows added in the interrupted run if the present run is a
@@ -31,7 +51,7 @@ type BinlogVerifyStore struct {
 	currentRowCount uint64 // The number of rows in store currently.
 }
 
-type BinlogVerifySerializedStore map[string]map[string]map[uint64]struct{}
+type BinlogVerifySerializedStore map[string]map[string]map[uint64]int
 
 func (s BinlogVerifySerializedStore) RowCount() uint64 {
 	var v uint64 = 0
@@ -53,7 +73,7 @@ func NewBinlogVerifyStore() *BinlogVerifyStore {
 	return &BinlogVerifyStore{
 		EmitLogPerRowsAdded: uint64(10000), // TODO: make this configurable
 		mutex:               &sync.Mutex{},
-		store:               make(map[string]map[string]map[uint64]struct{}),
+		store:               make(map[string]map[string]map[uint64]int),
 		totalRowCount:       uint64(0),
 		currentRowCount:     uint64(0),
 	}
@@ -65,29 +85,31 @@ func (s *BinlogVerifyStore) Add(table *TableSchema, pk uint64) {
 
 	_, exists := s.store[table.Schema]
 	if !exists {
-		s.store[table.Schema] = make(map[string]map[uint64]struct{})
+		s.store[table.Schema] = make(map[string]map[uint64]int)
 	}
 
 	_, exists = s.store[table.Schema][table.Name]
 	if !exists {
-		s.store[table.Schema][table.Name] = make(map[uint64]struct{})
+		s.store[table.Schema][table.Name] = make(map[uint64]int)
 	}
 
 	_, exists = s.store[table.Schema][table.Name][pk]
 	if !exists {
-		s.store[table.Schema][table.Name][pk] = struct{}{}
-		s.totalRowCount++
-		s.currentRowCount++
+		s.store[table.Schema][table.Name][pk] = 0
+	}
 
-		if s.totalRowCount%s.EmitLogPerRowsAdded == 0 {
-			metrics.Gauge("inline_verifier_current_rows", float64(s.currentRowCount), []MetricTag{}, 1.0)
-			metrics.Gauge("inline_verifier_total_rows", float64(s.totalRowCount), []MetricTag{}, 1.0)
-			logrus.WithFields(logrus.Fields{
-				"tag":         "binlog_verify_store",
-				"currentRows": s.currentRowCount,
-				"totalRows":   s.totalRowCount,
-			}).Debug("current rows in BinlogVerifyStore")
-		}
+	s.store[table.Schema][table.Name][pk]++
+	s.totalRowCount++
+	s.currentRowCount++
+
+	if s.totalRowCount%s.EmitLogPerRowsAdded == 0 {
+		metrics.Gauge("inline_verifier_current_rows", float64(s.currentRowCount), []MetricTag{}, 1.0)
+		metrics.Gauge("inline_verifier_total_rows", float64(s.totalRowCount), []MetricTag{}, 1.0)
+		logrus.WithFields(logrus.Fields{
+			"tag":         "binlog_verify_store",
+			"currentRows": s.currentRowCount,
+			"totalRows":   s.totalRowCount,
+		}).Debug("current rows in BinlogVerifyStore")
 	}
 }
 
@@ -107,7 +129,13 @@ func (s *BinlogVerifyStore) RemoveVerifiedBatch(batch BinlogVerifyBatch) {
 
 	for _, pk := range batch.Pks {
 		if _, exists = tableStore[pk]; exists {
-			delete(tableStore, pk)
+			if tableStore[pk] <= 1 {
+				// Even though this doesn't save as RAM, it will save space on the
+				// serialized output.
+				delete(tableStore, pk)
+			} else {
+				tableStore[pk]--
+			}
 			s.currentRowCount--
 		}
 	}
