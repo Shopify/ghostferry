@@ -112,5 +112,6 @@ class GhostferryTestCase < Minitest::Test
     refute dumped_state["LastSuccessfulPrimaryKeys"].nil?
     refute dumped_state["CompletedTables"].nil?
     refute dumped_state["LastWrittenBinlogPosition"].nil?
+    refute dumped_state["LastStoredBinlogPositionForInlineVerifier"].nil?
   end
 end
