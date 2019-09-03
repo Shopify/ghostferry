@@ -193,6 +193,13 @@ func (f *Ferry) NewChecksumTableVerifier() *ChecksumTableVerifier {
 func (f *Ferry) NewInlineVerifier() *InlineVerifier {
 	f.ensureInitialized()
 
+	var binlogVerifyStore *BinlogVerifyStore
+	if f.StateToResumeFrom != nil && f.StateToResumeFrom.BinlogVerifyStore != nil {
+		binlogVerifyStore = NewBinlogVerifyStoreFromSerialized(f.StateToResumeFrom.BinlogVerifyStore)
+	} else {
+		binlogVerifyStore = NewBinlogVerifyStore()
+	}
+
 	return &InlineVerifier{
 		SourceDB:                   f.SourceDB,
 		TargetDB:                   f.TargetDB,
@@ -203,13 +210,20 @@ func (f *Ferry) NewInlineVerifier() *InlineVerifier {
 		VerifyBinlogEventsInterval: f.Config.InlineVerifierConfig.verifyBinlogEventsInterval,
 		MaxExpectedDowntime:        f.Config.InlineVerifierConfig.maxExpectedDowntime,
 
+		StateTracker: f.StateTracker,
 		ErrorHandler: f.ErrorHandler,
 
-		reverifyStore:   NewBinlogVerifyStore(),
+		reverifyStore:   binlogVerifyStore,
 		sourceStmtCache: NewStmtCache(),
 		targetStmtCache: NewStmtCache(),
 		logger:          logrus.WithField("tag", "inline-verifier"),
 	}
+}
+
+func (f *Ferry) NewInlineVerifierWithoutStateTracker() *InlineVerifier {
+	v := f.NewInlineVerifier()
+	v.StateTracker = nil
+	return v
 }
 
 func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
@@ -646,12 +660,17 @@ func (f *Ferry) RunStandaloneDataCopy(tables []*TableSchema) error {
 	}
 
 	dataIterator := f.NewDataIteratorWithoutStateTracker()
+	batchWriter := f.NewBatchWriterWithoutStateTracker()
+
+	// Always use the InlineVerifier to verify the copied data here.
+	dataIterator.SelectFingerprint = true
+	batchWriter.InlineVerifier = f.NewInlineVerifierWithoutStateTracker()
 
 	// BUG: if the PanicErrorHandler fires while running the standalone copy, we
 	// will get an error dump even though we should not get one, which could be
 	// misleading.
 
-	dataIterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
+	dataIterator.AddBatchListener(batchWriter.WriteRowBatch)
 	f.logger.WithField("tables", tables).Info("starting delta table copy in cutover")
 
 	dataIterator.Run(tables)
@@ -707,8 +726,14 @@ func (f *Ferry) SerializeStateToJSON() (string, error) {
 		err := errors.New("no valid StateTracker")
 		return "", err
 	}
-	serializedState := f.StateTracker.Serialize(f.Tables)
-	stateBytes, err := json.MarshalIndent(serializedState, "", "  ")
+	var binlogVerifyStore *BinlogVerifyStore = nil
+	if f.inlineVerifier != nil {
+		binlogVerifyStore = f.inlineVerifier.reverifyStore
+	}
+
+	serializedState := f.StateTracker.Serialize(f.Tables, binlogVerifyStore)
+
+	stateBytes, err := json.MarshalIndent(serializedState, "", " ")
 	return string(stateBytes), err
 }
 
@@ -727,7 +752,7 @@ func (f *Ferry) Progress() *Progress {
 	s.FinalBinlogPos = f.BinlogStreamer.targetBinlogPosition
 
 	// Table Progress
-	serializedState := f.StateTracker.Serialize(nil)
+	serializedState := f.StateTracker.Serialize(nil, nil)
 	s.Tables = make(map[string]TableProgress)
 	targetPKs := make(map[string]uint64)
 	f.DataIterator.targetPKs.Range(func(k, v interface{}) bool {

@@ -197,21 +197,6 @@ func (r *ShardingFerry) deltaCopyJoinedTables() error {
 		return err
 	}
 
-	verifier, err := r.Ferry.NewIterativeVerifier()
-	if err != nil {
-		return err
-	}
-
-	verifier.Tables = tables
-
-	verificationResult, err := verifier.VerifyOnce()
-	if err != nil {
-		return err
-	}
-	if !verificationResult.DataCorrect {
-		return fmt.Errorf("joined tables verifier detected data discrepancy: %s", verificationResult.Message)
-	}
-
 	return nil
 }
 
@@ -250,21 +235,6 @@ func (r *ShardingFerry) copyPrimaryKeyTables() error {
 	err = r.Ferry.RunStandaloneDataCopy(tables)
 	if err != nil {
 		return err
-	}
-
-	verifier, err := r.Ferry.NewIterativeVerifier()
-	if err != nil {
-		return err
-	}
-
-	verifier.TableSchemaCache = sourceDbTables
-	verifier.Tables = tables
-
-	verificationResult, err := verifier.VerifyOnce()
-	if err != nil {
-		return err
-	} else if !verificationResult.DataCorrect {
-		return fmt.Errorf("primary key tables verifier detected data discrepancy: %s", verificationResult.Message)
 	}
 
 	return nil

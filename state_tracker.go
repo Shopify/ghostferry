@@ -38,6 +38,7 @@ type SerializableState struct {
 	CompletedTables                           map[string]bool
 	LastWrittenBinlogPosition                 mysql.Position
 	LastStoredBinlogPositionForInlineVerifier mysql.Position
+	BinlogVerifyStore                         BinlogVerifySerializedStore
 }
 
 func (s *SerializableState) MinBinlogPosition() mysql.Position {
@@ -208,7 +209,7 @@ func (s *StateTracker) updateSpeedLog(deltaPK uint64) {
 	}
 }
 
-func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache) *SerializableState {
+func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, binlogVerifyStore *BinlogVerifyStore) *SerializableState {
 	s.BinlogRWMutex.RLock()
 	defer s.BinlogRWMutex.RUnlock()
 
@@ -222,7 +223,10 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache) *Se
 		CompletedTables:                           make(map[string]bool),
 		LastWrittenBinlogPosition:                 s.lastWrittenBinlogPosition,
 		LastStoredBinlogPositionForInlineVerifier: s.lastStoredBinlogPositionForInlineVerifier,
-		// TODO: BinlogVerifySerializedStore
+	}
+
+	if binlogVerifyStore != nil {
+		state.BinlogVerifyStore = binlogVerifyStore.Serialize()
 	}
 
 	// Need a copy because lastSuccessfulPrimaryKeys may change after Serialize

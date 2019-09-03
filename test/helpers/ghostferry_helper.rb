@@ -47,7 +47,7 @@ module GhostferryHelper
       AFTER_BINLOG_APPLY = "AFTER_BINLOG_APPLY"
     end
 
-    attr_reader :stdout, :stderr, :exit_status, :pid, :error
+    attr_reader :stdout, :stderr, :logrus_lines, :exit_status, :pid, :error, :error_lines
 
     def initialize(main_path, config: {}, logger: nil, message_timeout: 30, port: 39393)
       @logger = logger
@@ -76,6 +76,8 @@ module GhostferryHelper
       @exit_status = nil
       @stdout = []
       @stderr = []
+      @logrus_lines = {} # tag => [line1, line2]
+      @error_lines = [] # lines with level == error
       @error = nil
 
       # Setup the directory to the compiled binary under the system temporary
@@ -250,6 +252,17 @@ module GhostferryHelper
                 @logger.debug("stdout: #{line}")
               elsif reader == stderr
                 @stderr << line
+                if json_log_line?(line)
+                  logline = JSON.parse(line)
+                  tag = logline["tag"]
+                  tag = "_none" if tag.nil?
+                  @logrus_lines[tag] ||= []
+                  @logrus_lines[tag] << logline
+
+                  if logline["level"] == "error"
+                    @error_lines << logline
+                  end
+                end
                 @logger.debug("stderr: #{line}")
               end
             end
@@ -308,6 +321,11 @@ module GhostferryHelper
       Process.kill(signal, @pid) if @pid != 0
     end
 
+    def term_and_wait_for_exit
+      send_signal("TERM")
+      @subprocess_thread.join
+    end
+
     def kill
       @server.shutdown unless @server.nil?
       send_signal("KILL")
@@ -322,6 +340,12 @@ module GhostferryHelper
       rescue GhostferryExitFailure
         # ignore
       end
+    end
+
+    private
+
+    def json_log_line?(line)
+      line.start_with?("{")
     end
   end
 end
