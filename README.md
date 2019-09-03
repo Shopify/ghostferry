@@ -45,5 +45,5 @@ Run tests:
 Test copydb:
 
 - `make copydb && ghostferry-copydb -verbose examples/copydb/conf.json`
-- For a more detailed tutorial, see the
-  [documentation](https://shopify.github.io/ghostferry).
+- For a more detailed [tutorial](https://shopify.github.io/ghostferry/master/tutorialcopydb.html), see the
+  [documentation](https://shopify.github.io/ghostferry/master/index.html).
