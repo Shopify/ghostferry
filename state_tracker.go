@@ -209,7 +209,7 @@ func (s *StateTracker) updateSpeedLog(deltaPK uint64) {
 	}
 }
 
-func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache) *SerializableState {
+func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, binlogVerifyStore *BinlogVerifyStore) *SerializableState {
 	s.BinlogRWMutex.RLock()
 	defer s.BinlogRWMutex.RUnlock()
 
@@ -223,6 +223,10 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache) *Se
 		CompletedTables:                           make(map[string]bool),
 		LastWrittenBinlogPosition:                 s.lastWrittenBinlogPosition,
 		LastStoredBinlogPositionForInlineVerifier: s.lastStoredBinlogPositionForInlineVerifier,
+	}
+
+	if binlogVerifyStore != nil {
+		state.BinlogVerifyStore = binlogVerifyStore.Serialize()
 	}
 
 	// Need a copy because lastSuccessfulPrimaryKeys may change after Serialize

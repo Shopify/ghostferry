@@ -170,12 +170,13 @@ class InterruptResumeTest < GhostferryTestCase
     refute_nil dumped_state["BinlogVerifyStore"]["gftest"]["test_table_1"]
 
     # FLAKY: AFTER_BINLOG_APPLY is emitted after the BinlogStreamer
-    #        finishes processing all of the event listeners. The block below
-    #        blocks the BinlogStreamer from processing additional rows but it
-    #        does not block InlineVerifier.PeriodicallyVerifyBinlogEvents. This
-    #        means the binlog event created in the code above may be verified
-    #        before the TERM signal is processed. Thus, the state dump may not
-    #        contain this row.
+    #        finishes processing all of the event listeners. The
+    #        term_and_wait_for_exit above blocks the BinlogStreamer from
+    #        processing additional rows but it does not block
+    #        InlineVerifier.PeriodicallyVerifyBinlogEvents. This means the
+    #        binlog event created in the code above may be verified before the
+    #        TERM signal is processed. Thus, the state dump may not contain
+    #        this row.
     #
     #        Fixing this is somewhat non-trivial and likely require a more
     #        extensive signal emitting system within Ghostferry.
@@ -253,6 +254,16 @@ class InterruptResumeTest < GhostferryTestCase
     result = source_db.query("SELECT MIN(id) FROM #{DEFAULT_FULL_TABLE_NAME}")
     chosen_id = result.first["MIN(id)"]
 
+    # This test is intended to observe the actions of a resumed InlineVerifier
+    # on a binlog entry that was inserted into the source database while
+    # Ghostferry is interrupted. Normally, Ghostferry would correctly apply the
+    # binlog entry to the target and the InlineVerifier will verify the row
+    # without errors. This means the test will not be able to observe that the
+    # InlineVerifier actually tried to verify that row. To observe the action
+    # of the InlineVerifier, we artificially corrupt the data on the target,
+    # causing the BinlogStreamer to not able to SET data = 'data2' on the
+    # target. The InlineVerifier should pick up this case if it is implemented
+    # correctly.
     source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'data2' WHERE id = #{chosen_id}")
     target_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'corrupted' WHERE id = #{chosen_id}")
 

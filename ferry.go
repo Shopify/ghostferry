@@ -726,11 +726,12 @@ func (f *Ferry) SerializeStateToJSON() (string, error) {
 		err := errors.New("no valid StateTracker")
 		return "", err
 	}
-	serializedState := f.StateTracker.Serialize(f.Tables)
-
+	var binlogVerifyStore *BinlogVerifyStore = nil
 	if f.inlineVerifier != nil {
-		serializedState.BinlogVerifyStore = f.inlineVerifier.reverifyStore.Serialize()
+		binlogVerifyStore = f.inlineVerifier.reverifyStore
 	}
+
+	serializedState := f.StateTracker.Serialize(f.Tables, binlogVerifyStore)
 
 	stateBytes, err := json.MarshalIndent(serializedState, "", " ")
 	return string(stateBytes), err
@@ -751,7 +752,7 @@ func (f *Ferry) Progress() *Progress {
 	s.FinalBinlogPos = f.BinlogStreamer.targetBinlogPosition
 
 	// Table Progress
-	serializedState := f.StateTracker.Serialize(nil)
+	serializedState := f.StateTracker.Serialize(nil, nil)
 	s.Tables = make(map[string]TableProgress)
 	targetPKs := make(map[string]uint64)
 	f.DataIterator.targetPKs.Range(func(k, v interface{}) bool {

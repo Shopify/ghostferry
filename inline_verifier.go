@@ -42,7 +42,7 @@ type BinlogVerifyStore struct {
 	// We may waste some CPU cycles by verify a row multiple times unnecessarily,
 	// but at least this approach is correct for now without major rework of the
 	// BinlogVerifyStore data structure and any code that manipulates this store.
-	store map[string]map[string]map[uint64]int
+	store BinlogVerifySerializedStore
 
 	// The total number of rows added to the reverify store, ever.  Does not
 	// include the rows added in the interrupted run if the present run is a
@@ -57,10 +57,28 @@ func (s BinlogVerifySerializedStore) RowCount() uint64 {
 	var v uint64 = 0
 	for _, dbStore := range s {
 		for _, tableStore := range dbStore {
-			v += uint64(len(tableStore))
+			for _, count := range tableStore {
+				v += uint64(count)
+			}
 		}
 	}
 	return v
+}
+
+func (s BinlogVerifySerializedStore) Copy() BinlogVerifySerializedStore {
+	copyS := make(BinlogVerifySerializedStore)
+
+	for db, _ := range s {
+		copyS[db] = make(map[string]map[uint64]int)
+		for table, _ := range s[db] {
+			copyS[db][table] = make(map[uint64]int)
+			for pk, count := range s[db][table] {
+				copyS[db][table][pk] = count
+			}
+		}
+	}
+
+	return copyS
 }
 
 type BinlogVerifyBatch struct {
@@ -83,13 +101,7 @@ func NewBinlogVerifyStoreFromSerialized(serialized BinlogVerifySerializedStore) 
 	s := NewBinlogVerifyStore()
 
 	s.store = serialized
-	for db, _ := range s.store {
-		for table, _ := range s.store[db] {
-			for _, count := range s.store[db][table] {
-				s.currentRowCount += uint64(count)
-			}
-		}
-	}
+	s.currentRowCount = serialized.RowCount()
 
 	s.totalRowCount = s.currentRowCount
 	return s
@@ -194,20 +206,7 @@ func (s *BinlogVerifyStore) Batches(batchsize int) []BinlogVerifyBatch {
 func (s *BinlogVerifyStore) Serialize() BinlogVerifySerializedStore {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-
-	serializedStore := make(BinlogVerifySerializedStore)
-
-	for db, _ := range s.store {
-		serializedStore[db] = make(map[string]map[uint64]int)
-		for table, _ := range s.store[db] {
-			serializedStore[db][table] = make(map[uint64]int)
-			for pk, count := range s.store[db][table] {
-				serializedStore[db][table][pk] = count
-			}
-		}
-	}
-
-	return BinlogVerifySerializedStore(s.store)
+	return s.store.Copy()
 }
 
 type InlineVerifier struct {

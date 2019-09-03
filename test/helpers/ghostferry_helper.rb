@@ -252,7 +252,7 @@ module GhostferryHelper
                 @logger.debug("stdout: #{line}")
               elsif reader == stderr
                 @stderr << line
-                if line.start_with?("{")
+                if json_log_line?(line)
                   logline = JSON.parse(line)
                   tag = logline["tag"]
                   tag = "_none" if tag.nil?
@@ -340,6 +340,12 @@ module GhostferryHelper
       rescue GhostferryExitFailure
         # ignore
       end
+    end
+
+    private
+
+    def json_log_line?(line)
+      line.start_with?("{")
     end
   end
 end

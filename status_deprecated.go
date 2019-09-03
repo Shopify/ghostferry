@@ -83,7 +83,7 @@ func FetchStatusDeprecated(f *Ferry, v Verifier) *StatusDeprecated {
 	// Getting all table statuses
 	status.TableStatuses = make([]*TableStatusDeprecated, 0, len(f.Tables))
 
-	serializedState := f.StateTracker.Serialize(nil)
+	serializedState := f.StateTracker.Serialize(nil, nil)
 
 	lastSuccessfulPKs := serializedState.LastSuccessfulPrimaryKeys
 	completedTables := serializedState.CompletedTables
