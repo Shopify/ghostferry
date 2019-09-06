@@ -28,7 +28,7 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 		JoinedTables:  config.JoinedTables,
 	}
 
-	config.VerifierType = ghostferry.VerifierTypeIterative
+	config.VerifierType = ghostferry.VerifierTypeInline
 
 	ignored, err := compileRegexps(config.IgnoredTables)
 	if err != nil {
@@ -155,11 +155,11 @@ func (r *ShardingFerry) Run() {
 	})
 	if err != nil {
 		r.logger.WithField("error", err).Errorf("verification encountered an error, aborting run")
-		r.Ferry.ErrorHandler.Fatal("iterative_verifier", err)
+		r.Ferry.ErrorHandler.Fatal("inline_verifier", err)
 	} else if !verificationResult.DataCorrect {
 		err = fmt.Errorf("verifier detected data discrepancy: %s", verificationResult.Message)
 		r.logger.WithField("error", err).Errorf("verification failed, aborting run")
-		r.Ferry.ErrorHandler.Fatal("iterative_verifier", err)
+		r.Ferry.ErrorHandler.Fatal("inline_verifier", err)
 	}
 
 	metrics.Measure("CopyPrimaryKeyTables", nil, 1.0, func() {
