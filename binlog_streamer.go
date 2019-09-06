@@ -291,6 +291,10 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 		}, 1.0)
 	}
 
+	if len(events) == 0 {
+		return nil
+	}
+
 	for _, listener := range s.eventListeners {
 		err := listener(events)
 		if err != nil {
