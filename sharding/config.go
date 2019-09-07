@@ -9,8 +9,8 @@ type Config struct {
 
 	ShardingKey   string
 	ShardingValue int64
-	SourceDB      string
-	TargetDB      string
+	SourceSchema  string
+	TargetSchema  string
 
 	SourceReplicationMaster       *ghostferry.DatabaseConfig
 	ReplicatedMasterPositionQuery string

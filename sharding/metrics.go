@@ -26,8 +26,8 @@ func InitializeMetrics(prefix string, config *Config) error {
 	SetGlobalMetrics(prefix, metricsChan)
 
 	metrics.DefaultTags = []ghostferry.MetricTag{
-		{Name: "SourceDB", Value: config.SourceDB},
-		{Name: "TargetDB", Value: config.TargetDB},
+		{Name: "SourceDB", Value: config.SourceSchema},
+		{Name: "TargetDB", Value: config.TargetSchema},
 	}
 
 	metrics.AddConsumer()

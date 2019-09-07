@@ -117,12 +117,12 @@ func parseConfig() *sharding.Config {
 		errorAndExit("missing ShardingValue config")
 	}
 
-	if config.SourceDB == "" {
-		errorAndExit("missing SourceDB config")
+	if config.SourceSchema == "" {
+		errorAndExit("missing SourceSchema config")
 	}
 
-	if config.TargetDB == "" {
-		errorAndExit("missing TargetDB config")
+	if config.TargetSchema == "" {
+		errorAndExit("missing TargetSchema config")
 	}
 
 	if config.StatsDAddress == "" {
