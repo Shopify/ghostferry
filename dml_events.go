@@ -99,7 +99,7 @@ func (e *BinlogInsertEvent) AsSQLString(schemaName, tableName string) (string, e
 		return "", err
 	}
 
-	query := "INSERT IGNORE INTO " +
+	query := "/* cdc comment */ INSERT IGNORE INTO " +
 		QuotedTableNameFromString(schemaName, tableName) +
 		" (" + strings.Join(quotedColumnNames(e.table), ",") + ")" +
 		" VALUES (" + buildStringListForValues(e.table.Columns, e.newValues) + ")"

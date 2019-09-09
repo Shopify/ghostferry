@@ -67,11 +67,11 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventGeneratesInsertQuery() {
 
 	q1, err := dmlEvents[0].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().Nil(err)
-	this.Require().Equal("INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col2`,`col3`) VALUES (1000,_binary'val1',1)", q1)
+	this.Require().Equal("/* cdc comment */ INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col2`,`col3`) VALUES (1000,_binary'val1',1)", q1)
 
 	q2, err := dmlEvents[1].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().Nil(err)
-	this.Require().Equal("INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col2`,`col3`) VALUES (1001,_binary'val2',0)", q2)
+	this.Require().Equal("/* cdc comment */ INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col2`,`col3`) VALUES (1001,_binary'val2',0)", q2)
 }
 
 func (this *DMLEventsTestSuite) TestBinlogInsertEventWithWrongColumnsReturnsError() {
