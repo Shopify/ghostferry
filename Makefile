@@ -10,7 +10,7 @@ COMMIT          := $(addsuffix $(DIRTY_TREE),$(shell git rev-parse --short HEAD)
 VERSION_STR     := $(VERSION)+$(DATETIME)+$(COMMIT)
 
 # Flags
-LDFLAGS         += -X github.com/Shopify/ghostferry.VersionString=$(VERSION_STR)
+LDFLAGS         := -X github.com/Shopify/ghostferry.VersionString=$(VERSION_STR)
 
 # Paths
 GOBIN           := $(GOPATH)/bin
