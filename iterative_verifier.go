@@ -2,9 +2,9 @@ package ghostferry
 
 import (
 	"bytes"
-	"database/sql"
 	"errors"
 	"fmt"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math"
 	"strconv"
 	"strings"

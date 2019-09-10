@@ -2,8 +2,9 @@ package ghostferry
 
 import (
 	"context"
-	"database/sql"
+	sqlorig "database/sql"
 	"fmt"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"sync/atomic"
 	"time"
 
@@ -148,9 +149,9 @@ func (t *LagThrottler) Run(ctx context.Context) error {
 }
 
 func (t *LagThrottler) updateLag(ctx context.Context) error {
-	var newLag sql.NullInt64
+	var newLag sqlorig.NullInt64
 	err := t.DB.QueryRowContext(ctx, t.config.Query).Scan(&newLag)
-	if err == sql.ErrNoRows {
+	if err == sqlorig.ErrNoRows {
 		return nil
 	}
 	if err != nil {

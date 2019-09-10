@@ -1,8 +1,9 @@
 package test
 
 import (
-	"database/sql"
+	sqlorig "database/sql"
 	"fmt"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math/rand"
 	"testing"
 
@@ -106,8 +107,8 @@ func TestCopyDataWhileRenamingDatabaseAndTable(t *testing.T) {
 		targetQuery := fmt.Sprintf("CHECKSUM TABLE `%s`.`%s` EXTENDED", targetDatabaseName, targetTableName)
 
 		var tablename string
-		var sourceChecksum sql.NullInt64
-		var targetChecksum sql.NullInt64
+		var sourceChecksum sqlorig.NullInt64
+		var targetChecksum sqlorig.NullInt64
 
 		sourceRow := f.SourceDB.QueryRow(sourceQuery)
 		err := sourceRow.Scan(&tablename, &sourceChecksum)

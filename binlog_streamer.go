@@ -3,8 +3,9 @@ package ghostferry
 import (
 	"context"
 	"crypto/tls"
-	"database/sql"
+	sqlorig "database/sql"
 	"fmt"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"time"
 
 	"github.com/siddontang/go-mysql/mysql"
@@ -350,7 +351,7 @@ func idsOnServer(db *sql.DB) ([]uint32, error) {
 	server_ids := make([]uint32, 0)
 	for rows.Next() {
 		var server_id uint32
-		var host, port, master_id, slave_uuid sql.NullString
+		var host, port, master_id, slave_uuid sqlorig.NullString
 
 		err = rows.Scan(&server_id, &host, &port, &master_id, &slave_uuid)
 		if err != nil {

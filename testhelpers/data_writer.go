@@ -1,8 +1,8 @@
 package testhelpers
 
 import (
-	"database/sql"
 	"fmt"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math/rand"
 	"sync"
 

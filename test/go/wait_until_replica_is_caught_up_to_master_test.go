@@ -1,7 +1,7 @@
 package test
 
 import (
-	"database/sql"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"testing"
 
 	"github.com/Shopify/ghostferry"

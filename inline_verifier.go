@@ -3,8 +3,8 @@ package ghostferry
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"fmt"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"strconv"
 	"strings"
 	"sync"

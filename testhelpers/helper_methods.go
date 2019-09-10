@@ -1,7 +1,8 @@
 package testhelpers
 
 import (
-	"database/sql"
+	sqlorig "database/sql"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"strings"
 	"testing"
 
@@ -99,7 +100,7 @@ func AssertQueriesHaveEqualResult(t *testing.T, ferry *ghostferry.Ferry, query s
 	return results1
 }
 
-func LoadResults(rows *sql.Rows) (out []map[string]interface{}, err error) {
+func LoadResults(rows *sqlorig.Rows) (out []map[string]interface{}, err error) {
 	var columns []string
 	var row []interface{}
 
