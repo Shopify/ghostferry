@@ -152,8 +152,18 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 		}()
 	}
 
+	i := 0
+	loggingIncrement := len(tablesWithData) / 50
+	if loggingIncrement == 0 {
+		loggingIncrement = 1
+	}
+
 	for table, _ := range tablesWithData {
 		tablesQueue <- table
+		i++
+		if i%loggingIncrement == 0 {
+			d.logger.WithField("table", table.String()).Infof("queued table for processing (%d/%d)", i, len(tablesWithData))
+		}
 	}
 
 	d.logger.Info("done queueing tables to be iterated, closing table channel")
