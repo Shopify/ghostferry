@@ -7,6 +7,15 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type BatchWriterVerificationFailed struct {
+	mismatchedPks []uint64
+	table         string
+}
+
+func (e BatchWriterVerificationFailed) Error() string {
+	return fmt.Sprintf("row fingerprints for pks %v on %v do not match", e.mismatchedPks, e.table)
+}
+
 type BatchWriter struct {
 	DB             *sql.DB
 	InlineVerifier *InlineVerifier
@@ -83,7 +92,7 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 
 			if len(mismatches) > 0 {
 				tx.Rollback()
-				return fmt.Errorf("row fingerprints for pks %v on %v do not match", mismatches, batch.TableSchema().String())
+				return BatchWriterVerificationFailed{mismatches, batch.TableSchema().String()}
 			}
 		}
 

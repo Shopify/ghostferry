@@ -138,8 +138,15 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 				})
 
 				if err != nil {
-					logger.WithError(err).Error("failed to iterate table")
-					d.ErrorHandler.Fatal("data_iterator", err)
+					switch e := err.(type) {
+					case BatchWriterVerificationFailed:
+						logger.WithField("incorrect_tables", e.table).Error(e.Error())
+						d.ErrorHandler.Fatal("inline_verifier", err)
+					default:
+						logger.WithError(err).Error("failed to iterate table")
+						d.ErrorHandler.Fatal("data_iterator", err)
+					}
+
 				}
 
 				logger.Debug("table iteration completed")
