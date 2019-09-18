@@ -7,8 +7,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/Shopify/ghostferry"
-	"github.com/Shopify/ghostferry/testhelpers"
+	"github.com/Shopify/ghostferry/v2"
+	"github.com/Shopify/ghostferry/v2/testhelpers"
 )
 
 type UtilsTestSuite struct {

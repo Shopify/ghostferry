@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	sth "github.com/Shopify/ghostferry/sharding/testhelpers"
-	"github.com/Shopify/ghostferry/testhelpers"
+	sth "github.com/Shopify/ghostferry/v2/sharding/testhelpers"
+	"github.com/Shopify/ghostferry/v2/testhelpers"
 )
 
 type JoinedTablesTestSuite struct {

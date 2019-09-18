@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/Shopify/ghostferry"
-	"github.com/Shopify/ghostferry/testhelpers"
+	"github.com/Shopify/ghostferry/v2"
+	"github.com/Shopify/ghostferry/v2/testhelpers"
 )
 
 func setupSingleEntryTable(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {

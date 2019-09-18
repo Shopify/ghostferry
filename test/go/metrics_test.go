@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/suite"
 
-	"github.com/Shopify/ghostferry"
+	"github.com/Shopify/ghostferry/v2"
 )
 
 type MetricsTestSuite struct {

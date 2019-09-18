@@ -1,5 +1,5 @@
 # Variables to be built into the binary
-VERSION         := 1.1.0
+VERSION         := 2.0.0
 DATETIME        := $(shell date -u +%Y%m%d%H%M%S)
 
 ifndef IGNORE_DIRTY_TREE

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Shopify/ghostferry"
+	"github.com/Shopify/ghostferry/v2"
 )
 
 // Whitelisting and blacklisting databases/tables to copy.

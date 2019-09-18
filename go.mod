@@ -1,4 +1,4 @@
-module github.com/Shopify/ghostferry
+module github.com/Shopify/ghostferry/v2
 
 go 1.13
 

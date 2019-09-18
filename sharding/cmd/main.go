@@ -7,8 +7,8 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/Shopify/ghostferry"
-	"github.com/Shopify/ghostferry/sharding"
+	"github.com/Shopify/ghostferry/v2"
+	"github.com/Shopify/ghostferry/v2/sharding"
 )
 
 var configPath string

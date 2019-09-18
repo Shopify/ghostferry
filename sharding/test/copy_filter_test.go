@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Shopify/ghostferry"
-	"github.com/Shopify/ghostferry/sharding"
+	"github.com/Shopify/ghostferry/v2"
+	"github.com/Shopify/ghostferry/v2/sharding"
 
 	"github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/replication"

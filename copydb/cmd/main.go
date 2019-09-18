@@ -8,8 +8,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/Shopify/ghostferry"
-	"github.com/Shopify/ghostferry/copydb"
+	"github.com/Shopify/ghostferry/v2"
+	"github.com/Shopify/ghostferry/v2/copydb"
 )
 
 func usage() {

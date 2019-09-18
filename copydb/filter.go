@@ -1,6 +1,6 @@
 package copydb
 
-import "github.com/Shopify/ghostferry"
+import "github.com/Shopify/ghostferry/v2"
 
 type StaticTableFilter struct {
 	Dbs            []string

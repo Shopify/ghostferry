@@ -6,7 +6,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/Shopify/ghostferry/testhelpers"
+	"github.com/Shopify/ghostferry/v2/testhelpers"
 )
 
 func TestCopyDataWithoutAnyWritesToSource(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/Shopify/ghostferry"
-	"github.com/Shopify/ghostferry/sharding"
+	"github.com/Shopify/ghostferry/v2"
+	"github.com/Shopify/ghostferry/v2/sharding"
 )
 
 func TestShardedTableFilterSelectsSingleDatabase(t *testing.T) {

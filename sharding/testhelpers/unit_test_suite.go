@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/Shopify/ghostferry"
-	"github.com/Shopify/ghostferry/sharding"
-	"github.com/Shopify/ghostferry/testhelpers"
+	"github.com/Shopify/ghostferry/v2"
+	"github.com/Shopify/ghostferry/v2/sharding"
+	"github.com/Shopify/ghostferry/v2/testhelpers"
 
 	"github.com/stretchr/testify/suite"
 )

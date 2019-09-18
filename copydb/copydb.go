@@ -8,7 +8,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/Shopify/ghostferry"
+	"github.com/Shopify/ghostferry/v2"
 )
 
 type CopydbFerry struct {

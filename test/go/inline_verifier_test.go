@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/Shopify/ghostferry"
+	"github.com/Shopify/ghostferry/v2"
 )
 
 func newMockBinlogVerifySerializedStore() ghostferry.BinlogVerifySerializedStore {

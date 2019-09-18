@@ -8,7 +8,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	"github.com/Shopify/ghostferry/testhelpers"
+	"github.com/Shopify/ghostferry/v2/testhelpers"
 )
 
 func addTypesToTable(db *sql.DB, dbName, tableName string) {

@@ -6,7 +6,7 @@ import (
 	"github.com/siddontang/go-mysql/mysql"
 	"github.com/stretchr/testify/suite"
 
-	"github.com/Shopify/ghostferry"
+	"github.com/Shopify/ghostferry/v2"
 )
 
 type StateTrackerTestSuite struct {

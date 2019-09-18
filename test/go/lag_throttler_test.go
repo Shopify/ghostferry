@@ -9,8 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/Shopify/ghostferry"
-	"github.com/Shopify/ghostferry/testhelpers"
+	"github.com/Shopify/ghostferry/v2"
+	"github.com/Shopify/ghostferry/v2/testhelpers"
 )
 
 func newThrottlerWithQuery(query string) *ghostferry.LagThrottler {

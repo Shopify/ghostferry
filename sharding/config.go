@@ -1,7 +1,7 @@
 package sharding
 
 import (
-	"github.com/Shopify/ghostferry"
+	"github.com/Shopify/ghostferry/v2"
 )
 
 type Config struct {

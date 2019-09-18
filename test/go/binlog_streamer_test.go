@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Shopify/ghostferry"
-	"github.com/Shopify/ghostferry/testhelpers"
+	"github.com/Shopify/ghostferry/v2"
+	"github.com/Shopify/ghostferry/v2/testhelpers"
 
 	"github.com/stretchr/testify/suite"
 )

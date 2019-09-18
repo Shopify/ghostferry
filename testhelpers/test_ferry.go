@@ -4,7 +4,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/Shopify/ghostferry"
+	"github.com/Shopify/ghostferry/v2"
 )
 
 type TestFerry struct {

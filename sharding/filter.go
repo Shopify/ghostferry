@@ -10,7 +10,7 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/Shopify/ghostferry"
+	"github.com/Shopify/ghostferry/v2"
 )
 
 type JoinTable struct {

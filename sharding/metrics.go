@@ -5,7 +5,7 @@ import (
 
 	"github.com/Shopify/go-dogstatsd"
 
-	"github.com/Shopify/ghostferry"
+	"github.com/Shopify/ghostferry/v2"
 )
 
 var metrics = &ghostferry.Metrics{

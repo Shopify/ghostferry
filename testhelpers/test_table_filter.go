@@ -1,6 +1,6 @@
 package testhelpers
 
-import "github.com/Shopify/ghostferry"
+import "github.com/Shopify/ghostferry/v2"
 
 type TestTableFilter struct {
 	DbsFunc    func([]string) []string
