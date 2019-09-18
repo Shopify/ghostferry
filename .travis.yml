@@ -2,7 +2,11 @@
 sudo: required
 language: go
 go:
-  - "1.10.2"
+  - "1.13"
+
+cache:
+  directories:
+    - $GOPATH/pkg/mod
 
 go_import_path: github.com/Shopify/ghostferry
 
@@ -23,6 +27,7 @@ install:
   - .travisci/start-mysql.sh
 
 script:
+  - go mod download
   - make test
 
 before_deploy:
