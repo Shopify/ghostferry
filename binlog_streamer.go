@@ -138,7 +138,6 @@ func (s *BinlogStreamer) Run() {
 
 			return er
 		})
-
 		if err != nil {
 			s.ErrorHandler.Fatal("binlog_streamer", err)
 		}
@@ -212,7 +211,6 @@ func (s *BinlogStreamer) FlushAndStop() {
 		s.targetBinlogPosition, err = ShowMasterStatusBinlogPosition(s.DB)
 		return err
 	})
-
 	if err != nil {
 		s.ErrorHandler.Fatal("binlog_streamer", err)
 	}

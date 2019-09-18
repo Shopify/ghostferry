@@ -3,8 +3,9 @@ package test
 import (
 	"testing"
 
-	"github.com/Shopify/ghostferry"
 	"github.com/stretchr/testify/require"
+
+	"github.com/Shopify/ghostferry"
 )
 
 func newMockBinlogVerifySerializedStore() ghostferry.BinlogVerifySerializedStore {

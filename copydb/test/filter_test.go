@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/copydb"
 	"github.com/Shopify/ghostferry/testhelpers"
-	"github.com/stretchr/testify/suite"
 
 	sqlSchema "github.com/siddontang/go-mysql/schema"
 )

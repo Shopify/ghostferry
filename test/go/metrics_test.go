@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Shopify/ghostferry"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/Shopify/ghostferry"
 )
 
 type MetricsTestSuite struct {

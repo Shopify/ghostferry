@@ -64,7 +64,6 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUp(targetMasterPos mysql.Po
 		currentReplicatedMasterPos, err = w.ReplicatedMasterPositionFetcher.Current(w.ReplicaDB)
 		return err
 	})
-
 	if err != nil {
 		return false, err
 	}
@@ -93,7 +92,6 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) Wait() error {
 		targetMasterPos, err = ShowMasterStatusBinlogPosition(w.MasterDB)
 		return err
 	})
-
 	if err != nil {
 		w.logger.WithError(err).Error("failed to get master binlog coordinates")
 		return err

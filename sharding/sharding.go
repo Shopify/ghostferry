@@ -7,8 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Shopify/ghostferry"
 	"github.com/sirupsen/logrus"
+
+	"github.com/Shopify/ghostferry"
 )
 
 type ShardingFerry struct {

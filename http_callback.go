@@ -52,7 +52,6 @@ func postCallback(client *http.Client, uri string, body interface{}) error {
 	}
 
 	resBody, err := ioutil.ReadAll(res.Body)
-
 	if err != nil {
 		logger.WithField("error", err).Errorf("error reading callback body")
 	}

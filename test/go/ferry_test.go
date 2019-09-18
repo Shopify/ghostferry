@@ -3,9 +3,10 @@ package test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/suite"
+
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
-	"github.com/stretchr/testify/suite"
 )
 
 type FerryTestSuite struct {

@@ -8,8 +8,9 @@ import (
 	"sync"
 
 	sq "github.com/Masterminds/squirrel"
-	"github.com/Shopify/ghostferry"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/Shopify/ghostferry"
 )
 
 type JoinTable struct {

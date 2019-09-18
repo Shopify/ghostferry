@@ -316,7 +316,6 @@ func (v *InlineVerifier) PeriodicallyVerifyBinlogEvents(ctx context.Context) {
 			return
 		}
 	}
-
 }
 
 func (v *InlineVerifier) VerifyBeforeCutover() error {

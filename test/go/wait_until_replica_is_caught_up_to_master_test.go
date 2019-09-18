@@ -4,10 +4,11 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/Shopify/ghostferry"
-	"github.com/Shopify/ghostferry/testhelpers"
 	"github.com/siddontang/go-mysql/mysql"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/Shopify/ghostferry"
+	"github.com/Shopify/ghostferry/testhelpers"
 )
 
 type WaitUntilReplicaIsCaughtUpToMasterSuite struct {

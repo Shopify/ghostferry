@@ -4,10 +4,11 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/Shopify/ghostferry"
-	"github.com/Shopify/ghostferry/sharding"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/Shopify/ghostferry"
+	"github.com/Shopify/ghostferry/sharding"
 )
 
 func TestShardedTableFilterSelectsSingleDatabase(t *testing.T) {

@@ -5,8 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Shopify/ghostferry"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/Shopify/ghostferry"
 )
 
 func PanicIfError(err error) {

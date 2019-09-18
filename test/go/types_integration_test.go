@@ -6,8 +6,9 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/Shopify/ghostferry/testhelpers"
 	"github.com/sirupsen/logrus"
+
+	"github.com/Shopify/ghostferry/testhelpers"
 )
 
 func addTypesToTable(db *sql.DB, dbName, tableName string) {

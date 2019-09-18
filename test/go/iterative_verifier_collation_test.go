@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Shopify/ghostferry/testhelpers"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/Shopify/ghostferry/testhelpers"
 )
 
 type IterativeVerifierCollationTestSuite struct {

@@ -110,7 +110,6 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 			tx.Rollback()
 			return err
 		})
-
 		if err != nil {
 			return err
 		}

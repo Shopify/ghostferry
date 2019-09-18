@@ -92,8 +92,8 @@ func TestCopyDataWhileRenamingDatabaseAndTable(t *testing.T) {
 	targetTableName := "table2"
 
 	testcase := &testhelpers.IntegrationTestCase{
-		T:     t,
-		Ferry: testhelpers.NewTestFerry(),
+		T:                       t,
+		Ferry:                   testhelpers.NewTestFerry(),
 		DisableChecksumVerifier: true,
 		SetupAction: func(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 			testhelpers.SeedInitialData(sourceDB, sourceDatabaseName, sourceTableName, 1111)

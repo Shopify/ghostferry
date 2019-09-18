@@ -8,12 +8,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var (
-	metrics = &Metrics{
-		Prefix: "ghostferry",
-		Sink:   nil,
-	}
-)
+var metrics = &Metrics{
+	Prefix: "ghostferry",
+	Sink:   nil,
+}
 
 type MetricTag struct {
 	Name  string

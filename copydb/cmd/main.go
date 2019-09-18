@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/copydb"
-	"github.com/sirupsen/logrus"
 )
 
 func usage() {

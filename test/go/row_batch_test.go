@@ -3,10 +3,11 @@ package test
 import (
 	"testing"
 
-	"github.com/Shopify/ghostferry"
 	"github.com/siddontang/go-mysql/replication"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/Shopify/ghostferry"
 )
 
 type RowBatchTestSuite struct {

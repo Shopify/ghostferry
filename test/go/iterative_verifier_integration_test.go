@@ -4,10 +4,11 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/Shopify/ghostferry"
-	"github.com/Shopify/ghostferry/testhelpers"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/Shopify/ghostferry"
+	"github.com/Shopify/ghostferry/testhelpers"
 )
 
 func TestHashesSql(t *testing.T) {
@@ -59,7 +60,7 @@ func TestVerificationFailsDeletedRow(t *testing.T) {
 			NumberOfWriters:     4,
 			Tables:              []string{"gftest.table1"},
 		},
-		Ferry: ferry,
+		Ferry:                   ferry,
 		DisableChecksumVerifier: true,
 	}
 
@@ -102,7 +103,7 @@ func TestVerificationFailsUpdatedRow(t *testing.T) {
 			NumberOfWriters:     4,
 			Tables:              []string{"gftest.table1"},
 		},
-		Ferry: ferry,
+		Ferry:                   ferry,
 		DisableChecksumVerifier: true,
 	}
 
@@ -149,7 +150,7 @@ func TestIgnoresColumns(t *testing.T) {
 			NumberOfWriters:     4,
 			Tables:              []string{"gftest.table1"},
 		},
-		Ferry: ferry,
+		Ferry:                   ferry,
 		DisableChecksumVerifier: true,
 	}
 
@@ -194,7 +195,7 @@ func TestIgnoresTables(t *testing.T) {
 			NumberOfWriters:     4,
 			Tables:              []string{"gftest.table1"},
 		},
-		Ferry: ferry,
+		Ferry:                   ferry,
 		DisableChecksumVerifier: true,
 	}
 

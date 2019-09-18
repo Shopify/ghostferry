@@ -8,9 +8,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/Shopify/ghostferry"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/Shopify/ghostferry"
 )
 
 func SetupTest() {

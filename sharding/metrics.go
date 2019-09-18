@@ -3,16 +3,15 @@ package sharding
 import (
 	"fmt"
 
-	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/go-dogstatsd"
+
+	"github.com/Shopify/ghostferry"
 )
 
-var (
-	metrics = &ghostferry.Metrics{
-		Prefix: "ghostferry",
-		Sink:   nil,
-	}
-)
+var metrics = &ghostferry.Metrics{
+	Prefix: "ghostferry",
+	Sink:   nil,
+}
 
 func InitializeMetrics(prefix string, config *Config) error {
 	address := config.StatsDAddress

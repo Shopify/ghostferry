@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
-	"github.com/stretchr/testify/require"
 )
 
 func setupSingleEntryTable(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {

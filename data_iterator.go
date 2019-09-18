@@ -136,7 +136,6 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 
 					return nil
 				})
-
 				if err != nil {
 					logger.WithError(err).Error("failed to iterate table")
 					d.ErrorHandler.Fatal("data_iterator", err)

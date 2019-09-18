@@ -141,7 +141,6 @@ func (c *CompressionVerifier) Decompress(table, column, algorithm string, compre
 			algorithm: algorithm,
 		}
 	}
-
 }
 
 // HashRow will fingerprint the non-primary columns of the row to verify data equality
@@ -214,7 +213,6 @@ func getRows(db *sql.DB, schema, table, pkColumn string, columns []schema.TableC
 		Where(sq.Eq{quotedPK: pks}).
 		OrderBy(quotedPK).
 		ToSql()
-
 	if err != nil {
 		return nil, err
 	}

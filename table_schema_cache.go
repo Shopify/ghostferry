@@ -277,7 +277,6 @@ func maxPk(db *sql.DB, table *TableSchema) (uint64, bool, error) {
 		OrderBy(fmt.Sprintf("%s DESC", pkName)).
 		Limit(1).
 		ToSql()
-
 	if err != nil {
 		return 0, false, err
 	}

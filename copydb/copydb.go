@@ -6,8 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Shopify/ghostferry"
 	"github.com/sirupsen/logrus"
+
+	"github.com/Shopify/ghostferry"
 )
 
 type CopydbFerry struct {
@@ -141,8 +142,8 @@ func (this *CopydbFerry) initializeWaitUntilReplicaIsCaughtUpToMasterConnection(
 	}
 
 	this.Ferry.WaitUntilReplicaIsCaughtUpToMaster = &ghostferry.WaitUntilReplicaIsCaughtUpToMaster{
-		MasterDB: masterDB,
-		Timeout:  timeout,
+		MasterDB:                        masterDB,
+		Timeout:                         timeout,
 		ReplicatedMasterPositionFetcher: positionFetcher,
 	}
 	return nil

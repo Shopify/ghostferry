@@ -6,9 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/suite"
+
 	sth "github.com/Shopify/ghostferry/sharding/testhelpers"
 	"github.com/Shopify/ghostferry/testhelpers"
-	"github.com/stretchr/testify/suite"
 )
 
 type JoinedTablesTestSuite struct {

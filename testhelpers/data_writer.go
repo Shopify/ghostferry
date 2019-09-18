@@ -217,7 +217,6 @@ func (this *MixedActionDataWriter) UpdateData() error {
 		SetMap(colvals).
 		Where(sq.GtOrEq{"id": id}).
 		Limit(1).ToSql()
-
 	if err != nil {
 		return err
 	}

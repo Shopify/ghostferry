@@ -6,8 +6,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Shopify/ghostferry"
 	"github.com/sirupsen/logrus"
+
+	"github.com/Shopify/ghostferry"
 )
 
 type IntegrationTestCase struct {

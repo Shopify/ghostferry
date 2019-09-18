@@ -140,7 +140,6 @@ func (t *LagThrottler) Run(ctx context.Context) error {
 		err := WithRetriesContext(ctx, 5, t.interval, nil, "update lag", func() error {
 			return t.updateLag(ctx)
 		})
-
 		if err != nil {
 			return err
 		}

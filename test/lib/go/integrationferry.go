@@ -10,9 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -61,7 +62,6 @@ func (f *IntegrationFerry) SendStatusAndWaitUntilContinue(status string, data ..
 		"status": []string{status},
 		"data":   data,
 	})
-
 	if err != nil {
 		return err
 	}
