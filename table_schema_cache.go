@@ -34,7 +34,8 @@ func NewTableIdentifierFromSchemaTable(table *TableSchema) TableIdentifier {
 type TableSchema struct {
 	*schema.Table
 
-	CompressedColumns map[string]string // Map of column name => compression type
+	CompressedColumnsForVerification map[string]string   // Map of column name => compression type
+	IgnoredColumnsForVerification    map[string]struct{} // Set of column name
 
 	rowMd5Query string
 }
@@ -42,18 +43,21 @@ type TableSchema struct {
 // This query returns the MD5 hash for a row on this table. This query is valid
 // for both the source and the target shard.
 //
-// Any compressed columns specified via CompressedColumns are excluded in
-// this checksum and the raw data is returned directly.
+// Any compressed columns specified via CompressedColumnsForVerification are
+// excluded in this checksum and the raw data is returned directly.
+//
+// Any columns specified in IgnoredColumnsForVerification are excluded from the
+// checksum and the raw data will not be returned.
 //
 // Note that the MD5 hash should consists of at least 1 column: the pk column.
 // This is to say that there should never be a case where the MD5 hash is
 // derived from an empty string.
 func (t *TableSchema) FingerprintQuery(schemaName, tableName string, numRows int) string {
-	columnsToSelect := make([]string, 2+len(t.CompressedColumns))
+	columnsToSelect := make([]string, 2+len(t.CompressedColumnsForVerification))
 	columnsToSelect[0] = quoteField(t.GetPKColumn(0).Name)
 	columnsToSelect[1] = t.RowMd5Query()
 	i := 2
-	for columnName, _ := range t.CompressedColumns {
+	for columnName, _ := range t.CompressedColumnsForVerification {
 		columnsToSelect[i] = quoteField(columnName)
 		i += 1
 	}
@@ -74,9 +78,14 @@ func (t *TableSchema) RowMd5Query() string {
 
 	columns := make([]schema.TableColumn, 0, len(t.Columns))
 	for _, column := range t.Columns {
-		if _, exists := t.CompressedColumns[column.Name]; !exists {
-			columns = append(columns, column)
+		_, isCompressed := t.CompressedColumnsForVerification[column.Name]
+		_, isIgnored := t.IgnoredColumnsForVerification[column.Name]
+
+		if isCompressed || isIgnored {
+			continue
 		}
+
+		columns = append(columns, column)
 	}
 
 	hashStrs := make([]string, len(columns))
@@ -123,7 +132,7 @@ func MaxPrimaryKeys(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) (ma
 	return tablesWithData, emptyTables, nil
 }
 
-func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig ColumnCompressionConfig) (TableSchemaCache, error) {
+func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig ColumnCompressionConfig, columnIgnoreConfig ColumnIgnoreConfig) (TableSchemaCache, error) {
 	logger := logrus.WithField("tag", "table_schema_cache")
 
 	tableSchemaCache := make(TableSchemaCache)
@@ -162,8 +171,9 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 			}
 
 			tableSchemas = append(tableSchemas, &TableSchema{
-				Table:             tableSchema,
-				CompressedColumns: columnCompressionConfig.CompressedColumnsFor(dbname, table),
+				Table: tableSchema,
+				CompressedColumnsForVerification: columnCompressionConfig.CompressedColumnsFor(dbname, table),
+				IgnoredColumnsForVerification:    columnIgnoreConfig.IgnoredColumnsFor(dbname, table),
 			})
 		}
 

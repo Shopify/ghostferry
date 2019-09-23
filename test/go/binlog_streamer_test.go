@@ -42,6 +42,7 @@ func (this *BinlogStreamerTestSuite) SetupTest() {
 			TablesFunc: nil,
 		},
 		nil,
+		nil,
 	)
 	this.Require().Nil(err)
 

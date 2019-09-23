@@ -250,10 +250,21 @@ func main() {
 	// TODO: allow Ghostferry config to be specified by the ruby test directly.
 	compressedDataColumn := os.Getenv("GHOSTFERRY_DATA_COLUMN_SNAPPY")
 	if compressedDataColumn != "" {
-		config.ColumnCompressionConfig = map[string]map[string]map[string]string{
+		config.CompressedColumnsForVerification = map[string]map[string]map[string]string{
 			"gftest": map[string]map[string]string{
 				"test_table_1": map[string]string{
 					"data": "SNAPPY",
+				},
+			},
+		}
+	}
+
+	ignoredColumn := os.Getenv("GHOSTFERRY_IGNORED_COLUMN")
+	if ignoredColumn != "" {
+		config.IgnoredColumnsForVerification = map[string]map[string]map[string]struct{}{
+			"gftest": map[string]map[string]struct{}{
+				"test_table_1": map[string]struct{}{
+					ignoredColumn: struct{}{},
 				},
 			},
 		}

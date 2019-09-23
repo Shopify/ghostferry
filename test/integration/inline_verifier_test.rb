@@ -66,6 +66,41 @@ class InlineVerifierTest < GhostferryTestCase
     assert_nil ghostferry.error
   end
 
+  def test_different_data_in_ignored_column_passes_inline_verification
+    [source_db, target_db].each do |db|
+      db.query("CREATE DATABASE IF NOT EXISTS #{DEFAULT_DB}")
+      db.query("CREATE TABLE IF NOT EXISTS #{DEFAULT_FULL_TABLE_NAME} (id bigint(20) not null auto_increment, data VARCHAR(255), data2 VARCHAR(255), primary key(id))")
+    end
+
+    source_db.prepare("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data, data2) VALUES (?, ?, ?)").execute(1, "data1", "same")
+    target_db.prepare("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data, data2) VALUES (?, ?, ?)").execute(1, "data2", "same")
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline", ignored_column: "data" })
+
+    ghostferry.on_status(Ghostferry::Status::ROW_COPY_COMPLETED) do
+      source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'data3' WHERE id = 1")
+    end
+
+    ghostferry.run
+    assert_nil ghostferry.error
+
+    rows = source_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME}")
+    assert_equal 1, rows.count
+    rows.each do |row|
+      assert_equal 1, row["id"]
+      assert_equal "data3", row["data"]
+      assert_equal "same", row["data2"]
+    end
+
+    rows = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME}")
+    assert_equal 1, rows.count
+    rows.each do |row|
+      assert_equal 1, row["id"]
+      assert_equal "data2", row["data"]
+      assert_equal "same", row["data2"]
+    end
+  end
+
   def test_catches_binlog_streamer_corruption
     seed_random_data(source_db, number_of_rows: 1)
     seed_random_data(target_db, number_of_rows: 0)
