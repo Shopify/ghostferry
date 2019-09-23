@@ -138,8 +138,15 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 				})
 
 				if err != nil {
-					logger.WithError(err).Error("failed to iterate table")
-					d.ErrorHandler.Fatal("data_iterator", err)
+					switch e := err.(type) {
+					case BatchWriterVerificationFailed:
+						logger.WithField("incorrect_tables", e.table).Error(e.Error())
+						d.ErrorHandler.Fatal("inline_verifier", err)
+					default:
+						logger.WithError(err).Error("failed to iterate table")
+						d.ErrorHandler.Fatal("data_iterator", err)
+					}
+
 				}
 
 				logger.Debug("table iteration completed")
@@ -152,8 +159,18 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 		}()
 	}
 
+	i := 0
+	loggingIncrement := len(tablesWithData) / 50
+	if loggingIncrement == 0 {
+		loggingIncrement = 1
+	}
+
 	for table, _ := range tablesWithData {
 		tablesQueue <- table
+		i++
+		if i%loggingIncrement == 0 {
+			d.logger.WithField("table", table.String()).Infof("queued table for processing (%d/%d)", i, len(tablesWithData))
+		}
 	}
 
 	d.logger.Info("done queueing tables to be iterated, closing table channel")
