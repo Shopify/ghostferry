@@ -71,8 +71,7 @@ type Ferry struct {
 	// returned in Initialize.
 	//
 	// If VerifierType is specified and this is nil on Ferry initialization, a
-	// Verifier will be created by Initialize. If an IterativeVerifier is to be
-	// created, IterativeVerifierConfig will be used to create the verifier.
+	// Verifier will be created by Initialize.
 	Verifier       Verifier
 	inlineVerifier *InlineVerifier
 
@@ -226,65 +225,6 @@ func (f *Ferry) NewInlineVerifierWithoutStateTracker() *InlineVerifier {
 	return v
 }
 
-func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
-	f.ensureInitialized()
-
-	var err error
-	config := f.Config.IterativeVerifierConfig
-
-	var maxExpectedDowntime time.Duration
-	if config.MaxExpectedDowntime != "" {
-		maxExpectedDowntime, err = time.ParseDuration(config.MaxExpectedDowntime)
-		if err != nil {
-			return nil, fmt.Errorf("invalid MaxExpectedDowntime: %v. this error should have been caught via .Validate()", err)
-		}
-	}
-
-	var compressionVerifier *CompressionVerifier
-	if config.TableColumnCompression != nil {
-		compressionVerifier, err = NewCompressionVerifier(config.TableColumnCompression)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	ignoredColumns := make(map[string]map[string]struct{})
-	for table, columns := range config.IgnoredColumns {
-		ignoredColumns[table] = make(map[string]struct{})
-		for _, column := range columns {
-			ignoredColumns[table][column] = struct{}{}
-		}
-	}
-
-	v := &IterativeVerifier{
-		CursorConfig: &CursorConfig{
-			DB:          f.SourceDB,
-			BatchSize:   f.Config.DataIterationBatchSize,
-			ReadRetries: f.Config.DBReadRetries,
-		},
-
-		BinlogStreamer:      f.BinlogStreamer,
-		SourceDB:            f.SourceDB,
-		TargetDB:            f.TargetDB,
-		CompressionVerifier: compressionVerifier,
-
-		Tables:              f.Tables.AsSlice(),
-		TableSchemaCache:    f.Tables,
-		IgnoredTables:       config.IgnoredTables,
-		IgnoredColumns:      ignoredColumns,
-		DatabaseRewrites:    f.Config.DatabaseRewrites,
-		TableRewrites:       f.Config.TableRewrites,
-		Concurrency:         config.Concurrency,
-		MaxExpectedDowntime: maxExpectedDowntime,
-	}
-
-	if f.CopyFilter != nil {
-		v.CursorConfig.BuildSelect = f.CopyFilter.BuildSelect
-	}
-
-	return v, v.Initialize()
-}
-
 // Initialize all the components of Ghostferry and connect to the Database
 func (f *Ferry) Initialize() (err error) {
 	f.StartTime = time.Now().Truncate(time.Second)
@@ -431,8 +371,6 @@ func (f *Ferry) Initialize() (err error) {
 		f.Tables = f.StateToResumeFrom.LastKnownTableSchemaCache
 	}
 
-	// The iterative verifier needs the binlog streamer so this has to be first.
-	// Eventually this can be moved below the verifier initialization.
 	f.BinlogStreamer = f.NewBinlogStreamer()
 	f.BinlogWriter = f.NewBinlogWriter()
 	f.DataIterator = f.NewDataIterator()
@@ -444,11 +382,6 @@ func (f *Ferry) Initialize() (err error) {
 		}
 
 		switch f.Config.VerifierType {
-		case VerifierTypeIterative:
-			f.Verifier, err = f.NewIterativeVerifier()
-			if err != nil {
-				return err
-			}
 		case VerifierTypeChecksumTable:
 			f.Verifier = f.NewChecksumTableVerifier()
 		case VerifierTypeInline:
