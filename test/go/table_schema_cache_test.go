@@ -144,12 +144,12 @@ func (this *TableSchemaCacheTestSuite) TestFingerprintQuery() {
 	tables := tableSchemaCache.AsSlice()
 	table := tables[0]
 	query := table.FingerprintQuery("s", "t", 10)
-	this.Require().Equal("SELECT `id`,MD5(CONCAT(MD5(COALESCE(`id`, 'NULL')),MD5(COALESCE(`data`, 'NULL')))) AS __ghostferry_row_md5 FROM `s`.`t` WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
+	this.Require().Equal("SELECT `id`,MD5(CONCAT_WS('',MD5(`id`),MD5(`data`))) AS __ghostferry_row_md5 FROM `s`.`t` WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
 
 	table = tables[1]
 	table.CompressedColumns = map[string]string{"data": "SNAPPY"}
 	query = table.FingerprintQuery("s", "t", 10)
-	this.Require().Equal("SELECT `id`,MD5(CONCAT(MD5(COALESCE(`id`, 'NULL')))) AS __ghostferry_row_md5,`data` FROM `s`.`t` WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
+	this.Require().Equal("SELECT `id`,MD5(CONCAT_WS('',MD5(`id`))) AS __ghostferry_row_md5,`data` FROM `s`.`t` WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
 }
 
 func (this *TableSchemaCacheTestSuite) TestTableRowMd5Query() {
@@ -159,12 +159,12 @@ func (this *TableSchemaCacheTestSuite) TestTableRowMd5Query() {
 	tables := tableSchemaCache.AsSlice()
 	table := tables[0]
 	query := table.RowMd5Query()
-	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`id`, 'NULL')),MD5(COALESCE(`data`, 'NULL')))) AS __ghostferry_row_md5", query)
+	this.Require().Equal("MD5(CONCAT_WS('',MD5(`id`),MD5(`data`))) AS __ghostferry_row_md5", query)
 
 	table = tables[1]
 	table.CompressedColumns = map[string]string{"data": "SNAPPY"}
 	query = table.RowMd5Query()
-	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`id`, 'NULL')))) AS __ghostferry_row_md5", query)
+	this.Require().Equal("MD5(CONCAT_WS('',MD5(`id`))) AS __ghostferry_row_md5", query)
 }
 
 func (this *TableSchemaCacheTestSuite) TestQuotedTableName() {

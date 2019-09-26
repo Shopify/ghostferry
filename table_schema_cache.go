@@ -81,10 +81,10 @@ func (t *TableSchema) RowMd5Query() string {
 
 	hashStrs := make([]string, len(columns))
 	for i, column := range columns {
-		hashStrs[i] = fmt.Sprintf("MD5(COALESCE(%s, 'NULL'))", normalizeAndQuoteColumn(column))
+		hashStrs[i] = fmt.Sprintf("MD5(%s)", normalizeAndQuoteColumn(column))
 	}
 
-	t.rowMd5Query = fmt.Sprintf("MD5(CONCAT(%s)) AS __ghostferry_row_md5", strings.Join(hashStrs, ","))
+	t.rowMd5Query = fmt.Sprintf("MD5(CONCAT_WS('',%s)) AS __ghostferry_row_md5", strings.Join(hashStrs, ","))
 	return t.rowMd5Query
 }
 
