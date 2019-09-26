@@ -3,6 +3,7 @@ package ghostferry
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/Masterminds/squirrel"
 	"github.com/siddontang/go-mysql/schema"
@@ -166,8 +167,15 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, pkpos uint64, err error
 		return
 	}
 
+	// With the inline verifier, the columns to be selected may be very large as
+	// the query generated will be very large. The code here simply hides the
+	// columns from the logger to not spam the logs.
+
+	splitQuery := strings.Split(query, "FROM")
+	loggedQuery := fmt.Sprintf("SELECT [omitted] FROM %s", splitQuery[1])
+
 	logger := c.logger.WithFields(logrus.Fields{
-		"sql":  query,
+		"sql":  loggedQuery,
 		"args": args,
 	})
 
