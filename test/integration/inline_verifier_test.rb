@@ -102,6 +102,91 @@ class InlineVerifierTest < GhostferryTestCase
     assert_equal "cutover verification failed for: gftest.test_table_1 [pks: #{corrupting_id} ] ", ghostferry.error_lines.last["msg"]
   end
 
+  #######################
+  # Special values test #
+  #######################
+
+  def test_positive_negative_zero
+    [source_db, target_db].each do |db|
+      seed_random_data(db, number_of_rows: 0)
+      db.query("ALTER TABLE #{DEFAULT_FULL_TABLE_NAME} MODIFY data FLOAT")
+    end
+
+    # If the data already exists on the target, Ghostferry's INSERT IGNORE will
+    # not insert again. However, the verifier should run.
+    # We first set the values to be different to ensure the InlineVerifier is
+    # indeed running as the nominal case (comparing 0.0 and -0.0) should not
+    # emit any error and thus we cannot say for certain if the InlineVerifier
+    # ran or not.
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, 0.0)")
+    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, 1.0)")
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+    ghostferry.run_expecting_interrupt
+    refute_nil ghostferry.error
+    err_msg = ghostferry.error["ErrMessage"]
+    assert err_msg.include?("row fingerprints for pks [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+
+    # Now we run the real test case.
+    target_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = -0.0 WHERE id = 1")
+
+    verification_ran = false
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*incorrect_tables|
+      verification_ran = true
+      assert_equal [], incorrect_tables
+    end
+
+    ghostferry.run
+    assert verification_ran
+  end
+
+  def test_null_vs_null
+    seed_random_data(source_db, number_of_rows: 0)
+    seed_random_data(target_db, number_of_rows: 0)
+
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, NULL)")
+    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, NULL)")
+
+    verification_ran = false
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*incorrect_tables|
+      verification_ran = true
+      assert_equal [], incorrect_tables
+    end
+
+    ghostferry.run
+    assert verification_ran
+  end
+
+  def test_null_vs_empty_string
+    seed_random_data(source_db, number_of_rows: 0)
+    seed_random_data(target_db, number_of_rows: 0)
+
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, NULL)")
+    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, '')")
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+    ghostferry.run_expecting_interrupt
+    refute_nil ghostferry.error
+    err_msg = ghostferry.error["ErrMessage"]
+    assert err_msg.include?("row fingerprints for pks [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+  end
+
+  def test_null_vs_null_string
+    seed_random_data(source_db, number_of_rows: 0)
+    seed_random_data(target_db, number_of_rows: 0)
+
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, NULL)")
+    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, 'NULL')")
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+    ghostferry.run_expecting_interrupt
+    refute_nil ghostferry.error
+    err_msg = ghostferry.error["ErrMessage"]
+    assert err_msg.include?("row fingerprints for pks [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+  end
+
   ###################
   # Collation Tests #
   ###################
