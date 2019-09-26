@@ -187,6 +187,23 @@ class InlineVerifierTest < GhostferryTestCase
     assert err_msg.include?("row fingerprints for pks [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
   end
 
+  def test_null_in_different_order
+    seed_random_data(source_db, number_of_rows: 0)
+    seed_random_data(target_db, number_of_rows: 0)
+
+    source_db.query("ALTER TABLE #{DEFAULT_FULL_TABLE_NAME} ADD COLUMN data2 VARCHAR(255) AFTER data")
+    target_db.query("ALTER TABLE #{DEFAULT_FULL_TABLE_NAME} ADD COLUMN data2 VARCHAR(255) AFTER data")
+
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, NULL, 'data')")
+    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, 'data', NULL)")
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+    ghostferry.run_expecting_interrupt
+    refute_nil ghostferry.error
+    err_msg = ghostferry.error["ErrMessage"]
+    assert err_msg.include?("row fingerprints for pks [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+  end
+
   ###################
   # Collation Tests #
   ###################
