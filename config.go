@@ -250,6 +250,24 @@ func (c ColumnCompressionConfig) CompressedColumnsFor(schemaName, tableName stri
 	return columnsConfig
 }
 
+// SchemaName => TableName => ColumnName => struct{}{}
+// These columns will be ignored during InlineVerification
+type ColumnIgnoreConfig map[string]map[string]map[string]struct{}
+
+func (c ColumnIgnoreConfig) IgnoredColumnsFor(schemaName, tableName string) map[string]struct{} {
+	tableConfig, found := c[schemaName]
+	if !found {
+		return nil
+	}
+
+	columnsConfig, found := tableConfig[tableName]
+	if !found {
+		return nil
+	}
+
+	return columnsConfig
+}
+
 type Config struct {
 	// Source database connection configuration
 	//
@@ -401,7 +419,20 @@ type Config struct {
 	// Note: a similar option exists in IterativeVerifier. However, the
 	// IterativeVerifier is being deprecated and this will be the correct place
 	// to specify it if you don't need the IterativeVerifier.
-	ColumnCompressionConfig ColumnCompressionConfig
+	CompressedColumnsForVerification ColumnCompressionConfig
+
+	// This config is also for inline verification for the same special case of
+	// Ghostferry as documented with the CompressedColumnsForVerification option:
+	//
+	// - If you're copying a table where the data is partially already on the
+	//   the target through some other means.
+	// - A difference in a particular column could be acceptable.
+	//   - An example would be a table with a data field and a created_at field.
+	//     Maybe the created_at field is not important for data integrity as long
+	//     as the data field is correct.
+	// - Putting the column in this config will cause the InlineVerifier to skip
+	//   this column for verification.
+	IgnoredColumnsForVerification ColumnIgnoreConfig
 }
 
 func (c *Config) ValidateConfig() error {

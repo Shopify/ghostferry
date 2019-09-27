@@ -277,7 +277,7 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, target
 		for idx, col := range table.Columns {
 			var compressedData []byte
 			var ok bool
-			if _, ok = table.CompressedColumns[col.Name]; !ok {
+			if _, ok = table.CompressedColumnsForVerification[col.Name]; !ok {
 				continue
 			}
 
@@ -462,7 +462,7 @@ func (v *InlineVerifier) getFingerprintDataFromDb(db *sql.DB, stmtCache *StmtCac
 
 func (v *InlineVerifier) decompressData(table *TableSchema, column string, compressed []byte) ([]byte, error) {
 	var decompressed []byte
-	algorithm, isCompressed := table.CompressedColumns[column]
+	algorithm, isCompressed := table.CompressedColumnsForVerification[column]
 	if !isCompressed {
 		return nil, fmt.Errorf("%v is not a compressed column", column)
 	}

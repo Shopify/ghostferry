@@ -34,7 +34,7 @@ func (this *DataIteratorTestSuite) SetupTest() {
 		TablesFunc: nil,
 	}
 
-	tables, err := ghostferry.LoadTables(sourceDb, tableFilter, nil)
+	tables, err := ghostferry.LoadTables(sourceDb, tableFilter, nil, nil)
 	this.Require().Nil(err)
 
 	this.tables = tables.AsSlice()
