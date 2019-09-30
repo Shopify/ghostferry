@@ -90,7 +90,9 @@ func (t *TableSchema) RowMd5Query() string {
 
 	hashStrs := make([]string, len(columns))
 	for i, column := range columns {
-		hashStrs[i] = fmt.Sprintf("MD5(COALESCE(%s, 'NULL'))", normalizeAndQuoteColumn(column))
+		// Magic string that's unlikely to be a real record. For a history of this
+		// issue, refer to https://github.com/Shopify/ghostferry/pull/137
+		hashStrs[i] = fmt.Sprintf("MD5(COALESCE(%s, 'NULL_PBj}b]74P@JTo$5G_null'))", normalizeAndQuoteColumn(column))
 	}
 
 	t.rowMd5Query = fmt.Sprintf("MD5(CONCAT(%s)) AS __ghostferry_row_md5", strings.Join(hashStrs, ","))
