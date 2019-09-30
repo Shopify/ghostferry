@@ -178,7 +178,7 @@ func (this *TableSchemaCacheTestSuite) TestFingerprintQueryWithIgnoredColumns() 
 		"data": struct{}{},
 	}
 	query := table.FingerprintQuery("s", "t", 10)
-	this.Require().Equal("SELECT `id`,MD5(CONCAT(MD5(COALESCE(`id`, 'NULL')))) AS __ghostferry_row_md5 FROM `s`.`t` WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
+	this.Require().Equal("SELECT `id`,MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5 FROM `s`.`t` WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
 }
 
 func (this *TableSchemaCacheTestSuite) TestQuotedTableName() {
