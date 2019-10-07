@@ -369,7 +369,7 @@ func (t *IterativeVerifierTestSuite) reloadTables() {
 		TablesFunc: nil,
 	}
 
-	tables, err := ghostferry.LoadTables(t.db, tableFilter, nil, nil)
+	tables, err := ghostferry.LoadTables(t.db, tableFilter, nil, nil, nil)
 	t.Require().Nil(err)
 
 	t.Ferry.Tables = tables

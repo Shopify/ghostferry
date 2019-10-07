@@ -39,6 +39,7 @@ func (this *FilterTestSuite) TestLoadTablesWithWhitelist() {
 		),
 		nil,
 		nil,
+		nil,
 	)
 
 	this.Require().Nil(err)
@@ -62,6 +63,7 @@ func (this *FilterTestSuite) TestLoadTablesWithBlacklist() {
 				Blacklist: []string{"test_table_2"},
 			},
 		),
+		nil,
 		nil,
 		nil,
 	)

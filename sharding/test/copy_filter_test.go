@@ -28,11 +28,12 @@ func (t *CopyFilterTestSuite) SetupTest() {
 	t.shardingValue = int64(1)
 	t.pkCursor = uint64(12345)
 
+	columns := []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}, {Name: "data"}}
 	t.normalTable = &ghostferry.TableSchema{
 		Table: &schema.Table{
 			Schema:    "shard_1",
 			Name:      "normaltable",
-			Columns:   []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}, {Name: "data"}},
+			Columns:   columns,
 			PKColumns: []int{0},
 			Indexes: []*schema.Index{
 				{Name: "unrelated_index", Columns: []string{"tenant_id", "data"}},
@@ -41,24 +42,29 @@ func (t *CopyFilterTestSuite) SetupTest() {
 				{Name: "unrelated_index2", Columns: []string{"data"}},
 			},
 		},
+		PaginationKeyColumn: &columns[0],
 	}
 
+	columns = []schema.TableColumn{{Name: "joined_pk"}}
 	t.joinedTable = &ghostferry.TableSchema{
 		Table: &schema.Table{
 			Schema:    "shard_1",
 			Name:      "joinedtable",
-			Columns:   []schema.TableColumn{{Name: "joined_pk"}},
+			Columns:   columns,
 			PKColumns: []int{0},
 		},
+		PaginationKeyColumn: &columns[0],
 	}
 
+	columns = []schema.TableColumn{{Name: "tenant_id"}}
 	t.pkTable = &ghostferry.TableSchema{
 		Table: &schema.Table{
 			Schema:    "shard_1",
 			Name:      "pktable",
-			Columns:   []schema.TableColumn{{Name: "tenant_id"}},
+			Columns:   columns,
 			PKColumns: []int{0},
 		},
+		PaginationKeyColumn: &columns[0],
 	}
 
 	t.filter = &sharding.ShardedCopyFilter{

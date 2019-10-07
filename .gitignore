@@ -15,3 +15,5 @@
 
 .vagrant/
 build/
+.bundle/
+.vscode/
