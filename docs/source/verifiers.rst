@@ -6,28 +6,34 @@ Verifiers
 
 Verifiers in Ghostferry is designed to ensure that Ghostferry did not
 corrupt/miss data. There are two different verifiers: the
-``ChecksumTableVerifier`` and the ``IterativeVerifier``. A comparison of them
+``ChecksumTableVerifier`` and the ``InlineVerifier``. A comparison of them
 are given below:
 
 +-----------------------+-----------------------+-----------------------------+
-|                       | ChecksumTableVerifier | IterativeVerifier           |
+|                       | ChecksumTableVerifier | InlineVerifier              |
 +-----------------------+-----------------------+-----------------------------+
-|Mechanism              | ``CHECKSUM TABLE``    | Verify row before cutover;  |
-|                       |                       | Reverify changed rows during|
-|                       |                       | cutover.                    |
+|Mechanism              | ``CHECKSUM TABLE``    | Each row is validated via a |
+|                       |                       | MD5 type query on the MySQL |
+|                       |                       | database after it is copied.|
+|                       |                       | Any entries copied due to   |
+|                       |                       | binlog activity is verified |
+|                       |                       | periodically during the copy|
+|                       |                       | process and ultimately      |
+|                       |                       | during the cutover.         |
 +-----------------------+-----------------------+-----------------------------+
-|Impacts on Cutover Time| Linear w.r.t data size| Linear w.r.t. change rate   |
-|                       |                       | [1]_                        |
+|Impacts on Cutover Time| Linear w.r.t data     | Linear w.r.t. change rate   |
+|                       | size.                 | [1]_.                       |
 +-----------------------+-----------------------+-----------------------------+
-|Impacts on Copy Time   | None                  | Linear w.r.t data size      |
+|Impacts on Copy Time   | None.                 | Linear w.r.t data size [3]_.|
 |[2]_                   |                       |                             |
 +-----------------------+-----------------------+-----------------------------+
-|Memory Usage           | Minimal               | Linear w.r.t rows changed   |
+|Memory Usage           | Minimal.              | Minimal.                    |
 +-----------------------+-----------------------+-----------------------------+
-|Partial table copy     | Not supported         | Supported                   |
+|Partial table copy     | Not supported.        | Supported.                  |
 +-----------------------+-----------------------+-----------------------------+
-|Worst Case Scenario    | Large databases causes| Verification is slower than |
-|                       | unacceptable downtime | the change rate of the DB;  |
+|Worst Case Scenario    | Large databases causes| Verification during cutover |
+|                       | unacceptable downtime.| is slower than the change   |
+|                       |                       | rate of the DB.             |
 +-----------------------+-----------------------+-----------------------------+
 
 .. [1] Additional improvements could be made to reduce this as long as
@@ -37,39 +43,45 @@ are given below:
 .. [2] Increase in copy time does not increase downtime. Downtime occurs only
        in cutover.
 
+.. [3] The increase should be minimal as the verification is done immediately
+       after copy, when the data most likely still live in RAM.
+
 If you want verification, you should try with the ``ChecksumTableVerifier``
 first if you're copying whole tables at a time. If that takes too long, you can
-try using the ``IterativeVerifier``. Alternatively, you can verify in a staging
+try using the ``InlineVerifier``. Alternatively, you can verify in a staging
 run and not verify during the production run (see :ref:`copydbinprod`).
 
-IterativeVerifier
------------------
+InlineVerifier
+--------------
 
-IterativeVerifier verifies the source and target in a couple of steps:
+Ghostferry's core algorithm has ran for millions of times and is backed by a
+TLA+ specification. There's a high degree of confidence in its correctness.
+However, correctness analysis assumed that the data is perfectly copied from
+the source to the target MySQL. However, this may not be the case as the data
+is transformed from MySQL -> Go -> MySQL. Different encodings could change the
+unintentionally data, resulting in corruptions. Some observed (and fixed) cases
+includes: floating point values and datetime columns.
 
-1. After the data copy, it first compares the hashes of each applicable rows
-   of the source and the target together to make sure they are the same. This
-   is known as the initial verification.
+The InlineVerifier is designed to catch these type of problems and fail the
+run if discrepencies are detected. **It is not designed to verify that certain
+records are missing**. Only the ChecksumTableVerifier can do that. The way the
+InlineVerifier catches encoding type issues are as follows:
 
-   a. If they are the same: the verification for that row is complete.
-   b. If they are not the same: add it into a reverify queue.
-
-2. For any rows changed during the initial verification process, add it into
-   the reverify queue.
-
-3. After the initial verification, verify the rows' hashes in the
-   reverification queue again. This is done to reduce the time needed to
-   reverify during the cutover as we assume the reverification queue will
-   become smaller during this process.
-
-4. During the cutover stage, verify all rows' hashes in the reverify queue.
-
-   a. If they are the same: the verification for that row is complete.
-   b. If they are not the same: the verification fails.
-
-5. If no verification failure occurs, the source and the target are identical.
-   If verification failure does occur (4b), then the source and target are not
-   identical.
-
-A proof of concept TLA+ verification of this algorithm is done in
-`<https://github.com/Shopify/ghostferry/tree/iterative-verifier-tla>`_.
+* During the DataIterator
+    1. While selecting a row to copy, a MD5 checksum is calculated on the source
+       MySQL server.
+    2. After the data is copied onto the target, the same MD5 checksum is
+       calculated on the target.
+    3. The hash is compared. If it is different, the run is aborted with an
+       error.
+* During the BinlogStreamer
+    1. Since the MD5 checksum cannot be synchronously generated with the Binlog
+       event, any rows seen in the BinlogStreamer is added to a background
+       verification queue.
+    2. Periodically in the background, the checksum for all rows within the
+       queue are computed both on the source and the target database.
+    3. The checksums are compared. If they match, the row is removed from the
+       verification queue. Otherwise, it remains in the queue.
+    4. During the cutover, when the source and target are read-only, checksums
+       for all rows within the verification queue are checked. If any
+       mismatches are detected, an error is raised.
