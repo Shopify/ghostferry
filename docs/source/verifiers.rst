@@ -12,7 +12,7 @@ are given below:
 +-----------------------+-----------------------+-----------------------------+
 |                       | ChecksumTableVerifier | InlineVerifier              |
 +-----------------------+-----------------------+-----------------------------+
-|Mechanism              | ``CHECKSUM TABLE``    | Each row is validated via a |
+|Mechanism              | ``CHECKSUM TABLE``    | Each row is validated via an|
 |                       |                       | MD5 type query on the MySQL |
 |                       |                       | database after it is copied.|
 |                       |                       | Any entries copied due to   |
@@ -54,7 +54,7 @@ run and not verify during the production run (see :ref:`copydbinprod`).
 InlineVerifier
 --------------
 
-Ghostferry's core algorithm has ran for millions of times and is backed by a
+Ghostferry's core algorithm has run for millions of times and is backed by a
 TLA+ specification. There's a high degree of confidence in its correctness.
 However, correctness analysis assumed that the data is perfectly copied from
 the source to the target MySQL. However, this may not be the case as the data
