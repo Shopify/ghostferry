@@ -224,15 +224,7 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 		}
 	}
 
-	verifierType := os.Getenv("GHOSTFERRY_VERIFIER_TYPE")
-	if verifierType == ghostferry.VerifierTypeIterative {
-		config.VerifierType = ghostferry.VerifierTypeIterative
-		config.IterativeVerifierConfig = ghostferry.IterativeVerifierConfig{
-			Concurrency: 2,
-		}
-	} else if verifierType != "" {
-		config.VerifierType = verifierType
-	}
+	config.VerifierType = os.Getenv("GHOSTFERRY_VERIFIER_TYPE")
 
 	return config, config.ValidateConfig()
 }

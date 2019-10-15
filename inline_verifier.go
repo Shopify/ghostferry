@@ -14,10 +14,25 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// This struct is very similar to ReverifyStore, but it is more optimized
-// for serialization into JSON.
-//
-// TODO: remove IterativeVerifier and remove this comment.
+const (
+	// CompressionSnappy is used to identify Snappy (https://google.github.io/snappy/) compressed column data
+	CompressionSnappy = "SNAPPY"
+)
+
+// UnsupportedCompressionError is used to identify errors resulting
+// from attempting to decompress unsupported algorithms
+type UnsupportedCompressionError struct {
+	table     string
+	column    string
+	algorithm string
+}
+
+func (e UnsupportedCompressionError) Error() string {
+	return "Compression algorithm: " + e.algorithm +
+		" not supported on table: " + e.table +
+		" for column: " + e.column
+}
+
 type BinlogVerifyStore struct {
 	EmitLogPerRowsAdded uint64
 

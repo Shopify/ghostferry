@@ -111,8 +111,8 @@ Some other considerations/notes:
     runs.
   * To test resuming errored runs further, see :ref:`prodtesting`.
 
-* Verifiers are not resumable, including the IterativeVerifier. This may change
-  in the future.
+* ChecksumTableVerifier is not resumable, but the InlineVerifier is as long as
+  cut over didn't begin.
 * While we are confident that the algorithm to be correct, this is still a
   highly experimental feature. USE AT YOUR OWN RISK.
 

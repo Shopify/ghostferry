@@ -306,3 +306,11 @@ func maxPk(db *sql.DB, table *TableSchema) (uint64, bool, error) {
 		return maxPrimaryKey, true, nil
 	}
 }
+
+func normalizeAndQuoteColumn(column schema.TableColumn) (quoted string) {
+	quoted = quoteField(column.Name)
+	if column.Type == schema.TYPE_FLOAT {
+		quoted = fmt.Sprintf("(if (%s = '-0', 0, %s))", quoted, quoted)
+	}
+	return
+}
