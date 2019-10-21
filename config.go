@@ -268,6 +268,37 @@ func (c ColumnIgnoreConfig) IgnoredColumnsFor(schemaName, tableName string) map[
 	return columnsConfig
 }
 
+// CascadingPaginationColumnConfig to configure pagination columns to be
+// used. The term `Cascading` to denote that greater specificity takes
+// precedence.
+type CascadingPaginationColumnConfig struct {
+	// PerTable has greatest specificity and takes precedence over the other options
+	PerTable map[string]map[string]string // SchemaName => TableName => ColumnName
+
+	// FallbackColumn is a global default to fallback to and is more specific than the default fallback,
+	// which would be the PK
+	FallbackColumn string
+}
+
+// PaginationColumnFor is a helper function to retrieve the column name to paginate by
+func (c *CascadingPaginationColumnConfig) PaginationColumnFor(schemaName, tableName string) (string, bool) {
+	if c == nil {
+		return "", false
+	}
+
+	tableConfig, found := c.PerTable[schemaName]
+	if !found {
+		return "", false
+	}
+
+	column, found := tableConfig[tableName]
+	if !found {
+		return "", false
+	}
+
+	return column, true
+}
+
 type Config struct {
 	// Source database connection configuration
 	//
@@ -433,6 +464,12 @@ type Config struct {
 	// - Putting the column in this config will cause the InlineVerifier to skip
 	//   this column for verification.
 	IgnoredColumnsForVerification ColumnIgnoreConfig
+
+	// Ghostferry requires a single numeric column to paginate over tables. Inferring that column is done in the following exact order:
+	// 1. Use the PerTable pagination column, if configured for a table. Fail if we cannot find this column in the table.
+	// 2. Use the FallbackColumn pagination column, if configured. Fail if we cannot find this column in the table.
+	// 3. Use the table's primary key column as the pagination column. Fail if the primary key is a composite key or is not numeric.
+	CascadingPaginationColumnConfig *CascadingPaginationColumnConfig
 }
 
 func (c *Config) ValidateConfig() error {

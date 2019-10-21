@@ -36,6 +36,7 @@ type TableSchema struct {
 
 	CompressedColumnsForVerification map[string]string   // Map of column name => compression type
 	IgnoredColumnsForVerification    map[string]struct{} // Set of column name
+	PaginationKeyColumn              *schema.TableColumn
 
 	rowMd5Query string
 }
@@ -101,6 +102,10 @@ func (t *TableSchema) RowMd5Query() string {
 
 type TableSchemaCache map[string]*TableSchema
 
+func fullTableName(schemaName, tableName string) string {
+	return fmt.Sprintf("%s.%s", schemaName, tableName)
+}
+
 func QuotedTableName(table *TableSchema) string {
 	return QuotedTableNameFromString(table.Schema, table.Name)
 }
@@ -134,7 +139,7 @@ func MaxPrimaryKeys(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) (ma
 	return tablesWithData, emptyTables, nil
 }
 
-func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig ColumnCompressionConfig, columnIgnoreConfig ColumnIgnoreConfig) (TableSchemaCache, error) {
+func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig ColumnCompressionConfig, columnIgnoreConfig ColumnIgnoreConfig, cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (TableSchemaCache, error) {
 	logger := logrus.WithField("tag", "table_schema_cache")
 
 	tableSchemaCache := make(TableSchemaCache)
@@ -189,18 +194,12 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 			tableLog := dbLog.WithField("table", tableName)
 			tableLog.Debug("caching table schema")
 
-			// Sanity check
-			if len(tableSchema.PKColumns) != 1 {
-				err = fmt.Errorf("table %s has %d primary key columns and this is not supported", tableName, len(tableSchema.PKColumns))
+			paginationKeyColumn, err := tableSchema.paginationKeyColumn(cascadingPaginationColumnConfig)
+			if err != nil {
 				logger.WithError(err).Error("invalid table")
 				return tableSchemaCache, err
 			}
-
-			if tableSchema.GetPKColumn(0).Type != schema.TYPE_NUMBER {
-				err = fmt.Errorf("table %s is using a non-numeric primary key column and this is not supported", tableName)
-				logger.WithError(err).Error("invalid table")
-				return tableSchemaCache, err
-			}
+			tableSchema.PaginationKeyColumn = paginationKeyColumn
 
 			tableSchemaCache[tableSchema.String()] = tableSchema
 		}
@@ -209,6 +208,84 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 	logger.WithField("tables", tableSchemaCache.AllTableNames()).Info("table schemas cached")
 
 	return tableSchemaCache, nil
+}
+
+func (t *TableSchema) findColumnByName(name string) (*schema.TableColumn, error) {
+	for _, column := range t.Columns {
+		if column.Name == name {
+			return &column, nil
+		}
+	}
+	return nil, NonExistingPaginationKeyColumnError(t.Schema, t.Name, name)
+}
+
+// NonExistingPaginationKeyColumnError exported to facilitate black box testing
+func NonExistingPaginationKeyColumnError(schema, table, paginationKey string) error {
+	return fmt.Errorf("Pagination Key `%s` for %s non existent", paginationKey, QuotedTableNameFromString(schema, table))
+}
+
+// NonExistingPKError exported to facilitate black box testing
+func NonExistingPKError(schema, table string) error {
+	return fmt.Errorf("%s has no Primary Key to default to for Pagination purposes. Kindly specify a Pagination Key for this table in the CascadingPaginationColumnConfig", QuotedTableNameFromString(schema, table))
+}
+
+// CompositePKError exported to facilitate black box testing
+func CompositePKError(schema, table string) error {
+	return fmt.Errorf("%s attempted to default to a Composite Primary Key for Pagination purposes whereas this is not supported. Kindly specify a Pagination Key for this table in the CascadingPaginationColumnConfig", QuotedTableNameFromString(schema, table))
+}
+
+// NonNumericPaginationKeyError exported to facilitate black box testing
+func NonNumericPaginationKeyError(schema, table, paginationKey string) error {
+	return fmt.Errorf("Pagination Key `%s` for %s is non-numeric", paginationKey, QuotedTableNameFromString(schema, table))
+}
+
+func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (*schema.TableColumn, error) {
+	var err error
+	var paginationKeyColumn *schema.TableColumn
+
+	if paginationColumn, found := cascadingPaginationColumnConfig.PaginationColumnFor(t.Schema, t.Name); found {
+		// Check that supplied pagination key column is in actual effect an existing column
+		paginationKeyColumn, err = t.findColumnByName(paginationColumn)
+	} else if cascadingPaginationColumnConfig == nil || cascadingPaginationColumnConfig.FallbackColumn == "" {
+		// default to Primary Key if possible
+		switch len(t.PKColumns) {
+		case 0:
+			err = NonExistingPKError(t.Schema, t.Name)
+		case 1:
+			paginationKeyColumn = &t.Columns[t.PKColumns[0]]
+		default:
+			err = CompositePKError(t.Schema, t.Name)
+		}
+	} else {
+		// Check that supplied pagination key column to fallback to is in actual effect an existing column
+		paginationKeyColumn, err = t.findColumnByName(cascadingPaginationColumnConfig.FallbackColumn)
+	}
+
+	if paginationKeyColumn != nil && paginationKeyColumn.Type != schema.TYPE_NUMBER {
+		return nil, NonNumericPaginationKeyError(t.Schema, t.Name, paginationKeyColumn.Name)
+	}
+
+	return paginationKeyColumn, err
+}
+
+/*
+GetPKColumn is a method originally belonging to go-mysql/schema.Table
+and stands for: `Get Primary Key Column`
+
+As `TableSchema` embeds `schema.Table`, previously the method call to
+`TableSchema` would delegate automatically to the method for
+`schema.Table`. This was in spirit with the initial assumption that the
+column to iterate over in any given table is the Primary Key Column.
+
+In order to accommodate user provided pagination columns through
+configuration in the least painful way, this method has been
+reimplemented. Now this method stands for: `Get Pagination Key Column`.
+
+The param `index` currently serves no purpose but to maintain the same
+method signature as the original method.
+*/
+func (t *TableSchema) GetPKColumn(index int) *schema.TableColumn {
+	return t.PaginationKeyColumn
 }
 
 func (c TableSchemaCache) AsSlice() (tables []*TableSchema) {
@@ -228,8 +305,7 @@ func (c TableSchemaCache) AllTableNames() (tableNames []string) {
 }
 
 func (c TableSchemaCache) Get(database, table string) *TableSchema {
-	fullTableName := fmt.Sprintf("%s.%s", database, table)
-	return c[fullTableName]
+	return c[fullTableName(database, table)]
 }
 
 func showDatabases(c *sql.DB) ([]string, error) {
@@ -282,7 +358,6 @@ func showTablesFrom(c *sql.DB, dbname string) ([]string, error) {
 func maxPk(db *sql.DB, table *TableSchema) (uint64, bool, error) {
 	primaryKeyColumn := table.GetPKColumn(0)
 	pkName := quoteField(primaryKeyColumn.Name)
-
 	query, args, err := sq.
 		Select(pkName).
 		From(QuotedTableName(table)).
