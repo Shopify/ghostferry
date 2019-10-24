@@ -234,6 +234,14 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 		config.VerifierType = verifierType
 	}
 
+	if cascadingPaginationKeyColumnConfig := os.Getenv("GHOSTFERRY_CASCADING_PAGINATION_COLUMN_CONFIG"); cascadingPaginationKeyColumnConfig != "" {
+		config.CascadingPaginationColumnConfig = &ghostferry.CascadingPaginationColumnConfig{}
+		err = json.Unmarshal([]byte(cascadingPaginationKeyColumnConfig), config.CascadingPaginationColumnConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return config, config.ValidateConfig()
 }
 

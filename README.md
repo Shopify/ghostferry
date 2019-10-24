@@ -26,7 +26,7 @@ that as it has a concise definition. However, the specification might not be
 entirely correct as proofs remain elusive.
 
 On a high-level, Ghostferry is broken into several components, enabling it to
-copy data. This is documented at 
+copy data. This is documented at
 https://shopify.github.io/ghostferry/master/technicaloverview.html
 
 Development Setup
@@ -47,3 +47,13 @@ Test copydb:
 - `make copydb && ghostferry-copydb -verbose examples/copydb/conf.json`
 - For a more detailed tutorial, see the
   [documentation](https://shopify.github.io/ghostferry).
+
+Ruby Integration Tests
+----
+
+Kindly take note of following options:
+*   `DEBUG=1`: To see more detailed debug output by `Ghostferry`
+*   `TESTOPTS=...`: As detailed under https://docs.ruby-lang.org/en/2.1.0/Rake/TestTask.html
+
+Example:
+`bundle exec rake test DEBUG=1 TESTOPTS="-v --name=TrivialIntegrationTests#test_logged_query_omits_columns"`
