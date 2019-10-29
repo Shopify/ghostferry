@@ -14,10 +14,10 @@ import (
 
 type TableStatusDeprecated struct {
 	TableName        string
-	PrimaryKeyName   string
+	PaginationKeyName   string
 	Status           string
-	LastSuccessfulPK uint64
-	TargetPK         uint64
+	LastSuccessfulPaginationKey uint64
+	TargetPaginationKey         uint64
 }
 
 type StatusDeprecated struct {
@@ -32,7 +32,7 @@ type StatusDeprecated struct {
 	TimeTaken         time.Duration
 	ETA               time.Duration
 	BinlogStreamerLag time.Duration
-	PKsPerSecond      uint64
+	PaginationKeysPerSecond      uint64
 
 	AutomaticCutover            bool
 	BinlogStreamerStopRequested bool
@@ -85,12 +85,12 @@ func FetchStatusDeprecated(f *Ferry, v Verifier) *StatusDeprecated {
 
 	serializedState := f.StateTracker.Serialize(nil, nil)
 
-	lastSuccessfulPKs := serializedState.LastSuccessfulPrimaryKeys
+	lastSuccessfulPaginationKeys := serializedState.LastSuccessfulPaginationKeys
 	completedTables := serializedState.CompletedTables
 
-	targetPKs := make(map[string]uint64)
-	f.DataIterator.targetPKs.Range(func(k, v interface{}) bool {
-		targetPKs[k.(string)] = v.(uint64)
+	targetPaginationKeys := make(map[string]uint64)
+	f.DataIterator.targetPaginationKeys.Range(func(k, v interface{}) bool {
+		targetPaginationKeys[k.(string)] = v.(uint64)
 		return true
 	})
 
@@ -120,7 +120,7 @@ func FetchStatusDeprecated(f *Ferry, v Verifier) *StatusDeprecated {
 		completedTableNames = append(completedTableNames, tableName)
 	}
 
-	for tableName, _ := range lastSuccessfulPKs {
+	for tableName, _ := range lastSuccessfulPaginationKeys {
 		if _, ok := completedTables[tableName]; ok {
 			continue // already completed, therefore not copying
 		}
@@ -129,13 +129,13 @@ func FetchStatusDeprecated(f *Ferry, v Verifier) *StatusDeprecated {
 	}
 
 	for tableName, _ := range f.Tables {
-		if lastSuccessfulPK, ok := lastSuccessfulPKs[tableName]; ok && lastSuccessfulPK != 0 {
+		if lastSuccessfulPaginationKey, ok := lastSuccessfulPaginationKeys[tableName]; ok && lastSuccessfulPaginationKey != 0 {
 			continue // already started, therefore not waiting
 		}
 
 		if _, ok := completedTables[tableName]; ok {
 			// There are no data in that table, thus it does not have an entry in
-			// lastSuccessfulPKs but has an entry in completedTables
+			// lastSuccessfulPaginationKeys but has an entry in completedTables
 			continue
 		}
 
@@ -149,49 +149,49 @@ func FetchStatusDeprecated(f *Ferry, v Verifier) *StatusDeprecated {
 	for _, tableName := range completedTableNames {
 		status.TableStatuses = append(status.TableStatuses, &TableStatusDeprecated{
 			TableName:        tableName,
-			PrimaryKeyName:   f.Tables[tableName].GetPKColumn(0).Name,
+			PaginationKeyName:   f.Tables[tableName].GetPaginationColumn().Name,
 			Status:           "complete",
-			TargetPK:         targetPKs[tableName],
-			LastSuccessfulPK: lastSuccessfulPKs[tableName],
+			TargetPaginationKey:         targetPaginationKeys[tableName],
+			LastSuccessfulPaginationKey: lastSuccessfulPaginationKeys[tableName],
 		})
 	}
 
 	for _, tableName := range copyingTableNames {
 		status.TableStatuses = append(status.TableStatuses, &TableStatusDeprecated{
 			TableName:        tableName,
-			PrimaryKeyName:   f.Tables[tableName].GetPKColumn(0).Name,
+			PaginationKeyName:   f.Tables[tableName].GetPaginationColumn().Name,
 			Status:           "copying",
-			TargetPK:         targetPKs[tableName],
-			LastSuccessfulPK: lastSuccessfulPKs[tableName],
+			TargetPaginationKey:         targetPaginationKeys[tableName],
+			LastSuccessfulPaginationKey: lastSuccessfulPaginationKeys[tableName],
 		})
 	}
 
 	for _, tableName := range waitingTableNames {
 		status.TableStatuses = append(status.TableStatuses, &TableStatusDeprecated{
 			TableName:        tableName,
-			PrimaryKeyName:   f.Tables[tableName].GetPKColumn(0).Name,
+			PaginationKeyName:   f.Tables[tableName].GetPaginationColumn().Name,
 			Status:           "waiting",
-			TargetPK:         targetPKs[tableName],
-			LastSuccessfulPK: 0,
+			TargetPaginationKey:         targetPaginationKeys[tableName],
+			LastSuccessfulPaginationKey: 0,
 		})
 	}
 
 	// ETA estimation
 	// We do it here rather than in DataIteratorState to give the lock back
 	// ASAP. It's not supposed to be that accurate anyway.
-	var totalPKsToCopy uint64 = 0
-	var completedPKs uint64 = 0
-	estimatedPKsPerSecond := f.StateTracker.EstimatedPKsPerSecond()
-	for _, targetPK := range targetPKs {
-		totalPKsToCopy += targetPK
+	var totalPaginationKeysToCopy uint64 = 0
+	var completedPaginationKeys uint64 = 0
+	estimatedPaginationKeysPerSecond := f.StateTracker.EstimatedPaginationKeysPerSecond()
+	for _, targetPaginationKey := range targetPaginationKeys {
+		totalPaginationKeysToCopy += targetPaginationKey
 	}
 
-	for _, completedPK := range lastSuccessfulPKs {
-		completedPKs += completedPK
+	for _, completedPaginationKey := range lastSuccessfulPaginationKeys {
+		completedPaginationKeys += completedPaginationKey
 	}
 
-	status.ETA = time.Duration(math.Ceil(float64(totalPKsToCopy-completedPKs)/estimatedPKsPerSecond)) * time.Second
-	status.PKsPerSecond = uint64(estimatedPKsPerSecond)
+	status.ETA = time.Duration(math.Ceil(float64(totalPaginationKeysToCopy-completedPaginationKeys)/estimatedPaginationKeysPerSecond)) * time.Second
+	status.PaginationKeysPerSecond = uint64(estimatedPaginationKeysPerSecond)
 
 	// Verifier display
 	if v != nil {

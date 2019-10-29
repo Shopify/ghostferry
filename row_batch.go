@@ -6,15 +6,15 @@ import (
 
 type RowBatch struct {
 	values       []RowData
-	pkIndex      int
+	paginationKeyIndex      int
 	table        *TableSchema
 	fingerprints map[uint64][]byte
 }
 
-func NewRowBatch(table *TableSchema, values []RowData, pkIndex int) *RowBatch {
+func NewRowBatch(table *TableSchema, values []RowData, paginationKeyIndex int) *RowBatch {
 	return &RowBatch{
 		values:  values,
-		pkIndex: pkIndex,
+		paginationKeyIndex: paginationKeyIndex,
 		table:   table,
 	}
 }
@@ -23,12 +23,12 @@ func (e *RowBatch) Values() []RowData {
 	return e.values
 }
 
-func (e *RowBatch) PkIndex() int {
-	return e.pkIndex
+func (e *RowBatch) PaginationKeyIndex() int {
+	return e.paginationKeyIndex
 }
 
-func (e *RowBatch) ValuesContainPk() bool {
-	return e.pkIndex >= 0
+func (e *RowBatch) ValuesContainPaginationKey() bool {
+	return e.paginationKeyIndex >= 0
 }
 
 func (e *RowBatch) Size() int {

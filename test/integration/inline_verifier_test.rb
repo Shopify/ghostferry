@@ -32,7 +32,7 @@ class InlineVerifierTest < GhostferryTestCase
 
     refute_nil ghostferry.error
     err_msg = ghostferry.error["ErrMessage"]
-    assert err_msg.include?("row fingerprints for pks [#{corrupting_id}] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+    assert err_msg.include?("row fingerprints for paginationKeys [#{corrupting_id}] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
 
     # Make sure it is not inserted into the target
     results = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{corrupting_id}")
@@ -56,7 +56,7 @@ class InlineVerifierTest < GhostferryTestCase
 
     refute_nil ghostferry.error
     err_msg = ghostferry.error["ErrMessage"]
-    assert err_msg.include?("row fingerprints for pks [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+    assert err_msg.include?("row fingerprints for paginationKeys [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
   end
 
   def test_same_decompressed_data_different_compressed_test_passes_inline_verification
@@ -134,7 +134,7 @@ class InlineVerifierTest < GhostferryTestCase
 
     ghostferry.run
     assert verification_ran
-    assert_equal "cutover verification failed for: gftest.test_table_1 [pks: #{corrupting_id} ] ", ghostferry.error_lines.last["msg"]
+    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: #{corrupting_id} ] ", ghostferry.error_lines.last["msg"]
   end
 
   #######################
@@ -160,7 +160,7 @@ class InlineVerifierTest < GhostferryTestCase
     ghostferry.run_expecting_interrupt
     refute_nil ghostferry.error
     err_msg = ghostferry.error["ErrMessage"]
-    assert err_msg.include?("row fingerprints for pks [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+    assert err_msg.include?("row fingerprints for paginationKeys [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
 
     # Now we run the real test case.
     target_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = -0.0 WHERE id = 1")
@@ -205,7 +205,7 @@ class InlineVerifierTest < GhostferryTestCase
     ghostferry.run_expecting_interrupt
     refute_nil ghostferry.error
     err_msg = ghostferry.error["ErrMessage"]
-    assert err_msg.include?("row fingerprints for pks [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+    assert err_msg.include?("row fingerprints for paginationKeys [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
   end
 
   def test_null_vs_null_string
@@ -219,7 +219,7 @@ class InlineVerifierTest < GhostferryTestCase
     ghostferry.run_expecting_interrupt
     refute_nil ghostferry.error
     err_msg = ghostferry.error["ErrMessage"]
-    assert err_msg.include?("row fingerprints for pks [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+    assert err_msg.include?("row fingerprints for paginationKeys [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
   end
 
   def test_null_in_different_order
@@ -236,7 +236,7 @@ class InlineVerifierTest < GhostferryTestCase
     ghostferry.run_expecting_interrupt
     refute_nil ghostferry.error
     err_msg = ghostferry.error["ErrMessage"]
-    assert err_msg.include?("row fingerprints for pks [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+    assert err_msg.include?("row fingerprints for paginationKeys [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
   end
 
   ###################
@@ -305,7 +305,7 @@ class InlineVerifierTest < GhostferryTestCase
 
       refute_nil ghostferry.error
       err_msg = ghostferry.error["ErrMessage"]
-      assert err_msg.include?("row fingerprints for pks [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+      assert err_msg.include?("row fingerprints for paginationKeys [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
     end
   end
 

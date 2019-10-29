@@ -34,7 +34,7 @@ type SerializableState struct {
 	GhostferryVersion         string
 	LastKnownTableSchemaCache TableSchemaCache
 
-	LastSuccessfulPrimaryKeys                 map[string]uint64
+	LastSuccessfulPaginationKeys                 map[string]uint64
 	CompletedTables                           map[string]bool
 	LastWrittenBinlogPosition                 mysql.Position
 	LastStoredBinlogPositionForInlineVerifier mysql.Position
@@ -59,7 +59,7 @@ func (s *SerializableState) MinBinlogPosition() mysql.Position {
 }
 
 // For tracking the speed of the copy
-type PKPositionLog struct {
+type PaginationKeyPositionLog struct {
 	Position uint64
 	At       time.Time
 }
@@ -70,7 +70,7 @@ func newSpeedLogRing(speedLogCount int) *ring.Ring {
 	}
 
 	speedLog := ring.New(speedLogCount)
-	speedLog.Value = PKPositionLog{
+	speedLog.Value = PaginationKeyPositionLog{
 		Position: 0,
 		At:       time.Now(),
 	}
@@ -85,7 +85,7 @@ type StateTracker struct {
 	lastWrittenBinlogPosition                 mysql.Position
 	lastStoredBinlogPositionForInlineVerifier mysql.Position
 
-	lastSuccessfulPrimaryKeys map[string]uint64
+	lastSuccessfulPaginationKeys map[string]uint64
 	completedTables           map[string]bool
 
 	iterationSpeedLog *ring.Ring
@@ -96,7 +96,7 @@ func NewStateTracker(speedLogCount int) *StateTracker {
 		BinlogRWMutex: &sync.RWMutex{},
 		CopyRWMutex:   &sync.RWMutex{},
 
-		lastSuccessfulPrimaryKeys: make(map[string]uint64),
+		lastSuccessfulPaginationKeys: make(map[string]uint64),
 		completedTables:           make(map[string]bool),
 		iterationSpeedLog:         newSpeedLogRing(speedLogCount),
 	}
@@ -106,7 +106,7 @@ func NewStateTracker(speedLogCount int) *StateTracker {
 // starting from the beginning.
 func NewStateTrackerFromSerializedState(speedLogCount int, serializedState *SerializableState) *StateTracker {
 	s := NewStateTracker(speedLogCount)
-	s.lastSuccessfulPrimaryKeys = serializedState.LastSuccessfulPrimaryKeys
+	s.lastSuccessfulPaginationKeys = serializedState.LastSuccessfulPaginationKeys
 	s.completedTables = serializedState.CompletedTables
 	s.lastWrittenBinlogPosition = serializedState.LastWrittenBinlogPosition
 	s.lastStoredBinlogPositionForInlineVerifier = serializedState.LastStoredBinlogPositionForInlineVerifier
@@ -127,17 +127,17 @@ func (s *StateTracker) UpdateLastStoredBinlogPositionForInlineVerifier(pos mysql
 	s.lastStoredBinlogPositionForInlineVerifier = pos
 }
 
-func (s *StateTracker) UpdateLastSuccessfulPK(table string, pk uint64) {
+func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginationKey uint64) {
 	s.CopyRWMutex.Lock()
 	defer s.CopyRWMutex.Unlock()
 
-	deltaPK := pk - s.lastSuccessfulPrimaryKeys[table]
-	s.lastSuccessfulPrimaryKeys[table] = pk
+	deltaPaginationKey := paginationKey - s.lastSuccessfulPaginationKeys[table]
+	s.lastSuccessfulPaginationKeys[table] = paginationKey
 
-	s.updateSpeedLog(deltaPK)
+	s.updateSpeedLog(deltaPaginationKey)
 }
 
-func (s *StateTracker) LastSuccessfulPK(table string) uint64 {
+func (s *StateTracker) LastSuccessfulPaginationKey(table string) uint64 {
 	s.CopyRWMutex.RLock()
 	defer s.CopyRWMutex.RUnlock()
 
@@ -146,12 +146,12 @@ func (s *StateTracker) LastSuccessfulPK(table string) uint64 {
 		return math.MaxUint64
 	}
 
-	pk, found := s.lastSuccessfulPrimaryKeys[table]
+	paginationKey, found := s.lastSuccessfulPaginationKeys[table]
 	if !found {
 		return 0
 	}
 
-	return pk
+	return paginationKey
 }
 
 func (s *StateTracker) MarkTableAsCompleted(table string) {
@@ -169,9 +169,9 @@ func (s *StateTracker) IsTableComplete(table string) bool {
 }
 
 // This is reasonably accurate if the rows copied are distributed uniformly
-// between pk = 0 -> max(pk). It would not be accurate if the distribution is
+// between paginationKey = 0 -> max(paginationKey). It would not be accurate if the distribution is
 // concentrated in a particular region.
-func (s *StateTracker) EstimatedPKsPerSecond() float64 {
+func (s *StateTracker) EstimatedPaginationKeysPerSecond() float64 {
 	if s.iterationSpeedLog == nil {
 		return 0.0
 	}
@@ -179,32 +179,32 @@ func (s *StateTracker) EstimatedPKsPerSecond() float64 {
 	s.CopyRWMutex.RLock()
 	defer s.CopyRWMutex.RUnlock()
 
-	if s.iterationSpeedLog.Value.(PKPositionLog).Position == 0 {
+	if s.iterationSpeedLog.Value.(PaginationKeyPositionLog).Position == 0 {
 		return 0.0
 	}
 
 	earliest := s.iterationSpeedLog
-	for earliest.Prev() != nil && earliest.Prev() != s.iterationSpeedLog && earliest.Prev().Value.(PKPositionLog).Position != 0 {
+	for earliest.Prev() != nil && earliest.Prev() != s.iterationSpeedLog && earliest.Prev().Value.(PaginationKeyPositionLog).Position != 0 {
 		earliest = earliest.Prev()
 	}
 
-	currentValue := s.iterationSpeedLog.Value.(PKPositionLog)
-	earliestValue := earliest.Value.(PKPositionLog)
-	deltaPK := currentValue.Position - earliestValue.Position
+	currentValue := s.iterationSpeedLog.Value.(PaginationKeyPositionLog)
+	earliestValue := earliest.Value.(PaginationKeyPositionLog)
+	deltaPaginationKey := currentValue.Position - earliestValue.Position
 	deltaT := currentValue.At.Sub(earliestValue.At).Seconds()
 
-	return float64(deltaPK) / deltaT
+	return float64(deltaPaginationKey) / deltaT
 }
 
-func (s *StateTracker) updateSpeedLog(deltaPK uint64) {
+func (s *StateTracker) updateSpeedLog(deltaPaginationKey uint64) {
 	if s.iterationSpeedLog == nil {
 		return
 	}
 
-	currentTotalPK := s.iterationSpeedLog.Value.(PKPositionLog).Position
+	currentTotalPaginationKey := s.iterationSpeedLog.Value.(PaginationKeyPositionLog).Position
 	s.iterationSpeedLog = s.iterationSpeedLog.Next()
-	s.iterationSpeedLog.Value = PKPositionLog{
-		Position: currentTotalPK + deltaPK,
+	s.iterationSpeedLog.Value = PaginationKeyPositionLog{
+		Position: currentTotalPaginationKey + deltaPaginationKey,
 		At:       time.Now(),
 	}
 }
@@ -219,7 +219,7 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, bin
 	state := &SerializableState{
 		GhostferryVersion:                         VersionString,
 		LastKnownTableSchemaCache:                 lastKnownTableSchemaCache,
-		LastSuccessfulPrimaryKeys:                 make(map[string]uint64),
+		LastSuccessfulPaginationKeys:                 make(map[string]uint64),
 		CompletedTables:                           make(map[string]bool),
 		LastWrittenBinlogPosition:                 s.lastWrittenBinlogPosition,
 		LastStoredBinlogPositionForInlineVerifier: s.lastStoredBinlogPositionForInlineVerifier,
@@ -229,11 +229,11 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, bin
 		state.BinlogVerifyStore = binlogVerifyStore.Serialize()
 	}
 
-	// Need a copy because lastSuccessfulPrimaryKeys may change after Serialize
+	// Need a copy because lastSuccessfulPaginationKeys may change after Serialize
 	// returns. This would inaccurately reflect the state of Ghostferry when
 	// Serialize is called.
-	for k, v := range s.lastSuccessfulPrimaryKeys {
-		state.LastSuccessfulPrimaryKeys[k] = v
+	for k, v := range s.lastSuccessfulPaginationKeys {
+		state.LastSuccessfulPaginationKeys[k] = v
 	}
 
 	for k, v := range s.completedTables {

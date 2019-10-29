@@ -92,7 +92,7 @@ func (t *IterativeVerifierTestSuite) TestVerifyOnceFails() {
 	t.Require().NotNil(result)
 	t.Require().Nil(err)
 	t.Require().False(result.DataCorrect)
-	t.Require().Equal("verification failed on table: gftest.test_table_1 for pk: 42", result.Message)
+	t.Require().Equal("verification failed on table: gftest.test_table_1 for paginationKey: 42", result.Message)
 }
 
 func (t *IterativeVerifierTestSuite) TestVerifyCompressedOnceFails() {
@@ -104,7 +104,7 @@ func (t *IterativeVerifierTestSuite) TestVerifyCompressedOnceFails() {
 	t.Require().Nil(err)
 	t.Require().False(result.DataCorrect)
 	t.Require().Equal(
-		fmt.Sprintf("verification failed on table: %s.%s for pk: %s", testhelpers.TestSchemaName, testhelpers.TestCompressedTable1Name, "42"),
+		fmt.Sprintf("verification failed on table: %s.%s for paginationKey: %s", testhelpers.TestSchemaName, testhelpers.TestCompressedTable1Name, "42"),
 		result.Message,
 	)
 }
@@ -154,7 +154,7 @@ func (t *IterativeVerifierTestSuite) TestBeforeCutoverFailuresFailAgainDuringCut
 	result, err := t.verifier.VerifyDuringCutover()
 	t.Require().Nil(err)
 	t.Require().False(result.DataCorrect)
-	t.Require().Equal("verification failed on table: gftest.test_table_1 for pks: 42", result.Message)
+	t.Require().Equal("verification failed on table: gftest.test_table_1 for paginationKeys: 42", result.Message)
 }
 
 func (t *IterativeVerifierTestSuite) TestBeforeCutoverCompressionFailuresFailAgainDuringCutover() {
@@ -167,7 +167,7 @@ func (t *IterativeVerifierTestSuite) TestBeforeCutoverCompressionFailuresFailAga
 	result, err := t.verifier.VerifyDuringCutover()
 	t.Require().Nil(err)
 	t.Require().False(result.DataCorrect)
-	t.Require().Equal(fmt.Sprintf("verification failed on table: %s.%s for pks: %s", "gftest", testhelpers.TestCompressedTable1Name, "42"), result.Message)
+	t.Require().Equal(fmt.Sprintf("verification failed on table: %s.%s for paginationKeys: %s", "gftest", testhelpers.TestCompressedTable1Name, "42"), result.Message)
 }
 
 func (t *IterativeVerifierTestSuite) TestBeforeCutoverDifferentCompressedSameDecompressedDataPassDuringCutover() {
@@ -222,13 +222,13 @@ func (t *IterativeVerifierTestSuite) TestChangingDataChangesHash() {
 func (t *IterativeVerifierTestSuite) TestDeduplicatesHashes() {
 	t.InsertRow(42, "foo")
 
-	hashes, err := t.verifier.GetHashes(t.db, t.table.Schema, t.table.Name, t.table.GetPKColumn(0).Name, t.table.Columns, []uint64{42, 42})
+	hashes, err := t.verifier.GetHashes(t.db, t.table.Schema, t.table.Name, t.table.GetPaginationColumn().Name, t.table.Columns, []uint64{42, 42})
 	t.Require().Nil(err)
 	t.Require().Equal(1, len(hashes))
 }
 
 func (t *IterativeVerifierTestSuite) TestDoesntReturnHashIfRecordDoesntExist() {
-	hashes, err := t.verifier.GetHashes(t.db, t.table.Schema, t.table.Name, t.table.GetPKColumn(0).Name, t.table.Columns, []uint64{42, 42})
+	hashes, err := t.verifier.GetHashes(t.db, t.table.Schema, t.table.Name, t.table.GetPaginationColumn().Name, t.table.Columns, []uint64{42, 42})
 	t.Require().Nil(err)
 	t.Require().Equal(0, len(hashes))
 }
@@ -243,7 +243,7 @@ func (t *IterativeVerifierTestSuite) TestUnrelatedRowsDontAffectHash() {
 	t.Require().Equal(expected, actual)
 }
 
-func (t *IterativeVerifierTestSuite) TestRowsWithSameDataButDifferentPKs() {
+func (t *IterativeVerifierTestSuite) TestRowsWithSameDataButDifferentPaginationKeys() {
 	t.InsertRow(42, "foo")
 	t.InsertRow(43, "foo")
 
@@ -346,7 +346,7 @@ func (t *IterativeVerifierTestSuite) DeleteRow(id int) {
 }
 
 func (t *IterativeVerifierTestSuite) GetHashes(ids []uint64) []string {
-	hashes, err := t.verifier.GetHashes(t.db, t.table.Schema, t.table.Name, t.table.GetPKColumn(0).Name, t.table.Columns, ids)
+	hashes, err := t.verifier.GetHashes(t.db, t.table.Schema, t.table.Name, t.table.GetPaginationColumn().Name, t.table.Columns, ids)
 	t.Require().Nil(err)
 	t.Require().Equal(len(hashes), len(ids))
 
@@ -391,39 +391,39 @@ func (t *ReverifyStoreTestSuite) SetupTest() {
 }
 
 func (t *ReverifyStoreTestSuite) TestAddEntryIntoReverifyStoreWillDeduplicate() {
-	pk1 := uint64(100)
-	pk2 := uint64(101)
+	paginationKey1 := uint64(100)
+	paginationKey2 := uint64(101)
 	table1 := &ghostferry.TableSchema{Table: &schema.Table{Schema: "gftest", Name: "table1"}}
-	t.store.Add(ghostferry.ReverifyEntry{Pk: pk1, Table: table1})
-	t.store.Add(ghostferry.ReverifyEntry{Pk: pk1, Table: table1})
-	t.store.Add(ghostferry.ReverifyEntry{Pk: pk1, Table: table1})
-	t.store.Add(ghostferry.ReverifyEntry{Pk: pk2, Table: table1})
-	t.store.Add(ghostferry.ReverifyEntry{Pk: pk2, Table: table1})
+	t.store.Add(ghostferry.ReverifyEntry{PaginationKey: paginationKey1, Table: table1})
+	t.store.Add(ghostferry.ReverifyEntry{PaginationKey: paginationKey1, Table: table1})
+	t.store.Add(ghostferry.ReverifyEntry{PaginationKey: paginationKey1, Table: table1})
+	t.store.Add(ghostferry.ReverifyEntry{PaginationKey: paginationKey2, Table: table1})
+	t.store.Add(ghostferry.ReverifyEntry{PaginationKey: paginationKey2, Table: table1})
 
 	t.Require().Equal(uint64(2), t.store.RowCount)
 	t.Require().Equal(1, len(t.store.MapStore))
 	t.Require().Equal(
 		map[uint64]struct{}{
-			pk1: struct{}{},
-			pk2: struct{}{},
+			paginationKey1: struct{}{},
+			paginationKey2: struct{}{},
 		},
 		t.store.MapStore[ghostferry.TableIdentifier{"gftest", "table1"}],
 	)
 }
 
 func (t *ReverifyStoreTestSuite) TestFlushAndBatchByTableWillCreateReverifyBatchesAndClearTheMapStore() {
-	expectedTable1Pks := make([]uint64, 0, 55)
+	expectedTable1PaginationKeys := make([]uint64, 0, 55)
 	table1 := &ghostferry.TableSchema{Table: &schema.Table{Schema: "gftest", Name: "table1"}}
 	table2 := &ghostferry.TableSchema{Table: &schema.Table{Schema: "gftest", Name: "table2"}}
 	for i := uint64(100); i < 155; i++ {
-		t.store.Add(ghostferry.ReverifyEntry{Pk: i, Table: table1})
-		expectedTable1Pks = append(expectedTable1Pks, i)
+		t.store.Add(ghostferry.ReverifyEntry{PaginationKey: i, Table: table1})
+		expectedTable1PaginationKeys = append(expectedTable1PaginationKeys, i)
 	}
 
-	expectedTable2Pks := make([]uint64, 0, 45)
+	expectedTable2PaginationKeys := make([]uint64, 0, 45)
 	for i := uint64(200); i < 245; i++ {
-		t.store.Add(ghostferry.ReverifyEntry{Pk: i, Table: table2})
-		expectedTable2Pks = append(expectedTable2Pks, i)
+		t.store.Add(ghostferry.ReverifyEntry{PaginationKey: i, Table: table2})
+		expectedTable2PaginationKeys = append(expectedTable2PaginationKeys, i)
 	}
 
 	batches := t.store.FlushAndBatchByTable(10)
@@ -443,25 +443,25 @@ func (t *ReverifyStoreTestSuite) TestFlushAndBatchByTableWillCreateReverifyBatch
 	t.Require().Equal(6, len(table1Batches))
 	t.Require().Equal(5, len(table2Batches))
 
-	actualTable1Pks := make([]uint64, 0)
+	actualTable1PaginationKeys := make([]uint64, 0)
 	for _, batch := range table1Batches {
-		for _, pk := range batch.Pks {
-			actualTable1Pks = append(actualTable1Pks, pk)
+		for _, paginationKey := range batch.PaginationKeys {
+			actualTable1PaginationKeys = append(actualTable1PaginationKeys, paginationKey)
 		}
 	}
 
-	sort.Slice(actualTable1Pks, func(i, j int) bool { return actualTable1Pks[i] < actualTable1Pks[j] })
-	t.Require().Equal(expectedTable1Pks, actualTable1Pks)
+	sort.Slice(actualTable1PaginationKeys, func(i, j int) bool { return actualTable1PaginationKeys[i] < actualTable1PaginationKeys[j] })
+	t.Require().Equal(expectedTable1PaginationKeys, actualTable1PaginationKeys)
 
-	actualTable2Pks := make([]uint64, 0)
+	actualTable2PaginationKeys := make([]uint64, 0)
 	for _, batch := range table2Batches {
-		for _, pk := range batch.Pks {
-			actualTable2Pks = append(actualTable2Pks, pk)
+		for _, paginationKey := range batch.PaginationKeys {
+			actualTable2PaginationKeys = append(actualTable2PaginationKeys, paginationKey)
 		}
 	}
 
-	sort.Slice(actualTable2Pks, func(i, j int) bool { return actualTable2Pks[i] < actualTable2Pks[j] })
-	t.Require().Equal(expectedTable2Pks, actualTable2Pks)
+	sort.Slice(actualTable2PaginationKeys, func(i, j int) bool { return actualTable2PaginationKeys[i] < actualTable2PaginationKeys[j] })
+	t.Require().Equal(expectedTable2PaginationKeys, actualTable2PaginationKeys)
 
 	t.Require().Equal(0, len(t.store.MapStore))
 }

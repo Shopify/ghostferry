@@ -11,8 +11,8 @@ const (
 )
 
 type TableProgress struct {
-	LastSuccessfulPK uint64
-	TargetPK         uint64
+	LastSuccessfulPaginationKey uint64
+	TargetPaginationKey         uint64
 	CurrentAction    string // Possible values are defined via the constants TableAction*
 }
 
@@ -40,8 +40,8 @@ type Progress struct {
 	FinalBinlogPos mysql.Position
 
 	// A best estimate on the speed at which the copying is taking place. If
-	// there are large gaps in the PK space, this probably will be inaccurate.
-	PKsPerSecond uint64
+	// there are large gaps in the PaginationKey space, this probably will be inaccurate.
+	PaginationKeysPerSecond uint64
 	ETA          float64 // seconds
 	TimeTaken    float64 // seconds
 }

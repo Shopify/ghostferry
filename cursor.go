@@ -41,19 +41,19 @@ type CursorConfig struct {
 }
 
 // returns a new Cursor with an embedded copy of itself
-func (c *CursorConfig) NewCursor(table *TableSchema, startPk, maxPk uint64) *Cursor {
+func (c *CursorConfig) NewCursor(table *TableSchema, startPaginationKey, maxPaginationKey uint64) *Cursor {
 	return &Cursor{
-		CursorConfig:             *c,
-		Table:                    table,
-		MaxPrimaryKey:            maxPk,
-		RowLock:                  true,
-		lastSuccessfulPrimaryKey: startPk,
+		CursorConfig:                *c,
+		Table:                       table,
+		MaxPaginationKey:            maxPaginationKey,
+		RowLock:                     true,
+		lastSuccessfulPaginationKey: startPaginationKey,
 	}
 }
 
 // returns a new Cursor with an embedded copy of itself
-func (c *CursorConfig) NewCursorWithoutRowLock(table *TableSchema, startPk, maxPk uint64) *Cursor {
-	cursor := c.NewCursor(table, startPk, maxPk)
+func (c *CursorConfig) NewCursorWithoutRowLock(table *TableSchema, startPaginationKey, maxPaginationKey uint64) *Cursor {
+	cursor := c.NewCursor(table, startPaginationKey, maxPaginationKey)
 	cursor.RowLock = false
 	return cursor
 }
@@ -61,13 +61,13 @@ func (c *CursorConfig) NewCursorWithoutRowLock(table *TableSchema, startPk, maxP
 type Cursor struct {
 	CursorConfig
 
-	Table         *TableSchema
-	MaxPrimaryKey uint64
-	RowLock       bool
+	Table            *TableSchema
+	MaxPaginationKey uint64
+	RowLock          bool
 
-	pkColumn                 *schema.TableColumn
-	lastSuccessfulPrimaryKey uint64
-	logger                   *logrus.Entry
+	paginationKeyColumn                    *schema.TableColumn
+	lastSuccessfulPaginationKey uint64
+	logger                      *logrus.Entry
 }
 
 func (c *Cursor) Each(f func(*RowBatch) error) error {
@@ -75,16 +75,16 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 		"table": c.Table.String(),
 		"tag":   "cursor",
 	})
-	c.pkColumn = c.Table.GetPKColumn(0)
+	c.paginationKeyColumn = c.Table.GetPaginationColumn()
 
 	if len(c.ColumnsToSelect) == 0 {
 		c.ColumnsToSelect = []string{"*"}
 	}
 
-	for c.lastSuccessfulPrimaryKey < c.MaxPrimaryKey {
+	for c.lastSuccessfulPaginationKey < c.MaxPaginationKey {
 		var tx SqlPreparerAndRollbacker
 		var batch *RowBatch
-		var pkpos uint64
+		var paginationKeypos uint64
 
 		err := WithRetries(c.ReadRetries, 0, c.logger, "fetch rows", func() (err error) {
 			if c.Throttler != nil {
@@ -103,7 +103,7 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 				tx = &SqlDBWithFakeRollback{c.DB}
 			}
 
-			batch, pkpos, err = c.Fetch(tx)
+			batch, paginationKeypos, err = c.Fetch(tx)
 			if err == nil {
 				return nil
 			}
@@ -122,10 +122,10 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 			break
 		}
 
-		if pkpos <= c.lastSuccessfulPrimaryKey {
+		if paginationKeypos <= c.lastSuccessfulPaginationKey {
 			tx.Rollback()
-			err = fmt.Errorf("new pkpos %d <= lastSuccessfulPk %d", pkpos, c.lastSuccessfulPrimaryKey)
-			c.logger.WithError(err).Errorf("last successful pk position did not advance")
+			err = fmt.Errorf("new paginationKeypos %d <= lastSuccessfulPaginationKey %d", paginationKeypos, c.lastSuccessfulPaginationKey)
+			c.logger.WithError(err).Errorf("last successful paginationKey position did not advance")
 			return err
 		}
 
@@ -138,23 +138,23 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 
 		tx.Rollback()
 
-		c.lastSuccessfulPrimaryKey = pkpos
+		c.lastSuccessfulPaginationKey = paginationKeypos
 	}
 
 	return nil
 }
 
-func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, pkpos uint64, err error) {
+func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos uint64, err error) {
 	var selectBuilder squirrel.SelectBuilder
 
 	if c.BuildSelect != nil {
-		selectBuilder, err = c.BuildSelect(c.ColumnsToSelect, c.Table, c.lastSuccessfulPrimaryKey, c.BatchSize)
+		selectBuilder, err = c.BuildSelect(c.ColumnsToSelect, c.Table, c.lastSuccessfulPaginationKey, c.BatchSize)
 		if err != nil {
 			c.logger.WithError(err).Error("failed to apply filter for select")
 			return
 		}
 	} else {
-		selectBuilder = DefaultBuildSelect(c.ColumnsToSelect, c.Table, c.lastSuccessfulPrimaryKey, c.BatchSize)
+		selectBuilder = DefaultBuildSelect(c.ColumnsToSelect, c.Table, c.lastSuccessfulPaginationKey, c.BatchSize)
 	}
 
 	if c.RowLock {
@@ -204,17 +204,17 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, pkpos uint64, err error
 		return
 	}
 
-	var pkIndex int = -1
+	var paginationKeyIndex int = -1
 	for idx, col := range columns {
-		if col == c.pkColumn.Name {
-			pkIndex = idx
+		if col == c.paginationKeyColumn.Name {
+			paginationKeyIndex = idx
 			break
 		}
 	}
 
-	if pkIndex < 0 {
-		err = fmt.Errorf("pk is not found during iteration with columns: %v", columns)
-		logger.WithError(err).Error("failed to get pk index")
+	if paginationKeyIndex < 0 {
+		err = fmt.Errorf("paginationKey is not found during iteration with columns: %v", columns)
+		logger.WithError(err).Error("failed to get paginationKey index")
 		return
 	}
 
@@ -237,16 +237,16 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, pkpos uint64, err error
 	}
 
 	if len(batchData) > 0 {
-		pkpos, err = batchData[len(batchData)-1].GetUint64(pkIndex)
+		paginationKeypos, err = batchData[len(batchData)-1].GetUint64(paginationKeyIndex)
 		if err != nil {
-			logger.WithError(err).Error("failed to get uint64 pk value")
+			logger.WithError(err).Error("failed to get uint64 paginationKey value")
 			return
 		}
 	}
 
 	batch = &RowBatch{
 		values:  batchData,
-		pkIndex: pkIndex,
+		paginationKeyIndex: paginationKeyIndex,
 		table:   c.Table,
 	}
 
@@ -279,12 +279,12 @@ func ScanByteRow(rows *sql.Rows, columnCount int) ([][]byte, error) {
 	return values, err
 }
 
-func DefaultBuildSelect(columns []string, table *TableSchema, lastPk, batchSize uint64) squirrel.SelectBuilder {
-	quotedPK := quoteField(table.GetPKColumn(0).Name)
+func DefaultBuildSelect(columns []string, table *TableSchema, lastPaginationKey, batchSize uint64) squirrel.SelectBuilder {
+	quotedPaginationKey := quoteField(table.GetPaginationColumn().Name)
 
 	return squirrel.Select(columns...).
 		From(QuotedTableName(table)).
-		Where(squirrel.Gt{quotedPK: lastPk}).
+		Where(squirrel.Gt{quotedPaginationKey: lastPaginationKey}).
 		Limit(batchSize).
-		OrderBy(quotedPK)
+		OrderBy(quotedPaginationKey)
 }

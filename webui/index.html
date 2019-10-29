@@ -65,7 +65,7 @@
             <tr>
               <th><abbr title="This number is just an estimate, it probably is not accurate.">ETA</abbr></th>
               <td>
-                {{.ETA}} (at {{.PKsPerSecond}} PKs/s)
+                {{.ETA}} (at {{.PaginationKeysPerSecond}} PaginationKeys/s)
               </td>
             </tr>
             <tr>
@@ -193,20 +193,20 @@
           <thead>
             <tr>
               <th>Table</th>
-              <th><abbr title="Primary Key Column">PK</abbr></th>
+              <th><abbr title="Pagination Column">PaginationKey</abbr></th>
               <th>Status</th>
-              <th>Last Successful PK</th>
-              <th>Target PK</th>
+              <th>Last Successful PaginationKey</th>
+              <th>Target PaginationKey</th>
             </tr>
           </thead>
           <tbody>
             {{range .TableStatuses}}
               <tr>
                 <td><code>{{.TableName}}</code></td>
-                <td><code>{{.PrimaryKeyName}}</code></td>
+                <td><code>{{.PaginationKeyName}}</code></td>
                 <td>{{.Status}}</td>
-                <td>{{.LastSuccessfulPK}}</td>
-                <td>{{.TargetPK}}</td>
+                <td>{{.LastSuccessfulPaginationKey}}</td>
+                <td>{{.TargetPaginationKey}}</td>
               </tr>
             {{end}}
           </tbody>

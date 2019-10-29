@@ -205,13 +205,13 @@ func (r *ShardingFerry) copyPrimaryKeyTables() error {
 		return nil
 	}
 
-	pkTables := map[string]struct{}{}
+	primaryKeyTables := map[string]struct{}{}
 	for _, name := range r.config.PrimaryKeyTables {
-		pkTables[name] = struct{}{}
+		primaryKeyTables[name] = struct{}{}
 	}
 
-	r.config.TableFilter.(*ShardedTableFilter).PrimaryKeyTables = pkTables
-	r.config.CopyFilter.(*ShardedCopyFilter).PrimaryKeyTables = pkTables
+	r.config.TableFilter.(*ShardedTableFilter).PrimaryKeyTables = primaryKeyTables
+	r.config.CopyFilter.(*ShardedCopyFilter).PrimaryKeyTables = primaryKeyTables
 
 	sourceDbTables, err := ghostferry.LoadTables(r.Ferry.SourceDB, r.config.TableFilter, r.config.CompressedColumnsForVerification, r.config.IgnoredColumnsForVerification, r.config.CascadingPaginationColumnConfig)
 	if err != nil {
@@ -220,7 +220,7 @@ func (r *ShardingFerry) copyPrimaryKeyTables() error {
 
 	tables := []*ghostferry.TableSchema{}
 	for _, table := range sourceDbTables.AsSlice() {
-		if _, exists := pkTables[table.Name]; exists {
+		if _, exists := primaryKeyTables[table.Name]; exists {
 			if len(table.PKColumns) != 1 {
 				return fmt.Errorf("Multiple PK columns are not supported with the PrimaryKeyTables option")
 			}

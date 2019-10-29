@@ -71,14 +71,14 @@ func TestCopyDataWithDeleteLoad(t *testing.T) {
 	testcase.Run()
 }
 
-func TestCopyDataWithLargePrimaryKeyValues(t *testing.T) {
+func TestCopyDataWithLargePaginationKeyValues(t *testing.T) {
 	ferry := testhelpers.NewTestFerry()
 
 	ferry.Config.DataIterationBatchSize = 10
 
 	testcase := &testhelpers.IntegrationTestCase{
 		T:           t,
-		SetupAction: setupSingleTableDatabaseWithHighBitUint64PKs,
+		SetupAction: setupSingleTableDatabaseWithHighBitUint64PaginationKeys,
 		Ferry:       ferry,
 	}
 
@@ -170,7 +170,7 @@ func TestCopyDataWithNullInColumn(t *testing.T) {
 // Helper methods below
 // ====================
 
-func useUnsignedPK(db *sql.DB) {
+func useUnsignedPaginationKey(db *sql.DB) {
 	_, err := db.Exec("ALTER TABLE gftest.table1 MODIFY id bigint(20) unsigned not null")
 	testhelpers.PanicIfError(err)
 }
@@ -188,14 +188,14 @@ func setupSingleTableDatabase(f *testhelpers.TestFerry, sourceDB, targetDB *sql.
 	testhelpers.SeedInitialData(targetDB, "gftest", "table1", 0)
 }
 
-func setupSingleTableDatabaseWithHighBitUint64PKs(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+func setupSingleTableDatabaseWithHighBitUint64PaginationKeys(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 	setupSingleTableDatabase(f, sourceDB, targetDB)
 
 	_, err := sourceDB.Exec("TRUNCATE gftest.table1")
 	testhelpers.PanicIfError(err)
 
-	useUnsignedPK(sourceDB)
-	useUnsignedPK(targetDB)
+	useUnsignedPaginationKey(sourceDB)
+	useUnsignedPaginationKey(targetDB)
 
 	stmt, err := sourceDB.Prepare("INSERT INTO gftest.table1 (id, data) VALUES (?, ?)")
 	testhelpers.PanicIfError(err)

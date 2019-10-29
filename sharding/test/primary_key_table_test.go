@@ -90,7 +90,7 @@ func (t *PrimaryKeyTableTestSuite) TestPrimaryKeyTableVerificationFailure() {
 	t.Ferry.Run()
 
 	t.Require().NotNil(errHandler.LastError)
-	t.Require().Equal("row fingerprints for pks [2] on gftest1.tenants_table do not match", errHandler.LastError.Error())
+	t.Require().Equal("row fingerprints for paginationKeys [2] on gftest1.tenants_table do not match", errHandler.LastError.Error())
 }
 
 func TestPrimaryKeyTableTestSuite(t *testing.T) {

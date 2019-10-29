@@ -276,7 +276,7 @@ type CascadingPaginationColumnConfig struct {
 	PerTable map[string]map[string]string // SchemaName => TableName => ColumnName
 
 	// FallbackColumn is a global default to fallback to and is more specific than the default fallback,
-	// which would be the PK
+	// which would be the Primary Key
 	FallbackColumn string
 }
 
@@ -436,7 +436,7 @@ type Config struct {
 	//
 	// - If you are copying a table where the data is already partially on the
 	//   target through some other means.
-	//   - Specifically, the PK of this row on both the source and the target are
+	//   - Specifically, the PaginationKey of this row on both the source and the target are
 	//     the same. Thus, INSERT IGNORE will skip copying this row, leaving the
 	//     data on the target unchanged.
 	//   - If the data on the target is already identical to the source, then
