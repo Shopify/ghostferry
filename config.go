@@ -275,8 +275,8 @@ type CascadingPaginationColumnConfig struct {
 	// PerTable has greatest specificity and takes precedence over the other options
 	PerTable map[string]map[string]string // SchemaName => TableName => ColumnName
 
-	// FallbackColumn is a global default to fallback to and is more specific than the default fallback,
-	// which would be the Primary Key
+	// FallbackColumn is a global default to fallback to and is less specific than the
+	// default, which is the Primary Key
 	FallbackColumn string
 }
 
@@ -297,6 +297,15 @@ func (c *CascadingPaginationColumnConfig) PaginationColumnFor(schemaName, tableN
 	}
 
 	return column, true
+}
+
+// FallbackPaginationColumnName retreives the column name specified as a fallback when the Primary Key isn't suitable for pagination
+func (c *CascadingPaginationColumnConfig) FallbackPaginationColumnName() (string, bool) {
+	if c == nil || c.FallbackColumn == "" {
+		return "", false
+	}
+
+	return c.FallbackColumn, true
 }
 
 type Config struct {
@@ -467,8 +476,8 @@ type Config struct {
 
 	// Ghostferry requires a single numeric column to paginate over tables. Inferring that column is done in the following exact order:
 	// 1. Use the PerTable pagination column, if configured for a table. Fail if we cannot find this column in the table.
-	// 2. Use the FallbackColumn pagination column, if configured. Fail if we cannot find this column in the table.
-	// 3. Use the table's primary key column as the pagination column. Fail if the primary key is a composite key or is not numeric.
+	// 2. Use the table's primary key column as the pagination column. Fail if the primary key is not numeric or is a composite key without a FallbackColumn specified.
+	// 3. Use the FallbackColumn pagination column, if configured. Fail if we cannot find this column in the table.
 	CascadingPaginationColumnConfig *CascadingPaginationColumnConfig
 }
 
