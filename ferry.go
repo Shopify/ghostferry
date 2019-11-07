@@ -413,7 +413,7 @@ func (f *Ferry) Initialize() (err error) {
 
 	// Loads the schema of the tables that are applicable.
 	// We need to do this at the beginning of the run as this is required
-	// in order to determine the PrimaryKey of each table as well as finding
+	// in order to determine the PaginationKey of each table as well as finding
 	// which value in the binlog event correspond to which field in the
 	// table.
 	//
@@ -754,9 +754,9 @@ func (f *Ferry) Progress() *Progress {
 	// Table Progress
 	serializedState := f.StateTracker.Serialize(nil, nil)
 	s.Tables = make(map[string]TableProgress)
-	targetPKs := make(map[string]uint64)
-	f.DataIterator.targetPKs.Range(func(k, v interface{}) bool {
-		targetPKs[k.(string)] = v.(uint64)
+	targetPaginationKeys := make(map[string]uint64)
+	f.DataIterator.targetPaginationKeys.Range(func(k, v interface{}) bool {
+		targetPaginationKeys[k.(string)] = v.(uint64)
 		return true
 	})
 
@@ -765,7 +765,7 @@ func (f *Ferry) Progress() *Progress {
 	for _, table := range tables {
 		var currentAction string
 		tableName := table.String()
-		lastSuccessfulPK, foundInProgress := serializedState.LastSuccessfulPrimaryKeys[tableName]
+		lastSuccessfulPaginationKey, foundInProgress := serializedState.LastSuccessfulPaginationKeys[tableName]
 
 		if serializedState.CompletedTables[tableName] {
 			currentAction = TableActionCompleted
@@ -776,26 +776,26 @@ func (f *Ferry) Progress() *Progress {
 		}
 
 		s.Tables[tableName] = TableProgress{
-			LastSuccessfulPK: lastSuccessfulPK,
-			TargetPK:         targetPKs[tableName],
+			LastSuccessfulPaginationKey: lastSuccessfulPaginationKey,
+			TargetPaginationKey:         targetPaginationKeys[tableName],
 			CurrentAction:    currentAction,
 		}
 	}
 
 	// ETA
-	var totalPKsToCopy uint64 = 0
-	var completedPKs uint64 = 0
-	estimatedPKsPerSecond := f.StateTracker.EstimatedPKsPerSecond()
-	for _, targetPK := range targetPKs {
-		totalPKsToCopy += targetPK
+	var totalPaginationKeysToCopy uint64 = 0
+	var completedPaginationKeys uint64 = 0
+	estimatedPaginationKeysPerSecond := f.StateTracker.EstimatedPaginationKeysPerSecond()
+	for _, targetPaginationKey := range targetPaginationKeys {
+		totalPaginationKeysToCopy += targetPaginationKey
 	}
 
-	for _, completedPK := range serializedState.LastSuccessfulPrimaryKeys {
-		completedPKs += completedPK
+	for _, completedPaginationKey := range serializedState.LastSuccessfulPaginationKeys {
+		completedPaginationKeys += completedPaginationKey
 	}
 
-	s.ETA = (time.Duration(math.Ceil(float64(totalPKsToCopy-completedPKs)/estimatedPKsPerSecond)) * time.Second).Seconds()
-	s.PKsPerSecond = uint64(estimatedPKsPerSecond)
+	s.ETA = (time.Duration(math.Ceil(float64(totalPaginationKeysToCopy-completedPaginationKeys)/estimatedPaginationKeysPerSecond)) * time.Second).Seconds()
+	s.PaginationKeysPerSecond = uint64(estimatedPaginationKeysPerSecond)
 	s.TimeTaken = time.Now().Sub(f.StartTime).Seconds()
 
 	return s

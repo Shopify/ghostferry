@@ -8,12 +8,12 @@ import (
 )
 
 type BatchWriterVerificationFailed struct {
-	mismatchedPks []uint64
+	mismatchedPaginationKeys []uint64
 	table         string
 }
 
 func (e BatchWriterVerificationFailed) Error() string {
-	return fmt.Sprintf("row fingerprints for pks %v on %v do not match", e.mismatchedPks, e.table)
+	return fmt.Sprintf("row fingerprints for paginationKeys %v on %v do not match", e.mismatchedPaginationKeys, e.table)
 }
 
 type BatchWriter struct {
@@ -42,12 +42,12 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 			return nil
 		}
 
-		startPkpos, err := values[0].GetUint64(batch.PkIndex())
+		startPaginationKeypos, err := values[0].GetUint64(batch.PaginationKeyIndex())
 		if err != nil {
 			return err
 		}
 
-		endPkpos, err := values[len(values)-1].GetUint64(batch.PkIndex())
+		endPaginationKeypos, err := values[len(values)-1].GetUint64(batch.PaginationKeyIndex())
 		if err != nil {
 			return err
 		}
@@ -64,12 +64,12 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 
 		query, args, err := batch.AsSQLQuery(db, table)
 		if err != nil {
-			return fmt.Errorf("during generating sql query at pk %v -> %v: %v", startPkpos, endPkpos, err)
+			return fmt.Errorf("during generating sql query at paginationKey %v -> %v: %v", startPaginationKeypos, endPaginationKeypos, err)
 		}
 
 		stmt, err := w.stmtCache.StmtFor(w.DB, query)
 		if err != nil {
-			return fmt.Errorf("during prepare query near pk %v -> %v (%s): %v", startPkpos, endPkpos, query, err)
+			return fmt.Errorf("during prepare query near paginationKey %v -> %v (%s): %v", startPaginationKeypos, endPaginationKeypos, query, err)
 		}
 
 		tx, err := w.DB.Begin()
@@ -80,14 +80,14 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 		_, err = tx.Stmt(stmt).Exec(args...)
 		if err != nil {
 			tx.Rollback()
-			return fmt.Errorf("during exec query near pk %v -> %v (%s): %v", startPkpos, endPkpos, query, err)
+			return fmt.Errorf("during exec query near paginationKey %v -> %v (%s): %v", startPaginationKeypos, endPaginationKeypos, query, err)
 		}
 
 		if w.InlineVerifier != nil {
 			mismatches, err := w.InlineVerifier.CheckFingerprintInline(tx, db, table, batch)
 			if err != nil {
 				tx.Rollback()
-				return fmt.Errorf("during fingerprint checking for pk %v -> %v (%s): %v", startPkpos, endPkpos, query, err)
+				return fmt.Errorf("during fingerprint checking for paginationKey %v -> %v (%s): %v", startPaginationKeypos, endPaginationKeypos, query, err)
 			}
 
 			if len(mismatches) > 0 {
@@ -99,13 +99,13 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 		err = tx.Commit()
 		if err != nil {
 			tx.Rollback()
-			return fmt.Errorf("during commit near pk %v -> %v (%s): %v", startPkpos, endPkpos, query, err)
+			return fmt.Errorf("during commit near paginationKey %v -> %v (%s): %v", startPaginationKeypos, endPaginationKeypos, query, err)
 		}
 
 		// Note that the state tracker expects us the track based on the original
 		// database and table names as opposed to the target ones.
 		if w.StateTracker != nil {
-			w.StateTracker.UpdateLastSuccessfulPK(batch.TableSchema().String(), endPkpos)
+			w.StateTracker.UpdateLastSuccessfulPaginationKey(batch.TableSchema().String(), endPaginationKeypos)
 		}
 
 		return nil

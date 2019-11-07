@@ -12,15 +12,15 @@ import (
 
 func TestHashesSql(t *testing.T) {
 	columns := []schema.TableColumn{schema.TableColumn{Name: "id"}, schema.TableColumn{Name: "data"}, schema.TableColumn{Name: "float_col", Type: schema.TYPE_FLOAT}}
-	pks := []uint64{1, 5, 42}
+	paginationKeys := []uint64{1, 5, 42}
 
-	sql, args, err := ghostferry.GetMd5HashesSql("gftest", "test_table", "id", columns, pks)
+	sql, args, err := ghostferry.GetMd5HashesSql("gftest", "test_table", "id", columns, paginationKeys)
 
 	assert.Nil(t, err)
 	assert.Equal(t, "SELECT `id`, MD5(CONCAT(MD5(COALESCE(`id`, 'NULL')),MD5(COALESCE(`data`, 'NULL')),MD5(COALESCE((if (`float_col` = '-0', 0, `float_col`)), 'NULL')))) "+
 		"AS row_fingerprint FROM `gftest`.`test_table` WHERE `id` IN (?,?,?) ORDER BY `id`", sql)
 	for idx, arg := range args {
-		assert.Equal(t, pks[idx], arg.(uint64))
+		assert.Equal(t, paginationKeys[idx], arg.(uint64))
 	}
 }
 
@@ -49,7 +49,7 @@ func TestVerificationFailsDeletedRow(t *testing.T) {
 			result, err := iterativeVerifier.VerifyDuringCutover()
 			assert.Nil(t, err)
 			assert.False(t, result.DataCorrect)
-			assert.Regexp(t, "verification failed.*gftest.table1.*pks: (43)|(42)|(43,42)|(42,43)", result.Message)
+			assert.Regexp(t, "verification failed.*gftest.table1.*paginationKeys: (43)|(42)|(43,42)|(42,43)", result.Message)
 			ran = true
 		},
 		DataWriter: &testhelpers.MixedActionDataWriter{
@@ -92,7 +92,7 @@ func TestVerificationFailsUpdatedRow(t *testing.T) {
 			result, err := iterativeVerifier.VerifyDuringCutover()
 			assert.Nil(t, err)
 			assert.False(t, result.DataCorrect)
-			assert.Regexp(t, "verification failed.*gftest.table1.*pks: (42)|(43)|(43,42)|(42,43)", result.Message)
+			assert.Regexp(t, "verification failed.*gftest.table1.*paginationKeys: (42)|(43)|(43,42)|(42,43)", result.Message)
 			ran = true
 		},
 		DataWriter: &testhelpers.MixedActionDataWriter{

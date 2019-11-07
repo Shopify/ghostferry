@@ -166,7 +166,7 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWhenCascadingPa
 	this.Require().EqualError(err, ghostferry.NonExistingPaginationKeyColumnError(testhelpers.TestSchemaName, table, paginationColumn).Error())
 }
 
-func (this *TableSchemaCacheTestSuite) TestLoadTablesWithPrimaryKeyColumnFallback() {
+func (this *TableSchemaCacheTestSuite) TestLoadTablesWithPaginationKeyColumnFallback() {
 	table := "pk_fallback_column_present"
 	query := fmt.Sprintf("CREATE TABLE %s.%s (identity bigint(20) not null, data TEXT, primary key(identity))", testhelpers.TestSchemaName, table)
 	_, err := this.Ferry.SourceDB.Exec(query)
@@ -186,7 +186,7 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutPKColumn
 	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil)
 
 	this.Require().NotNil(err)
-	this.Require().EqualError(err, ghostferry.NonExistingPKError(testhelpers.TestSchemaName, table).Error())
+	this.Require().EqualError(err, ghostferry.NonExistingPaginationKeyError(testhelpers.TestSchemaName, table).Error())
 }
 
 func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithCompositePKButNoAlternateColumnToFallBackTo() {

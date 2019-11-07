@@ -57,7 +57,7 @@ type CompressionVerifier struct {
 // The GetCompressedHashes method checks if the existing table contains compressed data
 // and will apply the decompression algorithm to the applicable columns if necessary.
 // After the columns are decompressed, the hashes of the data are used to verify equality
-func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64) (map[uint64][]byte, error) {
+func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []uint64) (map[uint64][]byte, error) {
 	c.logger.WithFields(logrus.Fields{
 		"tag":   "compression_verifier",
 		"table": table,
@@ -66,7 +66,7 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pkC
 	tableCompression := c.tableColumnCompressions[table]
 
 	// Extract the raw rows using SQL to be decompressed
-	rows, err := getRows(db, schema, table, pkColumn, columns, pks)
+	rows, err := getRows(db, schema, table, paginationKeyColumn, columns, paginationKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pkC
 			return nil, err
 		}
 
-		pk, err := strconv.ParseUint(string(rowData[0]), 10, 64)
+		paginationKey, err := strconv.ParseUint(string(rowData[0]), 10, 64)
 		if err != nil {
 			return nil, err
 		}
@@ -92,7 +92,7 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pkC
 		decompressedRowData := [][]byte{}
 		for idx, column := range columns {
 			if algorithm, ok := tableCompression[column.Name]; ok {
-				// rowData contains the result of "SELECT pkColumn, * FROM ...", so idx+1 to get each column
+				// rowData contains the result of "SELECT paginationKeyColumn, * FROM ...", so idx+1 to get each column
 				decompressedColData, err := c.Decompress(table, column.Name, algorithm, rowData[idx+1])
 				if err != nil {
 					return nil, err
@@ -109,7 +109,7 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pkC
 			return nil, err
 		}
 
-		resultSet[pk] = decompressedRowHash
+		resultSet[paginationKey] = decompressedRowHash
 	}
 
 	metrics.Gauge(
@@ -207,12 +207,12 @@ func NewCompressionVerifier(tableColumnCompressions TableColumnCompressionConfig
 	return compressionVerifier, nil
 }
 
-func getRows(db *sql.DB, schema, table, pkColumn string, columns []schema.TableColumn, pks []uint64) (*sql.Rows, error) {
-	quotedPK := quoteField(pkColumn)
-	sql, args, err := rowSelector(columns, pkColumn).
+func getRows(db *sql.DB, schema, table, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []uint64) (*sql.Rows, error) {
+	quotedPaginationKey := quoteField(paginationKeyColumn)
+	sql, args, err := rowSelector(columns, paginationKeyColumn).
 		From(QuotedTableNameFromString(schema, table)).
-		Where(sq.Eq{quotedPK: pks}).
-		OrderBy(quotedPK).
+		Where(sq.Eq{quotedPaginationKey: paginationKeys}).
+		OrderBy(quotedPaginationKey).
 		ToSql()
 
 	if err != nil {
@@ -236,11 +236,11 @@ func getRows(db *sql.DB, schema, table, pkColumn string, columns []schema.TableC
 	return rows, nil
 }
 
-func rowSelector(columns []schema.TableColumn, pkColumn string) sq.SelectBuilder {
+func rowSelector(columns []schema.TableColumn, paginationKeyColumn string) sq.SelectBuilder {
 	columnStrs := make([]string, len(columns))
 	for idx, column := range columns {
 		columnStrs[idx] = column.Name
 	}
 
-	return sq.Select(fmt.Sprintf("%s, %s", quoteField(pkColumn), strings.Join(columnStrs, ",")))
+	return sq.Select(fmt.Sprintf("%s, %s", quoteField(paginationKeyColumn), strings.Join(columnStrs, ",")))
 }

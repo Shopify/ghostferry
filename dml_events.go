@@ -42,7 +42,7 @@ type DMLEvent interface {
 	AsSQLString(string, string) (string, error)
 	OldValues() RowData
 	NewValues() RowData
-	PK() (uint64, error)
+	PaginationKey() (uint64, error)
 	BinlogPosition() mysql.Position
 }
 
@@ -107,8 +107,8 @@ func (e *BinlogInsertEvent) AsSQLString(schemaName, tableName string) (string, e
 	return query, nil
 }
 
-func (e *BinlogInsertEvent) PK() (uint64, error) {
-	return pkFromEventData(e.table, e.newValues)
+func (e *BinlogInsertEvent) PaginationKey() (uint64, error) {
+	return paginationKeyFromEventData(e.table, e.newValues)
 }
 
 type BinlogUpdateEvent struct {
@@ -160,8 +160,8 @@ func (e *BinlogUpdateEvent) AsSQLString(schemaName, tableName string) (string, e
 	return query, nil
 }
 
-func (e *BinlogUpdateEvent) PK() (uint64, error) {
-	return pkFromEventData(e.table, e.newValues)
+func (e *BinlogUpdateEvent) PaginationKey() (uint64, error) {
+	return paginationKeyFromEventData(e.table, e.newValues)
 }
 
 type BinlogDeleteEvent struct {
@@ -201,8 +201,8 @@ func (e *BinlogDeleteEvent) AsSQLString(schemaName, tableName string) (string, e
 	return query, nil
 }
 
-func (e *BinlogDeleteEvent) PK() (uint64, error) {
-	return pkFromEventData(e.table, e.oldValues)
+func (e *BinlogDeleteEvent) PaginationKey() (uint64, error) {
+	return paginationKeyFromEventData(e.table, e.oldValues)
 }
 
 func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos mysql.Position) ([]DMLEvent, error) {
@@ -440,11 +440,11 @@ func appendEscapedBuffer(buffer, value []byte, binary bool) []byte {
 	return append(buffer, '\'')
 }
 
-func pkFromEventData(table *TableSchema, rowData RowData) (uint64, error) {
+func paginationKeyFromEventData(table *TableSchema, rowData RowData) (uint64, error) {
 	if err := verifyValuesHasTheSameLengthAsColumns(table, rowData); err != nil {
 		return 0, err
 	}
 
-	pkIndex := table.PKColumns[0]
-	return rowData.GetUint64(pkIndex)
+	paginationKeyIndex := table.PKColumns[0]
+	return rowData.GetUint64(paginationKeyIndex)
 }

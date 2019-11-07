@@ -94,18 +94,18 @@ func (this *RowBatchTestSuite) TestRowBatchMetadata() {
 
 	this.Require().Equal("test_schema", batch.TableSchema().Schema)
 	this.Require().Equal("test_table", batch.TableSchema().Name)
-	this.Require().Equal(true, batch.ValuesContainPk())
-	this.Require().Equal(0, batch.PkIndex())
-	this.Require().Equal(1000, batch.Values()[0][batch.PkIndex()])
+	this.Require().Equal(true, batch.ValuesContainPaginationKey())
+	this.Require().Equal(0, batch.PaginationKeyIndex())
+	this.Require().Equal(1000, batch.Values()[0][batch.PaginationKeyIndex()])
 }
 
-func (this *RowBatchTestSuite) TestRowBatchNoPkIndex() {
+func (this *RowBatchTestSuite) TestRowBatchNoPaginationKeyIndex() {
 	vals := []ghostferry.RowData{
 		ghostferry.RowData{"hello"},
 	}
 	batch := ghostferry.NewRowBatch(this.sourceTable, vals, -1)
 
-	this.Require().Equal(false, batch.ValuesContainPk())
+	this.Require().Equal(false, batch.ValuesContainPaginationKey())
 }
 
 func TestRowBatchTestSuite(t *testing.T) {

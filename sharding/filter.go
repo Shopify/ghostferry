@@ -25,8 +25,8 @@ type ShardedCopyFilter struct {
 	missingShardingKeyIndexLogged sync.Map
 }
 
-func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.TableSchema, lastPk, batchSize uint64) (sq.SelectBuilder, error) {
-	quotedPK := "`" + table.GetPKColumn(0).Name + "`"
+func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.TableSchema, lastPaginationKey, batchSize uint64) (sq.SelectBuilder, error) {
+	quotedPaginationKey := "`" + table.GetPaginationColumn().Name + "`"
 	quotedShardingKey := "`" + f.ShardingKey + "`"
 	quotedTable := ghostferry.QuotedTableName(table)
 
@@ -36,20 +36,20 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 		// the model for a single tenant in a multitenant database, e.g. a shop on
 		// a multitenant commerce platform.
 		//
-		// It is necessary to use two WHERE conditions on quotedPK so the second batch will be empty.
+		// It is necessary to use two WHERE conditions on quotedPaginationKey so the second batch will be empty.
 		// No LIMIT clause is necessary since at most one row is present.
 		return sq.Select(columns...).
 			From(quotedTable + " USE INDEX (PRIMARY)").
-			Where(sq.Eq{quotedPK: f.ShardingValue}).
-			Where(sq.Gt{quotedPK: lastPk}), nil
+			Where(sq.Eq{quotedPaginationKey: f.ShardingValue}).
+			Where(sq.Gt{quotedPaginationKey: lastPaginationKey}), nil
 	}
 
 	joinTables, exists := f.JoinedTables[table.Name]
 	if !exists {
 		// This is a normal sharded table; functionally:
 		//   SELECT * FROM x
-		//     WHERE ShardingKey = ShardingValue AND PrimaryKey > LastPrimaryKey
-		//     ORDER BY PrimaryKey LIMIT BatchSize
+		//     WHERE ShardingKey = ShardingValue AND PaginationKey > LastPaginationKey
+		//     ORDER BY PaginationKey LIMIT BatchSize
 		//
 		// However, we found that for some tables, MySQL would not use the
 		// covering index correctly, indicated in EXPLAIN by used_key_parts
@@ -57,17 +57,17 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 		// rows in an affected table was very slow.
 		//
 		// To force MySQL to use the index fully, we use:
-		//   SELECT * FROM x JOIN (SELECT PrimaryKey FROM x ...) USING (PrimaryKey)
+		//   SELECT * FROM x JOIN (SELECT PaginationKey FROM x ...) USING (PaginationKey)
 		//
 		// i.e. load the primary keys first, then load the rest of the columns.
 
-		selectPrimaryKeys := "SELECT " + quotedPK + " FROM " + quotedTable + " " + f.shardingKeyIndexHint(table) +
-			" WHERE " + quotedShardingKey + " = ? AND " + quotedPK + " > ?" +
-			" ORDER BY " + quotedPK + " LIMIT " + strconv.Itoa(int(batchSize))
+		selectPaginationKeys := "SELECT " + quotedPaginationKey + " FROM " + quotedTable + " " + f.shardingKeyIndexHint(table) +
+			" WHERE " + quotedShardingKey + " = ? AND " + quotedPaginationKey + " > ?" +
+			" ORDER BY " + quotedPaginationKey + " LIMIT " + strconv.Itoa(int(batchSize))
 
 		return sq.Select(columns...).
 			From(quotedTable).
-			Join("("+selectPrimaryKeys+") AS `batch` USING("+quotedPK+")", f.ShardingValue, lastPk), nil
+			Join("("+selectPaginationKeys+") AS `batch` USING("+quotedPaginationKey+")", f.ShardingValue, lastPaginationKey), nil
 	}
 
 	// This is a "joined table". It is the only supported type of table that
@@ -86,12 +86,12 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 	//
 	// The final query is something like:
 	//
-	// SELECT * FROM x WHERE PrimaryKey IN (
-	//   (SELECT PrimaryKey FROM JoinTable1 WHERE ShardingKey = ? AND JoinTable1.PrimaryKey > ?)
+	// SELECT * FROM x WHERE PaginationKey IN (
+	//   (SELECT PaginationKey FROM JoinTable1 WHERE ShardingKey = ? AND JoinTable1.PaginationKey > ?)
 	//   UNION DISTINCT
-	//   (SELECT PrimaryKey FROM JoinTable2 WHERE ShardingKey = ? AND JoinTable2.PrimaryKey > ?)
+	//   (SELECT PaginationKey FROM JoinTable2 WHERE ShardingKey = ? AND JoinTable2.PaginationKey > ?)
 	//      < ... more UNION DISTINCT for each other join table >
-	//   ORDER BY PrimaryKey LIMIT BatchSize
+	//   ORDER BY PaginationKey LIMIT BatchSize
 	// )
 	//
 	// i.e. load the primary keys for each join table, take their UNION, limit
@@ -103,18 +103,18 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 		pattern := "SELECT `%s` AS sharding_join_alias FROM `%s`.`%s` WHERE `%s` = ? AND `%s` > ?"
 		sql := fmt.Sprintf(pattern, joinTable.JoinColumn, table.Schema, joinTable.TableName, f.ShardingKey, joinTable.JoinColumn)
 		clauses = append(clauses, sql)
-		args = append(args, f.ShardingValue, lastPk)
+		args = append(args, f.ShardingValue, lastPaginationKey)
 	}
 
 	subquery := strings.Join(clauses, " UNION DISTINCT ")
 	subquery += " ORDER BY sharding_join_alias LIMIT " + strconv.FormatUint(batchSize, 10)
 
-	condition := fmt.Sprintf("%s IN (SELECT * FROM (%s) AS sharding_join_table)", quotedPK, subquery)
+	condition := fmt.Sprintf("%s IN (SELECT * FROM (%s) AS sharding_join_table)", quotedPaginationKey, subquery)
 
 	return sq.Select(columns...).
 		From(quotedTable).
 		Where(sq.Expr(condition, args...)).
-		OrderBy(quotedPK), nil // LIMIT comes from the subquery.
+		OrderBy(quotedPaginationKey), nil // LIMIT comes from the subquery.
 }
 
 func (f *ShardedCopyFilter) shardingKeyIndexHint(table *ghostferry.TableSchema) string {
@@ -132,14 +132,14 @@ func (f *ShardedCopyFilter) shardingKeyIndexHint(table *ghostferry.TableSchema) 
 
 func (f *ShardedCopyFilter) shardingKeyIndexName(table *ghostferry.TableSchema) string {
 	indexName := ""
-	pkName := table.GetPKColumn(0).Name
+	paginationKeyName := table.GetPaginationColumn().Name
 
 	for _, x := range table.Indexes {
 		if x.Columns[0] == f.ShardingKey {
 			if len(x.Columns) == 1 {
 				// This index will work in InnoDB, but there may be a more specific one to prefer.
 				indexName = x.Name
-			} else if x.Columns[1] == pkName {
+			} else if x.Columns[1] == paginationKeyName {
 				// This index satisfies (sharding key, primary key).
 				indexName = x.Name
 				break
@@ -152,7 +152,7 @@ func (f *ShardedCopyFilter) shardingKeyIndexName(table *ghostferry.TableSchema) 
 func (f *ShardedCopyFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, error) {
 	shardingKey := f.ShardingKey
 	if _, exists := f.PrimaryKeyTables[event.Table()]; exists {
-		shardingKey = event.TableSchema().GetPKColumn(0).Name
+		shardingKey = event.TableSchema().GetPaginationColumn().Name
 	}
 
 	columns := event.TableSchema().Columns

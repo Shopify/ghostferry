@@ -16,8 +16,8 @@ class CallbacksTest < GhostferryTestCase
 
     assert_equal "done", progress.last["CurrentState"]
 
-    assert_equal 1111, progress.last["Tables"]["gftest.test_table_1"]["LastSuccessfulPK"]
-    assert_equal 1111, progress.last["Tables"]["gftest.test_table_1"]["TargetPK"]
+    assert_equal 1111, progress.last["Tables"]["gftest.test_table_1"]["LastSuccessfulPaginationKey"]
+    assert_equal 1111, progress.last["Tables"]["gftest.test_table_1"]["TargetPaginationKey"]
     assert_equal "completed", progress.last["Tables"]["gftest.test_table_1"]["CurrentAction"]
 
     refute progress.last["LastSuccessfulBinlogPos"]["Name"].nil?
@@ -27,7 +27,7 @@ class CallbacksTest < GhostferryTestCase
 
     assert_equal false, progress.last["Throttled"]
 
-    refute progress.last["PKsPerSecond"].nil?
+    refute progress.last["PaginationKeysPerSecond"].nil?
     refute progress.last["ETA"].nil?
     assert progress.last["TimeTaken"] > 0
   end

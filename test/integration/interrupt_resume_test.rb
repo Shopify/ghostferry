@@ -25,7 +25,7 @@ class InterruptResumeTest < GhostferryTestCase
     result = target_db.query("SELECT MAX(id) AS max_id FROM #{DEFAULT_FULL_TABLE_NAME}")
     last_successful_id = result.first["max_id"]
     assert last_successful_id > 0
-    assert_equal last_successful_id, dumped_state["LastSuccessfulPrimaryKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]
+    assert_equal last_successful_id, dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]
   end
 
   def test_interrupt_and_resume_without_last_known_schema_cache
@@ -237,7 +237,7 @@ class InterruptResumeTest < GhostferryTestCase
     assert_equal "gftest.test_table_1", incorrect_tables.first
 
     error_line = ghostferry.error_lines.last
-    assert_equal "cutover verification failed for: gftest.test_table_1 [pks: #{chosen_id} ] ", error_line["msg"]
+    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: #{chosen_id} ] ", error_line["msg"]
   end
 
   def test_interrupt_resume_inline_verifier_will_verify_additional_rows_changed_on_source_during_interrupt
@@ -281,6 +281,6 @@ class InterruptResumeTest < GhostferryTestCase
     assert_equal "gftest.test_table_1", incorrect_tables.first
 
     error_line = ghostferry.error_lines.last
-    assert_equal "cutover verification failed for: gftest.test_table_1 [pks: #{chosen_id} ] ", error_line["msg"]
+    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: #{chosen_id} ] ", error_line["msg"]
   end
 end

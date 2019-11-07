@@ -125,7 +125,7 @@ func TestSelectCopyUpdateBinlog(t *testing.T) {
 	testcase.Run()
 }
 
-func TestOnlyDeleteRowWithMaxPrimaryKey(t *testing.T) {
+func TestOnlyDeleteRowWithMaxPaginationKey(t *testing.T) {
 	testcase := &testhelpers.IntegrationTestCase{
 		T: t,
 		SetupAction: func(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {

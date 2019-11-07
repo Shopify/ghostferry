@@ -17,16 +17,16 @@ type CopyFilterTestSuite struct {
 	suite.Suite
 
 	shardingValue int64
-	pkCursor      uint64
+	paginationKeyCursor      uint64
 
-	normalTable, joinedTable, pkTable *ghostferry.TableSchema
+	normalTable, joinedTable, primaryKeyTable *ghostferry.TableSchema
 
 	filter *sharding.ShardedCopyFilter
 }
 
 func (t *CopyFilterTestSuite) SetupTest() {
 	t.shardingValue = int64(1)
-	t.pkCursor = uint64(12345)
+	t.paginationKeyCursor = uint64(12345)
 
 	columns := []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}, {Name: "data"}}
 	t.normalTable = &ghostferry.TableSchema{
@@ -45,7 +45,7 @@ func (t *CopyFilterTestSuite) SetupTest() {
 		PaginationKeyColumn: &columns[0],
 	}
 
-	columns = []schema.TableColumn{{Name: "joined_pk"}}
+	columns = []schema.TableColumn{{Name: "joined_paginationKey"}}
 	t.joinedTable = &ghostferry.TableSchema{
 		Table: &schema.Table{
 			Schema:    "shard_1",
@@ -57,10 +57,10 @@ func (t *CopyFilterTestSuite) SetupTest() {
 	}
 
 	columns = []schema.TableColumn{{Name: "tenant_id"}}
-	t.pkTable = &ghostferry.TableSchema{
+	t.primaryKeyTable = &ghostferry.TableSchema{
 		Table: &schema.Table{
 			Schema:    "shard_1",
-			Name:      "pktable",
+			Name:      "pkTable",
 			Columns:   columns,
 			PKColumns: []int{0},
 		},
@@ -73,66 +73,66 @@ func (t *CopyFilterTestSuite) SetupTest() {
 
 		JoinedTables: map[string][]sharding.JoinTable{
 			"joinedtable": []sharding.JoinTable{
-				{TableName: "join1", JoinColumn: "joined_pk1"},
-				{TableName: "join2", JoinColumn: "joined_pk2"},
+				{TableName: "join1", JoinColumn: "joined_paginationKey1"},
+				{TableName: "join2", JoinColumn: "joined_paginationKey2"},
 			},
 		},
 
-		PrimaryKeyTables: map[string]struct{}{"pktable": struct{}{}},
+		PrimaryKeyTables: map[string]struct{}{"pkTable": struct{}{}},
 	}
 }
 
 func (t *CopyFilterTestSuite) TestSelectsRegularTables() {
-	selectBuilder, err := t.filter.BuildSelect([]string{"*"}, t.normalTable, t.pkCursor, 1024)
+	selectBuilder, err := t.filter.BuildSelect([]string{"*"}, t.normalTable, t.paginationKeyCursor, 1024)
 	t.Require().Nil(err)
 
 	sql, args, err := selectBuilder.ToSql()
 	t.Require().Nil(err)
 	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` USE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
-	t.Require().Equal([]interface{}{t.shardingValue, t.pkCursor}, args)
+	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor}, args)
 }
 
 func (t *CopyFilterTestSuite) TestFallsBackToLessGoodIndex() {
 	t.normalTable.Indexes[2].Columns = []string{"data"} // Remove good index.
-	selectBuilder, err := t.filter.BuildSelect([]string{"*"}, t.normalTable, t.pkCursor, 1024)
+	selectBuilder, err := t.filter.BuildSelect([]string{"*"}, t.normalTable, t.paginationKeyCursor, 1024)
 	t.Require().Nil(err)
 
 	sql, args, err := selectBuilder.ToSql()
 	t.Require().Nil(err)
 	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` USE INDEX (`less_good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
-	t.Require().Equal([]interface{}{t.shardingValue, t.pkCursor}, args)
+	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor}, args)
 }
 
 func (t *CopyFilterTestSuite) TestFallsBackToIgnoredPrimaryIndex() {
 	t.normalTable.Indexes[1].Columns = []string{"data"} // Remove less good index.
 	t.normalTable.Indexes[2].Columns = []string{"data"} // Remove good index.
-	selectBuilder, err := t.filter.BuildSelect([]string{"*"}, t.normalTable, t.pkCursor, 1024)
+	selectBuilder, err := t.filter.BuildSelect([]string{"*"}, t.normalTable, t.paginationKeyCursor, 1024)
 	t.Require().Nil(err)
 
 	sql, args, err := selectBuilder.ToSql()
 	t.Require().Nil(err)
 	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` IGNORE INDEX (PRIMARY) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
-	t.Require().Equal([]interface{}{t.shardingValue, t.pkCursor}, args)
+	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor}, args)
 }
 
 func (t *CopyFilterTestSuite) TestSelectsJoinedTables() {
-	selectBuilder, err := t.filter.BuildSelect([]string{"*"}, t.joinedTable, t.pkCursor, 1024)
+	selectBuilder, err := t.filter.BuildSelect([]string{"*"}, t.joinedTable, t.paginationKeyCursor, 1024)
 	t.Require().Nil(err)
 
 	sql, args, err := selectBuilder.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`joinedtable` WHERE `joined_pk` IN (SELECT * FROM (SELECT `joined_pk1` AS sharding_join_alias FROM `shard_1`.`join1` WHERE `tenant_id` = ? AND `joined_pk1` > ? UNION DISTINCT SELECT `joined_pk2` AS sharding_join_alias FROM `shard_1`.`join2` WHERE `tenant_id` = ? AND `joined_pk2` > ? ORDER BY sharding_join_alias LIMIT 1024) AS sharding_join_table) ORDER BY `joined_pk`", sql)
-	t.Require().Equal([]interface{}{t.shardingValue, t.pkCursor, t.shardingValue, t.pkCursor}, args)
+	t.Require().Equal("SELECT * FROM `shard_1`.`joinedtable` WHERE `joined_paginationKey` IN (SELECT * FROM (SELECT `joined_paginationKey1` AS sharding_join_alias FROM `shard_1`.`join1` WHERE `tenant_id` = ? AND `joined_paginationKey1` > ? UNION DISTINCT SELECT `joined_paginationKey2` AS sharding_join_alias FROM `shard_1`.`join2` WHERE `tenant_id` = ? AND `joined_paginationKey2` > ? ORDER BY sharding_join_alias LIMIT 1024) AS sharding_join_table) ORDER BY `joined_paginationKey`", sql)
+	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor, t.shardingValue, t.paginationKeyCursor}, args)
 }
 
 func (t *CopyFilterTestSuite) TestSelectsPrimaryKeyTables() {
-	selectBuilder, err := t.filter.BuildSelect([]string{"*"}, t.pkTable, t.pkCursor, 1024)
+	selectBuilder, err := t.filter.BuildSelect([]string{"*"}, t.primaryKeyTable, t.paginationKeyCursor, 1024)
 	t.Require().Nil(err)
 
 	sql, args, err := selectBuilder.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`pktable` USE INDEX (PRIMARY) WHERE `tenant_id` = ? AND `tenant_id` > ?", sql)
-	t.Require().Equal([]interface{}{t.shardingValue, t.pkCursor}, args)
+	t.Require().Equal("SELECT * FROM `shard_1`.`pkTable` USE INDEX (PRIMARY) WHERE `tenant_id` = ? AND `tenant_id` > ?", sql)
+	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor}, args)
 }
 
 func (t *CopyFilterTestSuite) TestShardingValueTypes() {

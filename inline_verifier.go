@@ -22,7 +22,7 @@ type BinlogVerifyStore struct {
 	EmitLogPerRowsAdded uint64
 
 	mutex *sync.Mutex
-	// db => table => pk => number of times it changed.
+	// db => table => paginationKey => number of times it changed.
 	//
 	// We need to store the number of times the row has changed because of the
 	// following series of events:
@@ -72,8 +72,8 @@ func (s BinlogVerifySerializedStore) Copy() BinlogVerifySerializedStore {
 		copyS[db] = make(map[string]map[uint64]int)
 		for table, _ := range s[db] {
 			copyS[db][table] = make(map[uint64]int)
-			for pk, count := range s[db][table] {
-				copyS[db][table][pk] = count
+			for paginationKey, count := range s[db][table] {
+				copyS[db][table][paginationKey] = count
 			}
 		}
 	}
@@ -84,7 +84,7 @@ func (s BinlogVerifySerializedStore) Copy() BinlogVerifySerializedStore {
 type BinlogVerifyBatch struct {
 	SchemaName string
 	TableName  string
-	Pks        []uint64
+	PaginationKeys        []uint64
 }
 
 func NewBinlogVerifyStore() *BinlogVerifyStore {
@@ -107,7 +107,7 @@ func NewBinlogVerifyStoreFromSerialized(serialized BinlogVerifySerializedStore) 
 	return s
 }
 
-func (s *BinlogVerifyStore) Add(table *TableSchema, pk uint64) {
+func (s *BinlogVerifyStore) Add(table *TableSchema, paginationKey uint64) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
@@ -121,12 +121,12 @@ func (s *BinlogVerifyStore) Add(table *TableSchema, pk uint64) {
 		s.store[table.Schema][table.Name] = make(map[uint64]int)
 	}
 
-	_, exists = s.store[table.Schema][table.Name][pk]
+	_, exists = s.store[table.Schema][table.Name][paginationKey]
 	if !exists {
-		s.store[table.Schema][table.Name][pk] = 0
+		s.store[table.Schema][table.Name][paginationKey] = 0
 	}
 
-	s.store[table.Schema][table.Name][pk]++
+	s.store[table.Schema][table.Name][paginationKey]++
 	s.totalRowCount++
 	s.currentRowCount++
 
@@ -155,14 +155,14 @@ func (s *BinlogVerifyStore) RemoveVerifiedBatch(batch BinlogVerifyBatch) {
 		return
 	}
 
-	for _, pk := range batch.Pks {
-		if _, exists = tableStore[pk]; exists {
-			if tableStore[pk] <= 1 {
+	for _, paginationKey := range batch.PaginationKeys {
+		if _, exists = tableStore[paginationKey]; exists {
+			if tableStore[paginationKey] <= 1 {
 				// Even though this doesn't save as RAM, it will save space on the
 				// serialized output.
-				delete(tableStore, pk)
+				delete(tableStore, paginationKey)
 			} else {
-				tableStore[pk]--
+				tableStore[paginationKey]--
 			}
 			s.currentRowCount--
 		}
@@ -175,26 +175,26 @@ func (s *BinlogVerifyStore) Batches(batchsize int) []BinlogVerifyBatch {
 
 	batches := make([]BinlogVerifyBatch, 0)
 	for schemaName, _ := range s.store {
-		for tableName, pkSet := range s.store[schemaName] {
-			pkBatch := make([]uint64, 0, batchsize)
+		for tableName, paginationKeySet := range s.store[schemaName] {
+			paginationKeyBatch := make([]uint64, 0, batchsize)
 
-			for pk, _ := range pkSet {
-				pkBatch = append(pkBatch, pk)
-				if len(pkBatch) >= batchsize {
+			for paginationKey, _ := range paginationKeySet {
+				paginationKeyBatch = append(paginationKeyBatch, paginationKey)
+				if len(paginationKeyBatch) >= batchsize {
 					batches = append(batches, BinlogVerifyBatch{
 						SchemaName: schemaName,
 						TableName:  tableName,
-						Pks:        pkBatch,
+						PaginationKeys:        paginationKeyBatch,
 					})
-					pkBatch = make([]uint64, 0, batchsize)
+					paginationKeyBatch = make([]uint64, 0, batchsize)
 				}
 			}
 
-			if len(pkBatch) > 0 {
+			if len(paginationKeyBatch) > 0 {
 				batches = append(batches, BinlogVerifyBatch{
 					SchemaName: schemaName,
 					TableName:  tableName,
-					Pks:        pkBatch,
+					PaginationKeys:        paginationKeyBatch,
 				})
 			}
 		}
@@ -247,18 +247,18 @@ func (v *InlineVerifier) Result() (VerificationResultAndStatus, error) {
 func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, targetTable string, sourceBatch *RowBatch) ([]uint64, error) {
 	table := sourceBatch.TableSchema()
 
-	pks := make([]uint64, len(sourceBatch.Values()))
+	paginationKeys := make([]uint64, len(sourceBatch.Values()))
 	for i, row := range sourceBatch.Values() {
-		pk, err := row.GetUint64(sourceBatch.PkIndex())
+		paginationKey, err := row.GetUint64(sourceBatch.PaginationKeyIndex())
 		if err != nil {
 			return nil, err
 		}
 
-		pks[i] = pk
+		paginationKeys[i] = paginationKey
 	}
 
 	// Fetch target data
-	targetFingerprints, targetDecompressedData, err := v.getFingerprintDataFromTargetDb(targetSchema, targetTable, tx, table, pks)
+	targetFingerprints, targetDecompressedData, err := v.getFingerprintDataFromTargetDb(targetSchema, targetTable, tx, table, paginationKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -268,12 +268,12 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, target
 	sourceDecompressedData := make(map[uint64]map[string][]byte)
 
 	for _, rowData := range sourceBatch.Values() {
-		pk, err := rowData.GetUint64(sourceBatch.PkIndex())
+		paginationKey, err := rowData.GetUint64(sourceBatch.PaginationKeyIndex())
 		if err != nil {
 			return nil, err
 		}
 
-		sourceDecompressedData[pk] = make(map[string][]byte)
+		sourceDecompressedData[paginationKey] = make(map[string][]byte)
 		for idx, col := range table.Columns {
 			var compressedData []byte
 			var ok bool
@@ -286,7 +286,7 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, target
 				return nil, fmt.Errorf("cannot convert column %v to []byte", col.Name)
 			}
 
-			sourceDecompressedData[pk][col.Name], err = v.decompressData(table, col.Name, compressedData)
+			sourceDecompressedData[paginationKey][col.Name], err = v.decompressData(table, col.Name, compressedData)
 		}
 	}
 
@@ -306,7 +306,7 @@ func (v *InlineVerifier) PeriodicallyVerifyBinlogEvents(ctx context.Context) {
 				v.ErrorHandler.Fatal("inline_verifier", err)
 			}
 
-			v.readdMismatchedPKsToBeVerifiedAgain(mismatches)
+			v.readdMismatchedPaginationKeysToBeVerifiedAgain(mismatches)
 
 			v.logger.WithFields(logrus.Fields{
 				"remainingRowCount": v.reverifyStore.currentRowCount,
@@ -332,7 +332,7 @@ func (v *InlineVerifier) VerifyBeforeCutover() error {
 			return err
 		}
 
-		v.readdMismatchedPKsToBeVerifiedAgain(mismatches)
+		v.readdMismatchedPaginationKeysToBeVerifiedAgain(mismatches)
 		after := v.reverifyStore.currentRowCount
 		timeToVerify = time.Now().Sub(start)
 
@@ -373,14 +373,14 @@ func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	messageBuf.WriteString("cutover verification failed for: ")
 	incorrectTables := make([]string, 0)
 	for schemaName, _ := range mismatches {
-		for tableName, pks := range mismatches[schemaName] {
+		for tableName, paginationKeys := range mismatches[schemaName] {
 			tableName = fmt.Sprintf("%s.%s", schemaName, tableName)
 			incorrectTables = append(incorrectTables, tableName)
 
 			messageBuf.WriteString(tableName)
-			messageBuf.WriteString(" [pks: ")
-			for _, pk := range pks {
-				messageBuf.WriteString(strconv.FormatUint(pk, 10))
+			messageBuf.WriteString(" [paginationKeys: ")
+			for _, paginationKey := range paginationKeys {
+				messageBuf.WriteString(strconv.FormatUint(paginationKey, 10))
 				messageBuf.WriteString(" ")
 			}
 			messageBuf.WriteString("] ")
@@ -397,16 +397,16 @@ func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	}, nil
 }
 
-func (v *InlineVerifier) getFingerprintDataFromSourceDb(schemaName, tableName string, tx *sql.Tx, table *TableSchema, pks []uint64) (map[uint64][]byte, map[uint64]map[string][]byte, error) {
-	return v.getFingerprintDataFromDb(v.SourceDB, v.sourceStmtCache, schemaName, tableName, tx, table, pks)
+func (v *InlineVerifier) getFingerprintDataFromSourceDb(schemaName, tableName string, tx *sql.Tx, table *TableSchema, paginationKeys []uint64) (map[uint64][]byte, map[uint64]map[string][]byte, error) {
+	return v.getFingerprintDataFromDb(v.SourceDB, v.sourceStmtCache, schemaName, tableName, tx, table, paginationKeys)
 }
 
-func (v *InlineVerifier) getFingerprintDataFromTargetDb(schemaName, tableName string, tx *sql.Tx, table *TableSchema, pks []uint64) (map[uint64][]byte, map[uint64]map[string][]byte, error) {
-	return v.getFingerprintDataFromDb(v.TargetDB, v.targetStmtCache, schemaName, tableName, tx, table, pks)
+func (v *InlineVerifier) getFingerprintDataFromTargetDb(schemaName, tableName string, tx *sql.Tx, table *TableSchema, paginationKeys []uint64) (map[uint64][]byte, map[uint64]map[string][]byte, error) {
+	return v.getFingerprintDataFromDb(v.TargetDB, v.targetStmtCache, schemaName, tableName, tx, table, paginationKeys)
 }
 
-func (v *InlineVerifier) getFingerprintDataFromDb(db *sql.DB, stmtCache *StmtCache, schemaName, tableName string, tx *sql.Tx, table *TableSchema, pks []uint64) (map[uint64][]byte, map[uint64]map[string][]byte, error) {
-	fingerprintQuery := table.FingerprintQuery(schemaName, tableName, len(pks))
+func (v *InlineVerifier) getFingerprintDataFromDb(db *sql.DB, stmtCache *StmtCache, schemaName, tableName string, tx *sql.Tx, table *TableSchema, paginationKeys []uint64) (map[uint64][]byte, map[uint64]map[string][]byte, error) {
+	fingerprintQuery := table.FingerprintQuery(schemaName, tableName, len(paginationKeys))
 	fingerprintStmt, err := stmtCache.StmtFor(db, fingerprintQuery)
 	if err != nil {
 		return nil, nil, err
@@ -416,9 +416,9 @@ func (v *InlineVerifier) getFingerprintDataFromDb(db *sql.DB, stmtCache *StmtCac
 		fingerprintStmt = tx.Stmt(fingerprintStmt)
 	}
 
-	args := make([]interface{}, len(pks))
-	for i, pk := range pks {
-		args[i] = pk
+	args := make([]interface{}, len(paginationKeys))
+	for i, paginationKey := range paginationKeys {
+		args[i] = paginationKey
 	}
 
 	rows, err := fingerprintStmt.Query(args...)
@@ -428,8 +428,8 @@ func (v *InlineVerifier) getFingerprintDataFromDb(db *sql.DB, stmtCache *StmtCac
 		return nil, nil, err
 	}
 
-	fingerprints := make(map[uint64][]byte)                // pk -> fingerprint
-	decompressedData := make(map[uint64]map[string][]byte) // pk -> columnName -> decompressedData
+	fingerprints := make(map[uint64][]byte)                // paginationKey -> fingerprint
+	decompressedData := make(map[uint64]map[string][]byte) // paginationKey -> columnName -> decompressedData
 
 	for rows.Next() {
 		rowData, err := ScanByteRow(rows, len(columns))
@@ -437,20 +437,20 @@ func (v *InlineVerifier) getFingerprintDataFromDb(db *sql.DB, stmtCache *StmtCac
 			return nil, nil, err
 		}
 
-		pk, err := strconv.ParseUint(string(rowData[0]), 10, 64)
+		paginationKey, err := strconv.ParseUint(string(rowData[0]), 10, 64)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		fingerprints[pk] = rowData[1]
-		decompressedData[pk] = make(map[string][]byte)
+		fingerprints[paginationKey] = rowData[1]
+		decompressedData[paginationKey] = make(map[string][]byte)
 
-		// Note that the FingerprintQuery returns the columns: pk, fingerprint,
+		// Note that the FingerprintQuery returns the columns: paginationKey, fingerprint,
 		// compressedData1, compressedData2, ...
 		// If there are no compressed data, only 2 columns are returned and this
 		// loop will be skipped.
 		for i := 2; i < len(columns); i++ {
-			decompressedData[pk][columns[i]], err = v.decompressData(table, columns[i], rowData[i])
+			decompressedData[paginationKey][columns[i]], err = v.decompressData(table, columns[i], rowData[i])
 			if err != nil {
 				return nil, nil, err
 			}
@@ -482,17 +482,17 @@ func (v *InlineVerifier) decompressData(table *TableSchema, column string, compr
 func (v *InlineVerifier) compareHashes(source, target map[uint64][]byte) map[uint64]struct{} {
 	mismatchSet := map[uint64]struct{}{}
 
-	for pk, targetHash := range target {
-		sourceHash, exists := source[pk]
+	for paginationKey, targetHash := range target {
+		sourceHash, exists := source[paginationKey]
 		if !bytes.Equal(sourceHash, targetHash) || !exists {
-			mismatchSet[pk] = struct{}{}
+			mismatchSet[paginationKey] = struct{}{}
 		}
 	}
 
-	for pk, sourceHash := range source {
-		targetHash, exists := target[pk]
+	for paginationKey, sourceHash := range source {
+		targetHash, exists := target[paginationKey]
 		if !bytes.Equal(sourceHash, targetHash) || !exists {
-			mismatchSet[pk] = struct{}{}
+			mismatchSet[paginationKey] = struct{}{}
 		}
 	}
 
@@ -502,33 +502,33 @@ func (v *InlineVerifier) compareHashes(source, target map[uint64][]byte) map[uin
 func (v *InlineVerifier) compareDecompressedData(source, target map[uint64]map[string][]byte) map[uint64]struct{} {
 	mismatchSet := map[uint64]struct{}{}
 
-	for pk, targetDecompressedColumns := range target {
-		sourceDecompressedColumns, exists := source[pk]
+	for paginationKey, targetDecompressedColumns := range target {
+		sourceDecompressedColumns, exists := source[paginationKey]
 		if !exists {
-			mismatchSet[pk] = struct{}{}
+			mismatchSet[paginationKey] = struct{}{}
 			continue
 		}
 
 		for colName, targetData := range targetDecompressedColumns {
 			sourceData, exists := sourceDecompressedColumns[colName]
 			if !exists || !bytes.Equal(sourceData, targetData) {
-				mismatchSet[pk] = struct{}{}
+				mismatchSet[paginationKey] = struct{}{}
 				break // no need to compare other columns
 			}
 		}
 	}
 
-	for pk, sourceDecompressedColumns := range source {
-		targetDecompressedColumns, exists := target[pk]
+	for paginationKey, sourceDecompressedColumns := range source {
+		targetDecompressedColumns, exists := target[paginationKey]
 		if !exists {
-			mismatchSet[pk] = struct{}{}
+			mismatchSet[paginationKey] = struct{}{}
 			continue
 		}
 
 		for colName, sourceData := range sourceDecompressedColumns {
 			targetData, exists := targetDecompressedColumns[colName]
 			if !exists || !bytes.Equal(sourceData, targetData) {
-				mismatchSet[pk] = struct{}{}
+				mismatchSet[paginationKey] = struct{}{}
 				break
 			}
 		}
@@ -540,14 +540,14 @@ func (v *InlineVerifier) compareDecompressedData(source, target map[uint64]map[s
 func (v *InlineVerifier) compareHashesAndData(sourceHashes, targetHashes map[uint64][]byte, sourceData, targetData map[uint64]map[string][]byte) []uint64 {
 	mismatches := v.compareHashes(sourceHashes, targetHashes)
 	compressedMismatch := v.compareDecompressedData(sourceData, targetData)
-	for pk, _ := range compressedMismatch {
-		mismatches[pk] = struct{}{}
+	for paginationKey, _ := range compressedMismatch {
+		mismatches[paginationKey] = struct{}{}
 	}
 
 	mismatchList := make([]uint64, 0, len(mismatches))
 
-	for pk, _ := range mismatches {
-		mismatchList = append(mismatchList, pk)
+	for paginationKey, _ := range mismatches {
+		mismatchList = append(mismatchList, paginationKey)
 	}
 
 	return mismatchList
@@ -559,12 +559,12 @@ func (v *InlineVerifier) binlogEventListener(evs []DMLEvent) error {
 	}
 
 	for _, ev := range evs {
-		pk, err := ev.PK()
+		paginationKey, err := ev.PaginationKey()
 		if err != nil {
 			return err
 		}
 
-		v.reverifyStore.Add(ev.TableSchema(), pk)
+		v.reverifyStore.Add(ev.TableSchema(), paginationKey)
 	}
 
 	if v.StateTracker != nil {
@@ -575,18 +575,18 @@ func (v *InlineVerifier) binlogEventListener(evs []DMLEvent) error {
 	return nil
 }
 
-func (v *InlineVerifier) readdMismatchedPKsToBeVerifiedAgain(mismatches map[string]map[string][]uint64) {
+func (v *InlineVerifier) readdMismatchedPaginationKeysToBeVerifiedAgain(mismatches map[string]map[string][]uint64) {
 	for schemaName, _ := range mismatches {
-		for tableName, pks := range mismatches[schemaName] {
+		for tableName, paginationKeys := range mismatches[schemaName] {
 			table := v.TableSchemaCache.Get(schemaName, tableName)
-			for _, pk := range pks {
-				v.reverifyStore.Add(table, pk)
+			for _, paginationKey := range paginationKeys {
+				v.reverifyStore.Add(table, paginationKey)
 			}
 		}
 	}
 }
 
-// Returns mismatches in the form of db -> table -> pks
+// Returns mismatches in the form of db -> table -> paginationKeys
 func (v *InlineVerifier) verifyAllEventsInStore() (bool, map[string]map[string][]uint64, error) {
 	mismatchFound := false
 	mismatches := make(map[string]map[string][]uint64)
@@ -622,7 +622,7 @@ func (v *InlineVerifier) verifyAllEventsInStore() (bool, map[string]map[string][
 	return mismatchFound, mismatches, nil
 }
 
-// Returns a list of mismatched PKs.
+// Returns a list of mismatched PaginationKeys.
 // Since the mismatches gets re-added to the reverify store, this must return
 // a union of mismatches of fingerprints and mismatches due to decompressed
 // data.
@@ -655,7 +655,7 @@ func (v *InlineVerifier) verifyBinlogBatch(batch BinlogVerifyBatch) ([]uint64, e
 				batch.SchemaName, batch.TableName,
 				nil, // No transaction
 				sourceTableSchema,
-				batch.Pks,
+				batch.PaginationKeys,
 			)
 			return
 		})
@@ -671,7 +671,7 @@ func (v *InlineVerifier) verifyBinlogBatch(batch BinlogVerifyBatch) ([]uint64, e
 				targetSchema, targetTable,
 				nil, // No transaction
 				sourceTableSchema,
-				batch.Pks,
+				batch.PaginationKeys,
 			)
 			return
 		})

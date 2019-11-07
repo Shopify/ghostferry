@@ -50,12 +50,12 @@ type TableSchema struct {
 // Any columns specified in IgnoredColumnsForVerification are excluded from the
 // checksum and the raw data will not be returned.
 //
-// Note that the MD5 hash should consists of at least 1 column: the pk column.
+// Note that the MD5 hash should consists of at least 1 column: the paginationKey column.
 // This is to say that there should never be a case where the MD5 hash is
 // derived from an empty string.
 func (t *TableSchema) FingerprintQuery(schemaName, tableName string, numRows int) string {
 	columnsToSelect := make([]string, 2+len(t.CompressedColumnsForVerification))
-	columnsToSelect[0] = quoteField(t.GetPKColumn(0).Name)
+	columnsToSelect[0] = quoteField(t.GetPaginationColumn().Name)
 	columnsToSelect[1] = t.RowMd5Query()
 	i := 2
 	for columnName, _ := range t.CompressedColumnsForVerification {
@@ -114,26 +114,26 @@ func QuotedTableNameFromString(database, table string) string {
 	return fmt.Sprintf("`%s`.`%s`", database, table)
 }
 
-func MaxPrimaryKeys(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) (map[*TableSchema]uint64, []*TableSchema, error) {
+func MaxPaginationKeys(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) (map[*TableSchema]uint64, []*TableSchema, error) {
 	tablesWithData := make(map[*TableSchema]uint64)
 	emptyTables := make([]*TableSchema, 0, len(tables))
 
 	for _, table := range tables {
 		logger := logger.WithField("table", table.String())
 
-		maxPk, maxPkExists, err := maxPk(db, table)
+		maxPaginationKey, maxPaginationKeyExists, err := maxPaginationKey(db, table)
 		if err != nil {
-			logger.WithError(err).Errorf("failed to get max primary key %s", table.GetPKColumn(0).Name)
+			logger.WithError(err).Errorf("failed to get max primary key %s", table.GetPaginationColumn().Name)
 			return tablesWithData, emptyTables, err
 		}
 
-		if !maxPkExists {
+		if !maxPaginationKeyExists {
 			emptyTables = append(emptyTables, table)
 			logger.Warn("no data in this table, skipping")
 			continue
 		}
 
-		tablesWithData[table] = maxPk
+		tablesWithData[table] = maxPaginationKey
 	}
 
 	return tablesWithData, emptyTables, nil
@@ -224,8 +224,8 @@ func NonExistingPaginationKeyColumnError(schema, table, paginationKey string) er
 	return fmt.Errorf("Pagination Key `%s` for %s non existent", paginationKey, QuotedTableNameFromString(schema, table))
 }
 
-// NonExistingPKError exported to facilitate black box testing
-func NonExistingPKError(schema, table string) error {
+// NonExistingPaginationKeyError exported to facilitate black box testing
+func NonExistingPaginationKeyError(schema, table string) error {
 	return fmt.Errorf("%s has no Primary Key to default to for Pagination purposes. Kindly specify a Pagination Key for this table in the CascadingPaginationColumnConfig", QuotedTableNameFromString(schema, table))
 }
 
@@ -250,7 +250,7 @@ func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *Casca
 		// default to Primary Key if possible
 		switch len(t.PKColumns) {
 		case 0:
-			err = NonExistingPKError(t.Schema, t.Name)
+			err = NonExistingPaginationKeyError(t.Schema, t.Name)
 		case 1:
 			paginationKeyColumn = &t.Columns[t.PKColumns[0]]
 		default:
@@ -268,23 +268,8 @@ func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *Casca
 	return paginationKeyColumn, err
 }
 
-/*
-GetPKColumn is a method originally belonging to go-mysql/schema.Table
-and stands for: `Get Primary Key Column`
-
-As `TableSchema` embeds `schema.Table`, previously the method call to
-`TableSchema` would delegate automatically to the method for
-`schema.Table`. This was in spirit with the initial assumption that the
-column to iterate over in any given table is the Primary Key Column.
-
-In order to accommodate user provided pagination columns through
-configuration in the least painful way, this method has been
-reimplemented. Now this method stands for: `Get Pagination Key Column`.
-
-The param `index` currently serves no purpose but to maintain the same
-method signature as the original method.
-*/
-func (t *TableSchema) GetPKColumn(index int) *schema.TableColumn {
+// GetPaginationColumn retrieves PaginationKeyColumn
+func (t *TableSchema) GetPaginationColumn() *schema.TableColumn {
 	return t.PaginationKeyColumn
 }
 
@@ -355,13 +340,13 @@ func showTablesFrom(c *sql.DB, dbname string) ([]string, error) {
 	return tables, nil
 }
 
-func maxPk(db *sql.DB, table *TableSchema) (uint64, bool, error) {
-	primaryKeyColumn := table.GetPKColumn(0)
-	pkName := quoteField(primaryKeyColumn.Name)
+func maxPaginationKey(db *sql.DB, table *TableSchema) (uint64, bool, error) {
+	primaryKeyColumn := table.GetPaginationColumn()
+	paginationKeyName := quoteField(primaryKeyColumn.Name)
 	query, args, err := sq.
-		Select(pkName).
+		Select(paginationKeyName).
 		From(QuotedTableName(table)).
-		OrderBy(fmt.Sprintf("%s DESC", pkName)).
+		OrderBy(fmt.Sprintf("%s DESC", paginationKeyName)).
 		Limit(1).
 		ToSql()
 
@@ -369,8 +354,8 @@ func maxPk(db *sql.DB, table *TableSchema) (uint64, bool, error) {
 		return 0, false, err
 	}
 
-	var maxPrimaryKey uint64
-	err = db.QueryRow(query, args...).Scan(&maxPrimaryKey)
+	var maxPaginationKey uint64
+	err = db.QueryRow(query, args...).Scan(&maxPaginationKey)
 
 	switch {
 	case err == sql.ErrNoRows:
@@ -378,6 +363,6 @@ func maxPk(db *sql.DB, table *TableSchema) (uint64, bool, error) {
 	case err != nil:
 		return 0, false, err
 	default:
-		return maxPrimaryKey, true, nil
+		return maxPaginationKey, true, nil
 	}
 }
