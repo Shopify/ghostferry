@@ -229,11 +229,6 @@ func NonExistingPaginationKeyError(schema, table string) error {
 	return fmt.Errorf("%s has no Primary Key to default to for Pagination purposes. Kindly specify a Pagination Key for this table in the CascadingPaginationColumnConfig", QuotedTableNameFromString(schema, table))
 }
 
-// CompositePKError exported to facilitate black box testing
-func CompositePKError(schema, table string) error {
-	return fmt.Errorf("%s attempted to default to a Composite Primary Key for Pagination purposes whereas this is not supported. Kindly specify a Pagination Key for this table in the CascadingPaginationColumnConfig", QuotedTableNameFromString(schema, table))
-}
-
 // NonNumericPaginationKeyError exported to facilitate black box testing
 func NonNumericPaginationKeyError(schema, table, paginationKey string) error {
 	return fmt.Errorf("Pagination Key `%s` for %s is non-numeric", paginationKey, QuotedTableNameFromString(schema, table))
@@ -244,21 +239,17 @@ func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *Casca
 	var paginationKeyColumn *schema.TableColumn
 
 	if paginationColumn, found := cascadingPaginationColumnConfig.PaginationColumnFor(t.Schema, t.Name); found {
-		// Check that supplied pagination key column is in actual effect an existing column
+		// Use per-schema, per-table pagination key from config
 		paginationKeyColumn, err = t.findColumnByName(paginationColumn)
-	} else if cascadingPaginationColumnConfig == nil || cascadingPaginationColumnConfig.FallbackColumn == "" {
-		// default to Primary Key if possible
-		switch len(t.PKColumns) {
-		case 0:
-			err = NonExistingPaginationKeyError(t.Schema, t.Name)
-		case 1:
-			paginationKeyColumn = &t.Columns[t.PKColumns[0]]
-		default:
-			err = CompositePKError(t.Schema, t.Name)
-		}
+	} else if len(t.PKColumns) == 1 {
+		// Use Primary Key
+		paginationKeyColumn = &t.Columns[t.PKColumns[0]]
+	} else if fallbackColumnName, found := cascadingPaginationColumnConfig.FallbackPaginationColumnName(); found {
+		// Try fallback from config
+		paginationKeyColumn, err = t.findColumnByName(fallbackColumnName)
 	} else {
-		// Check that supplied pagination key column to fallback to is in actual effect an existing column
-		paginationKeyColumn, err = t.findColumnByName(cascadingPaginationColumnConfig.FallbackColumn)
+		// No usable pagination key found
+		err = NonExistingPaginationKeyError(t.Schema, t.Name)
 	}
 
 	if paginationKeyColumn != nil && paginationKeyColumn.Type != schema.TYPE_NUMBER {

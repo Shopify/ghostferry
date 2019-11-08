@@ -116,16 +116,32 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesCascadingPaginationColumnCo
 	dropTestTables(this) // needed because the default tables created at test setup interfere with this test
 
 	table := "pagination_by_column_config_right_scenario_2"
-	paginationColumn := "identity"
+	fallbackColumn := "identity"
 	cascadingPaginationColumnConfig := &ghostferry.CascadingPaginationColumnConfig{
-		FallbackColumn: paginationColumn,
+		FallbackColumn: fallbackColumn,
 	}
 
-	query := fmt.Sprintf("CREATE TABLE %s.%s (%s bigint(20) not null, data TEXT)", testhelpers.TestSchemaName, table, paginationColumn)
+	query := fmt.Sprintf("CREATE TABLE %s.%s (%s bigint(20) not null, data TEXT)", testhelpers.TestSchemaName, table, fallbackColumn)
 	_, err := this.Ferry.SourceDB.Exec(query)
 	this.Require().Nil(err)
 
-	this.assertLoadTablesWithCascadingPaginationColumnConfig(table, paginationColumn, cascadingPaginationColumnConfig)
+	this.assertLoadTablesWithCascadingPaginationColumnConfig(table, fallbackColumn, cascadingPaginationColumnConfig)
+}
+
+func (this *TableSchemaCacheTestSuite) TestLoadTablesCascadingPaginationColumnConfigUsesPKBeforeFallback() {
+	dropTestTables(this) // needed because the default tables created at test setup interfere with this test
+
+	table := "pagination_by_column_config_uses_pk_before_fallback"
+	fallbackColumn := "non_existent"
+	cascadingPaginationColumnConfig := &ghostferry.CascadingPaginationColumnConfig{
+		FallbackColumn: fallbackColumn,
+	}
+
+	query := fmt.Sprintf("CREATE TABLE %s.%s (id bigint(20), %s bigint(20) not null, data TEXT, primary key(id))", testhelpers.TestSchemaName, table, fallbackColumn)
+	_, err := this.Ferry.SourceDB.Exec(query)
+	this.Require().Nil(err)
+
+	this.assertLoadTablesWithCascadingPaginationColumnConfig(table, "id", cascadingPaginationColumnConfig)
 }
 
 func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWhenCascadingPaginationColumnConfigWrong() {
@@ -198,7 +214,7 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithCompositePK
 	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil)
 
 	this.Require().NotNil(err)
-	this.Require().EqualError(err, ghostferry.CompositePKError(testhelpers.TestSchemaName, table).Error())
+	this.Require().EqualError(err, ghostferry.NonExistingPaginationKeyError(testhelpers.TestSchemaName, table).Error())
 }
 
 func (this *TableSchemaCacheTestSuite) TestLoadTablesWithCompositePKButIDColumnToFallBackTo() {
