@@ -37,6 +37,7 @@ type TableSchema struct {
 	CompressedColumnsForVerification map[string]string   // Map of column name => compression type
 	IgnoredColumnsForVerification    map[string]struct{} // Set of column name
 	PaginationKeyColumn              *schema.TableColumn
+	PaginationKeyIndex               int
 
 	rowMd5Query string
 }
@@ -178,7 +179,7 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 			}
 
 			tableSchemas = append(tableSchemas, &TableSchema{
-				Table: tableSchema,
+				Table:                            tableSchema,
 				CompressedColumnsForVerification: columnCompressionConfig.CompressedColumnsFor(dbname, table),
 				IgnoredColumnsForVerification:    columnIgnoreConfig.IgnoredColumnsFor(dbname, table),
 			})
@@ -194,12 +195,13 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 			tableLog := dbLog.WithField("table", tableName)
 			tableLog.Debug("caching table schema")
 
-			paginationKeyColumn, err := tableSchema.paginationKeyColumn(cascadingPaginationColumnConfig)
+			paginationKeyColumn, paginationKeyIndex, err := tableSchema.paginationKeyColumn(cascadingPaginationColumnConfig)
 			if err != nil {
 				logger.WithError(err).Error("invalid table")
 				return tableSchemaCache, err
 			}
 			tableSchema.PaginationKeyColumn = paginationKeyColumn
+			tableSchema.PaginationKeyIndex = paginationKeyIndex
 
 			tableSchemaCache[tableSchema.String()] = tableSchema
 		}
@@ -210,13 +212,13 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 	return tableSchemaCache, nil
 }
 
-func (t *TableSchema) findColumnByName(name string) (*schema.TableColumn, error) {
-	for _, column := range t.Columns {
+func (t *TableSchema) findColumnByName(name string) (*schema.TableColumn, int, error) {
+	for i, column := range t.Columns {
 		if column.Name == name {
-			return &column, nil
+			return &column, i, nil
 		}
 	}
-	return nil, NonExistingPaginationKeyColumnError(t.Schema, t.Name, name)
+	return nil, -1, NonExistingPaginationKeyColumnError(t.Schema, t.Name, name)
 }
 
 // NonExistingPaginationKeyColumnError exported to facilitate black box testing
@@ -234,34 +236,40 @@ func NonNumericPaginationKeyError(schema, table, paginationKey string) error {
 	return fmt.Errorf("Pagination Key `%s` for %s is non-numeric", paginationKey, QuotedTableNameFromString(schema, table))
 }
 
-func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (*schema.TableColumn, error) {
+func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (*schema.TableColumn, int, error) {
 	var err error
 	var paginationKeyColumn *schema.TableColumn
+	var paginationKeyIndex int
 
 	if paginationColumn, found := cascadingPaginationColumnConfig.PaginationColumnFor(t.Schema, t.Name); found {
 		// Use per-schema, per-table pagination key from config
-		paginationKeyColumn, err = t.findColumnByName(paginationColumn)
+		paginationKeyColumn, paginationKeyIndex, err = t.findColumnByName(paginationColumn)
 	} else if len(t.PKColumns) == 1 {
 		// Use Primary Key
-		paginationKeyColumn = &t.Columns[t.PKColumns[0]]
+		paginationKeyIndex = t.PKColumns[0]
+		paginationKeyColumn = &t.Columns[paginationKeyIndex]
 	} else if fallbackColumnName, found := cascadingPaginationColumnConfig.FallbackPaginationColumnName(); found {
 		// Try fallback from config
-		paginationKeyColumn, err = t.findColumnByName(fallbackColumnName)
+		paginationKeyColumn, paginationKeyIndex, err = t.findColumnByName(fallbackColumnName)
 	} else {
 		// No usable pagination key found
 		err = NonExistingPaginationKeyError(t.Schema, t.Name)
 	}
 
 	if paginationKeyColumn != nil && paginationKeyColumn.Type != schema.TYPE_NUMBER {
-		return nil, NonNumericPaginationKeyError(t.Schema, t.Name, paginationKeyColumn.Name)
+		return nil, -1, NonNumericPaginationKeyError(t.Schema, t.Name, paginationKeyColumn.Name)
 	}
 
-	return paginationKeyColumn, err
+	return paginationKeyColumn, paginationKeyIndex, err
 }
 
 // GetPaginationColumn retrieves PaginationKeyColumn
 func (t *TableSchema) GetPaginationColumn() *schema.TableColumn {
 	return t.PaginationKeyColumn
+}
+
+func (t *TableSchema) GetPaginationKeyIndex() int {
+	return t.PaginationKeyIndex
 }
 
 func (c TableSchemaCache) AsSlice() (tables []*TableSchema) {
