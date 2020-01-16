@@ -65,7 +65,7 @@ type Cursor struct {
 	MaxPaginationKey uint64
 	RowLock          bool
 
-	paginationKeyColumn                    *schema.TableColumn
+	paginationKeyColumn         *schema.TableColumn
 	lastSuccessfulPaginationKey uint64
 	logger                      *logrus.Entry
 }
@@ -245,9 +245,9 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos uint64
 	}
 
 	batch = &RowBatch{
-		values:  batchData,
+		values:             batchData,
 		paginationKeyIndex: paginationKeyIndex,
-		table:   c.Table,
+		table:              c.Table,
 	}
 
 	logger.Debugf("found %d rows", batch.Size())
