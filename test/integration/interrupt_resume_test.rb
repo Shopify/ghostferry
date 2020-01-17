@@ -105,6 +105,26 @@ class InterruptResumeTest < GhostferryTestCase
     assert_test_table_is_identical
   end
 
+  def test_interrupt_resume_will_not_emit_binlog_position_for_inline_verifier_if_no_verification_is_used
+    datawriter = new_source_datawriter
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+
+    start_datawriter_with_ghostferry(datawriter, ghostferry)
+
+    batches_written = 0
+    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      batches_written += 1
+      if batches_written >= 2
+        ghostferry.term_and_wait_for_exit
+      end
+    end
+
+    dumped_state = ghostferry.run_expecting_interrupt
+    assert_basic_fields_exist_in_dumped_state(dumped_state)
+    assert_equal "", dumped_state["LastStoredBinlogPositionForInlineVerifier"]["Name"]
+    assert_equal 0, dumped_state["LastStoredBinlogPositionForInlineVerifier"]["Pos"]
+  end
+
   def test_interrupt_resume_inline_verifier_with_datawriter
     datawriter = new_source_datawriter
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
@@ -165,6 +185,7 @@ class InterruptResumeTest < GhostferryTestCase
 
     dumped_state = ghostferry.run_expecting_interrupt
     assert_basic_fields_exist_in_dumped_state(dumped_state)
+    refute_nil dumped_state["LastStoredBinlogPositionForInlineVerifier"].nil?
     refute_nil dumped_state["BinlogVerifyStore"]
     refute_nil dumped_state["BinlogVerifyStore"]["gftest"]
     refute_nil dumped_state["BinlogVerifyStore"]["gftest"]["test_table_1"]
