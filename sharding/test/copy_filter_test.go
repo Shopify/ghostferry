@@ -16,8 +16,8 @@ import (
 type CopyFilterTestSuite struct {
 	suite.Suite
 
-	shardingValue int64
-	paginationKeyCursor      uint64
+	shardingValue       int64
+	paginationKeyCursor uint64
 
 	normalTable, joinedTable, primaryKeyTable *ghostferry.TableSchema
 

@@ -34,7 +34,7 @@ type SerializableState struct {
 	GhostferryVersion         string
 	LastKnownTableSchemaCache TableSchemaCache
 
-	LastSuccessfulPaginationKeys                 map[string]uint64
+	LastSuccessfulPaginationKeys              map[string]uint64
 	CompletedTables                           map[string]bool
 	LastWrittenBinlogPosition                 mysql.Position
 	LastStoredBinlogPositionForInlineVerifier mysql.Position
@@ -86,7 +86,7 @@ type StateTracker struct {
 	lastStoredBinlogPositionForInlineVerifier mysql.Position
 
 	lastSuccessfulPaginationKeys map[string]uint64
-	completedTables           map[string]bool
+	completedTables              map[string]bool
 
 	iterationSpeedLog *ring.Ring
 }
@@ -97,8 +97,8 @@ func NewStateTracker(speedLogCount int) *StateTracker {
 		CopyRWMutex:   &sync.RWMutex{},
 
 		lastSuccessfulPaginationKeys: make(map[string]uint64),
-		completedTables:           make(map[string]bool),
-		iterationSpeedLog:         newSpeedLogRing(speedLogCount),
+		completedTables:              make(map[string]bool),
+		iterationSpeedLog:            newSpeedLogRing(speedLogCount),
 	}
 }
 
@@ -219,7 +219,7 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, bin
 	state := &SerializableState{
 		GhostferryVersion:                         VersionString,
 		LastKnownTableSchemaCache:                 lastKnownTableSchemaCache,
-		LastSuccessfulPaginationKeys:                 make(map[string]uint64),
+		LastSuccessfulPaginationKeys:              make(map[string]uint64),
 		CompletedTables:                           make(map[string]bool),
 		LastWrittenBinlogPosition:                 s.lastWrittenBinlogPosition,
 		LastStoredBinlogPositionForInlineVerifier: s.lastStoredBinlogPositionForInlineVerifier,

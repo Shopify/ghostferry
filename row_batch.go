@@ -5,17 +5,17 @@ import (
 )
 
 type RowBatch struct {
-	values       []RowData
-	paginationKeyIndex      int
-	table        *TableSchema
-	fingerprints map[uint64][]byte
+	values             []RowData
+	paginationKeyIndex int
+	table              *TableSchema
+	fingerprints       map[uint64][]byte
 }
 
 func NewRowBatch(table *TableSchema, values []RowData, paginationKeyIndex int) *RowBatch {
 	return &RowBatch{
-		values:  values,
+		values:             values,
 		paginationKeyIndex: paginationKeyIndex,
-		table:   table,
+		table:              table,
 	}
 }
 

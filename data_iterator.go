@@ -18,10 +18,10 @@ type DataIterator struct {
 	CursorConfig *CursorConfig
 	StateTracker *StateTracker
 
-	targetPaginationKeys      *sync.Map
-	batchListeners []func(*RowBatch) error
-	doneListeners  []func() error
-	logger         *logrus.Entry
+	targetPaginationKeys *sync.Map
+	batchListeners       []func(*RowBatch) error
+	doneListeners        []func() error
+	logger               *logrus.Entry
 }
 
 func (d *DataIterator) Run(tables []*TableSchema) {
@@ -119,10 +119,10 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 						}
 
 						batch = &RowBatch{
-							values:       rows,
-							paginationKeyIndex:      batch.PaginationKeyIndex(),
-							table:        table,
-							fingerprints: fingerprints,
+							values:             rows,
+							paginationKeyIndex: batch.PaginationKeyIndex(),
+							table:              table,
+							fingerprints:       fingerprints,
 						}
 					}
 

@@ -17,13 +17,13 @@ import (
 )
 
 type ReverifyBatch struct {
-	PaginationKeys   []uint64
-	Table TableIdentifier
+	PaginationKeys []uint64
+	Table          TableIdentifier
 }
 
 type ReverifyEntry struct {
-	PaginationKey    uint64
-	Table *TableSchema
+	PaginationKey uint64
+	Table         *TableSchema
 }
 
 type ReverifyStore struct {
@@ -79,8 +79,8 @@ func (r *ReverifyStore) FlushAndBatchByTable(batchsize int) []ReverifyBatch {
 			delete(paginationKeySet, paginationKey)
 			if len(paginationKeyBatch) >= batchsize {
 				r.BatchStore = append(r.BatchStore, ReverifyBatch{
-					PaginationKeys:   paginationKeyBatch,
-					Table: tableId,
+					PaginationKeys: paginationKeyBatch,
+					Table:          tableId,
 				})
 				paginationKeyBatch = make([]uint64, 0, batchsize)
 			}
@@ -88,8 +88,8 @@ func (r *ReverifyStore) FlushAndBatchByTable(batchsize int) []ReverifyBatch {
 
 		if len(paginationKeyBatch) > 0 {
 			r.BatchStore = append(r.BatchStore, ReverifyBatch{
-				PaginationKeys:   paginationKeyBatch,
-				Table: tableId,
+				PaginationKeys: paginationKeyBatch,
+				Table:          tableId,
 			})
 		}
 
@@ -413,7 +413,7 @@ func (v *IterativeVerifier) iterateTableFingerprints(table *TableSchema, mismatc
 
 		if len(mismatchedPaginationKeys) > 0 {
 			v.logger.WithFields(logrus.Fields{
-				"table":          batch.TableSchema().String(),
+				"table":                     batch.TableSchema().String(),
 				"mismatched_paginationKeys": mismatchedPaginationKeys,
 			}).Info("found mismatched rows")
 
@@ -453,7 +453,7 @@ func (v *IterativeVerifier) verifyStore(sourceTag string, additionalTags []Metri
 			metrics.Count("RowEvent", int64(len(reverifyBatch.PaginationKeys)), tags, 1.0)
 
 			v.logger.WithFields(logrus.Fields{
-				"table":    table.String(),
+				"table":               table.String(),
 				"len(paginationKeys)": len(reverifyBatch.PaginationKeys),
 			}).Debug("received paginationKey batch to reverify")
 

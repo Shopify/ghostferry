@@ -13,7 +13,7 @@ const (
 type TableProgress struct {
 	LastSuccessfulPaginationKey uint64
 	TargetPaginationKey         uint64
-	CurrentAction    string // Possible values are defined via the constants TableAction*
+	CurrentAction               string // Possible values are defined via the constants TableAction*
 }
 
 type Progress struct {
@@ -42,6 +42,6 @@ type Progress struct {
 	// A best estimate on the speed at which the copying is taking place. If
 	// there are large gaps in the PaginationKey space, this probably will be inaccurate.
 	PaginationKeysPerSecond uint64
-	ETA          float64 // seconds
-	TimeTaken    float64 // seconds
+	ETA                     float64 // seconds
+	TimeTaken               float64 // seconds
 }

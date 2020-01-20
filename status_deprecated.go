@@ -13,9 +13,9 @@ import (
 // TODO: eventually merge this into the ControlServer and use the Progress struct.
 
 type TableStatusDeprecated struct {
-	TableName        string
-	PaginationKeyName   string
-	Status           string
+	TableName                   string
+	PaginationKeyName           string
+	Status                      string
 	LastSuccessfulPaginationKey uint64
 	TargetPaginationKey         uint64
 }
@@ -26,13 +26,13 @@ type StatusDeprecated struct {
 	SourceHostPort string
 	TargetHostPort string
 
-	OverallState      string
-	StartTime         time.Time
-	CurrentTime       time.Time
-	TimeTaken         time.Duration
-	ETA               time.Duration
-	BinlogStreamerLag time.Duration
-	PaginationKeysPerSecond      uint64
+	OverallState            string
+	StartTime               time.Time
+	CurrentTime             time.Time
+	TimeTaken               time.Duration
+	ETA                     time.Duration
+	BinlogStreamerLag       time.Duration
+	PaginationKeysPerSecond uint64
 
 	AutomaticCutover            bool
 	BinlogStreamerStopRequested bool
@@ -148,9 +148,9 @@ func FetchStatusDeprecated(f *Ferry, v Verifier) *StatusDeprecated {
 
 	for _, tableName := range completedTableNames {
 		status.TableStatuses = append(status.TableStatuses, &TableStatusDeprecated{
-			TableName:        tableName,
-			PaginationKeyName:   f.Tables[tableName].GetPaginationColumn().Name,
-			Status:           "complete",
+			TableName:                   tableName,
+			PaginationKeyName:           f.Tables[tableName].GetPaginationColumn().Name,
+			Status:                      "complete",
 			TargetPaginationKey:         targetPaginationKeys[tableName],
 			LastSuccessfulPaginationKey: lastSuccessfulPaginationKeys[tableName],
 		})
@@ -158,9 +158,9 @@ func FetchStatusDeprecated(f *Ferry, v Verifier) *StatusDeprecated {
 
 	for _, tableName := range copyingTableNames {
 		status.TableStatuses = append(status.TableStatuses, &TableStatusDeprecated{
-			TableName:        tableName,
-			PaginationKeyName:   f.Tables[tableName].GetPaginationColumn().Name,
-			Status:           "copying",
+			TableName:                   tableName,
+			PaginationKeyName:           f.Tables[tableName].GetPaginationColumn().Name,
+			Status:                      "copying",
 			TargetPaginationKey:         targetPaginationKeys[tableName],
 			LastSuccessfulPaginationKey: lastSuccessfulPaginationKeys[tableName],
 		})
@@ -168,9 +168,9 @@ func FetchStatusDeprecated(f *Ferry, v Verifier) *StatusDeprecated {
 
 	for _, tableName := range waitingTableNames {
 		status.TableStatuses = append(status.TableStatuses, &TableStatusDeprecated{
-			TableName:        tableName,
-			PaginationKeyName:   f.Tables[tableName].GetPaginationColumn().Name,
-			Status:           "waiting",
+			TableName:                   tableName,
+			PaginationKeyName:           f.Tables[tableName].GetPaginationColumn().Name,
+			Status:                      "waiting",
 			TargetPaginationKey:         targetPaginationKeys[tableName],
 			LastSuccessfulPaginationKey: 0,
 		})

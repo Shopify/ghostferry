@@ -141,8 +141,8 @@ func (this *CopydbFerry) initializeWaitUntilReplicaIsCaughtUpToMasterConnection(
 	}
 
 	this.Ferry.WaitUntilReplicaIsCaughtUpToMaster = &ghostferry.WaitUntilReplicaIsCaughtUpToMaster{
-		MasterDB: masterDB,
-		Timeout:  timeout,
+		MasterDB:                        masterDB,
+		Timeout:                         timeout,
 		ReplicatedMasterPositionFetcher: positionFetcher,
 	}
 	return nil

@@ -9,7 +9,7 @@ import (
 
 type BatchWriterVerificationFailed struct {
 	mismatchedPaginationKeys []uint64
-	table         string
+	table                    string
 }
 
 func (e BatchWriterVerificationFailed) Error() string {

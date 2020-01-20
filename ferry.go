@@ -778,7 +778,7 @@ func (f *Ferry) Progress() *Progress {
 		s.Tables[tableName] = TableProgress{
 			LastSuccessfulPaginationKey: lastSuccessfulPaginationKey,
 			TargetPaginationKey:         targetPaginationKeys[tableName],
-			CurrentAction:    currentAction,
+			CurrentAction:               currentAction,
 		}
 	}
 

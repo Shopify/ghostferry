@@ -59,7 +59,7 @@ func TestVerificationFailsDeletedRow(t *testing.T) {
 			NumberOfWriters:     4,
 			Tables:              []string{"gftest.table1"},
 		},
-		Ferry: ferry,
+		Ferry:                   ferry,
 		DisableChecksumVerifier: true,
 	}
 
@@ -102,7 +102,7 @@ func TestVerificationFailsUpdatedRow(t *testing.T) {
 			NumberOfWriters:     4,
 			Tables:              []string{"gftest.table1"},
 		},
-		Ferry: ferry,
+		Ferry:                   ferry,
 		DisableChecksumVerifier: true,
 	}
 
@@ -149,7 +149,7 @@ func TestIgnoresColumns(t *testing.T) {
 			NumberOfWriters:     4,
 			Tables:              []string{"gftest.table1"},
 		},
-		Ferry: ferry,
+		Ferry:                   ferry,
 		DisableChecksumVerifier: true,
 	}
 
@@ -194,7 +194,7 @@ func TestIgnoresTables(t *testing.T) {
 			NumberOfWriters:     4,
 			Tables:              []string{"gftest.table1"},
 		},
-		Ferry: ferry,
+		Ferry:                   ferry,
 		DisableChecksumVerifier: true,
 	}
 
