@@ -599,14 +599,6 @@ func (v *InlineVerifier) verifyAllEventsInStore() (bool, map[string]map[string][
 	v.logger.WithField("batches", len(allBatches)).Debug("verifyAllEventsInStore")
 
 	for _, batch := range allBatches {
-		if _, exists := mismatches[batch.SchemaName]; !exists {
-			mismatches[batch.SchemaName] = make(map[string][]uint64)
-		}
-
-		if _, exists := mismatches[batch.SchemaName][batch.TableName]; !exists {
-			mismatches[batch.SchemaName][batch.TableName] = make([]uint64, 0)
-		}
-
 		batchMismatches, err := v.verifyBinlogBatch(batch)
 		if err != nil {
 			return false, nil, err
@@ -615,6 +607,15 @@ func (v *InlineVerifier) verifyAllEventsInStore() (bool, map[string]map[string][
 
 		if len(batchMismatches) > 0 {
 			mismatchFound = true
+
+			if _, exists := mismatches[batch.SchemaName]; !exists {
+				mismatches[batch.SchemaName] = make(map[string][]uint64)
+			}
+
+			if _, exists := mismatches[batch.SchemaName][batch.TableName]; !exists {
+				mismatches[batch.SchemaName][batch.TableName] = make([]uint64, 0)
+			}
+
 			mismatches[batch.SchemaName][batch.TableName] = append(mismatches[batch.SchemaName][batch.TableName], batchMismatches...)
 		}
 	}
