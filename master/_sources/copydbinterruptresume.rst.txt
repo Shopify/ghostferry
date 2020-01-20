@@ -67,7 +67,7 @@ state will be dumped to stdout with JSON. An example of this can be seen below:
         "Name": "mysql-bin.000008",
         "Pos": 193989
       },
-      "LastSuccessfulPaginationKeys": {
+      "LastSuccessfulPrimaryKeys": {
         "abc.table1": 200
       },
       "CompletedTables": {}
@@ -115,3 +115,4 @@ Some other considerations/notes:
   in the future.
 * While we are confident that the algorithm to be correct, this is still a
   highly experimental feature. USE AT YOUR OWN RISK.
+
