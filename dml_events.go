@@ -350,7 +350,7 @@ func appendEscapedValue(buffer []byte, value interface{}, column schema.TableCol
 	case string:
 		return appendEscapedString(buffer, v)
 	case []byte:
-		return appendEscapedBuffer(buffer, v, column.Type != schema.TYPE_JSON)
+		return appendEscapedBuffer(buffer, v, column.Type == schema.TYPE_JSON)
 	case bool:
 		if v {
 			return append(buffer, '1')
@@ -421,8 +421,10 @@ func appendEscapedString(buffer []byte, value string) []byte {
 	return append(buffer, '\'')
 }
 
-func appendEscapedBuffer(buffer, value []byte, binary bool) []byte {
-	if binary {
+func appendEscapedBuffer(buffer, value []byte, isJSON bool) []byte {
+	if isJSON {
+		buffer = append(buffer, "CAST("...)
+	} else {
 		buffer = append(buffer, "_binary"...)
 	}
 
@@ -437,7 +439,13 @@ func appendEscapedBuffer(buffer, value []byte, binary bool) []byte {
 		}
 	}
 
-	return append(buffer, '\'')
+	buffer = append(buffer, '\'')
+
+	if isJSON {
+		buffer = append(buffer, " AS JSON)"...)
+	}
+
+	return buffer
 }
 
 func paginationKeyFromEventData(table *TableSchema, rowData RowData) (uint64, error) {
