@@ -445,6 +445,5 @@ func paginationKeyFromEventData(table *TableSchema, rowData RowData) (uint64, er
 		return 0, err
 	}
 
-	paginationKeyIndex := table.PKColumns[0]
-	return rowData.GetUint64(paginationKeyIndex)
+	return rowData.GetUint64(table.GetPaginationKeyIndex())
 }

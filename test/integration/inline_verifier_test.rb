@@ -141,6 +141,44 @@ class InlineVerifierTest < GhostferryTestCase
   # Special values test #
   #######################
 
+  def test_catches_binlog_streamer_corruption_with_composite_pk
+    seed_random_data_in_composite_pk_table(source_db, number_of_rows: 1)
+    seed_random_data_in_composite_pk_table(target_db, number_of_rows: 0)
+
+    result = source_db.query("SELECT id FROM #{DEFAULT_FULL_TABLE_NAME} LIMIT 1")
+    corrupting_id = result.first["id"] + 1
+    enable_corrupting_insert_trigger(corrupting_id)
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: {
+      verifier_type: "Inline",
+      cascading_pagination_column_config: {
+        PerTable: {
+          DEFAULT_DB => {
+            DEFAULT_TABLE => "id"
+          },
+        },
+      }.to_json,
+    })
+
+    ghostferry.on_status(Ghostferry::Status::ROW_COPY_COMPLETED) do
+      source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, id2, data) VALUES (#{corrupting_id}, 10, 'data')")
+    end
+
+    verification_ran = false
+    incorrect_tables_found = false
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*incorrect_tables|
+      verification_ran = true
+
+      # Don't want to assert_equal here as it causes the ghostferry process to crash and mess up the error message
+      incorrect_tables_found = ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"] == incorrect_tables
+    end
+
+    ghostferry.run
+    assert verification_ran
+    assert incorrect_tables_found, "verification did not catch corrupted table"
+    assert_equal "cutover verification failed for: #{DEFAULT_DB}.#{DEFAULT_TABLE} [paginationKeys: #{corrupting_id} ] ", ghostferry.error_lines.last["msg"]
+  end
+
   def test_positive_negative_zero
     [source_db, target_db].each do |db|
       seed_random_data(db, number_of_rows: 0)
@@ -335,6 +373,21 @@ class InlineVerifierTest < GhostferryTestCase
       conf = target_db_config
       conf[:database] = DEFAULT_DB
       Mysql2::Client.new(conf)
+    end
+  end
+
+  def seed_random_data_in_composite_pk_table(connection, database_name: DEFAULT_DB, table_name: DEFAULT_TABLE, number_of_rows: 1111)
+    dbtable = full_table_name(database_name, table_name)
+
+    connection.query("CREATE DATABASE IF NOT EXISTS #{database_name}")
+    connection.query("CREATE TABLE IF NOT EXISTS #{dbtable} (id bigint(20) not null auto_increment, id2 bigint(20) not null, data TEXT, primary key(id2, id), INDEX `id` (id))")
+
+    transaction(connection) do
+      insert_statement = connection.prepare("INSERT INTO #{dbtable} (id, id2, data) VALUES (?, 10, ?)")
+
+      number_of_rows.times do
+        insert_statement.execute(nil, rand_data)
+      end
     end
   end
 end

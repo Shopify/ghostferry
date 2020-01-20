@@ -82,9 +82,9 @@ func (s BinlogVerifySerializedStore) Copy() BinlogVerifySerializedStore {
 }
 
 type BinlogVerifyBatch struct {
-	SchemaName string
-	TableName  string
-	PaginationKeys        []uint64
+	SchemaName     string
+	TableName      string
+	PaginationKeys []uint64
 }
 
 func NewBinlogVerifyStore() *BinlogVerifyStore {
@@ -182,9 +182,9 @@ func (s *BinlogVerifyStore) Batches(batchsize int) []BinlogVerifyBatch {
 				paginationKeyBatch = append(paginationKeyBatch, paginationKey)
 				if len(paginationKeyBatch) >= batchsize {
 					batches = append(batches, BinlogVerifyBatch{
-						SchemaName: schemaName,
-						TableName:  tableName,
-						PaginationKeys:        paginationKeyBatch,
+						SchemaName:     schemaName,
+						TableName:      tableName,
+						PaginationKeys: paginationKeyBatch,
 					})
 					paginationKeyBatch = make([]uint64, 0, batchsize)
 				}
@@ -192,9 +192,9 @@ func (s *BinlogVerifyStore) Batches(batchsize int) []BinlogVerifyBatch {
 
 			if len(paginationKeyBatch) > 0 {
 				batches = append(batches, BinlogVerifyBatch{
-					SchemaName: schemaName,
-					TableName:  tableName,
-					PaginationKeys:        paginationKeyBatch,
+					SchemaName:     schemaName,
+					TableName:      tableName,
+					PaginationKeys: paginationKeyBatch,
 				})
 			}
 		}
