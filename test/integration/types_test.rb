@@ -86,7 +86,7 @@ class TypesTest < GhostferryTestCase
     end
 
     ghostferry.run
-    refute timedout
+    refute timedout, "failed due to time out while waiting for the 4 insert binlogs to be written to the target"
 
     res = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
     assert_equal 0, res.first["cnt"]
@@ -132,7 +132,7 @@ class TypesTest < GhostferryTestCase
     end
 
     ghostferry.run
-    refute timedout
+    refute timedout, "failed due to time out while waiting for the 4 insert binlogs to be written to the target"
 
     res = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
     assert_equal 4, res.first["cnt"]
