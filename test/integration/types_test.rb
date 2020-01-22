@@ -10,11 +10,7 @@ class TypesTest < GhostferryTestCase
   JSON_NUMBER = '42'
 
   def test_json_colum_not_null_with_no_default_is_invalid_this_is_fine
-    # See:
-    # - https://github.com/mysql/mysql-server/commit/f538d494292127768094084a082997b94a96f2db
-    # - https://bugs.mysql.com/bug.php?id=87734
-    # - https://github.com/siddontang/go-mysql/issues/266
-    # - https://github.com/siddontang/go-mysql/issues/267
+    # See: https://bugs.mysql.com/bug.php?id=98496
 
     # source_db and target_db are global for the test, we don't want to activate
     # non strict mode for that and leak over to other tests.

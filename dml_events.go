@@ -423,6 +423,11 @@ func appendEscapedString(buffer []byte, value string) []byte {
 
 func appendEscapedBuffer(buffer, value []byte, isJSON bool) []byte {
 	if isJSON {
+		// See https://bugs.mysql.com/bug.php?id=98496
+		if len(value) == 0 {
+			value = []byte("null")
+		}
+
 		buffer = append(buffer, "CAST("...)
 	} else {
 		buffer = append(buffer, "_binary"...)
