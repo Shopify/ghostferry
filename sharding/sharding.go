@@ -20,7 +20,7 @@ type ShardingFerry struct {
 func NewFerry(config *Config) (*ShardingFerry, error) {
 	var err error
 
-	config.DatabaseRewrites = map[string]string{config.SourceDB: config.TargetDB}
+	config.DatabaseRewrites = map[string]string{config.SourceSchema: config.TargetSchema}
 
 	config.CopyFilter = &ShardedCopyFilter{
 		ShardingKey:   config.ShardingKey,
@@ -37,7 +37,7 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 
 	config.TableFilter = &ShardedTableFilter{
 		ShardingKey:   config.ShardingKey,
-		SourceShard:   config.SourceDB,
+		SourceShard:   config.SourceSchema,
 		JoinedTables:  config.JoinedTables,
 		IgnoredTables: ignored,
 	}
