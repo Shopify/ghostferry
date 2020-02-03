@@ -86,7 +86,7 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 		var batch *RowBatch
 		var paginationKeypos uint64
 
-		err := WithRetries(c.ReadRetries, 0, c.logger, "fetch rows", func() (err error) {
+		err := WithRetries(c.ReadRetries, 60, c.logger, "fetch rows", func() (err error) {
 			if c.Throttler != nil {
 				WaitForThrottle(c.Throttler)
 			}
