@@ -159,17 +159,18 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 		}()
 	}
 
-	i := 0
 	loggingIncrement := len(tablesWithData) / 50
 	if loggingIncrement == 0 {
 		loggingIncrement = 1
 	}
 
-	for table, _ := range tablesWithData {
-		tablesQueue <- table
+	sortedWithData := ByMaxKeyDesc{}.Sort(tablesWithData)
+
+	for i := 0; i < len(sortedWithData); i++ {
+		tablesQueue <- sortedWithData[i].TableSchema
 		i++
 		if i%loggingIncrement == 0 {
-			d.logger.WithField("table", table.String()).Infof("queued table for processing (%d/%d)", i, len(tablesWithData))
+			d.logger.WithField("table", sortedWithData[i].TableSchema.String()).Infof("queued table for processing (%d/%d)", i, len(sortedWithData))
 		}
 	}
 
