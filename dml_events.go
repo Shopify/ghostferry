@@ -25,6 +25,18 @@ func (r RowData) GetUint64(colIdx int) (res uint64, err error) {
 		if err != nil {
 			return 0, err
 		}
+	} else if _, ok := r[colIdx].(uint64); ok {
+		unsignedInt := reflect.ValueOf(r[colIdx]).Uint()
+		if unsignedInt < 0 {
+			return 0, fmt.Errorf("expected position %d in row to contain an unsigned number", colIdx)
+		}
+		res = unsignedInt
+	} else if _, ok := r[colIdx].(uint32); ok {
+		unsignedInt := reflect.ValueOf(r[colIdx]).Uint()
+		if unsignedInt < 0 {
+			return 0, fmt.Errorf("expected position %d in row to contain an unsigned number", colIdx)
+		}
+		res = uint64(unsignedInt)
 	} else {
 		signedInt := reflect.ValueOf(r[colIdx]).Int()
 		if signedInt < 0 {
@@ -429,6 +441,10 @@ func appendEscapedBuffer(buffer, value []byte, isJSON bool) []byte {
 		}
 
 		buffer = append(buffer, "CAST("...)
+		if len(value) == 0 {
+			buffer = append(buffer, "'null' AS JSON)"...)
+			return buffer
+		}
 	} else {
 		buffer = append(buffer, "_binary"...)
 	}
