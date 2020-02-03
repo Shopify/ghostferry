@@ -77,7 +77,7 @@ func (c *DatabaseConfig) MySQLConfig() (*mysql.Config, error) {
 			return nil, fmt.Errorf("failed to build TLS config: %v", err)
 		}
 
-		cfgName := fmt.Sprintf("%s@%s:%s", c.User, c.Host, c.Port)
+		cfgName := fmt.Sprintf("%s@%s:%d", c.User, c.Host, c.Port)
 
 		err = mysql.RegisterTLSConfig(cfgName, tlsConfig)
 		if err != nil {
