@@ -168,10 +168,10 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 
 	for i := 0; i < len(sortedWithData); i++ {
 		tablesQueue <- sortedWithData[i].TableSchema
-		i++
 		if i%loggingIncrement == 0 {
 			d.logger.WithField("table", sortedWithData[i].TableSchema.String()).Infof("queued table for processing (%d/%d)", i, len(sortedWithData))
 		}
+		i++
 	}
 
 	d.logger.Info("done queueing tables to be iterated, closing table channel")
