@@ -436,6 +436,10 @@ func appendEscapedString(buffer []byte, value string) []byte {
 func appendEscapedBuffer(buffer, value []byte, isJSON bool) []byte {
 	if isJSON {
 		buffer = append(buffer, "CAST("...)
+		if len(value) == 0 {
+			buffer = append(buffer, "'null' AS JSON)"...)
+			return buffer
+		}
 	} else {
 		buffer = append(buffer, "_binary"...)
 	}
