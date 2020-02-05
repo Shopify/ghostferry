@@ -601,7 +601,8 @@ func (f *Ferry) Run() {
 
 	go func() {
 		defer dataIteratorWg.Done()
-		f.DataIterator.Run(f.Tables.AsSlice())
+		//f.DataIterator.Run(f.Tables.AsSlice())
+		f.DataIterator.RunAsync(f.Tables.AsSlice())
 	}()
 
 	dataIteratorWg.Wait()
