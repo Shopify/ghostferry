@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/copydb"
@@ -33,6 +34,7 @@ func errorAndExit(msg string) {
 }
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	flag.Parse()
 	if flag.NArg() == 0 {
 		usage()
