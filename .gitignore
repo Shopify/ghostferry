@@ -17,3 +17,6 @@
 build/
 .bundle/
 .vscode/
+
+.idea/
+bin/
