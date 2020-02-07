@@ -36,7 +36,7 @@ func (w *BatchWriter) Initialize() {
 }
 
 func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
-	return WithRetries(w.WriteRetries, 0, w.logger, "write batch to target", func() error {
+	return WithRetries(w.WriteRetries, 30, w.logger, "write batch to target", func() error {
 		values := batch.Values()
 		if len(values) == 0 {
 			return nil

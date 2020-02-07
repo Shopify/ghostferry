@@ -651,7 +651,7 @@ func (v *InlineVerifier) verifyBinlogBatch(batch BinlogVerifyBatch) ([]uint64, e
 	var sourceErr error
 	go func() {
 		defer wg.Done()
-		sourceErr = WithRetries(5, 0, v.logger, "get fingerprints from source db", func() (err error) {
+		sourceErr = WithRetries(15, 15, v.logger, "get fingerprints from source db", func() (err error) {
 			sourceFingerprints, sourceDecompressedData, err = v.getFingerprintDataFromSourceDb(
 				batch.SchemaName, batch.TableName,
 				nil, // No transaction
@@ -667,7 +667,7 @@ func (v *InlineVerifier) verifyBinlogBatch(batch BinlogVerifyBatch) ([]uint64, e
 	var targetErr error
 	go func() {
 		defer wg.Done()
-		targetErr = WithRetries(5, 0, v.logger, "get fingerprints from target db", func() (err error) {
+		targetErr = WithRetries(15, 30, v.logger, "get fingerprints from target db", func() (err error) {
 			targetFingerprints, targetDecompressedData, err = v.getFingerprintDataFromTargetDb(
 				targetSchema, targetTable,
 				nil, // No transaction
