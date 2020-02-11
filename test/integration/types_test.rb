@@ -9,6 +9,82 @@ class TypesTest < GhostferryTestCase
   JSON_FALSE = 'false'
   JSON_NUMBER = '42'
 
+  def test_json_colum_not_null_with_no_default_is_invalid_this_is_fine
+    # See: https://bugs.mysql.com/bug.php?id=98496
+
+    # source_db and target_db are global for the test, we don't want to activate
+    # non strict mode for that and leak over to other tests.
+    nonstrict_source_db = Mysql2::Client.new(source_db_config)
+    nonstrict_target_db = Mysql2::Client.new(target_db_config)
+
+    [nonstrict_source_db, nonstrict_target_db].each do |db|
+      db.query("set session sql_mode=''")
+      db.query("CREATE DATABASE IF NOT EXISTS #{DEFAULT_DB}")
+      db.query("CREATE TABLE IF NOT EXISTS #{DEFAULT_FULL_TABLE_NAME} (id bigint(20) not null auto_increment, data JSON NOT NULL, primary key(id))")
+    end
+
+    nonstrict_source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id) VALUES (1)")
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+
+    verification_ran = false
+    incorrect_tables_found = true
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*incorrect_tables|
+      verification_ran = true
+
+      # Don't want to assert_equal here as it causes the ghostferry process to crash and mess up the error message
+      incorrect_tables_found = ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"] == incorrect_tables
+    end
+
+    ghostferry.on_status(Ghostferry::Status::BINLOG_STREAMING_STARTED) do
+      nonstrict_source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id) VALUES (2)")
+      nonstrict_source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id) VALUES (3)")
+      nonstrict_source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id) VALUES (4)")
+    end
+
+    timedout = false
+    ghostferry.on_status(Ghostferry::Status::ROW_COPY_COMPLETED) do
+      # Need to make sure we don't flush binlogs until we affirmatively see the
+      # 3 rows on the target and issue the DELETE statements
+      start = Time.now
+
+      loop do
+        sleep 0.1
+        res = nonstrict_target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
+        if res.first["cnt"] == 4
+          nonstrict_source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'true' WHERE id = 2")
+          nonstrict_source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'null' WHERE id = 3")
+          nonstrict_source_db.query("DELETE FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = 4")
+          break
+        end
+
+        if Time.now - start > 10
+          timedout = true
+          break
+        end
+      end
+    end
+
+    ghostferry.run
+
+    assert verification_ran
+    refute incorrect_tables_found, "data should be correctly copied but verifier says it is not"
+
+    res = nonstrict_target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
+    assert_equal 3, res.first["cnt"]
+
+    expected = [
+      {"id"=>1, "data"=>"null"},
+      {"id"=>2, "data"=>"true"},
+      {"id"=>3, "data"=>"null"},
+    ]
+
+    res = nonstrict_target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME} ORDER BY id ASC")
+    res.zip(expected).each do |row, expected_row|
+      assert_equal expected_row, row
+    end
+  end
+
   def test_json_data_insert
     [source_db, target_db].each do |db|
       db.query("CREATE DATABASE IF NOT EXISTS #{DEFAULT_DB}")
