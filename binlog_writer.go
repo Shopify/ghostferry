@@ -3,6 +3,7 @@ package ghostferry
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -51,7 +52,7 @@ func (b *BinlogWriter) Run() {
 			}
 		}
 
-		err := WithRetries(b.WriteRetries, 60, b.logger, "write events to target", func() error {
+		err := WithRetries(b.WriteRetries, time.Second*5, b.logger, "write events to target", func() error {
 			return b.writeEvents(batch)
 		})
 		if err != nil {

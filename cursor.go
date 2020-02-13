@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Masterminds/squirrel"
 	"github.com/siddontang/go-mysql/schema"
@@ -86,7 +87,7 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 		var batch *RowBatch
 		var paginationKeypos uint64
 
-		err := WithRetries(c.ReadRetries, 60, c.logger, "fetch rows", func() (err error) {
+		err := WithRetries(c.ReadRetries, time.Second*15, c.logger, "fetch rows", func() (err error) {
 			if c.Throttler != nil {
 				WaitForThrottle(c.Throttler)
 			}

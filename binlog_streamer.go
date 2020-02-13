@@ -126,7 +126,7 @@ func (s *BinlogStreamer) Run() {
 		var ev *replication.BinlogEvent
 		var timedOut bool
 
-		err := WithRetries(10, 15, s.logger, "get binlog event", func() (er error) {
+		err := WithRetries(5, time.Second*30, s.logger, "get binlog event", func() (er error) {
 			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 			defer cancel()
 			ev, er = s.binlogStreamer.GetEvent(ctx)
