@@ -167,11 +167,11 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 	sortedWithData := ByMaxKeyDesc{}.Sort(tablesWithData)
 
 	for i := 0; i < len(sortedWithData); i++ {
-		tablesQueue <- sortedWithData[i].TableSchema
+		idx := i
+		tablesQueue <- sortedWithData[idx].TableSchema
 		if i%loggingIncrement == 0 {
-			d.logger.WithField("table", sortedWithData[i].TableSchema.String()).Infof("queued table for processing (%d/%d)", i, len(sortedWithData))
+			d.logger.WithField("table", sortedWithData[idx].TableSchema.String()).Infof("queued table for processing (%d/%d)", idx+1, len(sortedWithData))
 		}
-		i++
 	}
 
 	d.logger.Info("done queueing tables to be iterated, closing table channel")
