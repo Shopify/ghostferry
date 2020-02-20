@@ -52,7 +52,7 @@ func (b *BinlogWriter) Run() {
 			}
 		}
 
-		err := WithRetries(b.WriteRetries, time.Second*5, b.logger, "write events to target", func() error {
+		err := WithRetries(b.WriteRetries*10, time.Second*30, b.logger, "write events to target", func() error {
 			return b.writeEvents(batch)
 		})
 		if err != nil {
