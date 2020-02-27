@@ -29,7 +29,7 @@ func (this *BinlogStreamerTestSuite) SetupTest() {
 	this.Require().Nil(err)
 
 	sourceDSN := sourceConfig.FormatDSN()
-	this.sourceDb, err = sql.Open("mysql", sourceDSN)
+	this.sourceDb, err = sql.Open("mysql", sourceDSN, testFerry.Source.Marginalia)
 	if err != nil {
 		this.Fail("failed to connect to source database")
 	}

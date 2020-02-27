@@ -49,12 +49,15 @@ func (this *TLSConfig) BuildConfig() (*tls.Config, error) {
 }
 
 type DatabaseConfig struct {
-	Host      string
-	Port      uint16
-	User      string
-	Pass      string
-	Collation string
-	Params    map[string]string
+	Host       string
+	Port       uint16
+	User       string
+	Pass       string
+	Collation  string
+	Params     map[string]string
+	// SQL query comments to differentiate Ghostferry's binlog events
+	// Optional: defaults to empty string (no comments)
+	Marginalia string
 
 	TLS *TLSConfig
 }
@@ -126,7 +129,7 @@ func (c *DatabaseConfig) SqlDB(logger *logrus.Entry) (*sql.DB, error) {
 		logger.WithField("dsn", MaskedDSN(dbCfg)).Info("connecting to database")
 	}
 
-	return sql.Open("mysql", dbCfg.FormatDSN())
+	return sql.Open("mysql", dbCfg.FormatDSN(), c.Marginalia)
 }
 
 func (c *DatabaseConfig) assertParamSet(param, value string) error {

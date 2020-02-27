@@ -16,6 +16,14 @@ func setupSingleEntryTable(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB)
 	testhelpers.SeedInitialData(targetDB, "gftest", "table1", 0)
 }
 
+func annotate(queries []string, marginalia string) []string {
+	annotatedQueries := make([]string, len(queries))
+	for i, q := range queries {
+		annotatedQueries[i] = sql.Annotate(q, marginalia)
+	}
+	return annotatedQueries
+}
+
 func TestSelectUpdateBinlogCopy(t *testing.T) {
 	testcase := testhelpers.IntegrationTestCase{
 		T:           t,
@@ -36,6 +44,8 @@ func TestSelectUpdateBinlogCopy(t *testing.T) {
 				}
 			}(queries[i])
 		}
+
+		queries = annotate(queries, testcase.Ferry.Source.Marginalia)
 
 		// Waiting for sure until we can see the queries as they will be
 		// locked due to the SELECT FOR UPDATE that is being performed.
