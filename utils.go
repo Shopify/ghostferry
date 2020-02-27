@@ -3,9 +3,10 @@ package ghostferry
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
+	sqlorig "database/sql"
 	"encoding/binary"
 	"fmt"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -145,16 +146,16 @@ loop:
 
 type StmtCache struct {
 	mut        sync.RWMutex
-	statements map[string]*sql.Stmt
+	statements map[string]*sqlorig.Stmt
 }
 
 func NewStmtCache() *StmtCache {
 	return &StmtCache{
-		statements: make(map[string]*sql.Stmt),
+		statements: make(map[string]*sqlorig.Stmt),
 	}
 }
 
-func (c *StmtCache) StmtFor(p SqlPreparer, query string) (*sql.Stmt, error) {
+func (c *StmtCache) StmtFor(p SqlPreparer, query string) (*sqlorig.Stmt, error) {
 	stmt, exists := c.getStmt(query)
 	if !exists {
 		return c.newStmtFor(p, query)
@@ -162,7 +163,7 @@ func (c *StmtCache) StmtFor(p SqlPreparer, query string) (*sql.Stmt, error) {
 	return stmt, nil
 }
 
-func (c *StmtCache) newStmtFor(p SqlPreparer, query string) (*sql.Stmt, error) {
+func (c *StmtCache) newStmtFor(p SqlPreparer, query string) (*sqlorig.Stmt, error) {
 	stmt, err := p.Prepare(query)
 	if err != nil {
 		return nil, err
@@ -172,13 +173,13 @@ func (c *StmtCache) newStmtFor(p SqlPreparer, query string) (*sql.Stmt, error) {
 	return stmt, nil
 }
 
-func (c *StmtCache) storeStmt(query string, stmt *sql.Stmt) {
+func (c *StmtCache) storeStmt(query string, stmt *sqlorig.Stmt) {
 	c.mut.Lock()
 	defer c.mut.Unlock()
 	c.statements[query] = stmt
 }
 
-func (c *StmtCache) getStmt(query string) (*sql.Stmt, bool) {
+func (c *StmtCache) getStmt(query string) (*sqlorig.Stmt, bool) {
 	c.mut.RLock()
 	defer c.mut.RUnlock()
 	stmt, exists := c.statements[query]
@@ -212,7 +213,7 @@ func ShowMasterStatusBinlogPosition(db *sql.DB) (mysql.Position, error) {
 
 func NewMysqlPosition(file string, position uint32, err error) (mysql.Position, error) {
 	switch {
-	case err == sql.ErrNoRows:
+	case err == sqlorig.ErrNoRows:
 		return mysql.Position{}, fmt.Errorf("no results from show master status")
 	case err != nil:
 		return mysql.Position{}, err

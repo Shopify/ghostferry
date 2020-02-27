@@ -1,8 +1,9 @@
 package ghostferry
 
 import (
-	"database/sql"
+	sqlorig "database/sql"
 	"fmt"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"strings"
 
 	"github.com/Masterminds/squirrel"
@@ -12,7 +13,7 @@ import (
 
 // both `sql.Tx` and `sql.DB` allow a SQL query to be `Prepare`d
 type SqlPreparer interface {
-	Prepare(string) (*sql.Stmt, error)
+	Prepare(string) (*sqlorig.Stmt, error)
 }
 
 type SqlDBWithFakeRollback struct {
@@ -255,7 +256,7 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos uint64
 	return
 }
 
-func ScanGenericRow(rows *sql.Rows, columnCount int) (RowData, error) {
+func ScanGenericRow(rows *sqlorig.Rows, columnCount int) (RowData, error) {
 	values := make(RowData, columnCount)
 	valuePtrs := make(RowData, columnCount)
 
@@ -267,7 +268,7 @@ func ScanGenericRow(rows *sql.Rows, columnCount int) (RowData, error) {
 	return values, err
 }
 
-func ScanByteRow(rows *sql.Rows, columnCount int) ([][]byte, error) {
+func ScanByteRow(rows *sqlorig.Rows, columnCount int) ([][]byte, error) {
 	values := make([][]byte, columnCount)
 	valuePtrs := make(RowData, columnCount)
 

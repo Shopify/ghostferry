@@ -1,8 +1,8 @@
 package ghostferry
 
 import (
-	"database/sql"
 	"errors"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math"
 	"time"
 

@@ -2,10 +2,10 @@ package ghostferry
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math"
 	"net/http"
 	"os"

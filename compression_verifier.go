@@ -2,10 +2,11 @@ package ghostferry
 
 import (
 	"crypto/md5"
-	"database/sql"
+	sqlorig "database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"strconv"
 	"strings"
 
@@ -207,7 +208,7 @@ func NewCompressionVerifier(tableColumnCompressions TableColumnCompressionConfig
 	return compressionVerifier, nil
 }
 
-func getRows(db *sql.DB, schema, table, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []uint64) (*sql.Rows, error) {
+func getRows(db *sql.DB, schema, table, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []uint64) (*sqlorig.Rows, error) {
 	quotedPaginationKey := quoteField(paginationKeyColumn)
 	sql, args, err := rowSelector(columns, paginationKeyColumn).
 		From(QuotedTableNameFromString(schema, table)).

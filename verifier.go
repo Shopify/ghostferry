@@ -1,9 +1,10 @@
 package ghostferry
 
 import (
-	"database/sql"
+	sqlorig "database/sql"
 	"errors"
 	"fmt"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"sync"
 	"time"
 
@@ -188,9 +189,9 @@ func (v *ChecksumTableVerifier) VerifyDuringCutover() (VerificationResult, error
 	return NewCorrectVerificationResult(), nil
 }
 
-func (v *ChecksumTableVerifier) fetchChecksumValueFromRow(row *sql.Row) (int64, error) {
+func (v *ChecksumTableVerifier) fetchChecksumValueFromRow(row *sqlorig.Row) (int64, error) {
 	var tablename string
-	var checksum sql.NullInt64
+	var checksum sqlorig.NullInt64
 
 	err := row.Scan(&tablename, &checksum)
 	if err != nil {

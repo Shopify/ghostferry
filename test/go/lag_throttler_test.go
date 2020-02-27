@@ -2,7 +2,7 @@ package test
 
 import (
 	"context"
-	"database/sql"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"sync"
 	"testing"
 	"time"

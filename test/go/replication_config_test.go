@@ -1,8 +1,8 @@
 package test
 
 import (
-	"database/sql"
 	"fmt"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math"
 	"testing"
 

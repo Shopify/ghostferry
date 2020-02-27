@@ -1,8 +1,9 @@
 package ghostferry
 
 import (
-	"database/sql"
+	sqlorig "database/sql"
 	"fmt"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"strings"
 
 	sq "github.com/Masterminds/squirrel"
@@ -172,7 +173,7 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 		for _, table := range tableNames {
 			tableLog := dbLog.WithField("table", table)
 			tableLog.Debug("fetching table schema")
-			tableSchema, err := schema.NewTableFromSqlDB(db, dbname, table)
+			tableSchema, err := schema.NewTableFromSqlDB(db.DB, dbname, table)
 			if err != nil {
 				tableLog.WithError(err).Error("cannot fetch table schema from source db")
 				return tableSchemaCache, err
@@ -357,7 +358,7 @@ func maxPaginationKey(db *sql.DB, table *TableSchema) (uint64, bool, error) {
 	err = db.QueryRow(query, args...).Scan(&maxPaginationKey)
 
 	switch {
-	case err == sql.ErrNoRows:
+	case err == sqlorig.ErrNoRows:
 		return 0, false, nil
 	case err != nil:
 		return 0, false, err

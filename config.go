@@ -3,9 +3,9 @@ package ghostferry
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"database/sql"
 	"errors"
 	"fmt"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"io/ioutil"
 	"time"
 
