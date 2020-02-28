@@ -406,58 +406,61 @@ func (v *InlineVerifier) getFingerprintDataFromTargetDb(schemaName, tableName st
 }
 
 func (v *InlineVerifier) getFingerprintDataFromDb(db *sql.DB, stmtCache *StmtCache, schemaName, tableName string, tx *sql.Tx, table *TableSchema, paginationKeys []uint64) (map[uint64][]byte, map[uint64]map[string][]byte, error) {
-	fingerprintQuery := table.FingerprintQuery(schemaName, tableName, len(paginationKeys))
-	fingerprintStmt, err := stmtCache.StmtFor(db, fingerprintQuery)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if tx != nil {
-		fingerprintStmt = tx.Stmt(fingerprintStmt)
-	}
-
-	args := make([]interface{}, len(paginationKeys))
-	for i, paginationKey := range paginationKeys {
-		args[i] = paginationKey
-	}
-
-	rows, err := fingerprintStmt.Query(args...)
-
-	columns, err := rows.Columns()
-	if err != nil {
-		return nil, nil, err
-	}
-
 	fingerprints := make(map[uint64][]byte)                // paginationKey -> fingerprint
 	decompressedData := make(map[uint64]map[string][]byte) // paginationKey -> columnName -> decompressedData
 
-	for rows.Next() {
-		rowData, err := ScanByteRow(rows, len(columns))
+	err := WithRetries(50, time.Second*5, v.logger, "get fingerprintdatafromdb", func() error {
+		fingerprintQuery := table.FingerprintQuery(schemaName, tableName, len(paginationKeys))
+		fingerprintStmt, err := stmtCache.StmtFor(db, fingerprintQuery)
 		if err != nil {
-			return nil, nil, err
+			return err
 		}
 
-		paginationKey, err := strconv.ParseUint(string(rowData[0]), 10, 64)
-		if err != nil {
-			return nil, nil, err
+		if tx != nil {
+			fingerprintStmt = tx.Stmt(fingerprintStmt)
 		}
 
-		fingerprints[paginationKey] = rowData[1]
-		decompressedData[paginationKey] = make(map[string][]byte)
+		args := make([]interface{}, len(paginationKeys))
+		for i, paginationKey := range paginationKeys {
+			args[i] = paginationKey
+		}
 
-		// Note that the FingerprintQuery returns the columns: paginationKey, fingerprint,
-		// compressedData1, compressedData2, ...
-		// If there are no compressed data, only 2 columns are returned and this
-		// loop will be skipped.
-		for i := 2; i < len(columns); i++ {
-			decompressedData[paginationKey][columns[i]], err = v.decompressData(table, columns[i], rowData[i])
+		rows, err := fingerprintStmt.Query(args...)
+
+		columns, err := rows.Columns()
+		if err != nil {
+			return err
+		}
+
+		for rows.Next() {
+			rowData, err := ScanByteRow(rows, len(columns))
 			if err != nil {
-				return nil, nil, err
+				return err
+			}
+
+			paginationKey, err := strconv.ParseUint(string(rowData[0]), 10, 64)
+			if err != nil {
+				return err
+			}
+
+			fingerprints[paginationKey] = rowData[1]
+			decompressedData[paginationKey] = make(map[string][]byte)
+
+			// Note that the FingerprintQuery returns the columns: paginationKey, fingerprint,
+			// compressedData1, compressedData2, ...
+			// If there are no compressed data, only 2 columns are returned and this
+			// loop will be skipped.
+			for i := 2; i < len(columns); i++ {
+				decompressedData[paginationKey][columns[i]], err = v.decompressData(table, columns[i], rowData[i])
+				if err != nil {
+					return err
+				}
 			}
 		}
-	}
+		return nil
+	})
 
-	return fingerprints, decompressedData, nil
+	return fingerprints, decompressedData, err
 }
 
 func (v *InlineVerifier) decompressData(table *TableSchema, column string, compressed []byte) ([]byte, error) {
