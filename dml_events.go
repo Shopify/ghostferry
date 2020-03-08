@@ -348,7 +348,11 @@ func appendEscapedValue(buffer []byte, value interface{}, column schema.TableCol
 
 	switch v := value.(type) {
 	case string:
-		return appendEscapedString(buffer, v)
+		var padToLength uint
+		if column.Type == schema.TYPE_BINARY {
+			padToLength = column.FixedSize
+		}
+		return appendEscapedString(buffer, v, padToLength)
 	case []byte:
 		return appendEscapedBuffer(buffer, v, column.Type == schema.TYPE_JSON)
 	case bool:
@@ -362,7 +366,7 @@ func appendEscapedValue(buffer []byte, value interface{}, column schema.TableCol
 	case float32:
 		return strconv.AppendFloat(buffer, float64(v), 'g', -1, 64)
 	case decimal.Decimal:
-		return appendEscapedString(buffer, v.String())
+		return appendEscapedString(buffer, v.String(), 0)
 	default:
 		panic(fmt.Sprintf("unsupported type %t", value))
 	}
@@ -406,16 +410,20 @@ func Int64Value(value interface{}) (int64, bool) {
 //
 // ref: https://github.com/mysql/mysql-server/blob/mysql-5.7.5/mysys/charset.c#L963-L1038
 // ref: https://github.com/go-sql-driver/mysql/blob/9181e3a86a19bacd63e68d43ae8b7b36320d8092/utils.go#L717-L758
-func appendEscapedString(buffer []byte, value string) []byte {
+func appendEscapedString(buffer []byte, value string, padToLength uint) []byte {
 	buffer = append(buffer, '\'')
 
-	for i := 0; i < len(value); i++ {
+	var i int
+	for i = 0; i < len(value); i++ {
 		c := value[i]
 		if c == '\'' {
 			buffer = append(buffer, '\'', '\'')
 		} else {
 			buffer = append(buffer, c)
 		}
+	}
+	for ; i < int(padToLength); i++ {
+		buffer = append(buffer, 0)
 	}
 
 	return append(buffer, '\'')

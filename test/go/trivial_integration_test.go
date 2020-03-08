@@ -149,12 +149,11 @@ func TestCopyDataInFixedSizeBinaryColumn(t *testing.T) {
 	// would it know that "updates are complete"?)
 	maxWaitForUpdates := 5 * time.Second
 
-	// XXX: If one changes the below line to be
-	//
-	// insertedData := "ABC\x00"
-	//
-	// the update stops working. This is a bug in how we process fixed-length binary columns
-	insertedData := "ABCD"
+	// NOTE: We explicitly test with trailing 0s, because the MySQL replication master will strip
+	// such trailing 0s when streaming events to us. As a result, the binlog writer must explicitly
+	// add then when building update/delete statements, as the WHERE clause would not match existing
+	// rows in the target DB
+	insertedData := "ABC\x00"
 	updatedData := "DEFG"
 
 	testcase := &testhelpers.IntegrationTestCase{
