@@ -348,7 +348,13 @@ func appendEscapedValue(buffer []byte, value interface{}, column schema.TableCol
 
 	switch v := value.(type) {
 	case string:
-		return appendEscapedString(buffer, v)
+		var rightPadLengthForBinaryColumn int
+		// see appendEscapedString() for details why we need special
+		// handling of BINARY column types
+		if column.Type == schema.TYPE_BINARY {
+			rightPadLengthForBinaryColumn = int(column.FixedSize)
+		}
+		return appendEscapedString(buffer, v, rightPadLengthForBinaryColumn)
 	case []byte:
 		return appendEscapedBuffer(buffer, v, column.Type == schema.TYPE_JSON)
 	case bool:
@@ -362,7 +368,7 @@ func appendEscapedValue(buffer []byte, value interface{}, column schema.TableCol
 	case float32:
 		return strconv.AppendFloat(buffer, float64(v), 'g', -1, 64)
 	case decimal.Decimal:
-		return appendEscapedString(buffer, v.String())
+		return appendEscapedString(buffer, v.String(), 0)
 	default:
 		panic(fmt.Sprintf("unsupported type %t", value))
 	}
@@ -406,10 +412,25 @@ func Int64Value(value interface{}) (int64, bool) {
 //
 // ref: https://github.com/mysql/mysql-server/blob/mysql-5.7.5/mysys/charset.c#L963-L1038
 // ref: https://github.com/go-sql-driver/mysql/blob/9181e3a86a19bacd63e68d43ae8b7b36320d8092/utils.go#L717-L758
-func appendEscapedString(buffer []byte, value string) []byte {
+//
+// We need to support right-padding of the generated string using 0-bytes to
+// mimic what a MySQL server would do for BINARY columns (with fixed length).
+//
+// ref: https://github.com/Shopify/ghostferry/pull/159
+//
+// This is specifically mentioned in the the below link:
+//
+//    When BINARY values are stored, they are right-padded with the pad value
+//    to the specified length. The pad value is 0x00 (the zero byte). Values
+//    are right-padded with 0x00 for inserts, and no trailing bytes are removed
+//    for retrievals.
+//
+// ref: https://dev.mysql.com/doc/refman/5.7/en/binary-varbinary.html
+func appendEscapedString(buffer []byte, value string, rightPadToLengthWithZeroBytes int) []byte {
 	buffer = append(buffer, '\'')
 
-	for i := 0; i < len(value); i++ {
+	var i int
+	for i = 0; i < len(value); i++ {
 		c := value[i]
 		if c == '\'' {
 			buffer = append(buffer, '\'', '\'')
@@ -417,8 +438,20 @@ func appendEscapedString(buffer []byte, value string) []byte {
 			buffer = append(buffer, c)
 		}
 	}
+	// continue 0-padding up to the desired length as provided by the
+	// caller
+	if i < rightPadToLengthWithZeroBytes {
+		buffer = rightPadBufferWithZeroBytes(buffer, rightPadToLengthWithZeroBytes-i)
+	}
 
 	return append(buffer, '\'')
+}
+
+func rightPadBufferWithZeroBytes(buffer []byte, padLength int) []byte {
+	for i := 0; i < padLength; i++ {
+		buffer = append(buffer, '\x00')
+	}
+	return buffer
 }
 
 func appendEscapedBuffer(buffer, value []byte, isJSON bool) []byte {

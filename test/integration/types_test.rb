@@ -268,6 +268,94 @@ class TypesTest < GhostferryTestCase
     end
   end
 
+  def test_decimal
+    # decimals are treated specially in binlog writing (they are inserted after
+    # conversion to string), so we add this test to make sure we don't corrupt
+    # data in the process
+    [source_db, target_db].each do |db|
+      db.query("CREATE DATABASE IF NOT EXISTS #{DEFAULT_DB}")
+      db.query("CREATE TABLE IF NOT EXISTS #{DEFAULT_FULL_TABLE_NAME} (id bigint(20) not null auto_increment, data decimal, primary key(id))")
+    end
+
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, 2)")
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+
+    row_copy_called = false
+    ghostferry.on_status(Ghostferry::Status::ROW_COPY_COMPLETED) do
+      # this hook follows the design in the helper method
+      # execute_copy_data_in_fixed_size_binary_column below. See detailed
+      # comments there
+      res = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME}")
+      assert_equal 1, res.count
+      res.each do |row|
+        assert_equal 1, row["id"]
+        assert_equal 2, row["data"]
+      end
+
+      source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (3, 4)")
+      source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 5 WHERE id = 1")
+
+      row_copy_called = true
+    end
+
+    ghostferry.run
+
+    assert row_copy_called
+    assert_test_table_is_identical
+    res = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME}")
+    assert_equal 2, res.count
+    res.each do |row|
+      if row["id"] == 1
+        assert_equal 5, row["data"]
+      else
+        assert_equal 3, row["id"]
+        assert_equal 4, row["data"]
+      end
+    end
+  end
+
+  def test_copy_data_in_fixed_size_binary_column
+    # NOTE: We explicitly test with a value that is shorter than the max column
+    # size - MySQL will 0-pad the value up the full length of the BINARY column,
+    # but the MySQL replication binlogs will *not* contain these 0-bytes.
+    #
+    # As a result, the binlog writer must explicitly add then when building
+    # update/delete statements, as the WHERE clause would not match existing
+    # rows in the target DB
+    inserted_data = "ABC"
+    execute_copy_data_in_fixed_size_binary_column(
+        column_size: 4,
+        inserted_data: inserted_data,
+        expected_inserted_data: "#{inserted_data}\x00",
+        updated_data: "EFGH"
+    )
+  end
+
+  def test_copy_data_in_fixed_size_binary_column__value_completely_filled
+    # NOTE: This test is interesting (beyond what is covered above already),
+    # because it seems the server strips the trailing 0-bytes before sending
+    # them to the binlog.
+    inserted_data = "ABC\x00"
+    execute_copy_data_in_fixed_size_binary_column(
+        column_size: 4,
+        inserted_data: inserted_data,
+        expected_inserted_data: inserted_data,
+        updated_data: "EFGH"
+    )
+  end
+
+  def test_copy_data_in_fixed_size_binary_column__length1
+    # slight variation to cover the corner-case where there is no data in the
+    # column at all and the entire value is 0-padded (here, only 1 byte)
+    execute_copy_data_in_fixed_size_binary_column(
+        column_size: 1,
+        inserted_data: "",
+        expected_inserted_data: "\x00",
+        updated_data: "A"
+    )
+  end
+
   private
 
   def insert_json_on_source
@@ -279,5 +367,62 @@ class TypesTest < GhostferryTestCase
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_TRUE}')")
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_FALSE}')")
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_NUMBER}')")
+  end
+
+  def execute_copy_data_in_fixed_size_binary_column(column_size:, inserted_data:, expected_inserted_data:, updated_data:)
+    # test for the BINARY columns needing 0-byte padding
+    #
+    # For details, see https://github.com/Shopify/ghostferry/pull/159
+
+    [source_db, target_db].each do |db|
+      db.query("CREATE DATABASE IF NOT EXISTS #{DEFAULT_DB}")
+      db.query("CREATE TABLE IF NOT EXISTS #{DEFAULT_FULL_TABLE_NAME} (id bigint(20) not null auto_increment, data BINARY(#{column_size}), primary key(id))")
+    end
+
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, _binary'#{inserted_data}')")
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+
+    row_copy_called = false
+    ghostferry.on_status(Ghostferry::Status::ROW_COPY_COMPLETED) do
+      # select row from the target and then make sure the data with 0 padding
+      # is present. We do this to make sure there are no races in the test
+      res = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME}")
+      assert_equal 1, res.count
+      res.each do |row|
+        assert_equal 1, row["id"]
+        assert_equal expected_inserted_data, row["data"]
+      end
+
+      # now that the target is guaranteed to be in the same state as the
+      # source, trigger an update that will cause the binlog to stream an
+      # entry that needs the 0-byte padding
+      #
+      # NOTE: If we use BINLOG_STREAMING_STARTED as hook instead, we race
+      # with getting the update into the batch-copy instead of into the
+      # streaming
+      source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = _binary'#{updated_data}' WHERE id = 1")
+
+      # NOTE: We move this flag to the end of the callback to make sure that
+      # we don't confuse ourselves if the callback crashes before completing
+      row_copy_called = true
+    end
+
+    ghostferry.run
+
+    # make sure the test framework called the expected hooks above - otherwise
+    # the test doesn't make much sense
+    assert row_copy_called
+    assert_test_table_is_identical
+
+    # just being paranoid here: make sure the test outcome is as expected. It
+    # should be, since we made sure the tables have the same checksums, but it
+    # helps understand what the test code does
+    res = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME}")
+    assert_equal 1, res.count
+    res.each do |row|
+      assert_equal 1, row["id"]
+      assert_equal updated_data, row["data"]
+    end
   end
 end
