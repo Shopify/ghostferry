@@ -266,6 +266,10 @@ module GhostferryHelper
           environment["GHOSTFERRY_SKIP_TARGET_VERIFICATION"] = @config[:skip_target_verification]
         end
 
+        if @config[:skip_foreign_key_constraints_check]
+          environment["SkipForeignKeyConstraintsCheck"] = @config[:skip_foreign_key_constraints_check]
+        end
+
         if @config[:marginalia]
           environment["GHOSTFERRY_MARGINALIA"] = @config[:marginalia]
         end

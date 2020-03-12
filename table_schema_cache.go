@@ -342,6 +342,75 @@ func (c TableSchemaCache) GetTableListWithPriority(priorityList []string) (prior
 	return
 }
 
+func (c TableSchemaCache) GetTableCreationOrder(db *sql.DB) ([]string, error) {
+	visitedTables := map[string]bool{}
+	tableMap := map[string][]string{}
+	tableOrder := []string{}
+
+	for table := range c {
+		t := strings.Split(table, ".")
+		referencedTables, err := getForeignKeyTablesOfTable(db, t[0], t[1])
+		if err != nil {
+			logrus.WithField("table", table).Error("cannot fetch foreign keys")
+		}
+		tableMap[table] = referencedTables
+	}
+
+	for table := range c {
+		if _, found := visitedTables[table]; !found {
+			visitedTables, tableOrder = getTableCreationOrderUtil(visitedTables, tableOrder, tableMap, table)
+		}
+	}
+
+	return tableOrder, nil
+}
+
+func getTableCreationOrderUtil(visitedTables map[string]bool, tableOrder []string, tableMap map[string][]string, currTable string) (map[string]bool, []string) {
+	visitedTables[currTable] = true
+	for _, referencedTable := range tableMap[currTable] {
+		if _, found := visitedTables[referencedTable]; !found {
+			visitedTables, tableOrder = getTableCreationOrderUtil(visitedTables, tableOrder, tableMap, referencedTable)
+		}
+	}
+	tableOrder = append(tableOrder, currTable)
+	return visitedTables, tableOrder
+}
+
+func getForeignKeyTablesOfTable(db *sql.DB, schema string, table string) ([]string, error) {
+	fkTables := []string{}
+	visitedTables := map[string]bool{}
+
+	query := fmt.Sprintf(`
+	SELECT CONCAT(REFERENCED_TABLE_SCHEMA, '.', REFERENCED_TABLE_NAME)
+	FROM information_schema.key_column_usage 
+	WHERE TABLE_SCHEMA = '%s' AND TABLE_NAME = '%s' AND REFERENCED_TABLE_NAME IS NOT NULL
+	`,
+		schema,
+		table,
+	)
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return fkTables, err
+	}
+
+	var tableName string
+	for rows.Next() {
+		err = rows.Scan(&tableName)
+		if err != nil {
+			return fkTables, err
+		}
+
+		if _, found := visitedTables[tableName]; !found && tableName != table {
+			fkTables = append(fkTables, tableName)
+			visitedTables[tableName] = true
+		}
+
+	}
+
+	return fkTables, nil
+}
+
 func showDatabases(c *sql.DB) ([]string, error) {
 	rows, err := c.Query("show databases")
 	if err != nil {

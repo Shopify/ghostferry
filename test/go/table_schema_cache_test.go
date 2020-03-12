@@ -3,6 +3,7 @@ package test
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/Shopify/ghostferry"
@@ -442,6 +443,56 @@ func (this *TableSchemaCacheTestSuite) TestTargetToSourceRewritesErrorsOnDuplica
 
 	_, err = ghostferry.TargetToSourceRewrites(dupRewrites)
 	this.Require().Equal(err.Error(), "duplicate target to source rewrite detected")
+}
+
+func (this *TableSchemaCacheTestSuite) TestGetTableCreationOrderWithoutForeignKeyConstraints() {
+	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.Ferry.TableFilter, nil, nil, nil, nil)
+	this.Require().Nil(err)
+
+	creationOrder, err := tables.GetTableCreationOrder(this.Ferry.SourceDB)
+	this.Require().Nil(err)
+
+	this.Require().Equal(len(creationOrder), 3)
+	this.Require().ElementsMatch(creationOrder, tables.AllTableNames())
+}
+
+func (this *TableSchemaCacheTestSuite) TestGetTableCreationOrderWithForeignKeyConstraints() {
+	_, err := this.Ferry.SourceDB.Exec(fmt.Sprintf("CREATE TABLE `%s`.`table1` (`id1` BIGINT, PRIMARY KEY (`id1`))", testhelpers.TestSchemaName))
+	this.Require().Nil(err)
+	_, err = this.Ferry.SourceDB.Exec(fmt.Sprintf("CREATE TABLE `%s`.`table2` (`id2` BIGINT, PRIMARY KEY (`id2`), CONSTRAINT `fkc2` FOREIGN KEY (`id2`) REFERENCES `table1` (`id1`))", testhelpers.TestSchemaName))
+	this.Require().Nil(err)
+	_, err = this.Ferry.SourceDB.Exec(fmt.Sprintf("CREATE TABLE `%s`.`table3` (`id3` BIGINT, PRIMARY KEY (`id3`), CONSTRAINT `fkc3_1` FOREIGN KEY (`id3`) REFERENCES `table1` (`id1`), CONSTRAINT `fkc3_2` FOREIGN KEY (`id3`) REFERENCES `table2` (`id2`))", testhelpers.TestSchemaName))
+	this.Require().Nil(err)
+
+	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.Ferry.TableFilter, nil, nil, nil, nil)
+	this.Require().Nil(err)
+
+	creationOrder, err := tables.GetTableCreationOrder(this.Ferry.SourceDB)
+	this.Require().Nil(err)
+
+	// 3 tests from the base test setup plus 3 added above
+	this.Require().Equal(len(creationOrder), 6)
+	this.Require().ElementsMatch(creationOrder, tables.AllTableNames())
+
+	// verify the order: all we care for is that table1 is created before
+	// table2, which is created before table3
+	table1Index := -1
+	table2Index := -1
+	table3Index := -1
+	for i, tableName := range creationOrder {
+		if strings.HasSuffix(tableName, ".table1") {
+			table1Index = i
+		} else if strings.HasSuffix(tableName, ".table2") {
+			table2Index = i
+		} else if strings.HasSuffix(tableName, ".table3") {
+			table3Index = i
+		}
+	}
+	this.Require().NotEqual(table1Index, -1)
+	this.Require().NotEqual(table2Index, -1)
+	this.Require().NotEqual(table3Index, -1)
+	this.Require().True(table1Index < table2Index)
+	this.Require().True(table2Index < table3Index)
 }
 
 func TestTableSchemaCache(t *testing.T) {

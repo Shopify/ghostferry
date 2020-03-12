@@ -138,6 +138,45 @@ module DbHelper
     end
   end
 
+  def disable_foreign_key_constraints
+    source_db.query("SET FOREIGN_KEY_CHECKS=0")
+  end
+
+  def enable_foreign_key_constraints
+    source_db.query("SET FOREIGN_KEY_CHECKS=1")
+  end
+
+  def seed_random_data_with_fk_constraints(connection, database_name: DEFAULT_DB, number_of_rows: 1111)
+    dbtable1 = full_table_name(database_name, "test_fk_table1")
+    dbtable2 = full_table_name(database_name, "test_fk_table2")
+    dbtable3 = full_table_name(database_name, "test_fk_table3")
+
+    connection.query("CREATE DATABASE IF NOT EXISTS #{database_name}")
+    connection.query("CREATE TABLE IF NOT EXISTS #{dbtable1} (id1 bigint(20), primary key(id1))")
+    connection.query("CREATE TABLE IF NOT EXISTS #{dbtable2} (id2 bigint(20), primary key(id2), CONSTRAINT fkc2 foreign key(id2) REFERENCES #{dbtable1}(id1))")
+    connection.query("CREATE TABLE IF NOT EXISTS #{dbtable3} (id3 bigint(20), primary key(id3), CONSTRAINT fkc3 foreign key(id3) REFERENCES #{dbtable2}(id2))")
+
+    return if number_of_rows == 0
+
+    [dbtable1, dbtable2, dbtable3].each do |dbtable|
+      transaction(connection) do
+        sqlargs = (["(?)"]*number_of_rows).join(", ")
+        sql = "INSERT INTO #{dbtable} VALUES #{sqlargs}"
+        insert_statement = connection.prepare(sql)
+
+        rand_rows = []
+        number_of_rows.times.each { |n| rand_rows << n }
+        
+        insert_statement.execute(*rand_rows)
+      end
+    end
+  end
+
+  def seed_simple_database_with_fk_constraints
+    max_id = 1111
+    seed_random_data_with_fk_constraints(source_db, number_of_rows: max_id)
+  end
+
   def seed_simple_database_with_single_table
     # Setup the source database with data.
     max_id = 1111

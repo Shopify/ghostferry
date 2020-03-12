@@ -29,7 +29,7 @@ PROJECT_DEBS    := $(foreach name,$(PROJECTS),$(name)-deb)
 # Target specific variable, set proj to have a valid value.
 PROJECT_PKG      = ./$(proj)/cmd
 PROJECT_BIN      = ghostferry-$(proj)
-BIN_TARGET       = $(GOBIN)/$(PROJECT_BIN)
+BIN_TARGET       = ./
 DEB_TARGET       = $(BUILD_DIR)/$(PROJECT_BIN)_$(VERSION_STR).deb
 
 PLATFORM        := $(shell uname -s | tr A-Z a-z)
