@@ -493,7 +493,7 @@ func (f *Ferry) Start() error {
 	// miss some records that are inserted between the time the
 	// DataIterator determines the range of IDs to copy and the time that
 	// the starting binlog coordinates are determined.
-	var pos siddontangmysql.Position
+	var pos BinlogPosition
 	var err error
 	if f.StateToResumeFrom != nil {
 		pos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.MinBinlogPosition())
@@ -504,9 +504,9 @@ func (f *Ferry) Start() error {
 		return err
 	}
 
-	// If we don't set this now, there is a race condition where Ghostferry
+	// If we don't set this now, there is a race condition where ghostferry
 	// is terminated with some rows copied but no binlog events are written.
-	// This guarentees that we are able to restart from a valid location.
+	// This guarantees that we are able to restart from a valid location.
 	f.StateTracker.UpdateLastWrittenBinlogPosition(pos)
 	if f.inlineVerifier != nil {
 		f.StateTracker.UpdateLastStoredBinlogPositionForInlineVerifier(pos)
@@ -749,7 +749,7 @@ func (f *Ferry) Progress() *Progress {
 	s.Throttled = f.Throttler.Throttled()
 
 	// Binlog Progress
-	s.LastSuccessfulBinlogPos = f.BinlogStreamer.lastStreamedBinlogPosition
+	s.LastSuccessfulBinlogPos = f.BinlogStreamer.GetLastStreamedBinlogPosition()
 	s.BinlogStreamerLag = time.Now().Sub(f.BinlogStreamer.lastProcessedEventTime).Seconds()
 	s.FinalBinlogPos = f.BinlogStreamer.targetBinlogPosition
 

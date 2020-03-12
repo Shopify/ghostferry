@@ -5,8 +5,6 @@ import (
 	"math"
 	"sync"
 	"time"
-
-	"github.com/siddontang/go-mysql/mysql"
 )
 
 // StateTracker design
@@ -36,13 +34,13 @@ type SerializableState struct {
 
 	LastSuccessfulPaginationKeys              map[string]uint64
 	CompletedTables                           map[string]bool
-	LastWrittenBinlogPosition                 mysql.Position
-	LastStoredBinlogPositionForInlineVerifier mysql.Position
+	LastWrittenBinlogPosition                 BinlogPosition
+	LastStoredBinlogPositionForInlineVerifier BinlogPosition
 	BinlogVerifyStore                         BinlogVerifySerializedStore
 }
 
-func (s *SerializableState) MinBinlogPosition() mysql.Position {
-	nilPosition := mysql.Position{}
+func (s *SerializableState) MinBinlogPosition() BinlogPosition {
+	nilPosition := BinlogPosition{}
 	if s.LastWrittenBinlogPosition == nilPosition {
 		return s.LastStoredBinlogPositionForInlineVerifier
 	}
@@ -82,8 +80,8 @@ type StateTracker struct {
 	BinlogRWMutex *sync.RWMutex
 	CopyRWMutex   *sync.RWMutex
 
-	lastWrittenBinlogPosition                 mysql.Position
-	lastStoredBinlogPositionForInlineVerifier mysql.Position
+	lastWrittenBinlogPosition                 BinlogPosition
+	lastStoredBinlogPositionForInlineVerifier BinlogPosition
 
 	lastSuccessfulPaginationKeys map[string]uint64
 	completedTables              map[string]bool
@@ -113,14 +111,14 @@ func NewStateTrackerFromSerializedState(speedLogCount int, serializedState *Seri
 	return s
 }
 
-func (s *StateTracker) UpdateLastWrittenBinlogPosition(pos mysql.Position) {
+func (s *StateTracker) UpdateLastWrittenBinlogPosition(pos BinlogPosition) {
 	s.BinlogRWMutex.Lock()
 	defer s.BinlogRWMutex.Unlock()
 
 	s.lastWrittenBinlogPosition = pos
 }
 
-func (s *StateTracker) UpdateLastStoredBinlogPositionForInlineVerifier(pos mysql.Position) {
+func (s *StateTracker) UpdateLastStoredBinlogPositionForInlineVerifier(pos BinlogPosition) {
 	s.BinlogRWMutex.Lock()
 	defer s.BinlogRWMutex.Unlock()
 
