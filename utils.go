@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Masterminds/squirrel"
 	"github.com/siddontang/go-mysql/mysql"
 	"github.com/sirupsen/logrus"
 )
@@ -234,4 +235,55 @@ func CheckDbIsAReplica(db *sql.DB) (bool, error) {
 	var isReadOnly bool
 	err := row.Scan(&isReadOnly)
 	return isReadOnly, err
+}
+
+type QualifiedTableName struct {
+	SchemaName string
+	TableName  string
+}
+
+func NewQualifiedTableName(schemaName, tableName string) QualifiedTableName {
+	return QualifiedTableName{
+		SchemaName: schemaName,
+		TableName:  tableName,
+	}
+}
+
+func (n QualifiedTableName) String() string {
+	return fmt.Sprintf("%s.%s", n.SchemaName, n.TableName)
+}
+
+// define a simple set of table names
+type TableForeignKeys map[QualifiedTableName]bool
+
+func GetForeignKeyTablesOfTable(db *sql.DB, table QualifiedTableName) (TableForeignKeys, error) {
+	rows, err := squirrel.
+		Select("UNIQUE_CONSTRAINT_SCHEMA", "REFERENCED_TABLE_NAME").
+		Distinct().
+		From("information_schema.REFERENTIAL_CONSTRAINTS").
+		Where(
+			squirrel.And{
+				squirrel.Eq{"CONSTRAINT_SCHEMA": table.SchemaName},
+				squirrel.Eq{"TABLE_NAME": table.TableName},
+			},
+		).
+		RunWith(db.DB).
+		Query()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	foreignKeys := make(TableForeignKeys)
+	for rows.Next() {
+		var targetSchema, targetTable string
+		err = rows.Scan(&targetSchema, &targetTable)
+		if err != nil {
+			return nil, err
+		}
+
+		foreignKeys[NewQualifiedTableName(targetSchema, targetTable)] = true
+	}
+
+	return foreignKeys, nil
 }

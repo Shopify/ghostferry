@@ -342,6 +342,64 @@ func (c TableSchemaCache) GetTableListWithPriority(priorityList []string) (prior
 	return
 }
 
+// Helper to sort the given map of tables based on the dependencies between
+// tables in terms of foreign key constraints
+func (c TableSchemaCache) GetTableCreationOrder(db *sql.DB) (prioritzedTableNames []string, err error) {
+	logger := logrus.WithField("tag", "table_schema_cache")
+
+	tableReferences := make(map[QualifiedTableName]TableForeignKeys)
+	for tableName, _ := range c {
+		t := strings.Split(tableName, ".")
+		table := NewQualifiedTableName(t[0], t[1])
+
+		referencedTables, dbErr := GetForeignKeyTablesOfTable(db, table)
+		if dbErr != nil {
+			logger.WithField("table", table).Error("cannot analyze database table foreign keys")
+			err = dbErr
+			return
+		}
+
+		logger.Debugf("found %d reference tables for %s", len(referencedTables), table)
+		tableReferences[table] = referencedTables
+	}
+
+	// simple fix-point loop: make sure we create at least one table per
+	// iteration and mark tables as able to create as soon as they no-longer
+	// refer to other tables
+	for len(tableReferences) > 0 {
+		createdTable := false
+		for table, referencedTables := range tableReferences {
+			if len(referencedTables) > 0 {
+				continue
+			}
+			logger.Debugf("queuing %s", table)
+			prioritzedTableNames = append(prioritzedTableNames, table.String())
+
+			// mark any table referring to the table as potential candidates
+			// for being created now
+			for otherTable, otherReferencedTables := range tableReferences {
+				if _, found := otherReferencedTables[table]; found {
+					delete(otherReferencedTables, table)
+					if len(otherReferencedTables) == 0 {
+						logger.Debugf("creation of %s unblocked creation of %s", table, otherTable)
+					}
+				}
+
+			}
+
+			delete(tableReferences, table)
+			createdTable = true
+		}
+
+		if !createdTable {
+			err = fmt.Errorf("failed creating tables: all %d remaining tables have foreign references", len(tableReferences))
+			return
+		}
+	}
+
+	return
+}
+
 func showDatabases(c *sql.DB) ([]string, error) {
 	rows, err := c.Query("show databases")
 	if err != nil {
