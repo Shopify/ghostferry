@@ -395,9 +395,11 @@ func (f *Ferry) Initialize() (err error) {
 
 	// Initializing the necessary components of Ghostferry.
 	if f.ErrorHandler == nil {
+		f.logger.Debugf("setting up error handler: %s", f.StateFilename)
 		f.ErrorHandler = &PanicErrorHandler{
 			Ferry:             f,
-			DumpStateToStdout: true,
+			DumpState:         true,
+			DumpStateFilename: f.StateFilename,
 		}
 	}
 
@@ -556,11 +558,14 @@ func (f *Ferry) Run() {
 	}
 
 	if f.DumpStateOnSignal {
+		f.logger.Debug("Setting up DumpStateOnSignal")
 		go func() {
 			c := make(chan os.Signal, 1)
 			signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
 
+			f.logger.Debug("Waiting for DumpStateOnSignal")
 			s := <-c
+			f.logger.Info("Received DumpStateOnSignal")
 			if ctx.Err() == nil {
 				// Ghostferry is still running
 				f.ErrorHandler.Fatal("user_interrupt", fmt.Errorf("signal received: %v", s.String()))

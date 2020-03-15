@@ -3,6 +3,7 @@ package ghostferry
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"sync/atomic"
@@ -20,7 +21,8 @@ type ErrorHandler interface {
 type PanicErrorHandler struct {
 	Ferry             *Ferry
 	ErrorCallback     HTTPCallback
-	DumpStateToStdout bool
+	DumpState         bool
+	DumpStateFilename string
 
 	errorCount int32
 }
@@ -28,11 +30,23 @@ type PanicErrorHandler struct {
 func (this *PanicErrorHandler) ReportError(from string, err error) {
 	logger := logrus.WithField("tag", "error_handler")
 
+	stateFilename := this.DumpStateFilename
 	stateJSON, jsonErr := this.Ferry.SerializeStateToJSON()
 	if jsonErr != nil {
 		logger.WithError(jsonErr).Error("failed to dump state to JSON...")
-	} else {
-		if this.DumpStateToStdout {
+	} else if this.DumpState {
+		if stateFilename != "" {
+			logger.Infof("writing state to %s", stateFilename)
+			writeErr := ioutil.WriteFile(stateFilename, []byte(stateJSON), 0640)
+			if writeErr != nil {
+				logger.WithError(writeErr).Errorf("failed to write state to %s. Dumping to stdout", stateFilename)
+				// if the write to file failed, write to stdout as last resort
+				// so the data is not lost entirely
+				stateFilename = ""
+			}
+		}
+		if stateFilename == "" {
+			logger.Info("writing state to stdout")
 			fmt.Fprintln(os.Stdout, stateJSON)
 		}
 	}
@@ -59,11 +73,16 @@ func (this *PanicErrorHandler) ReportError(from string, err error) {
 		}
 	}
 
-	var errmsg string
-	if this.DumpStateToStdout {
-		errmsg = "fatal error detected, state dump in stdout"
-	} else {
-		errmsg = "fatal error detected"
+	errmsg := "fatal error detected"
+	if this.DumpState {
+		errmsg += ", state dump "
+		if jsonErr != nil {
+			errmsg += "missing"
+		} else if stateFilename == "" {
+			errmsg += "in <stdout>"
+		} else {
+			errmsg += "written to " + stateFilename
+		}
 	}
 	// Print error to STDERR
 	logger.WithError(err).WithField("errfrom", from).Error(errmsg)

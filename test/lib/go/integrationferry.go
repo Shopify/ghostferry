@@ -294,7 +294,7 @@ func main() {
 		ErrorCallback: ghostferry.HTTPCallback{
 			URI: fmt.Sprintf("http://localhost:%s/callbacks/error", integrationPort),
 		},
-		DumpStateToStdout: true,
+		DumpState: true,
 	}
 
 	err = f.Main()

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/siddontang/go-mysql/mysql"
+	"github.com/sirupsen/logrus"
 )
 
 // StateTracker design
@@ -88,6 +89,7 @@ type StateTracker struct {
 	lastSuccessfulPaginationKeys map[string]uint64
 	completedTables              map[string]bool
 
+	logger            *logrus.Entry
 	iterationSpeedLog *ring.Ring
 }
 
@@ -98,6 +100,7 @@ func NewStateTracker(speedLogCount int) *StateTracker {
 
 		lastSuccessfulPaginationKeys: make(map[string]uint64),
 		completedTables:              make(map[string]bool),
+		logger:                       logrus.WithField("tag", "state_tracker"),
 		iterationSpeedLog:            newSpeedLogRing(speedLogCount),
 	}
 }
@@ -121,6 +124,8 @@ func (s *StateTracker) UpdateLastWrittenBinlogPosition(pos mysql.Position) {
 }
 
 func (s *StateTracker) UpdateLastStoredBinlogPositionForInlineVerifier(pos mysql.Position) {
+	s.logger.Debugf("updating last stored binlog position for inline verifier: %s", pos)
+
 	s.BinlogRWMutex.Lock()
 	defer s.BinlogRWMutex.Unlock()
 
@@ -128,6 +133,8 @@ func (s *StateTracker) UpdateLastStoredBinlogPositionForInlineVerifier(pos mysql
 }
 
 func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginationKey uint64) {
+	s.logger.WithField("table", table).Debugf("updating table last successful pagination key: %d", paginationKey)
+
 	s.CopyRWMutex.Lock()
 	defer s.CopyRWMutex.Unlock()
 
@@ -155,6 +162,8 @@ func (s *StateTracker) LastSuccessfulPaginationKey(table string) uint64 {
 }
 
 func (s *StateTracker) MarkTableAsCompleted(table string) {
+	s.logger.WithField("table", table).Debug("marking table as completed")
+
 	s.CopyRWMutex.Lock()
 	defer s.CopyRWMutex.Unlock()
 

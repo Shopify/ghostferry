@@ -47,26 +47,7 @@ func main() {
 	if verbose {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
-
-	var resumeState *ghostferry.SerializableState = nil
-
-	if stateFilePath != "" {
-		if _, err := os.Stat(stateFilePath); os.IsNotExist(err) {
-			errorAndExit(fmt.Sprintf("%s does not exist", stateFilePath))
-		}
-
-		f, err := os.Open(stateFilePath)
-		if err != nil {
-			errorAndExit(fmt.Sprintf("failed to open state file: %v", err))
-		}
-
-		resumeState = &ghostferry.SerializableState{}
-		parser := json.NewDecoder(f)
-		err = parser.Decode(&resumeState)
-		if err != nil {
-			errorAndExit(fmt.Sprintf("failed to parse state file: %v", err))
-		}
-	}
+	logger := logrus.WithField("tag", "ghostferry-copydb")
 
 	// Default values for configurations
 	config := &copydb.Config{
@@ -83,7 +64,6 @@ func main() {
 
 			MyServerId:        99399,
 			AutomaticCutover:  false,
-			StateToResumeFrom: resumeState,
 		},
 	}
 
@@ -97,6 +77,47 @@ func main() {
 	err = parser.Decode(&config)
 	if err != nil {
 		errorAndExit(fmt.Sprintf("failed to parse config file: %v", err))
+	}
+
+	// if the state file is not provided as command-line argument, check if we
+	// are tracking state in a file according to the config. If so, and the file
+	// exists, read from there
+	runTargetInitialization := true
+	if stateFilePath == "" {
+		// unlike when provided as command-line argument, we don't require the
+		// file to exist - it simply means that we will want to serialize to
+		// this file on shutdown and *try* to resume from there on restart
+		//
+		// If absence of the file should be treated as error, the caller can set
+		// the filename in the config *and* specify it as command line, in which
+		// case we'll resume from the CLI argument and write to the config file,
+		// but fail if the former does not exist
+		if _, err := os.Stat(config.Config.StateFilename); !os.IsNotExist(err) {
+			stateFilePath = config.Config.StateFilename
+			logger.Infof("Reading state information from file specified in config: %s", stateFilePath)
+		} else {
+			logger.Infof("Skip reading state file specified in config: %s does not exist", config.Config.StateFilename)
+		}
+	} else if _, err := os.Stat(stateFilePath); os.IsNotExist(err) {
+		errorAndExit(fmt.Sprintf("%s does not exist", stateFilePath))
+	} else {
+		logger.Infof("Reading state information from file specified on command-line: %s", stateFilePath)
+	}
+	if stateFilePath != "" {
+		logger.Debugf("Reading state information from %s", stateFilePath)
+		f, err := os.Open(stateFilePath)
+		if err != nil {
+			errorAndExit(fmt.Sprintf("failed to open state file: %v", err))
+		}
+
+		parser := json.NewDecoder(f)
+		err = parser.Decode(&config.Config.StateToResumeFrom)
+		if err != nil {
+			errorAndExit(fmt.Sprintf("failed to parse state file: %v", err))
+		}
+
+		logger.Debugf("Parsing state file %s successful", stateFilePath)
+		runTargetInitialization = false
 	}
 
 	err = config.InitializeAndValidateConfig()
@@ -121,11 +142,14 @@ func main() {
 		return
 	}
 
-	if resumeState == nil {
+	if runTargetInitialization {
+		logger.Debugf("Initializing target database tables")
 		err = ferry.CreateDatabasesAndTables()
 		if err != nil {
 			errorAndExit(fmt.Sprintf("failed to create databases and tables: %v", err))
 		}
+	} else {
+		logger.Debugf("Skip initializing target database tables: resuming state")
 	}
 
 	ferry.Run()

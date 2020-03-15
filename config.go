@@ -401,6 +401,13 @@ type Config struct {
 	// by dumping the current state to stdout and the error HTTP callback.
 	// The dumped state can be used to resume Ghostferry.
 	DumpStateOnSignal bool
+	// When dumping state is enabled, the file to which to write the state. If
+	// this is not set, use stdout.
+	//
+	// NOTE: Writing state to disk (rather than stdout) has the benefit that
+	// ghostferry can control when is a good time to write state and when to
+	// leave a previously existing state file intact
+	StateFilename string
 
 	// Config for the ControlServer
 	ServerBindAddr string
