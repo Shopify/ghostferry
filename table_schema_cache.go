@@ -293,6 +293,31 @@ func (c TableSchemaCache) Get(database, table string) *TableSchema {
 	return c[fullTableName(database, table)]
 }
 
+// Helper to sort a given map of tables with a second list giving a priority.
+// If an element is present in the input and the priority lists, the item will
+// appear first (in the order of the priority list), all other items appear in
+// the order given in the input
+func (c TableSchemaCache) GetTableListWithPriority(priorityList []string) (prioritzedTableNames []string) {
+	// just a fast lookup if the list contains items already
+	contains := map[string]struct{}{}
+	if len(priorityList) >= 0 {
+		for _, tableName := range priorityList {
+			// ignore tables given in the priority list that we don't know
+			if _, found := c[tableName]; found {
+				contains[tableName] = struct{}{}
+				prioritzedTableNames = append(prioritzedTableNames, tableName)
+			}
+		}
+	}
+	for tableName, _ := range c {
+		if _, found := contains[tableName]; !found {
+			prioritzedTableNames = append(prioritzedTableNames, tableName)
+		}
+	}
+
+	return
+}
+
 func showDatabases(c *sql.DB) ([]string, error) {
 	rows, err := c.Query("show databases")
 	if err != nil {

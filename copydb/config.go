@@ -44,6 +44,14 @@ type Config struct {
 	// Filter configuration for tables to copy
 	Tables FilterAndRewriteConfigs
 
+	// Specifies the order in which to create database tables as <db>.<table> .
+	// Names refer to original databases and tables (that is, before renaming
+	// occurs).
+	// If a table is to be created on start and appears in this list, it is
+	// created before any other table, and is created in the order listed here.
+	// All tables not specified in this list are created in arbitrary order.
+	TablesToBeCreatedFirst []string
+
 	// If you're running Ghostferry from a read only replica, turn this option
 	// on and specify SourceReplicationMaster and ReplicatedMasterPositionQuery.
 	RunFerryFromReplica bool

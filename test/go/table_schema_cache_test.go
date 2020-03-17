@@ -351,6 +351,54 @@ func (this *TableSchemaCacheTestSuite) TestQuotedTableNameFromString() {
 	this.Require().Equal("``.``", ghostferry.QuotedTableNameFromString("", ""))
 }
 
+func getMultiTableMap() *ghostferry.TableSchemaCache {
+	return &ghostferry.TableSchemaCache{
+		"schema.table1": &ghostferry.TableSchema{
+			Table: &sqlSchema.Table{
+				Schema: "schema",
+				Name:   "table1",
+			},
+		},
+		"schema.table2": &ghostferry.TableSchema{
+			Table: &sqlSchema.Table{
+				Schema: "schema",
+				Name:   "table2",
+			},
+		},
+		"schema.table3": &ghostferry.TableSchema{
+			Table: &sqlSchema.Table{
+				Schema: "schema",
+				Name:   "table3",
+			},
+		},
+	}
+}
+
+func (this *TableSchemaCacheTestSuite) TestGetTableListWithPriorityNil() {
+	tables := getMultiTableMap()
+	// make sure we are not losing any elements, even if the priority does not
+	// mater
+	creationOrder := tables.GetTableListWithPriority(nil)
+	this.Require().Equal(len(creationOrder), 3)
+	this.Require().ElementsMatch(creationOrder, tables.AllTableNames())
+}
+
+func (this *TableSchemaCacheTestSuite) TestGetTableListWithPriority() {
+	tables := getMultiTableMap()
+	creationOrder := tables.GetTableListWithPriority([]string{"schema.table2"})
+	this.Require().Equal(len(creationOrder), 3)
+	this.Require().ElementsMatch(creationOrder, tables.AllTableNames())
+	this.Require().Equal(creationOrder[0], "schema.table2")
+}
+
+func (this *TableSchemaCacheTestSuite) TestGetTableListWithPriorityIgnoreUnknown() {
+	tables := getMultiTableMap()
+	creationOrder := tables.GetTableListWithPriority([]string{"schema.table2", "schema.unknown_table"})
+	this.Require().Equal(len(creationOrder), 3)
+	this.Require().ElementsMatch(creationOrder, tables.AllTableNames())
+	this.Require().Equal(creationOrder[0], "schema.table2")
+}
+
 func TestTableSchemaCache(t *testing.T) {
 	testhelpers.SetupTest()
 	suite.Run(t, &TableSchemaCacheTestSuite{GhostferryUnitTestSuite: &testhelpers.GhostferryUnitTestSuite{}})

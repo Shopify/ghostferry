@@ -85,6 +85,13 @@ func (t *CopydbTestSuite) TestCreateDatabaseAndTableWithRewrites() {
 	t.Require().Equal(renamedTableName, value)
 }
 
+func (t *CopydbTestSuite) TestCreateDatabaseAndTableWithOrdering() {
+	// NOTE: Here we just ensure passing a table does not cause issues in the
+	// invocation. A more thorough test is done in the table-schema tests
+	t.copydbConfig.TablesToBeCreatedFirst = []string{testSchemaName + "." + testTableName}
+	t.TestCreateDatabaseAndTableWithRewrites()
+}
+
 func TestCopydb(t *testing.T) {
 	testhelpers.SetupTest()
 	suite.Run(t, &CopydbTestSuite{})
