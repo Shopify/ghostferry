@@ -297,7 +297,7 @@ func (c TableSchemaCache) Get(database, table string) *TableSchema {
 // If an element is present in the input and the priority lists, the item will
 // appear first (in the order of the priority list), all other items appear in
 // the order given in the input
-func (c TableSchemaCache) GetTableListWithPriority(priorityList []string) (prioritzedTableNames []string) {
+func (c TableSchemaCache) GetTableListWithPriority(priorityList []string) (prioritizedTableNames []string) {
 	// just a fast lookup if the list contains items already
 	contains := map[string]struct{}{}
 	if len(priorityList) >= 0 {
@@ -305,13 +305,13 @@ func (c TableSchemaCache) GetTableListWithPriority(priorityList []string) (prior
 			// ignore tables given in the priority list that we don't know
 			if _, found := c[tableName]; found {
 				contains[tableName] = struct{}{}
-				prioritzedTableNames = append(prioritzedTableNames, tableName)
+				prioritizedTableNames = append(prioritizedTableNames, tableName)
 			}
 		}
 	}
 	for tableName, _ := range c {
 		if _, found := contains[tableName]; !found {
-			prioritzedTableNames = append(prioritzedTableNames, tableName)
+			prioritizedTableNames = append(prioritizedTableNames, tableName)
 		}
 	}
 
