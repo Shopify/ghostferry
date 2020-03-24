@@ -30,7 +30,7 @@ func (t *IterativeVerifierCollationTestSuite) SetupTest() {
 
 	unsafeDSN := unsafeConfig.FormatDSN()
 
-	t.unsafeDb, err = sql.Open("mysql", unsafeDSN)
+	t.unsafeDb, err = sql.Open("mysql", unsafeDSN, unsafeDbConfig.Marginalia)
 	t.Require().Nil(err)
 
 	t.asciiData = "foobar"

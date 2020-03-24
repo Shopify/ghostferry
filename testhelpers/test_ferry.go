@@ -37,6 +37,7 @@ func NewTestConfig() *ghostferry.Config {
 			Params: map[string]string{
 				"charset": "utf8mb4",
 			},
+			Marginalia: "/*maintenance:ghostferry*/ ",
 		},
 
 		Target: &ghostferry.DatabaseConfig{
