@@ -5,9 +5,10 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"io/ioutil"
 	"time"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/go-sql-driver/mysql"
 	"github.com/sirupsen/logrus"
@@ -49,12 +50,12 @@ func (this *TLSConfig) BuildConfig() (*tls.Config, error) {
 }
 
 type DatabaseConfig struct {
-	Host       string
-	Port       uint16
-	User       string
-	Pass       string
-	Collation  string
-	Params     map[string]string
+	Host      string
+	Port      uint16
+	User      string
+	Pass      string
+	Collation string
+	Params    map[string]string
 	// SQL query comments to differentiate Ghostferry's binlog events
 	// Optional: defaults to empty string (no comments)
 	Marginalia string
@@ -64,14 +65,14 @@ type DatabaseConfig struct {
 
 func (c *DatabaseConfig) MySQLConfig() (*mysql.Config, error) {
 	cfg := &mysql.Config{
-		User:      c.User,
-		Passwd:    c.Pass,
-		Net:       "tcp",
-		Addr:      fmt.Sprintf("%s:%d", c.Host, c.Port),
-		Collation: c.Collation,
-		Params:    c.Params,
-
-		MultiStatements: true,
+		User:                 c.User,
+		Passwd:               c.Pass,
+		Net:                  "tcp",
+		Addr:                 fmt.Sprintf("%s:%d", c.Host, c.Port),
+		Collation:            c.Collation,
+		Params:               c.Params,
+		AllowNativePasswords: true,
+		MultiStatements:      true,
 	}
 
 	if c.TLS != nil {
