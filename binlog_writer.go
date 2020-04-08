@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	"fmt"
+
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/sirupsen/logrus"
@@ -110,7 +111,7 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 	}
 
 	if b.StateTracker != nil {
-		b.StateTracker.UpdateLastWrittenBinlogPosition(events[len(events)-1].BinlogPosition())
+		b.StateTracker.UpdateLastWrittenBinlogPosition(events[len(events)-1].ResumableBinlogPosition())
 	}
 
 	return nil

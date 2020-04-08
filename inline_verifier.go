@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/golang/snappy"
 	"github.com/sirupsen/logrus"
@@ -569,7 +570,7 @@ func (v *InlineVerifier) binlogEventListener(evs []DMLEvent) error {
 
 	if v.StateTracker != nil {
 		ev := evs[len(evs)-1]
-		v.StateTracker.UpdateLastStoredBinlogPositionForInlineVerifier(ev.BinlogPosition())
+		v.StateTracker.UpdateLastStoredBinlogPositionForInlineVerifier(ev.ResumableBinlogPosition())
 	}
 
 	return nil

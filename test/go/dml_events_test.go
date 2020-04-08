@@ -61,7 +61,7 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventGeneratesInsertQuery() {
 		},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogInsertEvents(this.sourceTable, rowsEvent, mysql.Position{})
+	dmlEvents, err := ghostferry.NewBinlogInsertEvents(this.sourceTable, rowsEvent, mysql.Position{}, mysql.Position{})
 	this.Require().Nil(err)
 	this.Require().Equal(2, len(dmlEvents))
 
@@ -80,7 +80,7 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventWithWrongColumnsReturnsErro
 		Rows:  [][]interface{}{{1000}},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogInsertEvents(this.sourceTable, rowsEvent, mysql.Position{})
+	dmlEvents, err := ghostferry.NewBinlogInsertEvents(this.sourceTable, rowsEvent, mysql.Position{}, mysql.Position{})
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 
@@ -95,7 +95,7 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventMetadata() {
 		Rows:  [][]interface{}{{1000}},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogInsertEvents(this.sourceTable, rowsEvent, mysql.Position{})
+	dmlEvents, err := ghostferry.NewBinlogInsertEvents(this.sourceTable, rowsEvent, mysql.Position{}, mysql.Position{})
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 	this.Require().Equal("test_schema", dmlEvents[0].Database())
@@ -115,7 +115,7 @@ func (this *DMLEventsTestSuite) TestBinlogUpdateEventGeneratesUpdateQuery() {
 		},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(this.sourceTable, rowsEvent, mysql.Position{})
+	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(this.sourceTable, rowsEvent, mysql.Position{}, mysql.Position{})
 	this.Require().Nil(err)
 	this.Require().Equal(2, len(dmlEvents))
 
@@ -134,7 +134,7 @@ func (this *DMLEventsTestSuite) TestBinlogUpdateEventWithWrongColumnsReturnsErro
 		Rows:  [][]interface{}{{1000}, {1000}},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(this.sourceTable, rowsEvent, mysql.Position{})
+	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(this.sourceTable, rowsEvent, mysql.Position{}, mysql.Position{})
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 
@@ -152,7 +152,7 @@ func (this *DMLEventsTestSuite) TestBinlogUpdateEventWithNull() {
 		},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(this.sourceTable, rowsEvent, mysql.Position{})
+	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(this.sourceTable, rowsEvent, mysql.Position{}, mysql.Position{})
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 
@@ -167,7 +167,7 @@ func (this *DMLEventsTestSuite) TestBinlogUpdateEventMetadata() {
 		Rows:  [][]interface{}{{1000}, {1001}},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(this.sourceTable, rowsEvent, mysql.Position{})
+	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(this.sourceTable, rowsEvent, mysql.Position{}, mysql.Position{})
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 	this.Require().Equal("test_schema", dmlEvents[0].Database())
@@ -185,7 +185,7 @@ func (this *DMLEventsTestSuite) TestBinlogDeleteEventGeneratesDeleteQuery() {
 		},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogDeleteEvents(this.sourceTable, rowsEvent, mysql.Position{})
+	dmlEvents, err := ghostferry.NewBinlogDeleteEvents(this.sourceTable, rowsEvent, mysql.Position{}, mysql.Position{})
 	this.Require().Nil(err)
 	this.Require().Equal(2, len(dmlEvents))
 
@@ -206,7 +206,7 @@ func (this *DMLEventsTestSuite) TestBinlogDeleteEventWithNull() {
 		},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogDeleteEvents(this.sourceTable, rowsEvent, mysql.Position{})
+	dmlEvents, err := ghostferry.NewBinlogDeleteEvents(this.sourceTable, rowsEvent, mysql.Position{}, mysql.Position{})
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 
@@ -221,7 +221,7 @@ func (this *DMLEventsTestSuite) TestBinlogDeleteEventWithWrongColumnsReturnsErro
 		Rows:  [][]interface{}{{1000}},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogDeleteEvents(this.sourceTable, rowsEvent, mysql.Position{})
+	dmlEvents, err := ghostferry.NewBinlogDeleteEvents(this.sourceTable, rowsEvent, mysql.Position{}, mysql.Position{})
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 
@@ -236,7 +236,7 @@ func (this *DMLEventsTestSuite) TestBinlogDeleteEventMetadata() {
 		Rows:  [][]interface{}{{1000}},
 	}
 
-	dmlEvents, err := ghostferry.NewBinlogDeleteEvents(this.sourceTable, rowsEvent, mysql.Position{})
+	dmlEvents, err := ghostferry.NewBinlogDeleteEvents(this.sourceTable, rowsEvent, mysql.Position{}, mysql.Position{})
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 	this.Require().Equal("test_schema", dmlEvents[0].Database())
