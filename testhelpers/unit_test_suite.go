@@ -17,6 +17,9 @@ func SetupTest() {
 	var err error
 
 	logrus.SetLevel(logrus.DebugLevel)
+	if os.Getenv("CI") == "true" {
+		logrus.SetLevel(logrus.ErrorLevel)
+	}
 
 	seed := time.Now().UnixNano()
 	envseed := os.Getenv("SEED")

@@ -248,6 +248,9 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 func main() {
 	logrus.SetFormatter(&logrus.JSONFormatter{})
 	logrus.SetLevel(logrus.DebugLevel)
+	if os.Getenv("CI") == "true" {
+		logrus.SetLevel(logrus.ErrorLevel)
+	}
 
 	config, err := NewStandardConfig()
 	if err != nil {

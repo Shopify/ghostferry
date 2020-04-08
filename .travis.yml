@@ -10,7 +10,7 @@ services:
   - docker
 
 env:
-  - DOCKER_COMPOSE_VERSION=1.21.2 RELEASE_BRANCH=master
+  - DOCKER_COMPOSE_VERSION=1.21.2 RELEASE_BRANCH=master CI=true
 
 install:
   # Installing Docker Compose
@@ -21,6 +21,9 @@ install:
 
   # Installing and Starting MySQL
   - .travisci/start-mysql.sh
+
+before_script:
+  - ulimit -n 16384
 
 script:
   - make test
