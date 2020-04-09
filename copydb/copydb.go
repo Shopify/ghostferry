@@ -60,7 +60,7 @@ func (this *CopydbFerry) CreateDatabasesAndTables() error {
 	// We need to create the same table/schemas on the target database
 	// as the ones we are copying.
 	logrus.Info("creating databases and tables on target")
-	for tableName := range this.Ferry.Tables {
+	for _, tableName := range this.Ferry.Tables.GetTableListWithPriority(this.config.TablesToBeCreatedFirst) {
 		t := strings.Split(tableName, ".")
 
 		err := this.createDatabaseIfExistsOnTarget(t[0])
