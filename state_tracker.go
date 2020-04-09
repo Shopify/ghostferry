@@ -113,14 +113,14 @@ func NewStateTrackerFromSerializedState(speedLogCount int, serializedState *Seri
 	return s
 }
 
-func (s *StateTracker) UpdateLastWrittenBinlogPosition(pos mysql.Position) {
+func (s *StateTracker) UpdateLastResumableBinlogPosition(pos mysql.Position) {
 	s.BinlogRWMutex.Lock()
 	defer s.BinlogRWMutex.Unlock()
 
 	s.lastWrittenBinlogPosition = pos
 }
 
-func (s *StateTracker) UpdateLastStoredBinlogPositionForInlineVerifier(pos mysql.Position) {
+func (s *StateTracker) UpdateLastResumableBinlogPositionForInlineVerifier(pos mysql.Position) {
 	s.BinlogRWMutex.Lock()
 	defer s.BinlogRWMutex.Unlock()
 

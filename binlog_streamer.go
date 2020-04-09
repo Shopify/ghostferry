@@ -187,8 +187,10 @@ func (s *BinlogStreamer) Run() {
 			// with empty GenericEvent structs.
 			// so there's no way to handle this for us.
 			continue
-		default:
+		case *replication.XIDEvent, *replication.GTIDEvent:
 			s.lastResumableBinlogPosition.Pos = uint32(ev.Header.LogPos)
+			s.updateLastStreamedPosAndTime(ev)
+		default:
 			s.updateLastStreamedPosAndTime(ev)
 		}
 	}

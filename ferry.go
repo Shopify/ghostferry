@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math"
 	"net/http"
 	"os"
@@ -14,6 +13,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/go-sql-driver/mysql"
 	siddontanglog "github.com/siddontang/go-log/log"
@@ -507,9 +508,9 @@ func (f *Ferry) Start() error {
 	// If we don't set this now, there is a race condition where Ghostferry
 	// is terminated with some rows copied but no binlog events are written.
 	// This guarentees that we are able to restart from a valid location.
-	f.StateTracker.UpdateLastWrittenBinlogPosition(pos)
+	f.StateTracker.UpdateLastResumableBinlogPosition(pos)
 	if f.inlineVerifier != nil {
-		f.StateTracker.UpdateLastStoredBinlogPositionForInlineVerifier(pos)
+		f.StateTracker.UpdateLastResumableBinlogPositionForInlineVerifier(pos)
 	}
 
 	return nil
