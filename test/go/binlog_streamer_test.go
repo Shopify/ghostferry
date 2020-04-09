@@ -8,6 +8,7 @@ import (
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
+	"github.com/siddontang/go-mysql/mysql"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -95,8 +96,8 @@ func (this *BinlogStreamerTestSuite) TestBinlogStreamerSetsBinlogPositionOnDMLEv
 	this.binlogStreamer.AddEventListener(func(evs []ghostferry.DMLEvent) error {
 		eventAsserted = true
 		this.Require().Equal(1, len(evs))
-		this.Require().True(strings.HasPrefix(evs[0].BinlogPosition().Name, "mysql-bin."))
-		this.Require().True(evs[0].BinlogPosition().Pos > 0)
+		this.Require().True(strings.HasPrefix(evs[0].BinlogPosition().EventPosition.Name, "mysql-bin."))
+		this.Require().True(evs[0].BinlogPosition().EventPosition.Pos > 0)
 		this.binlogStreamer.FlushAndStop()
 		return nil
 	})
@@ -113,6 +114,16 @@ func (this *BinlogStreamerTestSuite) TestBinlogStreamerSetsBinlogPositionOnDMLEv
 
 	wg.Wait()
 	this.Require().True(eventAsserted)
+}
+
+func (this *BinlogStreamerTestSuite) TestResumingFromInvalidResumePositionAfterEventPosition() {
+	pos := ghostferry.BinlogPosition{
+		EventPosition: mysql.Position{"mysql-bin.00002", 10},
+		ResumePosition: mysql.Position{"mysql-bin.00002", 11},
+	}
+	_, err := this.binlogStreamer.ConnectBinlogStreamerToMysqlFrom(pos)
+	this.Require().NotNil(err)
+	this.Require().Contains(err.Error(), "last event must not be before resume position")
 }
 
 func TestBinlogStreamerTestSuite(t *testing.T) {

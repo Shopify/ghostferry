@@ -8,7 +8,6 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/replication"
 	"github.com/siddontang/go-mysql/schema"
 )
@@ -43,13 +42,13 @@ type DMLEvent interface {
 	OldValues() RowData
 	NewValues() RowData
 	PaginationKey() (uint64, error)
-	BinlogPosition() mysql.Position
+	BinlogPosition() BinlogPosition
 }
 
 // The base of DMLEvent to provide the necessary methods.
 type DMLEventBase struct {
 	table *TableSchema
-	pos   mysql.Position
+	pos   BinlogPosition
 }
 
 func (e *DMLEventBase) Database() string {
@@ -64,7 +63,7 @@ func (e *DMLEventBase) TableSchema() *TableSchema {
 	return e.table
 }
 
-func (e *DMLEventBase) BinlogPosition() mysql.Position {
+func (e *DMLEventBase) BinlogPosition() BinlogPosition {
 	return e.pos
 }
 
@@ -73,7 +72,7 @@ type BinlogInsertEvent struct {
 	*DMLEventBase
 }
 
-func NewBinlogInsertEvents(table *TableSchema, rowsEvent *replication.RowsEvent, pos mysql.Position) ([]DMLEvent, error) {
+func NewBinlogInsertEvents(table *TableSchema, rowsEvent *replication.RowsEvent, pos BinlogPosition) ([]DMLEvent, error) {
 	insertEvents := make([]DMLEvent, len(rowsEvent.Rows))
 
 	for i, row := range rowsEvent.Rows {
@@ -117,7 +116,7 @@ type BinlogUpdateEvent struct {
 	*DMLEventBase
 }
 
-func NewBinlogUpdateEvents(table *TableSchema, rowsEvent *replication.RowsEvent, pos mysql.Position) ([]DMLEvent, error) {
+func NewBinlogUpdateEvents(table *TableSchema, rowsEvent *replication.RowsEvent, pos BinlogPosition) ([]DMLEvent, error) {
 	// UPDATE events have two rows in the RowsEvent. The first row is the
 	// entries of the old record (for WHERE) and the second row is the
 	// entries of the new record (for SET).
@@ -177,7 +176,7 @@ func (e *BinlogDeleteEvent) NewValues() RowData {
 	return nil
 }
 
-func NewBinlogDeleteEvents(table *TableSchema, rowsEvent *replication.RowsEvent, pos mysql.Position) ([]DMLEvent, error) {
+func NewBinlogDeleteEvents(table *TableSchema, rowsEvent *replication.RowsEvent, pos BinlogPosition) ([]DMLEvent, error) {
 	deleteEvents := make([]DMLEvent, len(rowsEvent.Rows))
 
 	for i, row := range rowsEvent.Rows {
@@ -205,7 +204,7 @@ func (e *BinlogDeleteEvent) PaginationKey() (uint64, error) {
 	return paginationKeyFromEventData(e.table, e.oldValues)
 }
 
-func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos mysql.Position) ([]DMLEvent, error) {
+func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos BinlogPosition) ([]DMLEvent, error) {
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
 	for _, row := range rowsEvent.Rows {

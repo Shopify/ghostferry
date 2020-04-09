@@ -15,21 +15,66 @@ import (
 
 const caughtUpThreshold = 10 * time.Second
 
+type BinlogPosition struct {
+	// A binlog position emitted by the binlog-streamer consists of two parts:
+	// First, the last emitted event position, which refers to the event that
+	// we received from the MySQL master and that we hand to clients. Second,
+	// a position from which we can resume a binlog-streamer.
+	// Ideally, these two values would be the same, but in reality they are
+	// not, because some events are streamed in a series (e.g. DML events
+	// require a table-map events to be seen before).
+	// As a result, we always stream event positions as a pair - if a binlog
+	// streamer is resumed from an event that is not safe to resume from, we
+	// resume from the most recent (earlier) event from which we can safely
+	// resume and simply suppress emitting these events up to the point of the
+	// last event returned.
+	//
+	// the actual binlog position of an event emitted by the streamer
+	EventPosition  mysql.Position
+	// the position from which one needs to point the streamer if we want to
+	// resume from after this event
+	ResumePosition mysql.Position
+}
+
+func NewResumableBinlogPosition(pos mysql.Position) BinlogPosition {
+	return BinlogPosition{pos, pos}
+}
+
+func (p BinlogPosition) Compare(o BinlogPosition) int {
+	// comparison always happens on the actual event
+	return p.EventPosition.Compare(o.EventPosition)
+}
+
+func (b BinlogPosition) String() string {
+	return fmt.Sprintf("Position(event %s, resume at %s)", b.EventPosition, b.ResumePosition)
+}
+
 type BinlogStreamer struct {
-	DB           *sql.DB
-	DBConfig     *DatabaseConfig
-	MyServerId   uint32
-	ErrorHandler ErrorHandler
-	Filter       CopyFilter
+	DB                  *sql.DB
+	DBConfig            *DatabaseConfig
+	MyServerId          uint32
+	ErrorHandler        ErrorHandler
+	Filter              CopyFilter
 
-	TableSchema TableSchemaCache
+	TableSchema         TableSchemaCache
 
-	binlogSyncer               *replication.BinlogSyncer
-	binlogStreamer             *replication.BinlogStreamer
-	lastStreamedBinlogPosition mysql.Position
-	targetBinlogPosition       mysql.Position
-	lastProcessedEventTime     time.Time
-	lastLagMetricEmittedTime   time.Time
+	binlogSyncer                   *replication.BinlogSyncer
+	binlogStreamer                 *replication.BinlogStreamer
+	// what is the last event that we ever received from the streamer
+	lastStreamedBinlogPosition     mysql.Position
+	// what is the last event that we received and from which it is possible
+	// to resume
+	lastResumeBinlogPosition       mysql.Position
+	// if we have resumed from an earlier position than where we last streamed
+	// to (that is, if lastResumeBinlogPosition is before
+	// lastStreamedBinlogPosition when resuming), up to what event should we
+	// suppress emitting events
+	suppressEmitUpToBinlogPosition mysql.Position
+	// up to what position to we want to continue streaming (if a stop was
+	// requested)
+	targetBinlogPosition           mysql.Position
+	lastProcessedEventTime         time.Time
+	lastLagMetricEmittedTime       time.Time
 
 	stopRequested bool
 
@@ -77,40 +122,49 @@ func (s *BinlogStreamer) createBinlogSyncer() error {
 	return nil
 }
 
-func (s *BinlogStreamer) ConnectBinlogStreamerToMysql() (mysql.Position, error) {
+func (s *BinlogStreamer) ConnectBinlogStreamerToMysql() (BinlogPosition, error) {
 	s.ensureLogger()
 
 	currentPosition, err := ShowMasterStatusBinlogPosition(s.DB)
 	if err != nil {
 		s.logger.WithError(err).Error("failed to read current binlog position")
-		return mysql.Position{}, err
+		return BinlogPosition{}, err
 	}
 
-	return s.ConnectBinlogStreamerToMysqlFrom(currentPosition)
+	return s.ConnectBinlogStreamerToMysqlFrom(NewResumableBinlogPosition(currentPosition))
 }
 
-func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFrom(startFromBinlogPosition mysql.Position) (mysql.Position, error) {
+func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFrom(startFromBinlogPosition BinlogPosition) (BinlogPosition, error) {
 	s.ensureLogger()
 
 	err := s.createBinlogSyncer()
 	if err != nil {
-		return mysql.Position{}, err
+		return BinlogPosition{}, err
 	}
 
-	s.lastStreamedBinlogPosition = startFromBinlogPosition
+	if startFromBinlogPosition.EventPosition.Compare(startFromBinlogPosition.ResumePosition) < 0 {
+		err = fmt.Errorf("invalid resume position %s: last event must not be before resume position", startFromBinlogPosition)
+		return BinlogPosition{}, err
+	}
+
+	s.lastStreamedBinlogPosition = startFromBinlogPosition.EventPosition
+	s.suppressEmitUpToBinlogPosition = startFromBinlogPosition.EventPosition
+	s.lastResumeBinlogPosition = startFromBinlogPosition.ResumePosition
 
 	s.logger.WithFields(logrus.Fields{
-		"file": s.lastStreamedBinlogPosition.Name,
-		"pos":  s.lastStreamedBinlogPosition.Pos,
+		"stream.file": s.lastStreamedBinlogPosition.Name,
+		"stream.pos":  s.lastStreamedBinlogPosition.Pos,
+		"resume.file": s.lastResumeBinlogPosition.Name,
+		"resume.pos":  s.lastResumeBinlogPosition.Pos,
 	}).Info("starting binlog streaming")
 
-	s.binlogStreamer, err = s.binlogSyncer.StartSync(s.lastStreamedBinlogPosition)
+	s.binlogStreamer, err = s.binlogSyncer.StartSync(s.lastResumeBinlogPosition)
 	if err != nil {
 		s.logger.WithError(err).Error("unable to start binlog streamer")
-		return mysql.Position{}, err
+		return BinlogPosition{}, err
 	}
 
-	return s.lastStreamedBinlogPosition, err
+	return startFromBinlogPosition, err
 }
 
 func (s *BinlogStreamer) Run() {
@@ -233,11 +287,42 @@ func (s *BinlogStreamer) updateLastStreamedPosAndTime(ev *replication.BinlogEven
 	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
 	s.lastProcessedEventTime = eventTime
 
+	if resumablePosition, evIsResumable := s.getResumePositionForEvent(ev); evIsResumable {
+		s.lastResumeBinlogPosition = resumablePosition
+	}
+
 	if time.Since(s.lastLagMetricEmittedTime) >= time.Second {
 		lag := time.Since(eventTime)
 		metrics.Gauge("BinlogStreamer.Lag", lag.Seconds(), nil, 1.0)
 		s.lastLagMetricEmittedTime = time.Now()
 	}
+}
+
+func (s *BinlogStreamer) getResumePositionForEvent(ev *replication.BinlogEvent) (resumablePosition mysql.Position, evIsResumable bool) {
+	// resuming from a RowsEvent is not possible, as it may be followed by
+	// another rows-event without a subsequent TableMapEvent. Thus, if we have
+	// a rows-event, we need to keep resuming from whatever last non-rows-event
+	//
+	// The same is true for TableMapEvents themselves, as we cannot resume right
+	// after the event: we need to re-stream the event itself to get ready for
+	// a RowsEvent
+	switch ev.Event.(type) {
+	case *replication.RowsEvent, *replication.TableMapEvent:
+		// it's not resumable - we need to return whatever was save to resume
+		// from before
+		resumablePosition = s.lastResumeBinlogPosition
+	default:
+		// it is safe to resume from here
+		evIsResumable = true
+		resumablePosition = mysql.Position{
+			// The filename is only changed and visible during the RotateEvent, which
+			// is handled transparently in Run().
+			Name: s.lastStreamedBinlogPosition.Name,
+			Pos:  ev.Header.LogPos,
+		}
+	}
+
+	return
 }
 
 func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
@@ -256,12 +341,24 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 		Pos:  ev.Header.LogPos,
 	}
 
+	// we may still be searching for the first event to stream to listeners, if
+	// we resumed reading upstream events from an earlier event
+	if pos.Compare(s.suppressEmitUpToBinlogPosition) <= 0 {
+		return nil
+	}
+
+	resumePosition, _ := s.getResumePositionForEvent(ev)
+	binlogPosition := BinlogPosition{
+		EventPosition:  pos,
+		ResumePosition: resumePosition,
+	}
+
 	table := s.TableSchema.Get(string(rowsEvent.Table.Schema), string(rowsEvent.Table.Table))
 	if table == nil {
 		return nil
 	}
 
-	dmlEvs, err := NewBinlogDMLEvents(table, ev, pos)
+	dmlEvs, err := NewBinlogDMLEvents(table, ev, binlogPosition)
 	if err != nil {
 		return err
 	}
