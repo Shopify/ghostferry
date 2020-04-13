@@ -100,6 +100,7 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFrom(startFromBinlogPositio
 	}
 
 	s.lastStreamedBinlogPosition = startFromBinlogPosition
+	s.lastResumableBinlogPosition = startFromBinlogPosition
 
 	s.logger.WithFields(logrus.Fields{
 		"file": s.lastStreamedBinlogPosition.Name,
@@ -155,6 +156,7 @@ func (s *BinlogStreamer) Run() {
 			// This event is needed because we need to update the last successful
 			// binlog position.
 			s.lastResumableBinlogPosition.Pos = uint32(e.Position)
+			s.lastResumableBinlogPosition.Name = string(e.NextLogName)
 
 			s.lastStreamedBinlogPosition.Pos = uint32(e.Position)
 			s.lastStreamedBinlogPosition.Name = string(e.NextLogName)
@@ -162,8 +164,6 @@ func (s *BinlogStreamer) Run() {
 				"pos":  s.lastStreamedBinlogPosition.Pos,
 				"file": s.lastStreamedBinlogPosition.Name,
 			}).Info("rotated binlog file")
-		case *replication.TableMapEvent:
-			continue
 		case *replication.RowsEvent:
 			err = s.handleRowsEvent(ev)
 			if err != nil {
@@ -292,7 +292,6 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 		return nil
 	}
 
-	s.lastResumableBinlogPosition.Name = s.lastStreamedBinlogPosition.Name
 	dmlEvs, err := NewBinlogDMLEvents(table, ev, pos, s.lastResumableBinlogPosition)
 	if err != nil {
 		return err
