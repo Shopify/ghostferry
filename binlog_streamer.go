@@ -188,6 +188,30 @@ func (s *BinlogStreamer) Run() {
 			// so there's no way to handle this for us.
 			continue
 		case *replication.XIDEvent, *replication.GTIDEvent:
+			// With regards to DMLs, we see (at least) the following sequence
+			// of events in the binlog stream:
+			//
+			// - GTIDEvent  <- START of transaction
+			// - QueryEvent
+			// - RowsQueryEvent
+			// - TableMapEvent
+			// - RowsEvent
+			// - RowsEvent
+			// - XIDEvent   <- END of transaction
+			//
+			// *NOTE*
+			//
+			// First, RowsQueryEvent is only available with `binlog_rows_query_log_events`
+			// set to "ON".
+			//
+			// Second, there will be at least one (but potentially more) RowsEvents
+			// depending on the number of rows updated in the transaction.
+			//
+			// Lastly, GTIDEvents will only be available if they are enabled.
+			//
+			// As a result, the following case will set the last resumable position for
+			// interruption to EITHER the start (if using GTIDs) or the end of the
+			// last transaction
 			s.lastResumableBinlogPosition.Pos = uint32(ev.Header.LogPos)
 			s.updateLastStreamedPosAndTime(ev)
 		default:
