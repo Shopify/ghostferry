@@ -150,6 +150,13 @@ func (this *ConfigTestSuite) TestParamsAndCollationGetsPassedToMysqlConfig() {
 	this.Require().Equal("'STRICT_ALL_TABLES,NO_BACKSLASH_ESCAPES'", mysqlConfig.Params["sql_mode"])
 }
 
+func (this *ConfigTestSuite) TestDefaultMarginalia() {
+	this.config.Target.Marginalia = ""
+	err := this.config.ValidateConfig()
+	this.Require().Nil(err)
+	this.Require().Equal(ghostferry.DefaultMarginalia, this.config.Target.Marginalia)
+}
+
 func TestConfig(t *testing.T) {
 	testhelpers.SetupTest()
 	suite.Run(t, new(ConfigTestSuite))
