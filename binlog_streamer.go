@@ -25,13 +25,16 @@ type BinlogStreamer struct {
 
 	TableSchema TableSchemaCache
 
-	binlogSyncer                *replication.BinlogSyncer
-	binlogStreamer              *replication.BinlogStreamer
+	binlogSyncer   *replication.BinlogSyncer
+	binlogStreamer *replication.BinlogStreamer
+
 	lastStreamedBinlogPosition  mysql.Position
 	lastResumableBinlogPosition mysql.Position
 	targetBinlogPosition        mysql.Position
-	lastProcessedEventTime      time.Time
-	lastLagMetricEmittedTime    time.Time
+	currentBinlogFileName       string
+
+	lastProcessedEventTime   time.Time
+	lastLagMetricEmittedTime time.Time
 
 	stopRequested bool
 
@@ -152,12 +155,13 @@ func (s *BinlogStreamer) Run() {
 
 		switch e := ev.Event.(type) {
 		case *replication.RotateEvent:
-			// This event is needed because we need to update the last successful
-			// binlog position.
+			// This event signifies that we've started a new binlog file
+			s.currentBinlogFileName = string(e.NextLogName)
+
 			s.lastResumableBinlogPosition.Pos = uint32(e.Position)
 
 			s.lastStreamedBinlogPosition.Pos = uint32(e.Position)
-			s.lastStreamedBinlogPosition.Name = string(e.NextLogName)
+			s.lastStreamedBinlogPosition.Name = s.currentBinlogFileName
 			s.logger.WithFields(logrus.Fields{
 				"pos":  s.lastStreamedBinlogPosition.Pos,
 				"file": s.lastStreamedBinlogPosition.Name,
@@ -268,7 +272,7 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 		return nil
 	}
 
-	s.lastResumableBinlogPosition.Name = s.lastStreamedBinlogPosition.Name
+	s.lastResumableBinlogPosition.Name = s.currentBinlogFileName
 	dmlEvs, err := NewBinlogDMLEvents(table, ev, pos, s.lastResumableBinlogPosition)
 	if err != nil {
 		return err
