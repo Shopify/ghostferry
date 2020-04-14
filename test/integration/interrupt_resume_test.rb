@@ -1,5 +1,4 @@
 require "test_helper"
-
 require "json"
 
 class InterruptResumeTest < GhostferryTestCase
@@ -303,5 +302,62 @@ class InterruptResumeTest < GhostferryTestCase
 
     error_line = ghostferry.error_lines.last
     assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: #{chosen_id} ] ", error_line["msg"]
+  end
+
+  # originally taken from @kolbitsch-lastline in https://github.com/Shopify/ghostferry/pull/160
+  def test_interrupt_resume_between_consecutive_rows_events
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+
+    start_binlog_status = source_db.query('SHOW MASTER STATUS').first
+
+    # create a series of rows-events that do not have interleaved table-map
+    # events. This is the case when multiple rows are affected in a single
+    # DML event.
+    # Since we are racing between applying rows and sending the shutdown event,
+    # we emit a whole bunch of them
+    num_batches = 20
+    num_values_per_batch = 1000
+    row_id = 0
+    ghostferry.on_status(Ghostferry::Status::BINLOG_STREAMING_STARTED) do
+      for _batch_id in 0..num_batches do
+        insert_sql = "INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES "
+        for value_in_batch in 0..num_values_per_batch do
+          row_id += 1
+          insert_sql += ", " if value_in_batch > 0
+          insert_sql += "('data#{row_id}')"
+        end
+        source_db.query(insert_sql)
+      end
+    end
+
+    ghostferry.on_status(Ghostferry::Status::AFTER_BINLOG_APPLY) do
+      # while we are emitting events in the loop above, try to inject a shutdown
+      # signal, hoping to interrupt between applying an INSERT and receiving the
+      # next table-map event
+      if row_id > 20
+        ghostferry.term_and_wait_for_exit
+      end
+    end
+
+    dumped_state = ghostferry.run_expecting_interrupt
+
+    refute_nil dumped_state['LastWrittenBinlogPosition']['Name']
+    refute_nil dumped_state['LastWrittenBinlogPosition']['Pos']
+    refute_nil dumped_state['LastStoredBinlogPositionForInlineVerifier']['Name']
+    refute_nil dumped_state['LastStoredBinlogPositionForInlineVerifier']['Pos']
+
+    # assert the resumable position is not the start position
+    if dumped_state['LastWrittenBinlogPosition']['Name'] == start_binlog_status['File']
+      refute_equal dumped_state['LastWrittenBinlogPosition']['Pos'], start_binlog_status['Position']
+      refute_equal dumped_state['LastStoredBinlogPositionForInlineVerifier']['Pos'], start_binlog_status['Position']
+    end
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+    # if we did not resume at a proper state, this invocation of ghostferry
+    # will crash, complaining that a rows-event is referring to an unknown
+    # table
+    ghostferry.run(dumped_state)
+
+    assert_test_table_is_identical
   end
 end

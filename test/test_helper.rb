@@ -113,4 +113,12 @@ class GhostferryTestCase < Minitest::Test
     refute dumped_state["CompletedTables"].nil?
     refute dumped_state["LastWrittenBinlogPosition"].nil?
   end
+
+  def with_env(key, value)
+    previous_value = ENV.delete(key)
+    ENV[key] = value
+    yield
+  ensure
+    ENV[key] = previous_value
+  end
 end

@@ -5,8 +5,9 @@ import (
 	"crypto/tls"
 	sqlorig "database/sql"
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"time"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/replication"
@@ -24,12 +25,13 @@ type BinlogStreamer struct {
 
 	TableSchema TableSchemaCache
 
-	binlogSyncer               *replication.BinlogSyncer
-	binlogStreamer             *replication.BinlogStreamer
-	lastStreamedBinlogPosition mysql.Position
-	targetBinlogPosition       mysql.Position
-	lastProcessedEventTime     time.Time
-	lastLagMetricEmittedTime   time.Time
+	binlogSyncer                *replication.BinlogSyncer
+	binlogStreamer              *replication.BinlogStreamer
+	lastStreamedBinlogPosition  mysql.Position
+	lastResumableBinlogPosition mysql.Position
+	targetBinlogPosition        mysql.Position
+	lastProcessedEventTime      time.Time
+	lastLagMetricEmittedTime    time.Time
 
 	stopRequested bool
 
@@ -98,6 +100,7 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFrom(startFromBinlogPositio
 	}
 
 	s.lastStreamedBinlogPosition = startFromBinlogPosition
+	s.lastResumableBinlogPosition = startFromBinlogPosition
 
 	s.logger.WithFields(logrus.Fields{
 		"file": s.lastStreamedBinlogPosition.Name,
@@ -122,7 +125,6 @@ func (s *BinlogStreamer) Run() {
 	}()
 
 	s.logger.Info("starting binlog streamer")
-
 	for !s.stopRequested || (s.stopRequested && s.lastStreamedBinlogPosition.Compare(s.targetBinlogPosition) < 0) {
 		var ev *replication.BinlogEvent
 		var timedOut bool
@@ -153,6 +155,9 @@ func (s *BinlogStreamer) Run() {
 		case *replication.RotateEvent:
 			// This event is needed because we need to update the last successful
 			// binlog position.
+			s.lastResumableBinlogPosition.Pos = uint32(e.Position)
+			s.lastResumableBinlogPosition.Name = string(e.NextLogName)
+
 			s.lastStreamedBinlogPosition.Pos = uint32(e.Position)
 			s.lastStreamedBinlogPosition.Name = string(e.NextLogName)
 			s.logger.WithFields(logrus.Fields{
@@ -165,7 +170,6 @@ func (s *BinlogStreamer) Run() {
 				s.logger.WithError(err).Error("failed to handle rows event")
 				s.ErrorHandler.Fatal("binlog_streamer", err)
 			}
-
 			s.updateLastStreamedPosAndTime(ev)
 		case *replication.FormatDescriptionEvent:
 			// This event has a LogPos = 0, presumably because this is the first
@@ -183,6 +187,33 @@ func (s *BinlogStreamer) Run() {
 			// with empty GenericEvent structs.
 			// so there's no way to handle this for us.
 			continue
+		case *replication.XIDEvent, *replication.GTIDEvent:
+			// With regards to DMLs, we see (at least) the following sequence
+			// of events in the binlog stream:
+			//
+			// - GTIDEvent  <- START of transaction
+			// - QueryEvent
+			// - RowsQueryEvent
+			// - TableMapEvent
+			// - RowsEvent
+			// - RowsEvent
+			// - XIDEvent   <- END of transaction
+			//
+			// *NOTE*
+			//
+			// First, RowsQueryEvent is only available with `binlog_rows_query_log_events`
+			// set to "ON".
+			//
+			// Second, there will be at least one (but potentially more) RowsEvents
+			// depending on the number of rows updated in the transaction.
+			//
+			// Lastly, GTIDEvents will only be available if they are enabled.
+			//
+			// As a result, the following case will set the last resumable position for
+			// interruption to EITHER the start (if using GTIDs) or the end of the
+			// last transaction
+			s.lastResumableBinlogPosition.Pos = uint32(ev.Header.LogPos)
+			s.updateLastStreamedPosAndTime(ev)
 		default:
 			s.updateLastStreamedPosAndTime(ev)
 		}
@@ -261,7 +292,7 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 		return nil
 	}
 
-	dmlEvs, err := NewBinlogDMLEvents(table, ev, pos)
+	dmlEvs, err := NewBinlogDMLEvents(table, ev, pos, s.lastResumableBinlogPosition)
 	if err != nil {
 		return err
 	}
