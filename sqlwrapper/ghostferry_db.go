@@ -3,6 +3,7 @@ package sqlwrapper
 import (
 	"context"
 	sqlorig "database/sql"
+	"fmt"
 )
 
 type DB struct {
@@ -90,5 +91,5 @@ func (tx Tx) QueryRow(query string, args ...interface{}) *sqlorig.Row {
 }
 
 func Annotate(query, marginalia string) string {
-	return marginalia + query
+	return fmt.Sprintf("/*%s*/ %s", marginalia, query)
 }

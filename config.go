@@ -19,6 +19,8 @@ const (
 	VerifierTypeIterative      = "Iterative"
 	VerifierTypeInline         = "Inline"
 	VerifierTypeNoVerification = "NoVerification"
+
+	DefaultMarginalia = "application:ghostferry"
 )
 
 type TLSConfig struct {
@@ -56,11 +58,12 @@ type DatabaseConfig struct {
 	Pass      string
 	Collation string
 	Params    map[string]string
-	// SQL query comments to differentiate Ghostferry's binlog events
-	// Optional: defaults to empty string (no comments)
-	Marginalia string
+	TLS       *TLSConfig
 
-	TLS *TLSConfig
+	// SQL annotations used to differentiate Ghostferry's DMLs
+	// against other actor's. This will default to the defaultMarginalia
+	// constant above if not set.
+	Marginalia string
 }
 
 func (c *DatabaseConfig) MySQLConfig() (*mysql.Config, error) {
@@ -115,6 +118,10 @@ func (c *DatabaseConfig) Validate() error {
 	err = c.assertParamSet("sql_mode", "'STRICT_ALL_TABLES,NO_BACKSLASH_ESCAPES'")
 	if err != nil {
 		return err
+	}
+
+	if c.Marginalia == "" {
+		c.Marginalia = DefaultMarginalia
 	}
 
 	return nil
