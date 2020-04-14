@@ -752,7 +752,7 @@ func (f *Ferry) Progress() *Progress {
 	// Binlog Progress
 	s.LastSuccessfulBinlogPos = f.BinlogStreamer.lastStreamedBinlogPosition
 	s.BinlogStreamerLag = time.Now().Sub(f.BinlogStreamer.lastProcessedEventTime).Seconds()
-	s.FinalBinlogPos = f.BinlogStreamer.targetBinlogPosition
+	s.FinalBinlogPos = f.BinlogStreamer.stopAtBinlogPosition
 
 	// Table Progress
 	serializedState := f.StateTracker.Serialize(nil, nil)

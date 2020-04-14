@@ -25,13 +25,16 @@ type BinlogStreamer struct {
 
 	TableSchema TableSchemaCache
 
-	binlogSyncer                *replication.BinlogSyncer
-	binlogStreamer              *replication.BinlogStreamer
+	binlogSyncer   *replication.BinlogSyncer
+	binlogStreamer *replication.BinlogStreamer
+
 	lastStreamedBinlogPosition  mysql.Position
 	lastResumableBinlogPosition mysql.Position
-	targetBinlogPosition        mysql.Position
-	lastProcessedEventTime      time.Time
-	lastLagMetricEmittedTime    time.Time
+	currentBinlogFilename       string
+	stopAtBinlogPosition        mysql.Position
+
+	lastProcessedEventTime   time.Time
+	lastLagMetricEmittedTime time.Time
 
 	stopRequested bool
 
@@ -99,12 +102,13 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFrom(startFromBinlogPositio
 		return mysql.Position{}, err
 	}
 
+	s.currentBinlogFilename = startFromBinlogPosition.Name
 	s.lastStreamedBinlogPosition = startFromBinlogPosition
 	s.lastResumableBinlogPosition = startFromBinlogPosition
 
 	s.logger.WithFields(logrus.Fields{
-		"file": s.lastStreamedBinlogPosition.Name,
-		"pos":  s.lastStreamedBinlogPosition.Pos,
+		"file":     s.lastStreamedBinlogPosition.Name,
+		"position": s.lastStreamedBinlogPosition.Pos,
 	}).Info("starting binlog streaming")
 
 	s.binlogStreamer, err = s.binlogSyncer.StartSync(s.lastStreamedBinlogPosition)
@@ -125,7 +129,7 @@ func (s *BinlogStreamer) Run() {
 	}()
 
 	s.logger.Info("starting binlog streamer")
-	for !s.stopRequested || (s.stopRequested && s.lastStreamedBinlogPosition.Compare(s.targetBinlogPosition) < 0) {
+	for !s.stopRequested || (s.stopRequested && s.lastStreamedBinlogPosition.Compare(s.stopAtBinlogPosition) < 0) {
 		var ev *replication.BinlogEvent
 		var timedOut bool
 
@@ -151,42 +155,56 @@ func (s *BinlogStreamer) Run() {
 			continue
 		}
 
+		s.logger.WithFields(logrus.Fields{
+			"position":                   ev.Header.LogPos,
+			"file":                       s.currentBinlogFilename,
+			"type":                       fmt.Sprintf("%T", ev.Event),
+			"lastStreamedBinlogPosition": s.lastStreamedBinlogPosition,
+		}).Debug("reached position")
+
+		isEventPositionResumable := false
+		isEventPositionValid := true
+
 		switch e := ev.Event.(type) {
 		case *replication.RotateEvent:
-			// This event is needed because we need to update the last successful
-			// binlog position.
-			s.lastResumableBinlogPosition.Pos = uint32(e.Position)
-			s.lastResumableBinlogPosition.Name = string(e.NextLogName)
+			// This event is used to keep the "current binlog filename" of the binlog streamer in sync.
 
-			s.lastStreamedBinlogPosition.Pos = uint32(e.Position)
-			s.lastStreamedBinlogPosition.Name = string(e.NextLogName)
+			isFakeRotateEvent := ev.Header.LogPos == 0 && ev.Header.Timestamp == 0
+			if isFakeRotateEvent {
+				// Sometimes the RotateEvent is fake and not a real rotation. we want to ignore those events
+				// https://github.com/percona/percona-server/blob/3ff016a46ce2cde58d8007ec9834f958da53cbea/sql/rpl_binlog_sender.cc#L278-L287
+				// https://github.com/percona/percona-server/blob/3ff016a46ce2cde58d8007ec9834f958da53cbea/sql/rpl_binlog_sender.cc#L904-L907
+				isEventPositionValid = false
+				break // out of the switch statement
+			}
+
+			nextFilename := string(e.NextLogName)
+
 			s.logger.WithFields(logrus.Fields{
-				"pos":  s.lastStreamedBinlogPosition.Pos,
-				"file": s.lastStreamedBinlogPosition.Name,
-			}).Info("rotated binlog file")
+				"cur_pos":   ev.Header.LogPos,
+				"cur_file":  s.currentBinlogFilename,
+				"next_pos":  e.Position,
+				"next_file": nextFilename,
+			}).Info("rotating binlog file")
+
+			s.currentBinlogFilename = nextFilename
+		case *replication.FormatDescriptionEvent:
+			// This event is sent:
+			//   1) when our replication client connects to mysql
+			//   2) at the beginning of each binlog file
+			//
+			// For (1), if we are starting the binlog from a position that's greater
+			// than BIN_LOG_HEADER_SIZE (currently, 4th byte), this event's position
+			// is explicitly set to 0 and should not be considered valid according to
+			// the mysql source. See:
+			// https://github.com/percona/percona-server/blob/93165de1451548ff11dd32c3d3e5df0ff28cfcfa/sql/rpl_binlog_sender.cc#L1020-L1026
+			isEventPositionValid = ev.Header.LogPos != 0
 		case *replication.RowsEvent:
 			err = s.handleRowsEvent(ev)
 			if err != nil {
 				s.logger.WithError(err).Error("failed to handle rows event")
 				s.ErrorHandler.Fatal("binlog_streamer", err)
 			}
-			s.updateLastStreamedPosAndTime(ev)
-		case *replication.FormatDescriptionEvent:
-			// This event has a LogPos = 0, presumably because this is the first
-			// event received by the BinlogStreamer to get some metadata about
-			// how the binlog is supposed to be transmitted.
-			// We don't want to save the binlog position derived from this event
-			// as it will contain the wrong thing.
-			continue
-			// case *replication.QueryEvent:
-			// This event can tell us about table structure change which means
-			// the cached schemas of the tables would be invalidated.
-			// TODO: investigate using this to allow for migrations to occur.
-		case *replication.GenericEvent:
-			// go-mysql don't parse all events and unparsed events are denoted
-			// with empty GenericEvent structs.
-			// so there's no way to handle this for us.
-			continue
 		case *replication.XIDEvent, *replication.GTIDEvent:
 			// With regards to DMLs, we see (at least) the following sequence
 			// of events in the binlog stream:
@@ -212,10 +230,11 @@ func (s *BinlogStreamer) Run() {
 			// As a result, the following case will set the last resumable position for
 			// interruption to EITHER the start (if using GTIDs) or the end of the
 			// last transaction
-			s.lastResumableBinlogPosition.Pos = uint32(ev.Header.LogPos)
-			s.updateLastStreamedPosAndTime(ev)
-		default:
-			s.updateLastStreamedPosAndTime(ev)
+			isEventPositionResumable = true
+		}
+
+		if isEventPositionValid {
+			s.updateLastStreamedPosAndTime(ev, isEventPositionResumable)
 		}
 	}
 }
@@ -241,26 +260,35 @@ func (s *BinlogStreamer) FlushAndStop() {
 	// passed the initial target position.
 	err := WithRetries(100, 600*time.Millisecond, s.logger, "read current binlog position", func() error {
 		var err error
-		s.targetBinlogPosition, err = ShowMasterStatusBinlogPosition(s.DB)
+		s.stopAtBinlogPosition, err = ShowMasterStatusBinlogPosition(s.DB)
 		return err
 	})
 
 	if err != nil {
 		s.ErrorHandler.Fatal("binlog_streamer", err)
 	}
-	s.logger.WithField("target_position", s.targetBinlogPosition).Info("current stop binlog position was recorded")
+	s.logger.WithField("target_position", s.stopAtBinlogPosition).Info("current stop binlog position was recorded")
 
 	s.stopRequested = true
 }
 
-func (s *BinlogStreamer) updateLastStreamedPosAndTime(ev *replication.BinlogEvent) {
-	if ev.Header.LogPos == 0 || ev.Header.Timestamp == 0 {
-		// This shouldn't happen, as the cases where it does happen are excluded.
-		// However, I've not seen all the cases yet.
+func (s *BinlogStreamer) updateLastStreamedPosAndTime(ev *replication.BinlogEvent, isResumablePosition bool) {
+	if (ev.Header.LogPos == 0) || ev.Header.Timestamp == 0 {
+		// This shouldn't happen, as the cases where it does happen are excluded and thus signal
+		// a programming error
 		s.logger.Panicf("logpos: %d %d %T", ev.Header.LogPos, ev.Header.Timestamp, ev.Event)
 	}
 
-	s.lastStreamedBinlogPosition.Pos = ev.Header.LogPos
+	pos := mysql.Position{
+		Name: s.currentBinlogFilename,
+		Pos:  ev.Header.LogPos,
+	}
+
+	s.lastStreamedBinlogPosition = pos
+	if isResumablePosition {
+		s.lastResumableBinlogPosition = pos
+	}
+
 	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
 	s.lastProcessedEventTime = eventTime
 
@@ -315,6 +343,7 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 		s.logger.WithFields(logrus.Fields{
 			"database": dmlEv.Database(),
 			"table":    dmlEv.Table(),
+			"position": pos,
 		}).Debugf("received event %T at %v", dmlEv, eventTime)
 
 		metrics.Count("RowEvent", 1, []MetricTag{

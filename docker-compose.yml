@@ -1,6 +1,17 @@
 mysql-1:
   image: percona:5.7
-  command: --server-id=1 --log-bin=mysql-bin --binlog-format=ROW --sync-binlog=1 --log-slave-updates=ON --gtid-mode=ON --enforce-gtid-consistency=ON --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --max-connections=1000 --read-only=OFF
+  command: --server-id=1
+    --log-bin=mysql-bin
+    --max-binlog-size=4096
+    --binlog-format=ROW
+    --sync-binlog=1
+    --log-slave-updates=ON
+    --gtid-mode=ON
+    --enforce-gtid-consistency=ON
+    --character-set-server=utf8mb4
+    --collation-server=utf8mb4_unicode_ci
+    --max-connections=1000
+    --read-only=OFF
   environment:
     MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
   volumes:
@@ -10,7 +21,17 @@ mysql-1:
 
 mysql-2:
   image: percona:5.7
-  command: --server-id=2 --log-bin=mysql-bin --binlog-format=ROW --sync-binlog=1 --log-slave-updates=ON --gtid-mode=ON --enforce-gtid-consistency=ON --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --max-connections=1000
+  command: --server-id=2
+    --log-bin=mysql-bin
+    --binlog-format=ROW
+    --max-binlog-size=4096
+    --sync-binlog=1
+    --log-slave-updates=ON
+    --gtid-mode=ON
+    --enforce-gtid-consistency=ON
+    --character-set-server=utf8mb4
+    --collation-server=utf8mb4_unicode_ci
+    --max-connections=1000
   environment:
     MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
   volumes:
@@ -20,7 +41,17 @@ mysql-2:
 
 mysql-3:
   image: percona:5.7
-  command: --server-id=3 --log-bin=mysql-bin --binlog-format=ROW --sync-binlog=1 --log-slave-updates=ON --gtid-mode=ON --enforce-gtid-consistency=ON --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --max-connections=1000
+  command: --server-id=3
+    --log-bin=mysql-bin
+    --binlog-format=ROW
+    --max-binlog-size=4096
+    --sync-binlog=1
+    --log-slave-updates=ON
+    --gtid-mode=ON
+    --enforce-gtid-consistency=ON
+    --character-set-server=utf8mb4
+    --collation-server=utf8mb4_unicode_ci
+    --max-connections=1000
   environment:
     MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
   volumes:
