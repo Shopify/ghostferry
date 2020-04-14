@@ -2,7 +2,6 @@ mysql-1:
   image: percona:5.7
   command: --server-id=1
     --log-bin=mysql-bin
-    --max-binlog-size=4096
     --binlog-format=ROW
     --sync-binlog=1
     --log-slave-updates=ON
@@ -24,7 +23,6 @@ mysql-2:
   command: --server-id=2
     --log-bin=mysql-bin
     --binlog-format=ROW
-    --max-binlog-size=4096
     --sync-binlog=1
     --log-slave-updates=ON
     --gtid-mode=ON
@@ -44,7 +42,6 @@ mysql-3:
   command: --server-id=3
     --log-bin=mysql-bin
     --binlog-format=ROW
-    --max-binlog-size=4096
     --sync-binlog=1
     --log-slave-updates=ON
     --gtid-mode=ON
