@@ -1,11 +1,19 @@
 GEM
   remote: https://rubygems.org/
   specs:
+    ansi (1.5.0)
+    builder (3.2.4)
     minitest (5.11.3)
     minitest-hooks (1.5.0)
       minitest (> 5.3)
+    minitest-reporters (1.4.2)
+      ansi
+      builder
+      minitest (>= 5.0)
+      ruby-progressbar
     mysql2 (0.5.2)
     rake (12.3.2)
+    ruby-progressbar (1.10.1)
 
 PLATFORMS
   ruby
@@ -13,8 +21,9 @@ PLATFORMS
 DEPENDENCIES
   minitest
   minitest-hooks
+  minitest-reporters
   mysql2
   rake
 
 BUNDLED WITH
-   1.16.1
+   1.17.3

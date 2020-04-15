@@ -1,5 +1,6 @@
 require "logger"
 require "minitest"
+require "minitest/reporters"
 require "minitest/autorun"
 require "minitest/hooks/test"
 
@@ -13,6 +14,8 @@ require "data_writer_helper"
 Minitest.after_run do
   GhostferryHelper.remove_all_binaries
 end
+
+MiniTest::Reporters.use! MiniTest::Reporters::SpecReporter.new
 
 class GhostferryTestCase < Minitest::Test
   include Minitest::Hooks
@@ -51,6 +54,8 @@ class GhostferryTestCase < Minitest::Test
     else
       @logger.level = Logger::INFO
     end
+
+    @logger.info("Our ulimits are:" + `ulimit -a`)
 
     initialize_db_connections
   end

@@ -173,7 +173,7 @@ class InterruptResumeTest < GhostferryTestCase
 
     i = 0
     ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
-      sleep if i >= 1 # block the DataIterator so it doesn't race with the term_and_wait_for_exit below.
+      # sleep if i >= 1 # block the DataIterator so it doesn't race with the term_and_wait_for_exit below.
       source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (#{chosen_id}, 'data')")
       i += 1
     end
@@ -223,7 +223,7 @@ class InterruptResumeTest < GhostferryTestCase
         # DataIterator holds a FOR UPDATE lock for the minimum id row.
         source_db.query("DELETE FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{chosen_id}")
       end
-      sleep if i > 1 # block the DataIterator so it doesn't race with the term_and_wait_for_exit below.
+      # sleep if i > 1 # block the DataIterator so it doesn't race with the term_and_wait_for_exit below.
       i += 1
     end
 
