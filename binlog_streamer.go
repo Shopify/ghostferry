@@ -178,23 +178,25 @@ func (s *BinlogStreamer) Run() {
 		switch e := ev.Event.(type) {
 		case *replication.RotateEvent:
 			// This event is used to keep the "current binlog filename" of the binlog streamer in sync.
+			nextFilename = string(e.NextLogName)
 
 			isFakeRotateEvent := ev.Header.LogPos == 0 && ev.Header.Timestamp == 0
 			if isFakeRotateEvent {
-				// Sometimes the RotateEvent is fake and not a real rotation. we want to ignore the log position for those events
+				// Sometimes the RotateEvent is fake and not a real rotation. we want to ignore the log position in the header for those events
 				// https://github.com/percona/percona-server/blob/3ff016a46ce2cde58d8007ec9834f958da53cbea/sql/rpl_binlog_sender.cc#L278-L287
 				// https://github.com/percona/percona-server/blob/3ff016a46ce2cde58d8007ec9834f958da53cbea/sql/rpl_binlog_sender.cc#L904-L907
-				isEventPositionValid = false
+
+				// However, we can always advance our lastStreamedBinlogPosition according to its data fields
+				evPosition = mysql.Position{
+					Name: string(e.NextLogName),
+					Pos:  uint32(e.Position),
+				}
 			}
 
-			nextFilename = string(e.NextLogName)
-
 			s.logger.WithFields(logrus.Fields{
-				"cur_pos":   ev.Header.LogPos,
-				"cur_file":  currentFilename,
-				"next_pos":  e.Position,
-				"next_file": nextFilename,
-			}).Info("rotating binlog file")
+				"pos":      evPosition.Pos,
+				"filename": evPosition.Name,
+			}).Info("binlog file rotated, advancing lastStreamedBinlogPosition")
 		case *replication.FormatDescriptionEvent:
 			// This event is sent:
 			//   1) when our replication client connects to mysql
@@ -280,15 +282,21 @@ func (s *BinlogStreamer) FlushAndStop() {
 }
 
 func (s *BinlogStreamer) updateLastStreamedPosAndTime(ev *replication.BinlogEvent, pos mysql.Position, isResumablePosition bool) {
-	if (ev.Header.LogPos == 0) || ev.Header.Timestamp == 0 {
-		// This shouldn't happen, as the cases where it does happen are excluded and thus signal
-		// a programming error
-		s.logger.Panicf("logpos: %d %d %T", ev.Header.LogPos, ev.Header.Timestamp, ev.Event)
+	if pos.Pos == 0 {
+		// This shouldn't happen, as the cases where it does happen are excluded and thus signal a programming error
+		s.logger.Panicf("tried to advance to a zero log position: %s %d %T", pos.Name, pos.Pos, ev.Event)
 	}
 
 	s.lastStreamedBinlogPosition = pos
 	if isResumablePosition {
 		s.lastResumableBinlogPosition = pos
+	}
+
+	// The first couple of events when connecting the binlog syncer (RotateEvent
+	// and FormatDescriptionEvent) have a zero timestamp..  Ignore those for
+	// timing updates
+	if ev.Header.Timestamp == 0 {
+		return
 	}
 
 	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
