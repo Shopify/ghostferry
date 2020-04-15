@@ -30,7 +30,6 @@ type BinlogStreamer struct {
 
 	lastStreamedBinlogPosition  mysql.Position
 	lastResumableBinlogPosition mysql.Position
-	currentBinlogFilename       string
 	stopAtBinlogPosition        mysql.Position
 
 	lastProcessedEventTime   time.Time
@@ -102,7 +101,6 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFrom(startFromBinlogPositio
 		return mysql.Position{}, err
 	}
 
-	s.currentBinlogFilename = startFromBinlogPosition.Name
 	s.lastStreamedBinlogPosition = startFromBinlogPosition
 	s.lastResumableBinlogPosition = startFromBinlogPosition
 
@@ -131,8 +129,12 @@ func (s *BinlogStreamer) Run() {
 		s.binlogSyncer.Close()
 	}()
 
+	currentFilename := s.lastStreamedBinlogPosition.Name
+	nextFilename := s.lastStreamedBinlogPosition.Name
+
 	s.logger.Info("starting binlog streamer")
 	for !s.stopRequested || (s.stopRequested && s.lastStreamedBinlogPosition.Compare(s.stopAtBinlogPosition) < 0) {
+		currentFilename = nextFilename
 		var ev *replication.BinlogEvent
 		var timedOut bool
 
@@ -159,14 +161,14 @@ func (s *BinlogStreamer) Run() {
 		}
 
 		evPosition := mysql.Position{
-			Name: s.currentBinlogFilename,
+			Name: currentFilename,
 			Pos:  ev.Header.LogPos,
 		}
 
 		s.logger.WithFields(logrus.Fields{
-			"position": evPosition.Pos,
-			"file":     evPosition.Name,
-			"type":     fmt.Sprintf("%T", ev.Event),
+			"position":                   evPosition.Pos,
+			"file":                       evPosition.Name,
+			"type":                       fmt.Sprintf("%T", ev.Event),
 			"lastStreamedBinlogPosition": s.lastStreamedBinlogPosition,
 		}).Debug("reached position")
 
@@ -186,16 +188,14 @@ func (s *BinlogStreamer) Run() {
 				break // out of the switch statement
 			}
 
-			nextFilename := string(e.NextLogName)
+			nextFilename = string(e.NextLogName)
 
 			s.logger.WithFields(logrus.Fields{
 				"cur_pos":   ev.Header.LogPos,
-				"cur_file":  s.currentBinlogFilename,
+				"cur_file":  currentFilename,
 				"next_pos":  e.Position,
 				"next_file": nextFilename,
 			}).Info("rotating binlog file")
-
-			s.currentBinlogFilename = nextFilename
 		case *replication.FormatDescriptionEvent:
 			// This event is sent:
 			//   1) when our replication client connects to mysql
