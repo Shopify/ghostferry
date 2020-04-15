@@ -132,9 +132,11 @@ func (f *IntegrationFerry) Main() error {
 	go func() {
 		defer wg.Done()
 		f.Run()
+		fmt.Println("HK-DEBUG finished f.Run()")
 	}()
 
 	f.WaitUntilRowCopyIsComplete()
+	fmt.Println("HK-DEBUG row copy copmlete")
 	err = f.SendStatusAndWaitUntilContinue(StatusRowCopyCompleted)
 	if err != nil {
 		return err

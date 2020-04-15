@@ -1,0 +1,21 @@
+#!/bin/bash
+
+log() {
+  echo $@
+}
+
+source_conf="--host 127.0.0.1 --port 29291 --user root"
+
+BINLOG_BASENAME=$(mysql $source_conf -Bse "SHOW GLOBAL VARIABLES LIKE 'log_bin_basename'")
+if [[ $? -eq "1" ]]; then
+    log "Please, check your mysql credentials" "ERROR"
+    exit 1
+fi
+
+BINLOG_BASENAME=$(basename `echo ${BINLOG_BASENAME} | tail -1 | awk '{ print $2 }'`)
+log "Binlog file basename is $BINLOG_BASENAME"
+
+BINLOG_INDEX_FILE=`mysql $source_conf -Bse "SHOW GLOBAL VARIABLES LIKE 'log_bin_index'" | tail -1 | awk '{ print $2 }'`
+log "Binlog index file is $BINLOG_BASENAME"
+
+mysqlbinlog --read-from-remote-server $source_conf -vvv --base64-output=decode-rows --stop-never --database gftest mysql-bin.000001 | grep -B2 -A3 "@1=$1"

@@ -2,6 +2,8 @@ package ghostferry
 
 import (
 	"fmt"
+	"time"
+
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/sirupsen/logrus"
@@ -36,7 +38,7 @@ func (w *BatchWriter) Initialize() {
 }
 
 func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
-	return WithRetries(w.WriteRetries, 0, w.logger, "write batch to target", func() error {
+	return WithRetries(w.WriteRetries, 500*time.Millisecond, w.logger, "write batch to target", func() error {
 		values := batch.Values()
 		if len(values) == 0 {
 			return nil
@@ -81,6 +83,14 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 		if err != nil {
 			tx.Rollback()
 			return fmt.Errorf("during exec query near paginationKey %v -> %v (%s): %v", startPaginationKeypos, endPaginationKeypos, query, err)
+		}
+
+		for _, rowData := range values {
+			pkey, err := rowData.GetUint64(batch.PaginationKeyIndex())
+			if err != nil {
+				return err
+			}
+			w.logger.WithField("id", pkey).Info("HK-DEBUG BATCH writer updating pkey")
 		}
 
 		if w.InlineVerifier != nil {

@@ -14,6 +14,7 @@ module DataWriterHelper
 
   def stop_datawriter_during_cutover(dw, gf)
     gf.on_status(GhostferryHelper::Ghostferry::Status::ROW_COPY_COMPLETED) do
+      puts "HK-DEBUG row copy is complete.. shutting down data writer"
       # At the start of the cutover phase, we have to set the database to
       # read-only. This is done by stopping the datawriter.
       dw.stop_and_join
@@ -59,9 +60,14 @@ module DataWriterHelper
         @threads << Thread.new do
           @logger.info("starting data writer thread #{i}")
 
-          until @stop_requested do
+          begin
             connection = Mysql2::Client.new(@db_config)
-            write_data(connection, &on_write)
+
+            until @stop_requested do
+              write_data(connection, &on_write)
+            end
+          ensure
+            connection.close
           end
 
           @logger.info("stopped data writer thread #{i}")
@@ -70,6 +76,7 @@ module DataWriterHelper
     end
 
     def stop_and_join
+      puts "HK-DEBUG data writer shutdown request"
       @stop_requested = true
       join
     end
@@ -94,7 +101,7 @@ module DataWriterHelper
         op = "DELETE"
       end
 
-      @logger.debug("writing data: #{op} #{id}")
+      # @logger.debug("writing data: #{op} #{id}")
       on_write.call(op, id) unless on_write.nil?
     end
 
@@ -102,6 +109,7 @@ module DataWriterHelper
       table = @tables.sample
       insert_statement = connection.prepare("INSERT INTO #{table} (id, data) VALUES (?, ?)")
       insert_statement.execute(nil, DbHelper.rand_data)
+      insert_statement.close
       connection.last_id
     end
 
@@ -110,6 +118,7 @@ module DataWriterHelper
       id = random_real_id(connection, table)
       update_statement = connection.prepare("UPDATE #{table} SET data = ? WHERE id >= ? LIMIT 1")
       update_statement.execute(DbHelper.rand_data, id)
+      update_statement.close
       id
     end
 
@@ -118,6 +127,7 @@ module DataWriterHelper
       id = random_real_id(connection, table)
       delete_statement = connection.prepare("DELETE FROM #{table} WHERE id >= ? LIMIT 1")
       delete_statement.execute(id)
+      delete_statement.close
       id
     end
 

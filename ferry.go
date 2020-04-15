@@ -613,7 +613,7 @@ func (f *Ferry) Run() {
 	}
 
 	if f.Verifier != nil {
-		f.logger.Info("calling VerifyBeforeCutover")
+		f.logger.Info("HK-DEBUG calling VerifyBeforeCutover")
 		f.OverallState = StateVerifyBeforeCutover
 
 		metrics.Measure("VerifyBeforeCutover", nil, 1.0, func() {
@@ -625,11 +625,11 @@ func (f *Ferry) Run() {
 		})
 	}
 
-	f.logger.Info("data copy is complete, waiting for cutover")
+	f.logger.Info("HK-DEBUG data copy is complete, waiting for cutover")
 	f.OverallState = StateWaitingForCutover
 	f.waitUntilAutomaticCutoverIsTrue()
 
-	f.logger.Info("entering cutover phase, notifying caller that row copy is complete")
+	f.logger.Info("HK-DEBUG entering cutover phase, notifying caller that row copy is complete")
 	f.OverallState = StateCutover
 	f.notifyRowCopyComplete()
 

@@ -90,5 +90,8 @@ func (tx Tx) QueryRow(query string, args ...interface{}) *sqlorig.Row {
 }
 
 func Annotate(query, marginalia string) string {
+	if marginalia == "" {
+		marginalia = "/* app:ghostferry */"
+	}
 	return marginalia + query
 }

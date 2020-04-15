@@ -96,12 +96,12 @@ module GhostferryHelper
     end
 
     # The main method to call to run a Ghostferry subprocess.
-    def run(resuming_state = nil)
+    def run(resuming_state = nil, run_id:)
       resuming_state = JSON.generate(resuming_state) if resuming_state.is_a?(Hash)
 
       compile_binary
       start_server
-      start_ghostferry(resuming_state)
+      start_ghostferry(resuming_state, run_id: run_id)
       start_server_watchdog
 
       @subprocess_thread.join
@@ -114,8 +114,8 @@ module GhostferryHelper
 
     # When using this method, you need to ensure that the datawriter has been
     # stopped properly (if you're using stop_datawriter_during_cutover).
-    def run_expecting_interrupt(resuming_state = nil)
-      run(resuming_state)
+    def run_expecting_interrupt(resuming_state = nil, run_id:)
+      run(resuming_state, run_id: run_id)
     rescue GhostferryExitFailure
       dumped_state = @stdout.join("")
       JSON.parse(dumped_state)
@@ -207,7 +207,7 @@ module GhostferryHelper
       end
     end
 
-    def start_ghostferry(resuming_state = nil)
+    def start_ghostferry(resuming_state = nil, run_id:)
       @subprocess_thread = Thread.new do
         # No need to spam the logs with Ghostferry interrupted exceptions if
         # Ghostferry is supposed to be interrupted.
@@ -257,7 +257,11 @@ module GhostferryHelper
 
               if reader == stdout
                 @stdout << line
-                @logger.debug("stdout: #{line}")
+                if line.include?("HK-DEBUG")
+                  @logger.info("stdout-#{run_id}: #{line}")
+                else
+                  # @logger.debug("stdout-#{run_id}: #{line}")
+                end
               elsif reader == stderr
                 @stderr << line
                 if json_log_line?(line)
@@ -271,7 +275,7 @@ module GhostferryHelper
                     @error_lines << logline
                   end
                 end
-                @logger.debug("stderr: #{line}")
+                @logger.debug("stderr-#{run_id}: #{line}")
               end
             end
           end

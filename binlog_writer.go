@@ -96,6 +96,12 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 			return fmt.Errorf("generating sql query at pos %v: %v", ev.BinlogPosition(), err)
 		}
 
+		pkey, err := ev.PaginationKey()
+		if err != nil {
+			return err
+		}
+		b.logger.WithField("id", pkey).Info("HK-DEBUG BINLOG writer updating pkey")
+
 		queryBuffer = append(queryBuffer, sql...)
 		queryBuffer = append(queryBuffer, ";\n"...)
 	}

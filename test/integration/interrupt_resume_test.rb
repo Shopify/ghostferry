@@ -138,7 +138,7 @@ class InterruptResumeTest < GhostferryTestCase
       end
     end
 
-    dumped_state = ghostferry.run_expecting_interrupt
+    dumped_state = ghostferry.run_expecting_interrupt(run_id: "interrupted_ferry")
     assert_basic_fields_exist_in_dumped_state(dumped_state)
     refute_nil dumped_state["BinlogVerifyStore"]
     refute_nil dumped_state["BinlogVerifyStore"]["gftest"]
@@ -158,7 +158,7 @@ class InterruptResumeTest < GhostferryTestCase
     # to stop it during cutover.
     stop_datawriter_during_cutover(datawriter, ghostferry)
 
-    ghostferry.run(dumped_state)
+    ghostferry.run(dumped_state, run_id: "final_run")
 
     assert verification_ran
     assert_equal 0, incorrect_tables.length

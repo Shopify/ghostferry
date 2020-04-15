@@ -1,6 +1,7 @@
 GEM
   remote: https://rubygems.org/
   specs:
+    byebug (11.1.1)
     minitest (5.11.3)
     minitest-hooks (1.5.0)
       minitest (> 5.3)
@@ -11,10 +12,11 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
+  byebug
   minitest
   minitest-hooks
   mysql2
   rake
 
 BUNDLED WITH
-   1.16.1
+   1.16.5

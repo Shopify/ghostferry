@@ -1,0 +1,6 @@
+#!/bin/bash
+
+echo "Data on source:"
+mysql -h 127.0.0.1 -P 29291 -u root -e "select * from gftest.test_table_1 where id='$1'"
+echo "Data on target:"
+mysql -h 127.0.0.1 -P 29292 -u root -e "select * from gftest.test_table_1 where id='$1'"
