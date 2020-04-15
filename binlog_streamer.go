@@ -181,11 +181,10 @@ func (s *BinlogStreamer) Run() {
 
 			isFakeRotateEvent := ev.Header.LogPos == 0 && ev.Header.Timestamp == 0
 			if isFakeRotateEvent {
-				// Sometimes the RotateEvent is fake and not a real rotation. we want to ignore those events
+				// Sometimes the RotateEvent is fake and not a real rotation. we want to ignore the log position for those events
 				// https://github.com/percona/percona-server/blob/3ff016a46ce2cde58d8007ec9834f958da53cbea/sql/rpl_binlog_sender.cc#L278-L287
 				// https://github.com/percona/percona-server/blob/3ff016a46ce2cde58d8007ec9834f958da53cbea/sql/rpl_binlog_sender.cc#L904-L907
 				isEventPositionValid = false
-				break // out of the switch statement
 			}
 
 			nextFilename = string(e.NextLogName)
