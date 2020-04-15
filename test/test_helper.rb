@@ -77,6 +77,10 @@ class GhostferryTestCase < Minitest::Test
     end
   end
 
+  def after_all
+    teardown_connections
+  end
+
   #####################
   # Assertion Helpers #
   #####################

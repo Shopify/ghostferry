@@ -124,7 +124,10 @@ func (s *BinlogStreamer) Run() {
 	s.ensureLogger()
 
 	defer func() {
-		s.logger.Info("exiting binlog streamer")
+		s.logger.WithFields(logrus.Fields{
+			"stopAtBinlogPosition":       s.stopAtBinlogPosition,
+			"lastStreamedBinlogPosition": s.lastStreamedBinlogPosition,
+		}).Info("exiting binlog streamer")
 		s.binlogSyncer.Close()
 	}()
 
@@ -155,10 +158,15 @@ func (s *BinlogStreamer) Run() {
 			continue
 		}
 
+		evPosition := mysql.Position{
+			Name: s.currentBinlogFilename,
+			Pos:  ev.Header.LogPos,
+		}
+
 		s.logger.WithFields(logrus.Fields{
-			"position":                   ev.Header.LogPos,
-			"file":                       s.currentBinlogFilename,
-			"type":                       fmt.Sprintf("%T", ev.Event),
+			"position": evPosition.Pos,
+			"file":     evPosition.Name,
+			"type":     fmt.Sprintf("%T", ev.Event),
 			"lastStreamedBinlogPosition": s.lastStreamedBinlogPosition,
 		}).Debug("reached position")
 
@@ -234,7 +242,7 @@ func (s *BinlogStreamer) Run() {
 		}
 
 		if isEventPositionValid {
-			s.updateLastStreamedPosAndTime(ev, isEventPositionResumable)
+			s.updateLastStreamedPosAndTime(ev, evPosition, isEventPositionResumable)
 		}
 	}
 }
@@ -272,16 +280,11 @@ func (s *BinlogStreamer) FlushAndStop() {
 	s.stopRequested = true
 }
 
-func (s *BinlogStreamer) updateLastStreamedPosAndTime(ev *replication.BinlogEvent, isResumablePosition bool) {
+func (s *BinlogStreamer) updateLastStreamedPosAndTime(ev *replication.BinlogEvent, pos mysql.Position, isResumablePosition bool) {
 	if (ev.Header.LogPos == 0) || ev.Header.Timestamp == 0 {
 		// This shouldn't happen, as the cases where it does happen are excluded and thus signal
 		// a programming error
 		s.logger.Panicf("logpos: %d %d %T", ev.Header.LogPos, ev.Header.Timestamp, ev.Event)
-	}
-
-	pos := mysql.Position{
-		Name: s.currentBinlogFilename,
-		Pos:  ev.Header.LogPos,
 	}
 
 	s.lastStreamedBinlogPosition = pos
