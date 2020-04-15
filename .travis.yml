@@ -24,6 +24,7 @@ install:
 
 before_script:
   - ulimit -n 16384
+  - ulimit -a
 
 script:
   - make test
