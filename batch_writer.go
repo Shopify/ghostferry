@@ -2,12 +2,21 @@ package ghostferry
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/sirupsen/logrus"
 )
+
+var batchWriteRetryDelay = 5 * time.Millisecond
+
+func init() {
+	if os.Getenv("CI") == "true" {
+		batchWriteRetryDelay = 500 * time.Millisecond
+	}
+}
 
 type BatchWriterVerificationFailed struct {
 	mismatchedPaginationKeys []uint64
@@ -38,7 +47,7 @@ func (w *BatchWriter) Initialize() {
 }
 
 func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
-	return WithRetries(w.WriteRetries, 500*time.Millisecond, w.logger, "write batch to target", func() error {
+	return WithRetries(w.WriteRetries, batchWriteRetryDelay, w.logger, "write batch to target", func() error {
 		values := batch.Values()
 		if len(values) == 0 {
 			return nil
