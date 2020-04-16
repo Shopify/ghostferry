@@ -97,12 +97,19 @@ module DbHelper
     connection.query("CREATE DATABASE IF NOT EXISTS #{database_name}")
     connection.query("CREATE TABLE IF NOT EXISTS #{dbtable} (id bigint(20) not null auto_increment, data TEXT, primary key(id))")
 
-    transaction(connection) do
-      insert_statement = connection.prepare("INSERT INTO #{dbtable} (id, data) VALUES (?, ?)")
+    return if number_of_rows == 0
 
+    transaction(connection) do
+      sqlargs = (["(?,?)"]*number_of_rows).join(", ")
+      sql = "INSERT INTO #{dbtable} (id, data) VALUES #{sqlargs}"
+      insert_statement = connection.prepare(sql)
+
+      rand_rows = []
       number_of_rows.times do
-        insert_statement.execute(nil, rand_data)
+        rand_rows += [nil, rand_data]
       end
+
+      insert_statement.execute(*rand_rows)
     end
   end
 
@@ -112,10 +119,17 @@ module DbHelper
     seed_random_data(source_db, number_of_rows: max_id)
 
     # Create some holes in the data.
-    delete_statement = source_db.prepare("DELETE FROM #{full_table_name(DEFAULT_DB, DEFAULT_TABLE)} WHERE id = ?")
-    140.times do
-      delete_statement.execute(Random.rand(max_id))
+    num_holes = 140
+
+    sqlargs = (["?"]*num_holes).join(",")
+    delete_statement = source_db.prepare("DELETE FROM #{full_table_name(DEFAULT_DB, DEFAULT_TABLE)} WHERE id IN (#{sqlargs})")
+
+    holes_ids = []
+    num_holes.times do
+      holes_ids << Random.rand(max_id)
     end
+
+    delete_statement.execute(*holes_ids)
 
     # Setup the target database with no data but the correct schema.
     seed_random_data(target_db, number_of_rows: 0)
