@@ -13,7 +13,8 @@ VERSION_STR     := $(VERSION)+$(DATETIME)+$(COMMIT)
 LDFLAGS         := -X github.com/Shopify/ghostferry.VersionString=$(VERSION_STR)
 
 # Paths
-GOBIN           := $(GOPATH)/bin
+FIRSTGOPATH     := $(firstword $(subst :, ,$(GOPATH)))
+GOBIN           := $(FIRSTGOPATH)/bin
 BUILD_DIR       := build
 DEB_PREFIX      := $(BUILD_DIR)/debian
 SHARE_DIR       := usr/share/ghostferry

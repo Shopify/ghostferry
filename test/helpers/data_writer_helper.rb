@@ -59,9 +59,14 @@ module DataWriterHelper
         @threads << Thread.new do
           @logger.info("starting data writer thread #{i}")
 
-          until @stop_requested do
+          begin
             connection = Mysql2::Client.new(@db_config)
-            write_data(connection, &on_write)
+
+            until @stop_requested do
+              write_data(connection, &on_write)
+            end
+          ensure
+            connection.close
           end
 
           @logger.info("stopped data writer thread #{i}")
@@ -103,6 +108,8 @@ module DataWriterHelper
       insert_statement = connection.prepare("INSERT INTO #{table} (id, data) VALUES (?, ?)")
       insert_statement.execute(nil, DbHelper.rand_data)
       connection.last_id
+    ensure
+      insert_statement&.close
     end
 
     def update_data(connection)
@@ -111,6 +118,8 @@ module DataWriterHelper
       update_statement = connection.prepare("UPDATE #{table} SET data = ? WHERE id >= ? LIMIT 1")
       update_statement.execute(DbHelper.rand_data, id)
       id
+    ensure
+      update_statement&.close
     end
 
     def delete_data(connection)
@@ -119,6 +128,8 @@ module DataWriterHelper
       delete_statement = connection.prepare("DELETE FROM #{table} WHERE id >= ? LIMIT 1")
       delete_statement.execute(id)
       id
+    ensure
+      delete_statement&.close
     end
 
     def random_real_id(connection, table)

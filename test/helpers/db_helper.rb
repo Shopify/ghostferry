@@ -58,6 +58,12 @@ module DbHelper
     end
   end
 
+  def teardown_connections
+    @connections.each_value do |conn|
+      conn&.close
+    end
+  end
+
   def source_db
     @connections[:source]
   end

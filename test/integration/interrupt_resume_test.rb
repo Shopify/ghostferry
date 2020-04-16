@@ -315,8 +315,8 @@ class InterruptResumeTest < GhostferryTestCase
     # DML event.
     # Since we are racing between applying rows and sending the shutdown event,
     # we emit a whole bunch of them
-    num_batches = 20
-    num_values_per_batch = 1000
+    num_batches = 10
+    num_values_per_batch = 200
     row_id = 0
     ghostferry.on_status(Ghostferry::Status::BINLOG_STREAMING_STARTED) do
       for _batch_id in 0..num_batches do
