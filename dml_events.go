@@ -1,8 +1,10 @@
 package ghostferry
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -12,6 +14,8 @@ import (
 	"github.com/siddontang/go-mysql/replication"
 	"github.com/siddontang/go-mysql/schema"
 )
+
+var annotationRegex = regexp.MustCompile(`/\*(.*?)\*/`)
 
 type RowData []interface{}
 
@@ -45,6 +49,7 @@ type DMLEvent interface {
 	PaginationKey() (uint64, error)
 	BinlogPosition() mysql.Position
 	ResumableBinlogPosition() mysql.Position
+	Annotations() ([]string, error)
 }
 
 // The base of DMLEvent to provide the necessary methods.
@@ -52,6 +57,7 @@ type DMLEventBase struct {
 	table        *TableSchema
 	pos          mysql.Position
 	resumablePos mysql.Position
+	query        []byte
 }
 
 func (e *DMLEventBase) Database() string {
@@ -74,18 +80,44 @@ func (e *DMLEventBase) ResumableBinlogPosition() mysql.Position {
 	return e.resumablePos
 }
 
+// Annotations will return all comments prefixed to the SQL string
+func (e *DMLEventBase) Annotations() ([]string, error) {
+	if e.query == nil {
+		return nil, errors.New("could not get query from DML event")
+	}
+
+	captured := annotationRegex.FindAllStringSubmatch(string(e.query), -1)
+
+	var matches []string
+	for _, match := range captured {
+		if len(match) > 1 {
+			matches = append(matches, match[1])
+		}
+	}
+	return matches, nil
+}
+
+func NewDMLEventBase(table *TableSchema, pos, resumablePos mysql.Position, query []byte) *DMLEventBase {
+	return &DMLEventBase{
+		table:        table,
+		pos:          pos,
+		resumablePos: resumablePos,
+		query:        query,
+	}
+}
+
 type BinlogInsertEvent struct {
 	newValues RowData
 	*DMLEventBase
 }
 
-func NewBinlogInsertEvents(table *TableSchema, rowsEvent *replication.RowsEvent, pos, resumablePos mysql.Position) ([]DMLEvent, error) {
+func NewBinlogInsertEvents(eventBase *DMLEventBase, rowsEvent *replication.RowsEvent) ([]DMLEvent, error) {
 	insertEvents := make([]DMLEvent, len(rowsEvent.Rows))
 
 	for i, row := range rowsEvent.Rows {
 		insertEvents[i] = &BinlogInsertEvent{
 			newValues:    row,
-			DMLEventBase: &DMLEventBase{table, pos, resumablePos},
+			DMLEventBase: eventBase,
 		}
 	}
 
@@ -123,7 +155,7 @@ type BinlogUpdateEvent struct {
 	*DMLEventBase
 }
 
-func NewBinlogUpdateEvents(table *TableSchema, rowsEvent *replication.RowsEvent, pos, resumablePos mysql.Position) ([]DMLEvent, error) {
+func NewBinlogUpdateEvents(eventBase *DMLEventBase, rowsEvent *replication.RowsEvent) ([]DMLEvent, error) {
 	// UPDATE events have two rows in the RowsEvent. The first row is the
 	// entries of the old record (for WHERE) and the second row is the
 	// entries of the new record (for SET).
@@ -139,7 +171,7 @@ func NewBinlogUpdateEvents(table *TableSchema, rowsEvent *replication.RowsEvent,
 		updateEvents[i/2] = &BinlogUpdateEvent{
 			oldValues:    row,
 			newValues:    rowsEvent.Rows[i+1],
-			DMLEventBase: &DMLEventBase{table, pos, resumablePos},
+			DMLEventBase: eventBase,
 		}
 	}
 
@@ -183,13 +215,13 @@ func (e *BinlogDeleteEvent) NewValues() RowData {
 	return nil
 }
 
-func NewBinlogDeleteEvents(table *TableSchema, rowsEvent *replication.RowsEvent, pos, resumablePos mysql.Position) ([]DMLEvent, error) {
+func NewBinlogDeleteEvents(eventBase *DMLEventBase, rowsEvent *replication.RowsEvent) ([]DMLEvent, error) {
 	deleteEvents := make([]DMLEvent, len(rowsEvent.Rows))
 
 	for i, row := range rowsEvent.Rows {
 		deleteEvents[i] = &BinlogDeleteEvent{
 			oldValues:    row,
-			DMLEventBase: &DMLEventBase{table, pos, resumablePos},
+			DMLEventBase: eventBase,
 		}
 	}
 
@@ -211,7 +243,7 @@ func (e *BinlogDeleteEvent) PaginationKey() (uint64, error) {
 	return paginationKeyFromEventData(e.table, e.oldValues)
 }
 
-func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, resumablePos mysql.Position) ([]DMLEvent, error) {
+func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, resumablePos mysql.Position, query []byte) ([]DMLEvent, error) {
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
 	for _, row := range rowsEvent.Rows {
@@ -242,13 +274,14 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 		}
 	}
 
+	eventBase := NewDMLEventBase(table, pos, resumablePos, query)
 	switch ev.Header.EventType {
 	case replication.WRITE_ROWS_EVENTv1, replication.WRITE_ROWS_EVENTv2:
-		return NewBinlogInsertEvents(table, rowsEvent, pos, resumablePos)
+		return NewBinlogInsertEvents(eventBase, rowsEvent)
 	case replication.DELETE_ROWS_EVENTv1, replication.DELETE_ROWS_EVENTv2:
-		return NewBinlogDeleteEvents(table, rowsEvent, pos, resumablePos)
+		return NewBinlogDeleteEvents(eventBase, rowsEvent)
 	case replication.UPDATE_ROWS_EVENTv1, replication.UPDATE_ROWS_EVENTv2:
-		return NewBinlogUpdateEvents(table, rowsEvent, pos, resumablePos)
+		return NewBinlogUpdateEvents(eventBase, rowsEvent)
 	default:
 		return nil, fmt.Errorf("unrecognized rows event: %s", ev.Header.EventType.String())
 	}

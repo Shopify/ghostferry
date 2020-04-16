@@ -129,6 +129,8 @@ func (s *BinlogStreamer) Run() {
 		s.binlogSyncer.Close()
 	}()
 
+	var query []byte
+
 	currentFilename := s.lastStreamedBinlogPosition.Name
 	nextFilename := s.lastStreamedBinlogPosition.Name
 
@@ -210,8 +212,14 @@ func (s *BinlogStreamer) Run() {
 			// the mysql source. See:
 			// https://github.com/percona/percona-server/blob/93165de1451548ff11dd32c3d3e5df0ff28cfcfa/sql/rpl_binlog_sender.cc#L1020-L1026
 			isEventPositionValid = ev.Header.LogPos != 0
+		case *replication.RowsQueryEvent:
+			// A RowsQueryEvent will always precede the corresponding RowsEvent
+			// if binlog_rows_query_log_events is enabled, and is used to get
+			// the full query that was executed on the master (with annotations)
+			// that is otherwise not possible to reconstruct
+			query = ev.Event.(*replication.RowsQueryEvent).Query
 		case *replication.RowsEvent:
-			err = s.handleRowsEvent(ev)
+			err = s.handleRowsEvent(ev, query)
 			if err != nil {
 				s.logger.WithError(err).Error("failed to handle rows event")
 				s.ErrorHandler.Fatal("binlog_streamer", err)
@@ -242,6 +250,11 @@ func (s *BinlogStreamer) Run() {
 			// interruption to EITHER the start (if using GTIDs) or the end of the
 			// last transaction
 			isEventPositionResumable = true
+
+			// Here we also reset the query event as we are either at the beginning
+			// or the end of the current/next transaction. As such, the query will be
+			// reset following the next RowsQueryEvent before the corresponding RowsEvent(s)
+			query = nil
 		}
 
 		if isEventPositionValid {
@@ -313,7 +326,7 @@ func (s *BinlogStreamer) updateLastStreamedPosAndTime(evTimestamp uint32, evPos 
 	}
 }
 
-func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
+func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []byte) error {
 	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
@@ -334,7 +347,7 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent) error {
 		return nil
 	}
 
-	dmlEvs, err := NewBinlogDMLEvents(table, ev, pos, s.lastResumableBinlogPosition)
+	dmlEvs, err := NewBinlogDMLEvents(table, ev, pos, s.lastResumableBinlogPosition, query)
 	if err != nil {
 		return err
 	}
