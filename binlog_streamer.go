@@ -194,9 +194,11 @@ func (s *BinlogStreamer) Run() {
 			}
 
 			s.logger.WithFields(logrus.Fields{
-				"pos":      evPosition.Pos,
-				"filename": evPosition.Name,
-			}).Info("binlog file rotated, advancing lastStreamedBinlogPosition")
+				"new_position":  evPosition.Pos,
+				"new_filename":  evPosition.Name,
+				"last_position": s.lastStreamedBinlogPosition.Pos,
+				"last_filename": s.lastStreamedBinlogPosition.Name,
+			}).Info("binlog file rotated")
 		case *replication.FormatDescriptionEvent:
 			// This event is sent:
 			//   1) when our replication client connects to mysql
@@ -243,7 +245,9 @@ func (s *BinlogStreamer) Run() {
 		}
 
 		if isEventPositionValid {
-			s.updateLastStreamedPosAndTime(ev, evPosition, isEventPositionResumable)
+			evType := fmt.Sprintf("%T", ev.Event)
+			evTimestamp := ev.Header.Timestamp
+			s.updateLastStreamedPosAndTime(evTimestamp, evPosition, evType, isEventPositionResumable)
 		}
 	}
 }
@@ -276,30 +280,30 @@ func (s *BinlogStreamer) FlushAndStop() {
 	if err != nil {
 		s.ErrorHandler.Fatal("binlog_streamer", err)
 	}
-	s.logger.WithField("target_position", s.stopAtBinlogPosition).Info("current stop binlog position was recorded")
+	s.logger.WithField("stop_at_position", s.stopAtBinlogPosition).Info("current stop binlog position was recorded")
 
 	s.stopRequested = true
 }
 
-func (s *BinlogStreamer) updateLastStreamedPosAndTime(ev *replication.BinlogEvent, pos mysql.Position, isResumablePosition bool) {
-	if pos.Pos == 0 {
+func (s *BinlogStreamer) updateLastStreamedPosAndTime(evTimestamp uint32, evPos mysql.Position, evType string, isResumablePosition bool) {
+	if evPos.Pos == 0 {
 		// This shouldn't happen, as the cases where it does happen are excluded and thus signal a programming error
-		s.logger.Panicf("tried to advance to a zero log position: %s %d %T", pos.Name, pos.Pos, ev.Event)
+		s.logger.Panicf("tried to advance to a zero log position: %s %d %T", evPos.Name, evPos.Pos, evType)
 	}
 
-	s.lastStreamedBinlogPosition = pos
+	s.lastStreamedBinlogPosition = evPos
 	if isResumablePosition {
-		s.lastResumableBinlogPosition = pos
+		s.lastResumableBinlogPosition = evPos
 	}
 
 	// The first couple of events when connecting the binlog syncer (RotateEvent
 	// and FormatDescriptionEvent) have a zero timestamp..  Ignore those for
 	// timing updates
-	if ev.Header.Timestamp == 0 {
+	if evTimestamp == 0 {
 		return
 	}
 
-	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
+	eventTime := time.Unix(int64(evTimestamp), 0)
 	s.lastProcessedEventTime = eventTime
 
 	if time.Since(s.lastLagMetricEmittedTime) >= time.Second {

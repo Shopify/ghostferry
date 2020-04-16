@@ -107,8 +107,9 @@ module DataWriterHelper
       table = @tables.sample
       insert_statement = connection.prepare("INSERT INTO #{table} (id, data) VALUES (?, ?)")
       insert_statement.execute(nil, DbHelper.rand_data)
-      insert_statement.close
       connection.last_id
+    ensure
+      insert_statement&.close
     end
 
     def update_data(connection)
@@ -116,8 +117,9 @@ module DataWriterHelper
       id = random_real_id(connection, table)
       update_statement = connection.prepare("UPDATE #{table} SET data = ? WHERE id >= ? LIMIT 1")
       update_statement.execute(DbHelper.rand_data, id)
-      update_statement.close
       id
+    ensure
+      update_statement&.close
     end
 
     def delete_data(connection)
@@ -125,8 +127,9 @@ module DataWriterHelper
       id = random_real_id(connection, table)
       delete_statement = connection.prepare("DELETE FROM #{table} WHERE id >= ? LIMIT 1")
       delete_statement.execute(id)
-      delete_statement.close
       id
+    ensure
+      delete_statement&.close
     end
 
     def random_real_id(connection, table)
