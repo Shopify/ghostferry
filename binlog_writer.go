@@ -78,7 +78,7 @@ func (b *BinlogWriter) BufferBinlogEvents(events []DMLEvent) error {
 func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 	WaitForThrottle(b.Throttler)
 
-	queryBuffer := []byte("BEGIN;\n")
+	queryBuffer := []byte(sql.Annotate("BEGIN;\n", b.DB.Marginalia))
 
 	for _, ev := range events {
 		eventDatabaseName := ev.Database()
@@ -91,12 +91,12 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 			eventTableName = targetTableName
 		}
 
-		sql, err := ev.AsSQLString(eventDatabaseName, eventTableName)
+		sqlStmt, err := ev.AsSQLString(eventDatabaseName, eventTableName)
 		if err != nil {
 			return fmt.Errorf("generating sql query at pos %v: %v", ev.BinlogPosition(), err)
 		}
 
-		queryBuffer = append(queryBuffer, sql...)
+		queryBuffer = append(queryBuffer, sql.Annotate(sqlStmt, b.DB.Marginalia)...)
 		queryBuffer = append(queryBuffer, ";\n"...)
 	}
 
