@@ -12,6 +12,7 @@ mysql-1:
     --collation-server=utf8mb4_unicode_ci
     --max-connections=1000
     --read-only=OFF
+    --binlog-rows-query-log-events=ON
   environment:
     MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
   volumes:
@@ -32,6 +33,7 @@ mysql-2:
     --character-set-server=utf8mb4
     --collation-server=utf8mb4_unicode_ci
     --max-connections=1000
+    --binlog-rows-query-log-events=ON
   environment:
     MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
   volumes:
@@ -52,6 +54,7 @@ mysql-3:
     --character-set-server=utf8mb4
     --collation-server=utf8mb4_unicode_ci
     --max-connections=1000
+    --binlog-rows-query-log-events=ON
   environment:
     MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
   volumes:
