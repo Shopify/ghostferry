@@ -120,8 +120,8 @@ class InterruptResumeTest < GhostferryTestCase
 
     dumped_state = ghostferry.run_expecting_interrupt
     assert_basic_fields_exist_in_dumped_state(dumped_state)
-    assert_equal "", dumped_state["LastStoredBinlogPositionForInlineVerifier"]["Name"]
-    assert_equal 0, dumped_state["LastStoredBinlogPositionForInlineVerifier"]["Pos"]
+    assert_equal "", dumped_state["LastStoredSourceBinlogPositionForInlineVerifier"]["Name"]
+    assert_equal 0, dumped_state["LastStoredSourceBinlogPositionForInlineVerifier"]["Pos"]
   end
 
   def test_interrupt_resume_inline_verifier_with_datawriter
@@ -184,7 +184,7 @@ class InterruptResumeTest < GhostferryTestCase
 
     dumped_state = ghostferry.run_expecting_interrupt
     assert_basic_fields_exist_in_dumped_state(dumped_state)
-    refute_nil dumped_state["LastStoredBinlogPositionForInlineVerifier"].nil?
+    refute_nil dumped_state["LastStoredSourceBinlogPositionForInlineVerifier"].nil?
     refute_nil dumped_state["BinlogVerifyStore"]
     refute_nil dumped_state["BinlogVerifyStore"]["gftest"]
     refute_nil dumped_state["BinlogVerifyStore"]["gftest"]["test_table_1"]
@@ -343,13 +343,15 @@ class InterruptResumeTest < GhostferryTestCase
 
     refute_nil dumped_state['LastWrittenBinlogPosition']['Name']
     refute_nil dumped_state['LastWrittenBinlogPosition']['Pos']
-    refute_nil dumped_state['LastStoredBinlogPositionForInlineVerifier']['Name']
-    refute_nil dumped_state['LastStoredBinlogPositionForInlineVerifier']['Pos']
+    refute_nil dumped_state['LastStoredSourceBinlogPositionForInlineVerifier']['Name']
+    refute_nil dumped_state['LastStoredSourceBinlogPositionForInlineVerifier']['Pos']
+    refute_nil dumped_state['LastStoredTargetBinlogPositionForInlineVerifier']['Name']
+    refute_nil dumped_state['LastStoredTargetBinlogPositionForInlineVerifier']['Pos']
 
     # assert the resumable position is not the start position
     if dumped_state['LastWrittenBinlogPosition']['Name'] == start_binlog_status['File']
       refute_equal dumped_state['LastWrittenBinlogPosition']['Pos'], start_binlog_status['Position']
-      refute_equal dumped_state['LastStoredBinlogPositionForInlineVerifier']['Pos'], start_binlog_status['Position']
+      refute_equal dumped_state['LastStoredSourceBinlogPositionForInlineVerifier']['Pos'], start_binlog_status['Position']
     end
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
@@ -359,5 +361,34 @@ class InterruptResumeTest < GhostferryTestCase
     ghostferry.run(dumped_state)
 
     assert_test_table_is_identical
+  end
+
+  def test_interrupt_resume_inline_verifier_will_verify_additional_rows_changed_on_target_during_interrupt
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+
+    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      ghostferry.term_and_wait_for_exit
+    end
+
+    dumped_state = ghostferry.run_expecting_interrupt
+    assert_basic_fields_exist_in_dumped_state(dumped_state)
+    refute_nil dumped_state["LastStoredTargetBinlogPositionForInlineVerifier"]
+
+    result = target_db.query("SELECT MIN(id) FROM #{DEFAULT_FULL_TABLE_NAME}")
+    chosen_id = result.first["MIN(id)"]
+
+    target_db.query(
+      "UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'corrupted' WHERE id = #{chosen_id}",
+      annotations: ["not:ghostferry"]
+    )
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+
+    ghostferry.run_expecting_interrupt(dumped_state)
+    refute_nil ghostferry.error
+
+    assert ghostferry.error["ErrMessage"].include?(
+      "row data with paginationKey #{chosen_id} on `gftest`.`test_table_1` has been corrupted"
+    )
   end
 end

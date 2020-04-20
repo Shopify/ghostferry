@@ -83,7 +83,7 @@ func (this *TestFerry) Start() error {
 	}
 
 	if this.BeforeBinlogApplyListener != nil {
-		this.Ferry.BinlogStreamer.AddEventListener(this.BeforeBinlogApplyListener)
+		this.Ferry.SourceBinlogStreamer.AddEventListener(this.BeforeBinlogApplyListener)
 	}
 
 	if this.BeforeRowCopyDoneListener != nil {
@@ -100,7 +100,7 @@ func (this *TestFerry) Start() error {
 	}
 
 	if this.AfterBinlogApplyListener != nil {
-		this.Ferry.BinlogStreamer.AddEventListener(this.AfterBinlogApplyListener)
+		this.Ferry.SourceBinlogStreamer.AddEventListener(this.AfterBinlogApplyListener)
 	}
 
 	if this.AfterRowCopyDoneListener != nil {

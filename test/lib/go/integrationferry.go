@@ -80,7 +80,7 @@ func (f *IntegrationFerry) Start() error {
 		return f.SendStatusAndWaitUntilContinue(StatusBeforeRowCopy, rowBatch.TableSchema().Name)
 	})
 
-	f.Ferry.BinlogStreamer.AddEventListener(func(events []ghostferry.DMLEvent) error {
+	f.Ferry.SourceBinlogStreamer.AddEventListener(func(events []ghostferry.DMLEvent) error {
 		return f.SendStatusAndWaitUntilContinue(StatusBeforeBinlogApply)
 	})
 
@@ -93,7 +93,7 @@ func (f *IntegrationFerry) Start() error {
 		return f.SendStatusAndWaitUntilContinue(StatusAfterRowCopy, rowBatch.TableSchema().Name)
 	})
 
-	f.Ferry.BinlogStreamer.AddEventListener(func(events []ghostferry.DMLEvent) error {
+	f.Ferry.SourceBinlogStreamer.AddEventListener(func(events []ghostferry.DMLEvent) error {
 		return f.SendStatusAndWaitUntilContinue(StatusAfterBinlogApply)
 	})
 
@@ -179,6 +179,7 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 			Params: map[string]string{
 				"charset": "utf8mb4",
 			},
+			Marginalia: os.Getenv("GHOSTFERRY_MARGINALIA"),
 		},
 
 		Target: &ghostferry.DatabaseConfig{
@@ -190,6 +191,7 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 			Params: map[string]string{
 				"charset": "utf8mb4",
 			},
+			Marginalia: os.Getenv("GHOSTFERRY_MARGINALIA"),
 		},
 
 		AutomaticCutover: true,
@@ -198,7 +200,8 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 			TablesFunc: nil,
 		},
 
-		DumpStateOnSignal: true,
+		DumpStateOnSignal:      true,
+		SkipTargetVerification: (os.Getenv("GHOSTFERRY_SKIP_TARGET_VERIFICATION") == "true"),
 	}
 
 	integrationPort := os.Getenv(portEnvName)

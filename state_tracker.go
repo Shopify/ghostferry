@@ -34,25 +34,26 @@ type SerializableState struct {
 	GhostferryVersion         string
 	LastKnownTableSchemaCache TableSchemaCache
 
-	LastSuccessfulPaginationKeys              map[string]uint64
-	CompletedTables                           map[string]bool
-	LastWrittenBinlogPosition                 mysql.Position
-	LastStoredBinlogPositionForInlineVerifier mysql.Position
-	BinlogVerifyStore                         BinlogVerifySerializedStore
+	LastSuccessfulPaginationKeys                    map[string]uint64
+	CompletedTables                                 map[string]bool
+	LastWrittenBinlogPosition                       mysql.Position
+	BinlogVerifyStore                               BinlogVerifySerializedStore
+	LastStoredSourceBinlogPositionForInlineVerifier mysql.Position
+	LastStoredTargetBinlogPositionForInlineVerifier mysql.Position
 }
 
 func (s *SerializableState) MinBinlogPosition() mysql.Position {
 	nilPosition := mysql.Position{}
 	if s.LastWrittenBinlogPosition == nilPosition {
-		return s.LastStoredBinlogPositionForInlineVerifier
+		return s.LastStoredSourceBinlogPositionForInlineVerifier
 	}
 
-	if s.LastStoredBinlogPositionForInlineVerifier == nilPosition {
+	if s.LastStoredSourceBinlogPositionForInlineVerifier == nilPosition {
 		return s.LastWrittenBinlogPosition
 	}
 
-	if s.LastWrittenBinlogPosition.Compare(s.LastStoredBinlogPositionForInlineVerifier) >= 0 {
-		return s.LastStoredBinlogPositionForInlineVerifier
+	if s.LastWrittenBinlogPosition.Compare(s.LastStoredSourceBinlogPositionForInlineVerifier) >= 0 {
+		return s.LastStoredSourceBinlogPositionForInlineVerifier
 	} else {
 		return s.LastWrittenBinlogPosition
 	}
@@ -82,8 +83,9 @@ type StateTracker struct {
 	BinlogRWMutex *sync.RWMutex
 	CopyRWMutex   *sync.RWMutex
 
-	lastWrittenBinlogPosition                 mysql.Position
-	lastStoredBinlogPositionForInlineVerifier mysql.Position
+	lastWrittenBinlogPosition                       mysql.Position
+	lastStoredSourceBinlogPositionForInlineVerifier mysql.Position
+	lastStoredTargetBinlogPositionForInlineVerifier mysql.Position
 
 	lastSuccessfulPaginationKeys map[string]uint64
 	completedTables              map[string]bool
@@ -109,7 +111,8 @@ func NewStateTrackerFromSerializedState(speedLogCount int, serializedState *Seri
 	s.lastSuccessfulPaginationKeys = serializedState.LastSuccessfulPaginationKeys
 	s.completedTables = serializedState.CompletedTables
 	s.lastWrittenBinlogPosition = serializedState.LastWrittenBinlogPosition
-	s.lastStoredBinlogPositionForInlineVerifier = serializedState.LastStoredBinlogPositionForInlineVerifier
+	s.lastStoredSourceBinlogPositionForInlineVerifier = serializedState.LastStoredSourceBinlogPositionForInlineVerifier
+	s.lastStoredTargetBinlogPositionForInlineVerifier = serializedState.LastStoredSourceBinlogPositionForInlineVerifier
 	return s
 }
 
@@ -120,11 +123,18 @@ func (s *StateTracker) UpdateLastResumableBinlogPosition(pos mysql.Position) {
 	s.lastWrittenBinlogPosition = pos
 }
 
-func (s *StateTracker) UpdateLastResumableBinlogPositionForInlineVerifier(pos mysql.Position) {
+func (s *StateTracker) UpdateLastResumableSourceBinlogPositionForInlineVerifier(pos mysql.Position) {
 	s.BinlogRWMutex.Lock()
 	defer s.BinlogRWMutex.Unlock()
 
-	s.lastStoredBinlogPositionForInlineVerifier = pos
+	s.lastWrittenBinlogPosition = pos
+}
+
+func (s *StateTracker) UpdateLastResumableTargetBinlogPositionForInlineVerifier(pos mysql.Position) {
+	s.BinlogRWMutex.Lock()
+	defer s.BinlogRWMutex.Unlock()
+
+	s.lastStoredTargetBinlogPositionForInlineVerifier = pos
 }
 
 func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginationKey uint64) {
@@ -217,12 +227,13 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, bin
 	defer s.CopyRWMutex.RUnlock()
 
 	state := &SerializableState{
-		GhostferryVersion:                         VersionString,
-		LastKnownTableSchemaCache:                 lastKnownTableSchemaCache,
-		LastSuccessfulPaginationKeys:              make(map[string]uint64),
-		CompletedTables:                           make(map[string]bool),
-		LastWrittenBinlogPosition:                 s.lastWrittenBinlogPosition,
-		LastStoredBinlogPositionForInlineVerifier: s.lastStoredBinlogPositionForInlineVerifier,
+		GhostferryVersion:                               VersionString,
+		LastKnownTableSchemaCache:                       lastKnownTableSchemaCache,
+		LastSuccessfulPaginationKeys:                    make(map[string]uint64),
+		CompletedTables:                                 make(map[string]bool),
+		LastWrittenBinlogPosition:                       s.lastWrittenBinlogPosition,
+		LastStoredSourceBinlogPositionForInlineVerifier: s.lastStoredSourceBinlogPositionForInlineVerifier,
+		LastStoredTargetBinlogPositionForInlineVerifier: s.lastStoredTargetBinlogPositionForInlineVerifier,
 	}
 
 	if binlogVerifyStore != nil {

@@ -56,8 +56,9 @@ type Ferry struct {
 	SourceDB *sql.DB
 	TargetDB *sql.DB
 
-	BinlogStreamer *BinlogStreamer
-	BinlogWriter   *BinlogWriter
+	SourceBinlogStreamer *BinlogStreamer
+	TargetBinlogStreamer *BinlogStreamer
+	BinlogWriter         *BinlogWriter
 
 	DataIterator *DataIterator
 	BatchWriter  *BatchWriter
@@ -120,12 +121,12 @@ func (f *Ferry) NewDataIteratorWithoutStateTracker() *DataIterator {
 	return dataIterator
 }
 
-func (f *Ferry) NewBinlogStreamer() *BinlogStreamer {
+func (f *Ferry) NewBinlogStreamer(db *sql.DB, dbConf *DatabaseConfig) *BinlogStreamer {
 	f.ensureInitialized()
 
 	return &BinlogStreamer{
-		DB:           f.SourceDB,
-		DBConfig:     f.Source,
+		DB:           db,
+		DBConfig:     dbConf,
 		MyServerId:   f.Config.MyServerId,
 		ErrorHandler: f.ErrorHandler,
 		Filter:       f.CopyFilter,
@@ -264,7 +265,7 @@ func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
 			ReadRetries: f.Config.DBReadRetries,
 		},
 
-		BinlogStreamer:      f.BinlogStreamer,
+		BinlogStreamer:      f.SourceBinlogStreamer,
 		SourceDB:            f.SourceDB,
 		TargetDB:            f.TargetDB,
 		CompressionVerifier: compressionVerifier,
@@ -434,7 +435,12 @@ func (f *Ferry) Initialize() (err error) {
 
 	// The iterative verifier needs the binlog streamer so this has to be first.
 	// Eventually this can be moved below the verifier initialization.
-	f.BinlogStreamer = f.NewBinlogStreamer()
+	f.SourceBinlogStreamer = f.NewBinlogStreamer(f.SourceDB, f.Config.Source)
+
+	if !f.Config.SkipTargetVerification {
+		f.TargetBinlogStreamer = f.NewBinlogStreamer(f.TargetDB, f.Config.Target)
+	}
+
 	f.BinlogWriter = f.NewBinlogWriter()
 	f.DataIterator = f.NewDataIterator()
 	f.BatchWriter = f.NewBatchWriter()
@@ -482,11 +488,15 @@ func (f *Ferry) Start() error {
 	// Registering the builtin event listeners in Start allows the consumer
 	// of the library to register event listeners that gets called before
 	// and after the data gets written to the target database.
-	f.BinlogStreamer.AddEventListener(f.BinlogWriter.BufferBinlogEvents)
+	f.SourceBinlogStreamer.AddEventListener(f.BinlogWriter.BufferBinlogEvents)
 	f.DataIterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
 
 	if f.inlineVerifier != nil {
-		f.BinlogStreamer.AddEventListener(f.inlineVerifier.binlogEventListener)
+		f.SourceBinlogStreamer.AddEventListener(f.inlineVerifier.sourceBinlogEventListener)
+
+		if !f.Config.SkipTargetVerification {
+			f.TargetBinlogStreamer.AddEventListener(f.inlineVerifier.targetBinlogEventListener)
+		}
 	}
 
 	// The starting binlog coordinates must be determined first. If it is
@@ -494,12 +504,22 @@ func (f *Ferry) Start() error {
 	// miss some records that are inserted between the time the
 	// DataIterator determines the range of IDs to copy and the time that
 	// the starting binlog coordinates are determined.
-	var pos siddontangmysql.Position
+	var sourcePos siddontangmysql.Position
+	var targetPos siddontangmysql.Position
+
 	var err error
 	if f.StateToResumeFrom != nil {
-		pos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.MinBinlogPosition())
+		sourcePos, err = f.SourceBinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.MinBinlogPosition())
+
+		if !f.Config.SkipTargetVerification {
+			targetPos, err = f.TargetBinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.LastStoredTargetBinlogPositionForInlineVerifier)
+		}
 	} else {
-		pos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysql()
+		sourcePos, err = f.SourceBinlogStreamer.ConnectBinlogStreamerToMysql()
+
+		if !f.Config.SkipTargetVerification {
+			targetPos, err = f.TargetBinlogStreamer.ConnectBinlogStreamerToMysql()
+		}
 	}
 	if err != nil {
 		return err
@@ -508,9 +528,13 @@ func (f *Ferry) Start() error {
 	// If we don't set this now, there is a race condition where Ghostferry
 	// is terminated with some rows copied but no binlog events are written.
 	// This guarentees that we are able to restart from a valid location.
-	f.StateTracker.UpdateLastResumableBinlogPosition(pos)
+	f.StateTracker.UpdateLastResumableBinlogPosition(sourcePos)
 	if f.inlineVerifier != nil {
-		f.StateTracker.UpdateLastResumableBinlogPositionForInlineVerifier(pos)
+		f.StateTracker.UpdateLastResumableSourceBinlogPositionForInlineVerifier(sourcePos)
+
+		if !f.Config.SkipTargetVerification {
+			f.StateTracker.UpdateLastResumableTargetBinlogPositionForInlineVerifier(targetPos)
+		}
 	}
 
 	return nil
@@ -583,7 +607,12 @@ func (f *Ferry) Run() {
 	}
 
 	binlogWg := &sync.WaitGroup{}
-	binlogWg.Add(2)
+
+	waitNum := 2
+	if !f.Config.SkipTargetVerification {
+		waitNum = 3
+	}
+	binlogWg.Add(waitNum)
 
 	go func() {
 		defer binlogWg.Done()
@@ -593,9 +622,16 @@ func (f *Ferry) Run() {
 	go func() {
 		defer binlogWg.Done()
 
-		f.BinlogStreamer.Run()
+		f.SourceBinlogStreamer.Run()
 		f.BinlogWriter.Stop()
 	}()
+
+	if !f.Config.SkipTargetVerification {
+		go func() {
+			defer binlogWg.Done()
+			f.TargetBinlogStreamer.Run()
+		}()
+	}
 
 	dataIteratorWg := &sync.WaitGroup{}
 	dataIteratorWg.Add(1)
@@ -687,7 +723,7 @@ func (f *Ferry) WaitUntilRowCopyIsComplete() {
 }
 
 func (f *Ferry) WaitUntilBinlogStreamerCatchesUp() {
-	for !f.BinlogStreamer.IsAlmostCaughtUp() {
+	for !f.SourceBinlogStreamer.IsAlmostCaughtUp() {
 		time.Sleep(500 * time.Millisecond)
 	}
 }
@@ -721,7 +757,10 @@ func (f *Ferry) FlushBinlogAndStopStreaming() {
 		}
 	}
 
-	f.BinlogStreamer.FlushAndStop()
+	f.SourceBinlogStreamer.FlushAndStop()
+	if !f.Config.SkipTargetVerification {
+		f.TargetBinlogStreamer.FlushAndStop()
+	}
 }
 
 func (f *Ferry) SerializeStateToJSON() (string, error) {
@@ -750,9 +789,9 @@ func (f *Ferry) Progress() *Progress {
 	s.Throttled = f.Throttler.Throttled()
 
 	// Binlog Progress
-	s.LastSuccessfulBinlogPos = f.BinlogStreamer.lastStreamedBinlogPosition
-	s.BinlogStreamerLag = time.Now().Sub(f.BinlogStreamer.lastProcessedEventTime).Seconds()
-	s.FinalBinlogPos = f.BinlogStreamer.stopAtBinlogPosition
+	s.LastSuccessfulBinlogPos = f.SourceBinlogStreamer.lastStreamedBinlogPosition
+	s.BinlogStreamerLag = time.Now().Sub(f.SourceBinlogStreamer.lastProcessedEventTime).Seconds()
+	s.FinalBinlogPos = f.SourceBinlogStreamer.stopAtBinlogPosition
 
 	// Table Progress
 	serializedState := f.StateTracker.Serialize(nil, nil)
@@ -881,6 +920,17 @@ func (f *Ferry) checkConnectionForBinlogFormat(db *sql.DB) error {
 		}
 		if strings.ToUpper(value) != "FULL" {
 			return fmt.Errorf("binlog_row_image must be FULL, not %s", value)
+		}
+	}
+
+	if !f.Config.SkipTargetVerification {
+		row = db.QueryRow("SHOW VARIABLES LIKE 'binlog_rows_query_log_events'")
+		err = row.Scan(&name, &value)
+		if err != nil {
+			return err
+		}
+		if strings.ToUpper(value) != "ON" {
+			return fmt.Errorf("binlog_rows_query_log_events must be ON, not %s", value)
 		}
 	}
 

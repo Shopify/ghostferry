@@ -63,6 +63,10 @@ type DatabaseConfig struct {
 	// SQL annotations used to differentiate Ghostferry's DMLs
 	// against other actor's. This will default to the defaultMarginalia
 	// constant above if not set.
+	//
+	// This is used to ensure any changes to the Target during the move process
+	// are performed only by Ghostferry (until cutover). Otherwise, the modification
+	// will be identified as data corruption and fail the move.
 	Marginalia string
 }
 
@@ -490,6 +494,21 @@ type Config struct {
 	// 2. Use the table's primary key column as the pagination column. Fail if the primary key is not numeric or is a composite key without a FallbackColumn specified.
 	// 3. Use the FallbackColumn pagination column, if configured. Fail if we cannot find this column in the table.
 	CascadingPaginationColumnConfig *CascadingPaginationColumnConfig
+
+	// SkipTargetVerification is used to enable or disable target verification during moves.
+	// This feature is currently only available while using the InlineVerifier.
+	//
+	// This does so by inspecting the annotations (configured as Marginalia in the DatabaseConfig above)
+	// and will fail the move unless all applicable DMLs (as identified by the sharding key) sent to the
+	// Target were sent from Ghostferry.
+	//
+	// NOTE:
+	// The Target database must be configured with binlog_rows_query_log_events
+	// set to "ON" for this to function properly. Ghostferry not allow the move
+	// process to begin if this is enabled and the above option is set to "OFF".
+	//
+	// Required: defaults to false
+	SkipTargetVerification bool
 }
 
 func (c *Config) ValidateConfig() error {

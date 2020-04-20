@@ -2,10 +2,11 @@ package test
 
 import (
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"sort"
 	"testing"
 	"time"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
@@ -42,7 +43,7 @@ func (t *IterativeVerifierTestSuite) SetupTest() {
 			BatchSize:   t.Ferry.Config.DataIterationBatchSize,
 			ReadRetries: t.Ferry.Config.DBReadRetries,
 		},
-		BinlogStreamer: t.Ferry.BinlogStreamer,
+		BinlogStreamer: t.Ferry.SourceBinlogStreamer,
 		SourceDB:       t.Ferry.SourceDB,
 		TargetDB:       t.Ferry.TargetDB,
 
