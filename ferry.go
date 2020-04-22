@@ -510,19 +510,29 @@ func (f *Ferry) Start() error {
 	var err error
 	if f.StateToResumeFrom != nil {
 		sourcePos, err = f.SourceBinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.MinBinlogPosition())
+		if err != nil {
+			return err
+		}
 
 		if !f.Config.SkipTargetVerification {
 			targetPos, err = f.TargetBinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.LastStoredTargetBinlogPositionForInlineVerifier)
+			if err != nil {
+				return err
+			}
+
 		}
 	} else {
 		sourcePos, err = f.SourceBinlogStreamer.ConnectBinlogStreamerToMysql()
+		if err != nil {
+			return err
+		}
 
 		if !f.Config.SkipTargetVerification {
 			targetPos, err = f.TargetBinlogStreamer.ConnectBinlogStreamerToMysql()
+			if err != nil {
+				return err
+			}
 		}
-	}
-	if err != nil {
-		return err
 	}
 
 	// If we don't set this now, there is a race condition where Ghostferry
@@ -607,18 +617,13 @@ func (f *Ferry) Run() {
 	}
 
 	binlogWg := &sync.WaitGroup{}
-
-	waitNum := 2
-	if !f.Config.SkipTargetVerification {
-		waitNum = 3
-	}
-	binlogWg.Add(waitNum)
-
+	binlogWg.Add(1)
 	go func() {
 		defer binlogWg.Done()
 		f.BinlogWriter.Run()
 	}()
 
+	binlogWg.Add(1)
 	go func() {
 		defer binlogWg.Done()
 
@@ -627,6 +632,7 @@ func (f *Ferry) Run() {
 	}()
 
 	if !f.Config.SkipTargetVerification {
+		binlogWg.Add(1)
 		go func() {
 			defer binlogWg.Done()
 			f.TargetBinlogStreamer.Run()
@@ -635,7 +641,6 @@ func (f *Ferry) Run() {
 
 	dataIteratorWg := &sync.WaitGroup{}
 	dataIteratorWg.Add(1)
-
 	go func() {
 		defer dataIteratorWg.Done()
 		f.DataIterator.Run(f.Tables.AsSlice())
