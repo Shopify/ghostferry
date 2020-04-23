@@ -7,6 +7,7 @@ package schema
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/juju/errors"
@@ -29,6 +30,8 @@ const (
 	TYPE_TIME                 // time
 	TYPE_BIT                  // bit
 	TYPE_JSON                 // json
+	TYPE_BINARY               // binary
+	TYPE_VARBINARY            // varbinary
 )
 
 type TableColumn struct {
@@ -40,6 +43,7 @@ type TableColumn struct {
 	IsUnsigned bool
 	EnumValues []string
 	SetValues  []string
+	FixedSize  uint
 }
 
 type Index struct {
@@ -90,6 +94,11 @@ func (ta *Table) AddColumn(name string, columnType string, collation string, ext
 				")"),
 			"'", "", -1),
 			",")
+	} else if strings.HasPrefix(columnType, "binary") {
+		ta.Columns[index].Type = TYPE_BINARY
+		ta.Columns[index].FixedSize = getFixedSizeFromColumnType(columnType)
+	} else if strings.HasPrefix(columnType, "varbinary") {
+		ta.Columns[index].Type = TYPE_VARBINARY
 	} else if strings.HasPrefix(columnType, "datetime") {
 		ta.Columns[index].Type = TYPE_DATETIME
 	} else if strings.HasPrefix(columnType, "timestamp") {
@@ -104,6 +113,9 @@ func (ta *Table) AddColumn(name string, columnType string, collation string, ext
 		ta.Columns[index].Type = TYPE_JSON
 	} else if strings.Contains(columnType, "int") || strings.HasPrefix(columnType, "year") {
 		ta.Columns[index].Type = TYPE_NUMBER
+	} else if strings.HasPrefix(columnType, "char") {
+		ta.Columns[index].Type = TYPE_STRING
+		ta.Columns[index].FixedSize = getFixedSizeFromColumnType(columnType)
 	} else {
 		ta.Columns[index].Type = TYPE_STRING
 	}
@@ -116,6 +128,22 @@ func (ta *Table) AddColumn(name string, columnType string, collation string, ext
 	if extra == "auto_increment" {
 		ta.Columns[index].IsAuto = true
 	}
+}
+
+func getFixedSizeFromColumnType(columnType string) uint {
+	startIndex := strings.Index(columnType, "(")
+	endIndex := strings.Index(columnType, ")")
+	if startIndex < 0 || endIndex < 0 || startIndex > endIndex {
+		return 0
+	}
+	i, err := strconv.Atoi(columnType[startIndex+1:endIndex])
+	if err != nil {
+		return 0
+	}
+	if i < 0 {
+		return 0
+	}
+	return uint(i)
 }
 
 func (ta *Table) FindColumn(name string) int {
