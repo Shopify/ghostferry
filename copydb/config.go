@@ -70,6 +70,8 @@ type Config struct {
 
 	// The duration to wait for the replication to catchup before aborting. Only use if RunFerryFromReplica is true.
 	WaitForReplicationTimeout string
+
+	AllowExistingTargetTable bool
 }
 
 func (c *Config) InitializeAndValidateConfig() error {

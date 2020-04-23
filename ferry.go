@@ -101,8 +101,9 @@ func (f *Ferry) NewDataIterator() *DataIterator {
 			DB:        f.SourceDB,
 			Throttler: f.Throttler,
 
-			BatchSize:   f.Config.DataIterationBatchSize,
-			ReadRetries: f.Config.DBReadRetries,
+			BatchSize:      f.Config.DataIterationBatchSize,
+			ReadRetries:    f.Config.DBReadRetries,
+			ColumnRewrites: f.Config.ColumnRewrites,
 		},
 		StateTracker: f.StateTracker,
 	}

@@ -344,6 +344,8 @@ type Config struct {
 	// Optional: defaults to empty map/no rewrites
 	TableRewrites map[string]string
 
+	ColumnRewrites map[string]map[string]string
+
 	// The maximum number of retries for writes if the writes failed on
 	// the target database.
 	//

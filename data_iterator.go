@@ -14,9 +14,10 @@ type DataIterator struct {
 	Concurrency       int
 	SelectFingerprint bool
 
-	ErrorHandler ErrorHandler
-	CursorConfig *CursorConfig
-	StateTracker *StateTracker
+	ErrorHandler   ErrorHandler
+	CursorConfig   *CursorConfig
+	StateTracker   *StateTracker
+	ColumnRewrites map[string]map[string]string
 
 	targetPaginationKeys *sync.Map
 	batchListeners       []func(*RowBatch) error
@@ -123,6 +124,7 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 							paginationKeyIndex: batch.PaginationKeyIndex(),
 							table:              table,
 							fingerprints:       fingerprints,
+							ColumnRewrites:     d.ColumnRewrites,
 						}
 					}
 

@@ -9,6 +9,7 @@ type RowBatch struct {
 	paginationKeyIndex int
 	table              *TableSchema
 	fingerprints       map[uint64][]byte
+	ColumnRewrites     map[string]map[string]string
 }
 
 func NewRowBatch(table *TableSchema, values []RowData, paginationKeyIndex int) *RowBatch {
@@ -48,6 +49,7 @@ func (e *RowBatch) AsSQLQuery(schemaName, tableName string) (string, []interface
 		return "", nil, err
 	}
 
+	e.rewriteColumns()
 	columns := quotedColumnNames(e.table)
 
 	valuesStr := "(" + strings.Repeat("?,", len(columns)-1) + "?)"
@@ -58,6 +60,19 @@ func (e *RowBatch) AsSQLQuery(schemaName, tableName string) (string, []interface
 		" (" + strings.Join(columns, ",") + ") VALUES " + valuesStr
 
 	return query, e.flattenRowData(), nil
+}
+
+func (e *RowBatch) rewriteColumns() {
+	renamedColumns := e.ColumnRewrites[e.table.Name]
+	if renamedColumns == nil {
+		return
+	}
+
+	for i, column := range e.table.Columns {
+		if newName := renamedColumns[column.Name]; newName != "" {
+			e.table.Columns[i].Name = newName
+		}
+	}
 }
 
 func (e *RowBatch) flattenRowData() []interface{} {

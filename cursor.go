@@ -39,6 +39,7 @@ type CursorConfig struct {
 	BuildSelect     func([]string, *TableSchema, uint64, uint64) (squirrel.SelectBuilder, error)
 	BatchSize       uint64
 	ReadRetries     int
+	ColumnRewrites  map[string]map[string]string
 }
 
 // returns a new Cursor with an embedded copy of itself
@@ -249,6 +250,7 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos uint64
 		values:             batchData,
 		paginationKeyIndex: paginationKeyIndex,
 		table:              c.Table,
+		ColumnRewrites:     c.ColumnRewrites,
 	}
 
 	logger.Debugf("found %d rows", batch.Size())
