@@ -19,7 +19,7 @@ func setupSingleEntryTable(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB)
 func annotate(queries []string, marginalia string) []string {
 	annotatedQueries := make([]string, len(queries))
 	for i, q := range queries {
-		annotatedQueries[i] = sql.Annotate(q, marginalia)
+		annotatedQueries[i] = sql.AnnotateStmt(q, marginalia)
 	}
 	return annotatedQueries
 }

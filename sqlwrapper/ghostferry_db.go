@@ -8,7 +8,7 @@ import (
 
 type DB struct {
 	*sqlorig.DB
-	marginalia string
+	Marginalia string
 }
 
 type Tx struct {
@@ -22,11 +22,11 @@ func Open(driverName, dataSourceName, marginalia string) (*DB, error) {
 }
 
 func (db DB) PrepareContext(ctx context.Context, query string) (*sqlorig.Stmt, error) {
-	return db.DB.PrepareContext(ctx, Annotate(query, db.marginalia))
+	return db.DB.PrepareContext(ctx, AnnotateStmt(query, db.Marginalia))
 }
 
 func (db DB) ExecContext(ctx context.Context, query string, args ...interface{}) (sqlorig.Result, error) {
-	return db.DB.ExecContext(ctx, Annotate(query, db.marginalia), args...)
+	return db.DB.ExecContext(ctx, AnnotateStmt(query, db.Marginalia), args...)
 }
 
 func (db DB) QueryContext(ctx context.Context, query string, args ...interface{}) (*sqlorig.Rows, error) {
@@ -34,11 +34,11 @@ func (db DB) QueryContext(ctx context.Context, query string, args ...interface{}
 }
 
 func (db DB) Exec(query string, args ...interface{}) (sqlorig.Result, error) {
-	return db.DB.Exec(Annotate(query, db.marginalia), args...)
+	return db.DB.Exec(AnnotateStmt(query, db.Marginalia), args...)
 }
 
 func (db DB) Prepare(query string) (*sqlorig.Stmt, error) {
-	return db.DB.Prepare(Annotate(query, db.marginalia))
+	return db.DB.Prepare(AnnotateStmt(query, db.Marginalia))
 }
 
 func (db DB) Query(query string, args ...interface{}) (*sqlorig.Rows, error) {
@@ -55,23 +55,23 @@ func (db DB) QueryRowContext(ctx context.Context, query string, args ...interfac
 
 func (db DB) Begin() (*Tx, error) {
 	tx, err := db.DB.Begin()
-	return &Tx{tx, db.marginalia}, err
+	return &Tx{tx, db.Marginalia}, err
 }
 
 func (tx Tx) ExecContext(ctx context.Context, query string, args ...interface{}) (sqlorig.Result, error) {
-	return tx.Tx.ExecContext(ctx, Annotate(query, tx.marginalia), args...)
+	return tx.Tx.ExecContext(ctx, AnnotateStmt(query, tx.marginalia), args...)
 }
 
 func (tx Tx) Exec(query string, args ...interface{}) (sqlorig.Result, error) {
-	return tx.Tx.Exec(Annotate(query, tx.marginalia), args...)
+	return tx.Tx.Exec(AnnotateStmt(query, tx.marginalia), args...)
 }
 
 func (tx Tx) Prepare(query string) (*sqlorig.Stmt, error) {
-	return tx.Tx.Prepare(Annotate(query, tx.marginalia))
+	return tx.Tx.Prepare(AnnotateStmt(query, tx.marginalia))
 }
 
 func (tx Tx) PrepareContext(ctx context.Context, query string) (*sqlorig.Stmt, error) {
-	return tx.Tx.PrepareContext(ctx, Annotate(query, tx.marginalia))
+	return tx.Tx.PrepareContext(ctx, AnnotateStmt(query, tx.marginalia))
 }
 
 func (tx Tx) QueryContext(ctx context.Context, query string, args ...interface{}) (*sqlorig.Rows, error) {
@@ -90,6 +90,11 @@ func (tx Tx) QueryRow(query string, args ...interface{}) *sqlorig.Row {
 	return tx.Tx.QueryRow(query, args...)
 }
 
-func Annotate(query, marginalia string) string {
+// AnnotateStmt annotates a single SQL statement with the configured marginalia.
+//
+// *NOTE*
+// This is NOT SAFE to use with multiple SQL statements as it naively annotates
+// the single query string provided and does not attempt to parse the provided SQL
+func AnnotateStmt(query, marginalia string) string {
 	return fmt.Sprintf("/*%s*/ %s", marginalia, query)
 }
