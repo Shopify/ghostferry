@@ -77,8 +77,8 @@ class InterruptResumeTest < GhostferryTestCase
     assert_test_table_is_identical
   end
 
-  def test_interrupt_resume_when_table_has_completed
-    # Start a run of Ghostferry expecting to be interrupted
+  def test_interrupt_ignored_when_table_has_completed
+    # Start a run of Ghostferry expecting termination signal to be ignored
     datawriter = new_source_datawriter
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
 
@@ -89,19 +89,25 @@ class InterruptResumeTest < GhostferryTestCase
       ghostferry.send_signal("TERM")
     end
 
-    dumped_state = ghostferry.run_expecting_interrupt
-    assert_basic_fields_exist_in_dumped_state(dumped_state)
+    with_env('CI', nil) do
+      ghostferry.run
 
-    # Resume ghostferry from interrupted state
-    datawriter = new_source_datawriter
-    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+      assert_test_table_is_identical
 
-    start_datawriter_with_ghostferry(datawriter, ghostferry)
-    stop_datawriter_during_cutover(datawriter, ghostferry)
+      assert ghostferry.logrus_lines["ferry"].length > 0
 
-    ghostferry.run(dumped_state)
+      found_signal = false
+      ghostferry.logrus_lines["ferry"].each do |line|
+        if line["msg"].start_with?("Received signal: ")
+          found_signal = true
+          assert line["msg"].match?("Received signal: terminated during cutover. " \
+                                    "Refusing to interrupt and will attempt to complete the run.")
+        end
+      end
 
-    assert_test_table_is_identical
+      assert(found_signal, "Expected to receive a termination signal")
+    end
+
   end
 
   def test_interrupt_resume_will_not_emit_binlog_position_for_inline_verifier_if_no_verification_is_used

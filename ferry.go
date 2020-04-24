@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -81,7 +82,7 @@ type Ferry struct {
 
 	StartTime    time.Time
 	DoneTime     time.Time
-	OverallState string
+	OverallState atomic.Value
 
 	logger *logrus.Entry
 
@@ -289,7 +290,7 @@ func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
 // Initialize all the components of Ghostferry and connect to the Database
 func (f *Ferry) Initialize() (err error) {
 	f.StartTime = time.Now().Truncate(time.Second)
-	f.OverallState = StateStarting
+	f.OverallState.Store(StateStarting)
 
 	f.logger = logrus.WithField("tag", "ferry")
 	f.rowCopyCompleteCh = make(chan struct{})
@@ -520,7 +521,7 @@ func (f *Ferry) Start() error {
 // Wait for the background tasks to finish.
 func (f *Ferry) Run() {
 	f.logger.Info("starting ferry run")
-	f.OverallState = StateCopying
+	f.OverallState.Store(StateCopying)
 
 	ctx, shutdown := context.WithCancel(context.Background())
 
@@ -564,7 +565,14 @@ func (f *Ferry) Run() {
 			s := <-c
 			if ctx.Err() == nil {
 				// Ghostferry is still running
-				f.ErrorHandler.Fatal("user_interrupt", fmt.Errorf("signal received: %v", s.String()))
+				if f.OverallState.Load() != StateCutover {
+					// Save state dump and exit if not during the cutover stage
+					f.ErrorHandler.Fatal("user_interrupt", fmt.Errorf("signal received: %v", s.String()))
+				} else {
+					// Log and ignore the signal during cutover
+					f.logger.Warnf("Received signal: %s during cutover. " + 
+								   "Refusing to interrupt and will attempt to complete the run.", s.String());
+				}
 			} else {
 				// shutdown() has been called and Ghostferry is done.
 				os.Exit(0)
@@ -614,7 +622,7 @@ func (f *Ferry) Run() {
 
 	if f.Verifier != nil {
 		f.logger.Info("calling VerifyBeforeCutover")
-		f.OverallState = StateVerifyBeforeCutover
+		f.OverallState.Store(StateVerifyBeforeCutover)
 
 		metrics.Measure("VerifyBeforeCutover", nil, 1.0, func() {
 			err := f.Verifier.VerifyBeforeCutover()
@@ -626,11 +634,11 @@ func (f *Ferry) Run() {
 	}
 
 	f.logger.Info("data copy is complete, waiting for cutover")
-	f.OverallState = StateWaitingForCutover
+	f.OverallState.Store(StateWaitingForCutover)
 	f.waitUntilAutomaticCutoverIsTrue()
 
 	f.logger.Info("entering cutover phase, notifying caller that row copy is complete")
-	f.OverallState = StateCutover
+	f.OverallState.Store(StateCutover)
 	f.notifyRowCopyComplete()
 
 	// Cutover is a cooperative activity between the Ghostferry library and
@@ -646,7 +654,7 @@ func (f *Ferry) Run() {
 	binlogWg.Wait()
 
 	f.logger.Info("ghostferry run is complete, shutting down auxiliary services")
-	f.OverallState = StateDone
+	f.OverallState.Store(StateDone)
 	f.DoneTime = time.Now()
 
 	shutdown()
@@ -742,7 +750,7 @@ func (f *Ferry) SerializeStateToJSON() (string, error) {
 
 func (f *Ferry) Progress() *Progress {
 	s := &Progress{
-		CurrentState:  f.OverallState,
+		CurrentState:  f.OverallState.Load().(string),
 		CustomPayload: f.Config.ProgressCallback.Payload,
 		VerifierType:  f.VerifierType,
 	}
@@ -832,7 +840,7 @@ func (f *Ferry) ensureInitialized() {
 	// Note: the constructor shouldn't have a large amount of positional argument
 	//       so it is more readable.
 	//
-	if f.OverallState == "" {
+	if f.OverallState.Load() == nil || f.OverallState.Load() == "" {
 		panic("ferry has not been initialized")
 	}
 }
