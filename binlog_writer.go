@@ -111,7 +111,7 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 	}
 
 	if b.StateTracker != nil {
-		b.StateTracker.UpdateLastResumableBinlogPosition(events[len(events)-1].ResumableBinlogPosition())
+		b.StateTracker.UpdateLastResumableSourceBinlogPosition(events[len(events)-1].ResumableBinlogPosition())
 	}
 
 	return nil

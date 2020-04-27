@@ -42,7 +42,7 @@ type SerializableState struct {
 	LastStoredTargetBinlogPositionForInlineVerifier mysql.Position
 }
 
-func (s *SerializableState) MinBinlogPosition() mysql.Position {
+func (s *SerializableState) MinSourceBinlogPosition() mysql.Position {
 	nilPosition := mysql.Position{}
 	if s.LastWrittenBinlogPosition == nilPosition {
 		return s.LastStoredSourceBinlogPositionForInlineVerifier
@@ -116,7 +116,7 @@ func NewStateTrackerFromSerializedState(speedLogCount int, serializedState *Seri
 	return s
 }
 
-func (s *StateTracker) UpdateLastResumableBinlogPosition(pos mysql.Position) {
+func (s *StateTracker) UpdateLastResumableSourceBinlogPosition(pos mysql.Position) {
 	s.BinlogRWMutex.Lock()
 	defer s.BinlogRWMutex.Unlock()
 

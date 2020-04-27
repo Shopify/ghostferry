@@ -518,7 +518,7 @@ func (f *Ferry) Start() error {
 
 	var err error
 	if f.StateToResumeFrom != nil {
-		sourcePos, err = f.SourceBinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.MinBinlogPosition())
+		sourcePos, err = f.SourceBinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.MinSourceBinlogPosition())
 		if err != nil {
 			return err
 		}
@@ -550,7 +550,7 @@ func (f *Ferry) Start() error {
 	// If we don't set this now, there is a race condition where Ghostferry
 	// is terminated with some rows copied but no binlog events are written.
 	// This guarentees that we are able to restart from a valid location.
-	f.StateTracker.UpdateLastResumableBinlogPosition(sourcePos)
+	f.StateTracker.UpdateLastResumableSourceBinlogPosition(sourcePos)
 	if f.inlineVerifier != nil {
 		f.StateTracker.UpdateLastResumableSourceBinlogPositionForInlineVerifier(sourcePos)
 
