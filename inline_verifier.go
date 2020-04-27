@@ -225,7 +225,6 @@ type InlineVerifier struct {
 
 	reverifyStore              *BinlogVerifyStore
 	verifyDuringCutoverStarted AtomicBoolean
-	cutoverCompleted           AtomicBoolean
 
 	sourceStmtCache *StmtCache
 	targetStmtCache *StmtCache
@@ -358,7 +357,6 @@ func (v *InlineVerifier) VerifyBeforeCutover() error {
 
 func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	v.verifyDuringCutoverStarted.Set(true)
-	defer v.cutoverCompleted.Set(true)
 
 	mismatchFound, mismatches, err := v.verifyAllEventsInStore()
 	if err != nil {
@@ -573,45 +571,6 @@ func (v *InlineVerifier) sourceBinlogEventListener(evs []DMLEvent) error {
 
 	if v.StateTracker != nil {
 		v.StateTracker.UpdateLastResumableSourceBinlogPositionForInlineVerifier(evs[len(evs)-1].ResumableBinlogPosition())
-	}
-
-	return nil
-}
-
-// Verify that all DMLs against the target are coming from Ghostferry for the
-// duration of the move. Once cutover has completed, we no longer need to perform
-// this verification as all writes from the application are directed to the target
-func (v *InlineVerifier) targetBinlogEventListener(evs []DMLEvent) error {
-	// Cutover has completed, we do not need to verify target writes
-	if v.cutoverCompleted.Get() {
-		return nil
-	}
-
-	for _, ev := range evs {
-		annotations, err := ev.Annotations()
-		if err != nil {
-			return err
-		}
-
-		foundAnnotation := false
-		for _, annotation := range annotations {
-			if strings.Contains(annotation, v.TargetDB.Marginalia) {
-				foundAnnotation = true
-				continue
-			}
-		}
-
-		if !foundAnnotation {
-			paginationKey, err := ev.PaginationKey()
-			if err != nil {
-				return err
-			}
-			return fmt.Errorf("row data with paginationKey %d on `%s`.`%s` has been corrupted", paginationKey, ev.Database(), ev.Table())
-		}
-	}
-
-	if v.StateTracker != nil {
-		v.StateTracker.UpdateLastResumableTargetBinlogPositionForInlineVerifier(evs[len(evs)-1].ResumableBinlogPosition())
 	}
 
 	return nil
