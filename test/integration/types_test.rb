@@ -268,6 +268,32 @@ class TypesTest < GhostferryTestCase
     end
   end
 
+  # Ensure we can process annotations in data columns
+  def test_annotation_in_values
+    [source_db, target_db].each do |db|
+      db.query("CREATE DATABASE IF NOT EXISTS #{DEFAULT_DB}")
+      db.query("CREATE TABLE IF NOT EXISTS #{DEFAULT_FULL_TABLE_NAME} (id bigint(20) not null auto_increment, data1 TEXT, primary key(id))")
+    end
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data1) VALUES (1, '/* data1 */')")
+
+    ghostferry.on_status(Ghostferry::Status::BINLOG_STREAMING_STARTED) do
+      source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data1) VALUES (2, '/* data2 */')")
+    end
+
+    ghostferry.run
+
+    assert_test_table_is_identical
+    res = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME}")
+    assert_equal 2, res.count
+    res.each_with_index do |row, i|
+      assert_equal i + 1, row["id"]
+      assert_equal "data#{i + 1}", row["data1"]
+    end
+  end
+
   private
 
   def insert_json_on_source
