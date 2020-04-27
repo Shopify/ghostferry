@@ -766,9 +766,6 @@ func (f *Ferry) FlushSourceBinlogAndStopStreaming() {
 	}
 
 	f.SourceBinlogStreamer.FlushAndStop()
-	if !f.Config.SkipTargetVerification {
-		f.TargetBinlogStreamer.FlushAndStop()
-	}
 }
 
 func (f *Ferry) Stop() {
