@@ -32,13 +32,13 @@ func (t *TargetVerifier) BinlogEventListener(evs []DMLEvent) error {
 	}
 
 	for _, ev := range evs {
-		annotations, err := ev.Annotations()
+		annotation, err := ev.Annotation()
 		if err != nil {
 			return err
 		}
 
 		// Ghostferry's annotation will alwaays be the first, if available
-		if len(annotations) == 0 || annotations[0] != t.DB.Marginalia {
+		if annotation == "" || annotation != t.DB.Marginalia {
 			paginationKey, err := ev.PaginationKey()
 			if err != nil {
 				return err

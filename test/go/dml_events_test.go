@@ -267,10 +267,9 @@ func (this *DMLEventsTestSuite) TestAnnotations() {
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 
-	annotations, err := dmlEvents[0].Annotations()
+	annotation, err := dmlEvents[0].Annotation()
 	this.Require().Nil(err)
-	this.Require().Equal(1, len(annotations))
-	this.Require().Equal(annotations[0], "application:ghostferry")
+	this.Require().Equal(annotation, "application:ghostferry")
 
 }
 
@@ -293,9 +292,9 @@ func (this *DMLEventsTestSuite) TestNoAnnotations() {
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 
-	annotations, err := dmlEvents[0].Annotations()
+	annotation, err := dmlEvents[0].Annotation()
 	this.Require().Nil(err)
-	this.Require().Nil(annotations)
+	this.Require().Equal("", annotation)
 }
 
 func (this *DMLEventsTestSuite) TestMultipleAnnotations() {
@@ -317,13 +316,9 @@ func (this *DMLEventsTestSuite) TestMultipleAnnotations() {
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 
-	annotations, err := dmlEvents[0].Annotations()
+	annotation, err := dmlEvents[0].Annotation()
 	this.Require().Nil(err)
-
-	this.Require().Equal(3, len(annotations))
-	this.Require().Equal(annotations[0], "application:ghostferry")
-	this.Require().Equal(annotations[1], "request_id:d8e8fca2dc0f896fd7cb4cb0031ba249")
-	this.Require().Equal(annotations[2], "myannotation")
+	this.Require().Equal(annotation, "application:ghostferry")
 }
 
 func (this *DMLEventsTestSuite) TestSeparatedAnnotations() {
@@ -345,12 +340,9 @@ func (this *DMLEventsTestSuite) TestSeparatedAnnotations() {
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 
-	annotations, err := dmlEvents[0].Annotations()
+	annotation, err := dmlEvents[0].Annotation()
 	this.Require().Nil(err)
-
-	this.Require().Equal(2, len(annotations))
-	this.Require().Equal(annotations[0], "application:ghostferry")
-	this.Require().Equal(annotations[1], "request_id:d8e8fca2dc0f896fd7cb4cb0031ba249;other:annotation")
+	this.Require().Equal(annotation, "application:ghostferry")
 }
 
 func (this *DMLEventsTestSuite) TestNoRowsQueryEvent() {
@@ -372,10 +364,10 @@ func (this *DMLEventsTestSuite) TestNoRowsQueryEvent() {
 	this.Require().Nil(err)
 	this.Require().Equal(1, len(dmlEvents))
 
-	annotations, err := dmlEvents[0].Annotations()
+	annotation, err := dmlEvents[0].Annotation()
 	this.Require().NotNil(err)
 	this.Require().Equal(err.Error(), "could not get query from DML event")
-	this.Require().Equal(0, len(annotations))
+	this.Require().Equal("", annotation)
 }
 
 func TestDMLEventsTestSuite(t *testing.T) {

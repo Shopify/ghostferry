@@ -128,9 +128,9 @@ func (this *BinlogStreamerTestSuite) TestBinlogStreamerSetsQueryEventOnRowsEvent
 		this.Require().True(strings.HasPrefix(evs[0].BinlogPosition().Name, "mysql-bin."))
 		this.Require().True(evs[0].BinlogPosition().Pos > 0)
 
-		annotations, err := evs[0].Annotations()
+		annotation, err := evs[0].Annotation()
 		this.Require().Nil(err)
-		this.Require().Equal(annotations[0], fmt.Sprintf("%s", ghostferry.DefaultMarginalia))
+		this.Require().Equal(annotation, fmt.Sprintf("%s", ghostferry.DefaultMarginalia))
 		this.binlogStreamer.FlushAndStop()
 		return nil
 	})

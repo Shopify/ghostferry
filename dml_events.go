@@ -49,7 +49,7 @@ type DMLEvent interface {
 	PaginationKey() (uint64, error)
 	BinlogPosition() mysql.Position
 	ResumableBinlogPosition() mysql.Position
-	Annotations() ([]string, error)
+	Annotation() (string, error)
 }
 
 // The base of DMLEvent to provide the necessary methods.
@@ -80,21 +80,19 @@ func (e *DMLEventBase) ResumableBinlogPosition() mysql.Position {
 	return e.resumablePos
 }
 
-// Annotations will return all comments prefixed to the SQL string
-func (e *DMLEventBase) Annotations() ([]string, error) {
+// Annotation will return the first prefixed comment on the SQL string,
+// or an error if the query attribute of the DMLEvent is not set
+func (e *DMLEventBase) Annotation() (string, error) {
 	if e.query == nil {
-		return nil, errors.New("could not get query from DML event")
+		return "", errors.New("could not get query from DML event")
 	}
 
-	captured := annotationRegex.FindAllStringSubmatch(string(e.query), -1)
-
-	var matches []string
-	for _, match := range captured {
-		if len(match) > 1 {
-			matches = append(matches, match[1])
-		}
+	captured := annotationRegex.FindStringSubmatch(string(e.query))
+	if len(captured) > 1 {
+		return captured[1], nil
 	}
-	return matches, nil
+
+	return "", nil
 }
 
 func NewDMLEventBase(table *TableSchema, pos, resumablePos mysql.Position, query []byte) *DMLEventBase {
