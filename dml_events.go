@@ -15,7 +15,7 @@ import (
 	"github.com/siddontang/go-mysql/schema"
 )
 
-var annotationRegex = regexp.MustCompile(`/\*(.*?)\*/`)
+var annotationRegex = regexp.MustCompile(`^/\*(.*?)\*/`)
 
 type RowData []interface{}
 
