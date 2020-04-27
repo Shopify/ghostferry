@@ -23,6 +23,7 @@ import (
 )
 
 var (
+	zeroPosition  siddontangmysql.Position
 	VersionString string = "?.?.?+??????????????+???????"
 	WebUiBasedir  string = ""
 )
@@ -59,6 +60,9 @@ type Ferry struct {
 	SourceBinlogStreamer *BinlogStreamer
 	TargetBinlogStreamer *BinlogStreamer
 	BinlogWriter         *BinlogWriter
+
+	targetVerifierWg *sync.WaitGroup
+	TargetVerifier   *TargetVerifier
 
 	DataIterator *DataIterator
 	BatchWriter  *BatchWriter
@@ -362,7 +366,6 @@ func (f *Ferry) Initialize() (err error) {
 			return err
 		}
 
-		var zeroPosition siddontangmysql.Position
 		// Ensures the query to check for position is executable.
 		_, err = f.WaitUntilReplicaIsCaughtUpToMaster.IsCaughtUp(zeroPosition, 1)
 		if err != nil {
@@ -471,6 +474,12 @@ func (f *Ferry) Initialize() (err error) {
 		}
 	}
 
+	targetVerifier, err := NewTargetVerifier(f.TargetDB, f.StateTracker, f.TargetBinlogStreamer)
+	if err != nil {
+		return err
+	}
+	f.TargetVerifier = targetVerifier
+
 	f.logger.Info("ferry initialized")
 	return nil
 }
@@ -495,7 +504,7 @@ func (f *Ferry) Start() error {
 		f.SourceBinlogStreamer.AddEventListener(f.inlineVerifier.sourceBinlogEventListener)
 
 		if !f.Config.SkipTargetVerification {
-			f.TargetBinlogStreamer.AddEventListener(f.inlineVerifier.targetBinlogEventListener)
+			f.TargetBinlogStreamer.AddEventListener(f.TargetVerifier.BinlogEventListener)
 		}
 	}
 
@@ -513,21 +522,24 @@ func (f *Ferry) Start() error {
 		if err != nil {
 			return err
 		}
-
-		if !f.Config.SkipTargetVerification {
-			targetPos, err = f.TargetBinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.LastStoredTargetBinlogPositionForInlineVerifier)
-			if err != nil {
-				return err
-			}
-
-		}
 	} else {
 		sourcePos, err = f.SourceBinlogStreamer.ConnectBinlogStreamerToMysql()
 		if err != nil {
 			return err
 		}
+	}
+	if err != nil {
+		return err
+	}
 
-		if !f.Config.SkipTargetVerification {
+	if !f.Config.SkipTargetVerification {
+		if f.StateToResumeFrom != nil && f.StateToResumeFrom.LastStoredTargetBinlogPositionForInlineVerifier != zeroPosition {
+			targetPos, err = f.TargetBinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.LastStoredTargetBinlogPositionForInlineVerifier)
+			if err != nil {
+				return err
+			}
+
+		} else {
 			targetPos, err = f.TargetBinlogStreamer.ConnectBinlogStreamerToMysql()
 			if err != nil {
 				return err
@@ -632,9 +644,10 @@ func (f *Ferry) Run() {
 	}()
 
 	if !f.Config.SkipTargetVerification {
-		binlogWg.Add(1)
+		f.targetVerifierWg = &sync.WaitGroup{}
+		f.targetVerifierWg.Add(1)
 		go func() {
-			defer binlogWg.Done()
+			defer f.targetVerifierWg.Done()
 			f.TargetBinlogStreamer.Run()
 		}()
 	}
@@ -739,7 +752,7 @@ func (f *Ferry) WaitUntilBinlogStreamerCatchesUp() {
 //
 // This method will actually not shutdown the BinlogStreamer immediately.
 // You will know that the BinlogStreamer finished when .Run() returns.
-func (f *Ferry) FlushBinlogAndStopStreaming() {
+func (f *Ferry) FlushSourceBinlogAndStopStreaming() {
 	if f.WaitUntilReplicaIsCaughtUpToMaster != nil {
 		isReplica, err := CheckDbIsAReplica(f.WaitUntilReplicaIsCaughtUpToMaster.MasterDB)
 		if err != nil {
@@ -765,6 +778,13 @@ func (f *Ferry) FlushBinlogAndStopStreaming() {
 	f.SourceBinlogStreamer.FlushAndStop()
 	if !f.Config.SkipTargetVerification {
 		f.TargetBinlogStreamer.FlushAndStop()
+	}
+}
+
+func (f *Ferry) Stop() {
+	if !f.Config.SkipTargetVerification {
+		f.TargetBinlogStreamer.FlushAndStop()
+		f.targetVerifierWg.Wait()
 	}
 }
 

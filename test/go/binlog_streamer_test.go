@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
-	"github.com/siddontang/go-mysql/mysql"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
@@ -76,20 +75,6 @@ func (this *BinlogStreamerTestSuite) TestConnectWithZeroIdGetsRandomServerId() {
 
 	this.Require().Nil(err)
 	this.Require().NotZero(this.binlogStreamer.MyServerId)
-}
-
-func (this *BinlogStreamerTestSuite) TestConnectWithNilPositionGetsLatestMasterPosition() {
-	testNilPosition := mysql.Position{
-		Pos:  0,
-		Name: "",
-	}
-
-	lastPos, err := this.binlogStreamer.ConnectBinlogStreamerToMysqlFrom(testNilPosition)
-
-	this.Require().Nil(err)
-	this.Require().NotZero(this.binlogStreamer.GetLastStreamedBinlogPosition())
-	this.Require().Equal(lastPos, this.binlogStreamer.GetLastStreamedBinlogPosition())
-	this.Require().True(strings.HasPrefix(this.binlogStreamer.GetLastStreamedBinlogPosition().Name, "mysql-bin."))
 }
 
 func (this *BinlogStreamerTestSuite) TestConnectErrorsOutIfErrorInServerIdGeneration() {

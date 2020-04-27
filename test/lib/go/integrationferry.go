@@ -121,6 +121,8 @@ func (f *IntegrationFerry) Main() error {
 		return err
 	}
 
+	defer f.Stop()
+
 	err = f.SendStatusAndWaitUntilContinue(StatusBinlogStreamingStarted)
 	if err != nil {
 		return err
@@ -142,7 +144,7 @@ func (f *IntegrationFerry) Main() error {
 
 	// TODO: this method should return errors rather than calling
 	// the error handler to panic directly.
-	f.FlushBinlogAndStopStreaming()
+	f.FlushSourceBinlogAndStopStreaming()
 	wg.Wait()
 
 	if f.Verifier != nil {

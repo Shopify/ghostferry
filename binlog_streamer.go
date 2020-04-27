@@ -101,14 +101,6 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFrom(startFromBinlogPositio
 		return mysql.Position{}, err
 	}
 
-	if startFromBinlogPosition.Pos == 0 && startFromBinlogPosition.Name == "" {
-		startFromBinlogPosition, err = ShowMasterStatusBinlogPosition(s.DB)
-		if err != nil {
-			s.logger.WithError(err).Error("failed to read current binlog position")
-			return mysql.Position{}, err
-		}
-	}
-
 	s.lastStreamedBinlogPosition = startFromBinlogPosition
 	s.lastResumableBinlogPosition = startFromBinlogPosition
 

@@ -91,6 +91,8 @@ func (this *CopydbFerry) Run() {
 		this.Ferry.Run()
 	}()
 
+	defer this.Ferry.Stop()
+
 	// If AutomaticCutover == false, it will pause below the following line
 	this.Ferry.WaitUntilRowCopyIsComplete()
 
@@ -103,11 +105,13 @@ func (this *CopydbFerry) Run() {
 	// is done in application level or the database level.
 	// Must ensure that all transactions are flushed to the binlog before
 	// proceeding.
-	this.Ferry.FlushBinlogAndStopStreaming()
+	this.Ferry.FlushSourceBinlogAndStopStreaming()
 
 	// After waiting for the binlog streamer to stop, the source and the target
 	// should be identical.
 	copyWG.Wait()
+
+	this.Ferry.TargetVerifier.CutoverCompleted.Set(true)
 
 	// This is where you cutover from using the source database to
 	// using the target database.

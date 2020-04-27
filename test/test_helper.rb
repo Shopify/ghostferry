@@ -2,6 +2,7 @@ require "logger"
 require "minitest"
 require "minitest/autorun"
 require "minitest/hooks/test"
+require "pry-byebug"
 
 GO_CODE_PATH = File.join(File.absolute_path(File.dirname(__FILE__)), "lib", "go")
 FIXTURE_PATH = File.join(File.absolute_path(File.dirname(__FILE__)), "fixtures")

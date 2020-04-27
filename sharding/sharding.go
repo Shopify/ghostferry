@@ -105,6 +105,8 @@ func (r *ShardingFerry) Run() {
 		r.Ferry.Run()
 	}()
 
+	defer r.Ferry.Stop()
+
 	r.Ferry.WaitUntilRowCopyIsComplete()
 
 	ghostferry.WaitForThrottle(r.Ferry.Throttler)
@@ -135,7 +137,7 @@ func (r *ShardingFerry) Run() {
 
 	r.Ferry.Throttler.SetDisabled(true)
 
-	r.Ferry.FlushBinlogAndStopStreaming()
+	r.Ferry.FlushSourceBinlogAndStopStreaming()
 	copyWG.Wait()
 
 	// Joined tables cannot be easily monitored for changes in the binlog stream
@@ -171,6 +173,8 @@ func (r *ShardingFerry) Run() {
 	}
 
 	r.Ferry.Throttler.SetDisabled(false)
+
+	r.Ferry.TargetVerifier.CutoverCompleted.Set(true)
 
 	metrics.Measure("CutoverUnlock", nil, 1.0, func() {
 		err = r.config.CutoverUnlock.Post(&client)
