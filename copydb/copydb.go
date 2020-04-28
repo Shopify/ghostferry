@@ -159,7 +159,7 @@ func (this *CopydbFerry) createDatabaseIfExistsOnTarget(database string) error {
 }
 
 func (this *CopydbFerry) createTableOnTarget(database, table string) error {
-	var tableNameAgain, createTableQuery string
+	var tableNameAgain, createTableQuery, createStatement string
 
 	r := this.Ferry.SourceDB.QueryRow(fmt.Sprintf("SHOW CREATE TABLE `%s`.`%s`", database, table))
 	err := r.Scan(&tableNameAgain, &createTableQuery)
@@ -180,10 +180,16 @@ func (this *CopydbFerry) createTableOnTarget(database, table string) error {
 		tableNameAgain = targetTableName
 	}
 
+	if this.config.AllowExistingTargetTable {
+		createStatement = "CREATE TABLE IF NOT EXISTS `%s`.`%s`"
+	} else {
+		createStatement = "CREATE TABLE `%s`.`%s`"
+	}
+
 	createTableQueryReplaced := strings.Replace(
 		createTableQuery,
 		fmt.Sprintf("CREATE TABLE `%s`", table),
-		fmt.Sprintf("CREATE TABLE `%s`.`%s`", database, tableNameAgain),
+		fmt.Sprintf(createStatement, database, tableNameAgain),
 		1,
 	)
 

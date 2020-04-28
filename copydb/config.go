@@ -70,6 +70,10 @@ type Config struct {
 
 	// The duration to wait for the replication to catchup before aborting. Only use if RunFerryFromReplica is true.
 	WaitForReplicationTimeout string
+
+	// Ghostferry will by default create tables on your target and fail if these already exist.
+	// This allows pre-existing tables on your target, schemas won't be validated.
+	AllowExistingTargetTable bool
 }
 
 func (c *Config) InitializeAndValidateConfig() error {

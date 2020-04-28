@@ -85,6 +85,29 @@ func (t *CopydbTestSuite) TestCreateDatabaseAndTableWithRewrites() {
 	t.Require().Equal(renamedTableName, value)
 }
 
+func (t *CopydbTestSuite) TestCreateDatabasesAndTablesAlreadyExists() {
+	var err error
+	t.copydbFerry.Ferry.Tables, err = ghostferry.LoadTables(t.ferry.SourceDB, t.copydbFerry.Ferry.TableFilter, nil, nil, nil)
+	t.Require().Nil(err)
+
+	testhelpers.SeedInitialData(t.ferry.TargetDB, renamedSchemaName, renamedTableName, 1)
+
+	err = t.copydbFerry.CreateDatabasesAndTables()
+	t.Require().EqualError(err, "Error 1050: Table 'test_table_1_renamed' already exists")
+}
+
+func (t *CopydbTestSuite) TestCreateDatabasesAndTablesAlreadyExistsAllowed() {
+	var err error
+	t.copydbFerry.Ferry.Tables, err = ghostferry.LoadTables(t.ferry.SourceDB, t.copydbFerry.Ferry.TableFilter, nil, nil, nil)
+	t.Require().Nil(err)
+
+	testhelpers.SeedInitialData(t.ferry.TargetDB, renamedSchemaName, renamedTableName, 1)
+	t.copydbConfig.AllowExistingTargetTable = true
+
+	err = t.copydbFerry.CreateDatabasesAndTables()
+	t.Require().Nil(err)
+}
+
 func (t *CopydbTestSuite) TestCreateDatabaseAndTableWithOrdering() {
 	// NOTE: Here we just ensure passing a table does not cause issues in the
 	// invocation. A more thorough test is done in the table-schema tests
