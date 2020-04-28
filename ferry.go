@@ -570,8 +570,8 @@ func (f *Ferry) Run() {
 					f.ErrorHandler.Fatal("user_interrupt", fmt.Errorf("signal received: %v", s.String()))
 				} else {
 					// Log and ignore the signal during cutover
-					f.logger.Warnf("Received signal: %s during cutover. " + 
-								   "Refusing to interrupt and will attempt to complete the run.", s.String());
+					f.logger.Warnf("Received signal: %s during cutover. "+
+						"Refusing to interrupt and will attempt to complete the run.", s.String())
 				}
 			} else {
 				// shutdown() has been called and Ghostferry is done.
