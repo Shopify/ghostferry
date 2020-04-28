@@ -121,7 +121,7 @@ func (f *IntegrationFerry) Main() error {
 		return err
 	}
 
-	defer f.Stop()
+	defer f.StopTargetVerifier()
 
 	err = f.SendStatusAndWaitUntilContinue(StatusBinlogStreamingStarted)
 	if err != nil {

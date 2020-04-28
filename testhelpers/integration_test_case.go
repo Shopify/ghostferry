@@ -106,7 +106,7 @@ func (this *IntegrationTestCase) StopStreamingAndWaitForGhostferryFinish() {
 	this.wg.Wait()
 
 	this.callCustomAction(this.AfterStoppedBinlogStreaming)
-	this.Ferry.Stop()
+	this.Ferry.StopTargetVerifier()
 }
 
 func (this *IntegrationTestCase) VerifyData() {

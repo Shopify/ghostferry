@@ -8,29 +8,28 @@ import (
 )
 
 type TargetVerifier struct {
-	logger           *logrus.Entry
-	DB               *sql.DB
-	StateTracker     *StateTracker
-	CutoverCompleted AtomicBoolean
+	logger         *logrus.Entry
+	DB             *sql.DB
+	BinlogStreamer *BinlogStreamer
+	StateTracker   *StateTracker
 }
 
 func NewTargetVerifier(targetDB *sql.DB, stateTracker *StateTracker, binlogStreamer *BinlogStreamer) (*TargetVerifier, error) {
-	return &TargetVerifier{
-		logger:       logrus.WithField("tag", "target_verifier"),
-		DB:           targetDB,
-		StateTracker: stateTracker,
-	}, nil
+	targetVerifier := &TargetVerifier{
+		logger:         logrus.WithField("tag", "target_verifier"),
+		DB:             targetDB,
+		BinlogStreamer: binlogStreamer,
+		StateTracker:   stateTracker,
+	}
+	targetVerifier.BinlogStreamer.AddEventListener(targetVerifier.BinlogEventListener)
+
+	return targetVerifier, nil
 }
 
 // Verify that all DMLs against the target are coming from Ghostferry for the
 // duration of the move. Once cutover has completed, we no longer need to perform
 // this verification as all writes from the application are directed to the target
 func (t *TargetVerifier) BinlogEventListener(evs []DMLEvent) error {
-	// Cutover has completed, we do not need to verify target writes
-	if t.CutoverCompleted.Get() {
-		return nil
-	}
-
 	for _, ev := range evs {
 		annotation, err := ev.Annotation()
 		if err != nil {

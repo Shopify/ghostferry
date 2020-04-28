@@ -91,8 +91,6 @@ func (this *CopydbFerry) Run() {
 		this.Ferry.Run()
 	}()
 
-	defer this.Ferry.Stop()
-
 	// If AutomaticCutover == false, it will pause below the following line
 	this.Ferry.WaitUntilRowCopyIsComplete()
 
@@ -111,7 +109,7 @@ func (this *CopydbFerry) Run() {
 	// should be identical.
 	copyWG.Wait()
 
-	this.Ferry.TargetVerifier.CutoverCompleted.Set(true)
+	this.Ferry.StopTargetVerifier()
 
 	// This is where you cutover from using the source database to
 	// using the target database.

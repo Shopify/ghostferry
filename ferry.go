@@ -58,7 +58,6 @@ type Ferry struct {
 	TargetDB *sql.DB
 
 	SourceBinlogStreamer *BinlogStreamer
-	TargetBinlogStreamer *BinlogStreamer
 	BinlogWriter         *BinlogWriter
 
 	targetVerifierWg *sync.WaitGroup
@@ -441,7 +440,12 @@ func (f *Ferry) Initialize() (err error) {
 	f.SourceBinlogStreamer = f.NewBinlogStreamer(f.SourceDB, f.Config.Source)
 
 	if !f.Config.SkipTargetVerification {
-		f.TargetBinlogStreamer = f.NewBinlogStreamer(f.TargetDB, f.Config.Target)
+		targetVerifier, err := NewTargetVerifier(f.TargetDB, f.StateTracker, f.NewBinlogStreamer(f.TargetDB, f.Config.Target))
+		if err != nil {
+			return err
+		}
+
+		f.TargetVerifier = targetVerifier
 	}
 
 	f.BinlogWriter = f.NewBinlogWriter()
@@ -474,12 +478,6 @@ func (f *Ferry) Initialize() (err error) {
 		}
 	}
 
-	targetVerifier, err := NewTargetVerifier(f.TargetDB, f.StateTracker, f.TargetBinlogStreamer)
-	if err != nil {
-		return err
-	}
-	f.TargetVerifier = targetVerifier
-
 	f.logger.Info("ferry initialized")
 	return nil
 }
@@ -502,10 +500,6 @@ func (f *Ferry) Start() error {
 
 	if f.inlineVerifier != nil {
 		f.SourceBinlogStreamer.AddEventListener(f.inlineVerifier.sourceBinlogEventListener)
-
-		if !f.Config.SkipTargetVerification {
-			f.TargetBinlogStreamer.AddEventListener(f.TargetVerifier.BinlogEventListener)
-		}
 	}
 
 	// The starting binlog coordinates must be determined first. If it is
@@ -528,9 +522,9 @@ func (f *Ferry) Start() error {
 
 	if !f.Config.SkipTargetVerification {
 		if f.StateToResumeFrom != nil && f.StateToResumeFrom.LastStoredTargetBinlogPositionForInlineVerifier != zeroPosition {
-			targetPos, err = f.TargetBinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.LastStoredTargetBinlogPositionForInlineVerifier)
+			targetPos, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.LastStoredTargetBinlogPositionForInlineVerifier)
 		} else {
-			targetPos, err = f.TargetBinlogStreamer.ConnectBinlogStreamerToMysql()
+			targetPos, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysql()
 		}
 	}
 	if err != nil {
@@ -638,7 +632,7 @@ func (f *Ferry) Run() {
 		f.targetVerifierWg.Add(1)
 		go func() {
 			defer f.targetVerifierWg.Done()
-			f.TargetBinlogStreamer.Run()
+			f.TargetVerifier.BinlogStreamer.Run()
 		}()
 	}
 
@@ -768,9 +762,9 @@ func (f *Ferry) FlushSourceBinlogAndStopStreaming() {
 	f.SourceBinlogStreamer.FlushAndStop()
 }
 
-func (f *Ferry) Stop() {
+func (f *Ferry) StopTargetVerifier() {
 	if !f.Config.SkipTargetVerification {
-		f.TargetBinlogStreamer.FlushAndStop()
+		f.TargetVerifier.BinlogStreamer.FlushAndStop()
 		f.targetVerifierWg.Wait()
 	}
 }

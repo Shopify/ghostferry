@@ -105,8 +105,6 @@ func (r *ShardingFerry) Run() {
 		r.Ferry.Run()
 	}()
 
-	defer r.Ferry.Stop()
-
 	r.Ferry.WaitUntilRowCopyIsComplete()
 
 	ghostferry.WaitForThrottle(r.Ferry.Throttler)
@@ -174,7 +172,7 @@ func (r *ShardingFerry) Run() {
 
 	r.Ferry.Throttler.SetDisabled(false)
 
-	r.Ferry.TargetVerifier.CutoverCompleted.Set(true)
+	r.Ferry.StopTargetVerifier()
 
 	metrics.Measure("CutoverUnlock", nil, 1.0, func() {
 		err = r.config.CutoverUnlock.Post(&client)
