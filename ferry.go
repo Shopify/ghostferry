@@ -521,8 +521,8 @@ func (f *Ferry) Start() error {
 	}
 
 	if !f.Config.SkipTargetVerification {
-		if f.StateToResumeFrom != nil && f.StateToResumeFrom.LastStoredTargetBinlogPositionForInlineVerifier != zeroPosition {
-			targetPos, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.LastStoredTargetBinlogPositionForInlineVerifier)
+		if f.StateToResumeFrom != nil && f.StateToResumeFrom.LastStoredBinlogPositionForTargetVerifier != zeroPosition {
+			targetPos, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.LastStoredBinlogPositionForTargetVerifier)
 		} else {
 			targetPos, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysql()
 		}
@@ -539,7 +539,7 @@ func (f *Ferry) Start() error {
 		f.StateTracker.UpdateLastResumableSourceBinlogPositionForInlineVerifier(sourcePos)
 
 		if !f.Config.SkipTargetVerification {
-			f.StateTracker.UpdateLastResumableTargetBinlogPositionForInlineVerifier(targetPos)
+			f.StateTracker.UpdateLastResumableBinlogPositionForTargetVerifier(targetPos)
 		}
 	}
 
