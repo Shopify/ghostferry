@@ -555,7 +555,7 @@ func (v *InlineVerifier) compareHashesAndData(sourceHashes, targetHashes map[uin
 	return mismatchList
 }
 
-func (v *InlineVerifier) sourceBinlogEventListener(evs []DMLEvent) error {
+func (v *InlineVerifier) binlogEventListener(evs []DMLEvent) error {
 	if v.verifyDuringCutoverStarted.Get() {
 		return fmt.Errorf("cutover has started but received binlog event!")
 	}

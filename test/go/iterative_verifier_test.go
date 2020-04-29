@@ -43,7 +43,7 @@ func (t *IterativeVerifierTestSuite) SetupTest() {
 			BatchSize:   t.Ferry.Config.DataIterationBatchSize,
 			ReadRetries: t.Ferry.Config.DBReadRetries,
 		},
-		BinlogStreamer: t.Ferry.SourceBinlogStreamer,
+		BinlogStreamer: t.Ferry.BinlogStreamer,
 		SourceDB:       t.Ferry.SourceDB,
 		TargetDB:       t.Ferry.TargetDB,
 

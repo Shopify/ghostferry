@@ -127,7 +127,7 @@ func (s *StateTracker) UpdateLastResumableSourceBinlogPositionForInlineVerifier(
 	s.BinlogRWMutex.Lock()
 	defer s.BinlogRWMutex.Unlock()
 
-	s.lastWrittenBinlogPosition = pos
+	s.lastStoredBinlogPositionForInlineVerifier = pos
 }
 
 func (s *StateTracker) UpdateLastResumableBinlogPositionForTargetVerifier(pos mysql.Position) {

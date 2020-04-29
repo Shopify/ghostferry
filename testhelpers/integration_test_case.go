@@ -102,7 +102,7 @@ func (this *IntegrationTestCase) SetReadonlyOnSourceDbAndStopDataWriter() {
 func (this *IntegrationTestCase) StopStreamingAndWaitForGhostferryFinish() {
 	this.callCustomAction(this.BeforeStoppingBinlogStreaming)
 
-	this.Ferry.FlushSourceBinlogAndStopStreaming()
+	this.Ferry.FlushBinlogAndStopStreaming()
 	this.wg.Wait()
 
 	this.callCustomAction(this.AfterStoppedBinlogStreaming)

@@ -103,7 +103,7 @@ func (this *CopydbFerry) Run() {
 	// is done in application level or the database level.
 	// Must ensure that all transactions are flushed to the binlog before
 	// proceeding.
-	this.Ferry.FlushSourceBinlogAndStopStreaming()
+	this.Ferry.FlushBinlogAndStopStreaming()
 
 	// After waiting for the binlog streamer to stop, the source and the target
 	// should be identical.

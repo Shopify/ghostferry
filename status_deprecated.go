@@ -71,12 +71,12 @@ func FetchStatusDeprecated(f *Ferry, v Verifier) *StatusDeprecated {
 	} else {
 		status.TimeTaken = f.DoneTime.Sub(status.StartTime)
 	}
-	status.BinlogStreamerLag = time.Now().Sub(f.SourceBinlogStreamer.lastProcessedEventTime)
+	status.BinlogStreamerLag = time.Now().Sub(f.BinlogStreamer.lastProcessedEventTime)
 
 	status.AutomaticCutover = f.Config.AutomaticCutover
-	status.BinlogStreamerStopRequested = f.SourceBinlogStreamer.stopRequested
-	status.LastSuccessfulBinlogPos = f.SourceBinlogStreamer.lastStreamedBinlogPosition
-	status.TargetBinlogPos = f.SourceBinlogStreamer.stopAtBinlogPosition
+	status.BinlogStreamerStopRequested = f.BinlogStreamer.stopRequested
+	status.LastSuccessfulBinlogPos = f.BinlogStreamer.lastStreamedBinlogPosition
+	status.TargetBinlogPos = f.BinlogStreamer.stopAtBinlogPosition
 
 	status.Throttled = f.Throttler.Throttled()
 

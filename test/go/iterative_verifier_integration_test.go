@@ -247,7 +247,7 @@ func setupIterativeVerifierFromFerry(v *ghostferry.IterativeVerifier, f *ghostfe
 		ReadRetries: f.Config.DBReadRetries,
 	}
 
-	v.BinlogStreamer = f.SourceBinlogStreamer
+	v.BinlogStreamer = f.BinlogStreamer
 	v.SourceDB = f.SourceDB
 	v.TargetDB = f.TargetDB
 	v.Tables = f.Tables.AsSlice()

@@ -135,7 +135,7 @@ func (r *ShardingFerry) Run() {
 
 	r.Ferry.Throttler.SetDisabled(true)
 
-	r.Ferry.FlushSourceBinlogAndStopStreaming()
+	r.Ferry.FlushBinlogAndStopStreaming()
 	copyWG.Wait()
 
 	// Joined tables cannot be easily monitored for changes in the binlog stream
