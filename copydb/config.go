@@ -72,7 +72,8 @@ type Config struct {
 	WaitForReplicationTimeout string
 
 	// Ghostferry will by default create tables on your target and fail if these already exist.
-	// This allows pre-existing tables on your target, schemas won't be validated.
+	// This allows pre-existing tables on your target, schemas and data compatibility won't be validated.
+	// Use at your own risk.
 	AllowExistingTargetTable bool
 }
 
