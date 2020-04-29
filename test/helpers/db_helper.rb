@@ -5,8 +5,33 @@ module DbHelper
   ALPHANUMERICS = ("0".."9").to_a + ("a".."z").to_a + ("A".."Z").to_a
   DB_PORTS = {source: 29291, target: 29292}
 
+  DEFAULT_ANNOTATION = "application:ghostferry"
+
   DEFAULT_DB = "gftest"
   DEFAULT_TABLE = "test_table_1"
+
+  class Mysql2::Client
+    alias_method :query_without_maginalia, :query
+    alias_method :prepare_without_maginalia, :prepare
+
+    def query(sql, exclude_marginalia: false, annotations: [DEFAULT_ANNOTATION])
+      sql_annotations = []
+      annotations.each do |annotation|
+        sql_annotations << "/*#{annotation}*/"
+      end
+      sql = "#{sql_annotations.join(" ")} #{sql}" unless exclude_marginalia
+      query_without_maginalia(sql)
+    end
+
+    def prepare(sql, exclude_marginalia: false, annotations: [DEFAULT_ANNOTATION])
+      sql_annotations = []
+      annotations.each do |annotation|
+        sql_annotations << "/*#{annotation}*/"
+      end
+      sql = "#{sql_annotations.join(" ")} #{sql}" unless exclude_marginalia
+      prepare_without_maginalia(sql)
+    end
+  end
 
   def self.full_table_name(db, table)
     "`#{db}`.`#{table}`"

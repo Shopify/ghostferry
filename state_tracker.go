@@ -37,11 +37,12 @@ type SerializableState struct {
 	LastSuccessfulPaginationKeys              map[string]uint64
 	CompletedTables                           map[string]bool
 	LastWrittenBinlogPosition                 mysql.Position
-	LastStoredBinlogPositionForInlineVerifier mysql.Position
 	BinlogVerifyStore                         BinlogVerifySerializedStore
+	LastStoredBinlogPositionForInlineVerifier mysql.Position
+	LastStoredBinlogPositionForTargetVerifier mysql.Position
 }
 
-func (s *SerializableState) MinBinlogPosition() mysql.Position {
+func (s *SerializableState) MinSourceBinlogPosition() mysql.Position {
 	nilPosition := mysql.Position{}
 	if s.LastWrittenBinlogPosition == nilPosition {
 		return s.LastStoredBinlogPositionForInlineVerifier
@@ -84,6 +85,7 @@ type StateTracker struct {
 
 	lastWrittenBinlogPosition                 mysql.Position
 	lastStoredBinlogPositionForInlineVerifier mysql.Position
+	lastStoredBinlogPositionForTargetVerifier mysql.Position
 
 	lastSuccessfulPaginationKeys map[string]uint64
 	completedTables              map[string]bool
@@ -110,21 +112,29 @@ func NewStateTrackerFromSerializedState(speedLogCount int, serializedState *Seri
 	s.completedTables = serializedState.CompletedTables
 	s.lastWrittenBinlogPosition = serializedState.LastWrittenBinlogPosition
 	s.lastStoredBinlogPositionForInlineVerifier = serializedState.LastStoredBinlogPositionForInlineVerifier
+	s.lastStoredBinlogPositionForTargetVerifier = serializedState.LastStoredBinlogPositionForInlineVerifier
 	return s
 }
 
-func (s *StateTracker) UpdateLastResumableBinlogPosition(pos mysql.Position) {
+func (s *StateTracker) UpdateLastResumableSourceBinlogPosition(pos mysql.Position) {
 	s.BinlogRWMutex.Lock()
 	defer s.BinlogRWMutex.Unlock()
 
 	s.lastWrittenBinlogPosition = pos
 }
 
-func (s *StateTracker) UpdateLastResumableBinlogPositionForInlineVerifier(pos mysql.Position) {
+func (s *StateTracker) UpdateLastResumableSourceBinlogPositionForInlineVerifier(pos mysql.Position) {
 	s.BinlogRWMutex.Lock()
 	defer s.BinlogRWMutex.Unlock()
 
 	s.lastStoredBinlogPositionForInlineVerifier = pos
+}
+
+func (s *StateTracker) UpdateLastResumableBinlogPositionForTargetVerifier(pos mysql.Position) {
+	s.BinlogRWMutex.Lock()
+	defer s.BinlogRWMutex.Unlock()
+
+	s.lastStoredBinlogPositionForTargetVerifier = pos
 }
 
 func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginationKey uint64) {
@@ -223,6 +233,7 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, bin
 		CompletedTables:                           make(map[string]bool),
 		LastWrittenBinlogPosition:                 s.lastWrittenBinlogPosition,
 		LastStoredBinlogPositionForInlineVerifier: s.lastStoredBinlogPositionForInlineVerifier,
+		LastStoredBinlogPositionForTargetVerifier: s.lastStoredBinlogPositionForTargetVerifier,
 	}
 
 	if binlogVerifyStore != nil {

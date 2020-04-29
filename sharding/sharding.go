@@ -172,6 +172,8 @@ func (r *ShardingFerry) Run() {
 
 	r.Ferry.Throttler.SetDisabled(false)
 
+	r.Ferry.StopTargetVerifier()
+
 	metrics.Measure("CutoverUnlock", nil, 1.0, func() {
 		err = r.config.CutoverUnlock.Post(&client)
 	})

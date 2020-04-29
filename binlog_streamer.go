@@ -107,6 +107,8 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFrom(startFromBinlogPositio
 	s.logger.WithFields(logrus.Fields{
 		"file":     s.lastStreamedBinlogPosition.Name,
 		"position": s.lastStreamedBinlogPosition.Pos,
+		"host":     s.DBConfig.Host,
+		"port":     s.DBConfig.Port,
 	}).Info("starting binlog streaming")
 
 	s.binlogStreamer, err = s.binlogSyncer.StartSync(s.lastStreamedBinlogPosition)

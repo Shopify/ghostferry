@@ -24,6 +24,7 @@ import (
 )
 
 var (
+	zeroPosition  siddontangmysql.Position
 	VersionString string = "?.?.?+??????????????+???????"
 	WebUiBasedir  string = ""
 )
@@ -59,6 +60,9 @@ type Ferry struct {
 
 	BinlogStreamer *BinlogStreamer
 	BinlogWriter   *BinlogWriter
+
+	targetVerifierWg *sync.WaitGroup
+	TargetVerifier   *TargetVerifier
 
 	DataIterator *DataIterator
 	BatchWriter  *BatchWriter
@@ -121,12 +125,12 @@ func (f *Ferry) NewDataIteratorWithoutStateTracker() *DataIterator {
 	return dataIterator
 }
 
-func (f *Ferry) NewBinlogStreamer() *BinlogStreamer {
+func (f *Ferry) NewBinlogStreamer(db *sql.DB, dbConf *DatabaseConfig) *BinlogStreamer {
 	f.ensureInitialized()
 
 	return &BinlogStreamer{
-		DB:           f.SourceDB,
-		DBConfig:     f.Source,
+		DB:           db,
+		DBConfig:     dbConf,
 		MyServerId:   f.Config.MyServerId,
 		ErrorHandler: f.ErrorHandler,
 		Filter:       f.CopyFilter,
@@ -362,7 +366,6 @@ func (f *Ferry) Initialize() (err error) {
 			return err
 		}
 
-		var zeroPosition siddontangmysql.Position
 		// Ensures the query to check for position is executable.
 		_, err = f.WaitUntilReplicaIsCaughtUpToMaster.IsCaughtUp(zeroPosition, 1)
 		if err != nil {
@@ -435,7 +438,17 @@ func (f *Ferry) Initialize() (err error) {
 
 	// The iterative verifier needs the binlog streamer so this has to be first.
 	// Eventually this can be moved below the verifier initialization.
-	f.BinlogStreamer = f.NewBinlogStreamer()
+	f.BinlogStreamer = f.NewBinlogStreamer(f.SourceDB, f.Config.Source)
+
+	if !f.Config.SkipTargetVerification {
+		targetVerifier, err := NewTargetVerifier(f.TargetDB, f.StateTracker, f.NewBinlogStreamer(f.TargetDB, f.Config.Target))
+		if err != nil {
+			return err
+		}
+
+		f.TargetVerifier = targetVerifier
+	}
+
 	f.BinlogWriter = f.NewBinlogWriter()
 	f.DataIterator = f.NewDataIterator()
 	f.BatchWriter = f.NewBatchWriter()
@@ -495,12 +508,25 @@ func (f *Ferry) Start() error {
 	// miss some records that are inserted between the time the
 	// DataIterator determines the range of IDs to copy and the time that
 	// the starting binlog coordinates are determined.
-	var pos siddontangmysql.Position
+	var sourcePos siddontangmysql.Position
+	var targetPos siddontangmysql.Position
+
 	var err error
 	if f.StateToResumeFrom != nil {
-		pos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.MinBinlogPosition())
+		sourcePos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.MinSourceBinlogPosition())
 	} else {
-		pos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysql()
+		sourcePos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysql()
+	}
+	if err != nil {
+		return err
+	}
+
+	if !f.Config.SkipTargetVerification {
+		if f.StateToResumeFrom != nil && f.StateToResumeFrom.LastStoredBinlogPositionForTargetVerifier != zeroPosition {
+			targetPos, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.LastStoredBinlogPositionForTargetVerifier)
+		} else {
+			targetPos, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysql()
+		}
 	}
 	if err != nil {
 		return err
@@ -509,9 +535,13 @@ func (f *Ferry) Start() error {
 	// If we don't set this now, there is a race condition where Ghostferry
 	// is terminated with some rows copied but no binlog events are written.
 	// This guarentees that we are able to restart from a valid location.
-	f.StateTracker.UpdateLastResumableBinlogPosition(pos)
+	f.StateTracker.UpdateLastResumableSourceBinlogPosition(sourcePos)
 	if f.inlineVerifier != nil {
-		f.StateTracker.UpdateLastResumableBinlogPositionForInlineVerifier(pos)
+		f.StateTracker.UpdateLastResumableSourceBinlogPositionForInlineVerifier(sourcePos)
+	}
+
+	if !f.Config.SkipTargetVerification {
+		f.StateTracker.UpdateLastResumableBinlogPositionForTargetVerifier(targetPos)
 	}
 
 	return nil
@@ -591,13 +621,13 @@ func (f *Ferry) Run() {
 	}
 
 	binlogWg := &sync.WaitGroup{}
-	binlogWg.Add(2)
-
+	binlogWg.Add(1)
 	go func() {
 		defer binlogWg.Done()
 		f.BinlogWriter.Run()
 	}()
 
+	binlogWg.Add(1)
 	go func() {
 		defer binlogWg.Done()
 
@@ -605,9 +635,17 @@ func (f *Ferry) Run() {
 		f.BinlogWriter.Stop()
 	}()
 
+	if !f.Config.SkipTargetVerification {
+		f.targetVerifierWg = &sync.WaitGroup{}
+		f.targetVerifierWg.Add(1)
+		go func() {
+			defer f.targetVerifierWg.Done()
+			f.TargetVerifier.BinlogStreamer.Run()
+		}()
+	}
+
 	dataIteratorWg := &sync.WaitGroup{}
 	dataIteratorWg.Add(1)
-
 	go func() {
 		defer dataIteratorWg.Done()
 		f.DataIterator.Run(f.Tables.AsSlice())
@@ -730,6 +768,13 @@ func (f *Ferry) FlushBinlogAndStopStreaming() {
 	}
 
 	f.BinlogStreamer.FlushAndStop()
+}
+
+func (f *Ferry) StopTargetVerifier() {
+	if !f.Config.SkipTargetVerification {
+		f.TargetVerifier.BinlogStreamer.FlushAndStop()
+		f.targetVerifierWg.Wait()
+	}
 }
 
 func (f *Ferry) SerializeStateToJSON() (string, error) {
@@ -889,6 +934,17 @@ func (f *Ferry) checkConnectionForBinlogFormat(db *sql.DB) error {
 		}
 		if strings.ToUpper(value) != "FULL" {
 			return fmt.Errorf("binlog_row_image must be FULL, not %s", value)
+		}
+	}
+
+	if !f.Config.SkipTargetVerification {
+		row = db.QueryRow("SHOW VARIABLES LIKE 'binlog_rows_query_log_events'")
+		err = row.Scan(&name, &value)
+		if err != nil {
+			return err
+		}
+		if strings.ToUpper(value) != "ON" {
+			return fmt.Errorf("binlog_rows_query_log_events must be ON, not %s", value)
 		}
 	}
 

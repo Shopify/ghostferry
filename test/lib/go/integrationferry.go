@@ -121,6 +121,8 @@ func (f *IntegrationFerry) Main() error {
 		return err
 	}
 
+	defer f.StopTargetVerifier()
+
 	err = f.SendStatusAndWaitUntilContinue(StatusBinlogStreamingStarted)
 	if err != nil {
 		return err
@@ -179,6 +181,7 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 			Params: map[string]string{
 				"charset": "utf8mb4",
 			},
+			Marginalia: os.Getenv("GHOSTFERRY_MARGINALIA"),
 		},
 
 		Target: &ghostferry.DatabaseConfig{
@@ -190,6 +193,7 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 			Params: map[string]string{
 				"charset": "utf8mb4",
 			},
+			Marginalia: os.Getenv("GHOSTFERRY_MARGINALIA"),
 		},
 
 		AutomaticCutover: true,
@@ -198,7 +202,8 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 			TablesFunc: nil,
 		},
 
-		DumpStateOnSignal: true,
+		DumpStateOnSignal:      true,
+		SkipTargetVerification: (os.Getenv("GHOSTFERRY_SKIP_TARGET_VERIFICATION") == "true"),
 	}
 
 	integrationPort := os.Getenv(portEnvName)

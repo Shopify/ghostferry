@@ -2,9 +2,10 @@ package testhelpers
 
 import (
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"sync"
 	"testing"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/sirupsen/logrus"
@@ -105,6 +106,7 @@ func (this *IntegrationTestCase) StopStreamingAndWaitForGhostferryFinish() {
 	this.wg.Wait()
 
 	this.callCustomAction(this.AfterStoppedBinlogStreaming)
+	this.Ferry.StopTargetVerifier()
 }
 
 func (this *IntegrationTestCase) VerifyData() {
@@ -155,6 +157,9 @@ func (this *IntegrationTestCase) Teardown() {
 	if r != nil {
 		panic(r)
 	}
+
+	this.SourceDB.Close()
+	this.TargetDB.Close()
 }
 
 func (this *IntegrationTestCase) verifyTableChecksum() (ghostferry.VerificationResult, error) {

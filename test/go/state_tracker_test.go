@@ -24,7 +24,7 @@ func (s *StateTrackerTestSuite) TestMinBinlogPosition() {
 			Pos:  10,
 		},
 	}
-	s.Require().Equal(serializedState.MinBinlogPosition(), mysql.Position{"mysql-bin.00003", 4})
+	s.Require().Equal(serializedState.MinSourceBinlogPosition(), mysql.Position{"mysql-bin.00003", 4})
 
 	serializedState = &ghostferry.SerializableState{
 		LastWrittenBinlogPosition: mysql.Position{
@@ -37,7 +37,7 @@ func (s *StateTrackerTestSuite) TestMinBinlogPosition() {
 			Pos:  10,
 		},
 	}
-	s.Require().Equal(serializedState.MinBinlogPosition(), mysql.Position{"mysql-bin.00002", 10})
+	s.Require().Equal(serializedState.MinSourceBinlogPosition(), mysql.Position{"mysql-bin.00002", 10})
 
 	serializedState = &ghostferry.SerializableState{
 		LastWrittenBinlogPosition: mysql.Position{
@@ -50,7 +50,7 @@ func (s *StateTrackerTestSuite) TestMinBinlogPosition() {
 			Pos:  10,
 		},
 	}
-	s.Require().Equal(serializedState.MinBinlogPosition(), mysql.Position{"mysql-bin.00002", 10})
+	s.Require().Equal(serializedState.MinSourceBinlogPosition(), mysql.Position{"mysql-bin.00002", 10})
 
 	serializedState = &ghostferry.SerializableState{
 		LastStoredBinlogPositionForInlineVerifier: mysql.Position{
@@ -63,7 +63,7 @@ func (s *StateTrackerTestSuite) TestMinBinlogPosition() {
 			Pos:  10,
 		},
 	}
-	s.Require().Equal(serializedState.MinBinlogPosition(), mysql.Position{"mysql-bin.00002", 10})
+	s.Require().Equal(serializedState.MinSourceBinlogPosition(), mysql.Position{"mysql-bin.00002", 10})
 }
 
 func TestStateTrackerTestSuite(t *testing.T) {

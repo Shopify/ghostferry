@@ -357,6 +357,7 @@ func (v *InlineVerifier) VerifyBeforeCutover() error {
 
 func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	v.verifyDuringCutoverStarted.Set(true)
+
 	mismatchFound, mismatches, err := v.verifyAllEventsInStore()
 	if err != nil {
 		v.logger.WithError(err).Error("failed to VerifyDuringCutover")
@@ -569,8 +570,7 @@ func (v *InlineVerifier) binlogEventListener(evs []DMLEvent) error {
 	}
 
 	if v.StateTracker != nil {
-		ev := evs[len(evs)-1]
-		v.StateTracker.UpdateLastResumableBinlogPositionForInlineVerifier(ev.ResumableBinlogPosition())
+		v.StateTracker.UpdateLastResumableSourceBinlogPositionForInlineVerifier(evs[len(evs)-1].ResumableBinlogPosition())
 	}
 
 	return nil

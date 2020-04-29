@@ -109,6 +109,8 @@ func (this *CopydbFerry) Run() {
 	// should be identical.
 	copyWG.Wait()
 
+	this.Ferry.StopTargetVerifier()
+
 	// This is where you cutover from using the source database to
 	// using the target database.
 	logrus.Info("ghostferry main operations has terminated but the control server remains online")
