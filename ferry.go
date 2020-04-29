@@ -537,10 +537,10 @@ func (f *Ferry) Start() error {
 	f.StateTracker.UpdateLastResumableSourceBinlogPosition(sourcePos)
 	if f.inlineVerifier != nil {
 		f.StateTracker.UpdateLastResumableSourceBinlogPositionForInlineVerifier(sourcePos)
+	}
 
-		if !f.Config.SkipTargetVerification {
-			f.StateTracker.UpdateLastResumableBinlogPositionForTargetVerifier(targetPos)
-		}
+	if !f.Config.SkipTargetVerification {
+		f.StateTracker.UpdateLastResumableBinlogPositionForTargetVerifier(targetPos)
 	}
 
 	return nil
