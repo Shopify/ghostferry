@@ -247,6 +247,10 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 		}
 	}
 
+	if lockStrategy := os.Getenv("GHOSTFERRY_LOCK_STRATEGY"); lockStrategy != "" {
+		config.LockStrategy = lockStrategy
+	}
+
 	return config, config.ValidateConfig()
 }
 

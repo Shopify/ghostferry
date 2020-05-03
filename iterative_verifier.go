@@ -384,7 +384,7 @@ func (v *IterativeVerifier) iterateAllTables(mismatchedPaginationKeyFunc func(ui
 func (v *IterativeVerifier) iterateTableFingerprints(table *TableSchema, mismatchedPaginationKeyFunc func(uint64, *TableSchema) error) error {
 	// The cursor will stop iterating when it cannot find anymore rows,
 	// so it will not iterate until MaxUint64.
-	cursor := v.CursorConfig.NewCursorWithoutRowLock(table, 0, math.MaxUint64)
+	cursor := v.CursorConfig.NewCursorWithoutRowLock(table, 0, math.MaxUint64, nil)
 
 	// It only needs the PaginationKeys, not the entire row.
 	cursor.ColumnsToSelect = []string{fmt.Sprintf("`%s`", table.GetPaginationColumn().Name)}

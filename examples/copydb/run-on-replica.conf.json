@@ -22,6 +22,7 @@
   },
 
   "RunFerryFromReplica": true,
+  "LockStrategy": "LockInGhostferry",
   "SourceReplicationMaster": {
     "Host": "127.0.0.1",
     "Port": 29291,

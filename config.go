@@ -21,6 +21,10 @@ const (
 	VerifierTypeNoVerification = "NoVerification"
 
 	DefaultMarginalia = "application:ghostferry"
+
+	LockStrategySourceDB     = "LockOnSourceDB"
+	LockStrategyInGhostferry = "LockInGhostferry"
+	LockStrategyNone         = "None"
 )
 
 type TLSConfig struct {
@@ -412,6 +416,21 @@ type Config struct {
 	// Optional: defaults to false
 	AutomaticCutover bool
 
+	// This specifies how to prevent races between the data copy and binlog
+	// streaming. Possible values are:
+	// - LockOnSourceDB: obtain a table lock on the source table while copying
+	//   data, which will prevent any type of data modification on the source
+	//   DB; this is the strictest method but may intervene with the
+	//   application trying to insert data,
+	// - LockInGhostferry: obtain a lock in ghostferry, preventing updates to
+	//   the target DB while copying data; this should be sufficient in most
+	//   scenarios, and
+	// - None: do not perform locking, assume the application does not update
+	//   or delete data in a way that races may occur.
+	//
+	// Optional: defaults to "LockOnSourceDB"
+	LockStrategy string
+
 	// This specifies whether or not Ferry.Run will handle SIGINT and SIGTERM
 	// by dumping the current state to stdout and the error HTTP callback.
 	// The dumped state can be used to resume Ghostferry.
@@ -536,6 +555,12 @@ func (c *Config) ValidateConfig() error {
 		if err := c.InlineVerifierConfig.Validate(); err != nil {
 			return fmt.Errorf("InlineVerifierConfig invalid: %v", err)
 		}
+	}
+
+	if c.LockStrategy == "" {
+		c.LockStrategy = LockStrategySourceDB
+	} else if c.LockStrategy != LockStrategySourceDB && c.LockStrategy != LockStrategyInGhostferry && c.LockStrategy != LockStrategyNone {
+		return fmt.Errorf("Invalid LockStrategy specified (set to %s)", c.LockStrategy)
 	}
 
 	if c.DBWriteRetries == 0 {

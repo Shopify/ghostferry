@@ -89,6 +89,7 @@ type StateTracker struct {
 
 	lastSuccessfulPaginationKeys map[string]uint64
 	completedTables              map[string]bool
+	tableLocks                   map[string]*sync.RWMutex
 
 	iterationSpeedLog *ring.Ring
 }
@@ -100,6 +101,7 @@ func NewStateTracker(speedLogCount int) *StateTracker {
 
 		lastSuccessfulPaginationKeys: make(map[string]uint64),
 		completedTables:              make(map[string]bool),
+		tableLocks:                   make(map[string]*sync.RWMutex),
 		iterationSpeedLog:            newSpeedLogRing(speedLogCount),
 	}
 }
@@ -176,6 +178,26 @@ func (s *StateTracker) IsTableComplete(table string) bool {
 	defer s.CopyRWMutex.RUnlock()
 
 	return s.completedTables[table]
+}
+
+func (s *StateTracker) GetTableLock(table string) *sync.RWMutex {
+	s.CopyRWMutex.Lock()
+	defer s.CopyRWMutex.Unlock()
+
+	// table locks are needed only for synchronizing data copy and binlog
+	// writing. We optimize this into a NULL-lock if we know this race is
+	// not possible
+	if s.completedTables[table] {
+		return nil
+	}
+
+	if lock, found := s.tableLocks[table]; found {
+		return lock
+	}
+
+	lock := &sync.RWMutex{}
+	s.tableLocks[table] = lock
+	return lock
 }
 
 // This is reasonably accurate if the rows copied are distributed uniformly

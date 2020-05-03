@@ -243,6 +243,10 @@ module GhostferryHelper
           environment["GHOSTFERRY_MARGINALIA"] = @config[:marginalia]
         end
 
+        if @config[:lock_strategy]
+          environment["GHOSTFERRY_LOCK_STRATEGY"] = @config[:lock_strategy]
+        end
+
         @logger.info("starting ghostferry test binary #{@compiled_binary_path}")
         Open3.popen3(environment, @compiled_binary_path) do |stdin, stdout, stderr, wait_thr|
           stdin.puts(resuming_state) unless resuming_state.nil?

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"strings"
+	"sync"
 
 	"github.com/Masterminds/squirrel"
 	"github.com/siddontang/go-mysql/schema"
@@ -18,9 +19,24 @@ type SqlPreparer interface {
 
 type SqlDBWithFakeRollback struct {
 	*sql.DB
+	lock *sync.RWMutex
+}
+
+func NewSqlDBWithFakeRollback(db *sql.DB, lock *sync.RWMutex) *SqlDBWithFakeRollback {
+	tx := &SqlDBWithFakeRollback{
+		DB:   db,
+		lock: lock,
+	}
+	if lock != nil {
+		lock.Lock()
+	}
+	return tx
 }
 
 func (d *SqlDBWithFakeRollback) Rollback() error {
+	if d.lock != nil {
+		d.lock.Unlock()
+	}
 	return nil
 }
 
@@ -53,9 +69,12 @@ func (c *CursorConfig) NewCursor(table *TableSchema, startPaginationKey, maxPagi
 }
 
 // returns a new Cursor with an embedded copy of itself
-func (c *CursorConfig) NewCursorWithoutRowLock(table *TableSchema, startPaginationKey, maxPaginationKey uint64) *Cursor {
+func (c *CursorConfig) NewCursorWithoutRowLock(table *TableSchema, startPaginationKey, maxPaginationKey uint64, tableLock *sync.RWMutex) *Cursor {
 	cursor := c.NewCursor(table, startPaginationKey, maxPaginationKey)
 	cursor.RowLock = false
+	// NOTE: We only allow internal table locking, if row-locking is disabled
+	// to avoid a potential deadlock
+	cursor.tableLock = tableLock
 	return cursor
 }
 
@@ -68,6 +87,7 @@ type Cursor struct {
 
 	paginationKeyColumn         *schema.TableColumn
 	lastSuccessfulPaginationKey uint64
+	tableLock                   *sync.RWMutex
 	logger                      *logrus.Entry
 }
 
@@ -101,7 +121,7 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 					return err
 				}
 			} else {
-				tx = &SqlDBWithFakeRollback{c.DB}
+				tx = NewSqlDBWithFakeRollback(c.DB, c.tableLock)
 			}
 
 			batch, paginationKeypos, err = c.Fetch(tx)
