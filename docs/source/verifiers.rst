@@ -39,10 +39,12 @@ are given below:
 
 If you want verification, you should try with the ``ChecksumTableVerifier``
 first if you're copying whole tables at a time. If that takes too long, you can
-try using the ``IterativeVerifier`` or ``InlineVerifier``. Alternatively, you can verify in a staging
-run and not verify during the production run (see :ref:`copydbinprod`).
+try using the ``IterativeVerifier`` or ``InlineVerifier``. However, please note
+that the ``IterativeVerifier`` has been deprecated and will be removed.
+Alternatively, you can verify in a staging run and not verify during the
+production run (see :ref:`copydbinprod`).
 
-IterativeVerifier
+IterativeVerifier (Deprecated)
 -----------------
 
 IterativeVerifier verifies the source and target in a couple of steps:
