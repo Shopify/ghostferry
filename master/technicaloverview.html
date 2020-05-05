@@ -93,8 +93,7 @@ verifiers, the control server. These components are optional to Ghostferry
 runs.</p>
 <p>The overall, simplified architecture of Ghostferry can be summarized with the
 figure below. It shows the basic flow of all the background tasks, along with
-how each task is spawned (starting from <code class="docutils literal notranslate"><span class="pre">Ferry.Run</span></code>). Yellow boxes indicates
-at which the data is inserted into the target database. Arrows pointing towards
+how each task is spawned (starting from <code class="docutils literal notranslate"><span class="pre">Ferry.Run</span></code>). Arrows pointing towards
 outside of an encapsulating box indicate the task will exit.  The red arrows
 with “Error action” indicates an error has occurred and the error is sent to
 the <code class="docutils literal notranslate"><span class="pre">ErrorHandler</span></code>, at which the ErrorHandler flow takes over.</p>

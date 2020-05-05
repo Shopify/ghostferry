@@ -37,42 +37,52 @@
   <div class="section" id="verifiers">
 <span id="id1"></span><h1>Verifiers<a class="headerlink" href="#verifiers" title="Permalink to this headline">¶</a></h1>
 <p>Verifiers in Ghostferry is designed to ensure that Ghostferry did not
-corrupt/miss data. There are two different verifiers: the
-<code class="docutils literal notranslate"><span class="pre">ChecksumTableVerifier</span></code> and the <code class="docutils literal notranslate"><span class="pre">IterativeVerifier</span></code>. A comparison of them
+corrupt/miss data. There are three different verifiers: the
+<code class="docutils literal notranslate"><span class="pre">ChecksumTableVerifier</span></code>, the <code class="docutils literal notranslate"><span class="pre">IterativeVerifier</span></code>, and the <code class="docutils literal notranslate"><span class="pre">InlineVerifier</span></code>. A comparison of them
 are given below:</p>
 <table border="1" class="docutils">
 <colgroup>
-<col width="31%" />
-<col width="31%" />
-<col width="39%" />
+<col width="22%" />
+<col width="22%" />
+<col width="28%" />
+<col width="28%" />
 </colgroup>
 <tbody valign="top">
 <tr class="row-odd"><td>&#160;</td>
 <td>ChecksumTableVerifier</td>
 <td>IterativeVerifier</td>
+<td>InlineVerifier</td>
 </tr>
 <tr class="row-even"><td>Mechanism</td>
 <td><code class="docutils literal notranslate"><span class="pre">CHECKSUM</span> <span class="pre">TABLE</span></code></td>
 <td>Verify row before cutover;
 Reverify changed rows during
 cutover.</td>
+<td>Verify row after insert;
+Reverify changed rows before
+and during cutover.</td>
 </tr>
 <tr class="row-odd"><td>Impacts on Cutover Time</td>
 <td>Linear w.r.t data size</td>
 <td>Linear w.r.t. change rate
-<a class="footnote-reference" href="#id4" id="id2">[1]</a></td>
+<a class="footnote-reference" href="#id5" id="id2">[1]</a></td>
+<td>Linear w.r.t. change rate
+<a class="footnote-reference" href="#id5" id="id3">[1]</a></td>
 </tr>
 <tr class="row-even"><td>Impacts on Copy Time
-<a class="footnote-reference" href="#id5" id="id3">[2]</a></td>
+<a class="footnote-reference" href="#id6" id="id4">[2]</a></td>
 <td>None</td>
+<td>Linear w.r.t data size</td>
 <td>Linear w.r.t data size</td>
 </tr>
 <tr class="row-odd"><td>Memory Usage</td>
 <td>Minimal</td>
 <td>Linear w.r.t rows changed</td>
+<td>Linear w.r.t rows changed</td>
 </tr>
 <tr class="row-even"><td>Partial table copy</td>
 <td>Not supported</td>
+<td>Supported</td>
 <td>Supported</td>
 </tr>
 <tr class="row-odd"><td>Worst Case Scenario</td>
@@ -80,30 +90,34 @@ cutover.</td>
 unacceptable downtime</td>
 <td>Verification is slower than
 the change rate of the DB;</td>
+<td>Verification is slower than
+the change rate of the DB;</td>
 </tr>
-</tbody>
-</table>
-<table class="docutils footnote" frame="void" id="id4" rules="none">
-<colgroup><col class="label" /><col /></colgroup>
-<tbody valign="top">
-<tr><td class="label"><a class="fn-backref" href="#id2">[1]</a></td><td>Additional improvements could be made to reduce this as long as
-Ghostferry is faster than the rate of change. See
-<a class="reference external" href="https://github.com/Shopify/ghostferry/issues/13">https://github.com/Shopify/ghostferry/issues/13</a>.</td></tr>
 </tbody>
 </table>
 <table class="docutils footnote" frame="void" id="id5" rules="none">
 <colgroup><col class="label" /><col /></colgroup>
 <tbody valign="top">
-<tr><td class="label"><a class="fn-backref" href="#id3">[2]</a></td><td>Increase in copy time does not increase downtime. Downtime occurs only
+<tr><td class="label">[1]</td><td><em>(<a class="fn-backref" href="#id2">1</a>, <a class="fn-backref" href="#id3">2</a>)</em> Additional improvements could be made to reduce this as long as
+Ghostferry is faster than the rate of change. See
+<a class="reference external" href="https://github.com/Shopify/ghostferry/issues/13">https://github.com/Shopify/ghostferry/issues/13</a>.</td></tr>
+</tbody>
+</table>
+<table class="docutils footnote" frame="void" id="id6" rules="none">
+<colgroup><col class="label" /><col /></colgroup>
+<tbody valign="top">
+<tr><td class="label"><a class="fn-backref" href="#id4">[2]</a></td><td>Increase in copy time does not increase downtime. Downtime occurs only
 in cutover.</td></tr>
 </tbody>
 </table>
 <p>If you want verification, you should try with the <code class="docutils literal notranslate"><span class="pre">ChecksumTableVerifier</span></code>
 first if you’re copying whole tables at a time. If that takes too long, you can
-try using the <code class="docutils literal notranslate"><span class="pre">IterativeVerifier</span></code>. Alternatively, you can verify in a staging
-run and not verify during the production run (see <a class="reference internal" href="copydbinprod.html#copydbinprod"><span class="std std-ref">Running ghostferry-copydb in production</span></a>).</p>
-<div class="section" id="iterativeverifier">
-<h2>IterativeVerifier<a class="headerlink" href="#iterativeverifier" title="Permalink to this headline">¶</a></h2>
+try using the <code class="docutils literal notranslate"><span class="pre">IterativeVerifier</span></code> or <code class="docutils literal notranslate"><span class="pre">InlineVerifier</span></code>. However, please note
+that the <code class="docutils literal notranslate"><span class="pre">IterativeVerifier</span></code> has been deprecated and will be removed.
+Alternatively, you can verify in a staging run and not verify during the
+production run (see <a class="reference internal" href="copydbinprod.html#copydbinprod"><span class="std std-ref">Running ghostferry-copydb in production</span></a>).</p>
+<div class="section" id="iterativeverifier-deprecated">
+<h2>IterativeVerifier (Deprecated)<a class="headerlink" href="#iterativeverifier-deprecated" title="Permalink to this headline">¶</a></h2>
 <p>IterativeVerifier verifies the source and target in a couple of steps:</p>
 <ol class="arabic simple">
 <li>After the data copy, it first compares the hashes of each applicable rows
@@ -130,6 +144,68 @@ identical.</li>
 </ol>
 <p>A proof of concept TLA+ verification of this algorithm is done in
 <a class="reference external" href="https://github.com/Shopify/ghostferry/tree/iterative-verifier-tla">https://github.com/Shopify/ghostferry/tree/iterative-verifier-tla</a>.</p>
+</div>
+<div class="section" id="inlineverifier">
+<h2>InlineVerifier<a class="headerlink" href="#inlineverifier" title="Permalink to this headline">¶</a></h2>
+<p>InlineVerifier verifies the source and target inline with the other components with
+a few slight differences from the IterativeVerifier above. The primary difference
+being that this verification process happens while the data is being copied by the
+DataIterator instead of after the fact.</p>
+<p>With regards to the <code class="docutils literal notranslate"><span class="pre">DataIterator</span></code> and <code class="docutils literal notranslate"><span class="pre">BatchWriter</span></code>:</p>
+<ol class="arabic">
+<li><p class="first">While selecting the data in the <code class="docutils literal notranslate"><span class="pre">DataIterator</span></code>, a fingerprint is appended
+to the end of the statement that <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> s data from the source as
+<code class="docutils literal notranslate"><span class="pre">SELECT</span> <span class="pre">*,</span> <span class="pre">MD5(...)</span> <span class="pre">FROM</span> <span class="pre">...</span></code></p>
+</li>
+<li><p class="first">The fingerprint, gathered from the <code class="docutils literal notranslate"><span class="pre">MD5(...)</span></code> of the query above is stored
+on the <code class="docutils literal notranslate"><span class="pre">RowBatch</span></code> to be used in the next verification step.</p>
+</li>
+<li><p class="first">The <code class="docutils literal notranslate"><span class="pre">BatchWriter</span></code> then attempts to write the <code class="docutils literal notranslate"><span class="pre">RowBatch</span></code>, but instead of inserting
+it directly, the following process is taken:</p>
+<ol class="loweralpha simple">
+<li>A transaction is opened.</li>
+<li>The data contained in the <code class="docutils literal notranslate"><span class="pre">RowBatch</span></code> is inserted.</li>
+<li>The PK and fingerprint is then <code class="docutils literal notranslate"><span class="pre">SELECT</span></code> ed from the Target
+as <code class="docutils literal notranslate"><span class="pre">SELECT</span> <span class="pre">pk,</span> <span class="pre">MD5(....)</span> <span class="pre">FROM</span> <span class="pre">...</span></code>.</li>
+<li>The fingerprint (<code class="docutils literal notranslate"><span class="pre">MD5</span></code>) is then checked against the fingerprint currently
+stored on the <code class="docutils literal notranslate"><span class="pre">RowBatch</span></code>.</li>
+</ol>
+<p>The process in step 3 above is retried (with a limit) if there happens to be
+a failure or mismatch, and will fail the run if they are not verified within
+the retry limits.</p>
+</li>
+</ol>
+<p>With regards to the BinlogStreamer:</p>
+<ol class="arabic simple">
+<li>As DMLs are observed by the <code class="docutils literal notranslate"><span class="pre">BinlogStreamer</span></code>, the PKs of the events are placed into
+a <code class="docutils literal notranslate"><span class="pre">reverifyStore</span></code> to be periodically verified for correctness.</li>
+<li>This continues to happen in the background throughout the process of the Run.</li>
+<li>If a PK is found not to match, it is added back into the reverifyStore to be verified
+again.</li>
+<li>When <code class="docutils literal notranslate"><span class="pre">VerifyBeforeCutover</span></code> starts, the InlineVerifier will verify enough of the
+events in the <code class="docutils literal notranslate"><span class="pre">reverifyStore</span></code> to ensure it has a sufficiently small number of events
+that can be successfully verified before cutover.</li>
+<li>When <code class="docutils literal notranslate"><span class="pre">VerifyDuringCutover</span></code> begins, all of the remaining events in the <code class="docutils literal notranslate"><span class="pre">reverifyStore</span></code>
+are verified and any mismatches are returned.</li>
+</ol>
+</div>
+<div class="section" id="targetverifier">
+<h2>TargetVerifier<a class="headerlink" href="#targetverifier" title="Permalink to this headline">¶</a></h2>
+<p>TargetVerifier ensures data on the Target is not corrupted during the move process
+and is meant to be used in conjunction with another verifier above.</p>
+<p>It uses a configurable annotation string that is prepended to DMLs that acts as
+a verified “signature” of all of Ghostferry’s operations on the Target:</p>
+<ol class="arabic simple">
+<li>A BinlogStreamer is created and attached to the Target</li>
+<li>As this BinlogStreamer receives DML events, it attempts to extract the annotation
+from each for each of the <code class="docutils literal notranslate"><span class="pre">RowsEvents</span></code>.</li>
+</ol>
+<p>3. If an annotation is not found for the DML, or the extracted annotation does not
+match the configured annotation of Ghostferry, an error is returned and the process fails.</p>
+<p>The TargetVerifier needs to be manually stopped before cutover. If it is not stopped,
+it may detect writes from the application (that are not from Ghostferry) and fail the run.
+Stopping before cutover also gives the TargetVerifier the opportunity to inspect all
+of the DMLs in its <code class="docutils literal notranslate"><span class="pre">BinlogStreamer</span></code> queue to ensure no corruption of the data has occurred.</p>
 </div>
 </div>
 
@@ -167,7 +243,9 @@ identical.</li>
 <li class="toctree-l1"><a class="reference internal" href="copydbinprod.html">Running <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> in production</a></li>
 <li class="toctree-l1"><a class="reference internal" href="copydbinterruptresume.html">Interrupt and resuming <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code></a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Verifiers</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#iterativeverifier">IterativeVerifier</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#iterativeverifier-deprecated">IterativeVerifier (Deprecated)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#inlineverifier">InlineVerifier</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#targetverifier">TargetVerifier</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="howtousecustom.html">Using Ghostferry in Custom Applications</a></li>
