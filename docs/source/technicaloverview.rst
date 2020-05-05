@@ -68,8 +68,7 @@ runs.
 
 The overall, simplified architecture of Ghostferry can be summarized with the
 figure below. It shows the basic flow of all the background tasks, along with
-how each task is spawned (starting from ``Ferry.Run``). Yellow boxes indicates
-at which the data is inserted into the target database. Arrows pointing towards
+how each task is spawned (starting from ``Ferry.Run``). Arrows pointing towards
 outside of an encapsulating box indicate the task will exit.  The red arrows
 with "Error action" indicates an error has occurred and the error is sent to
 the ``ErrorHandler``, at which the ErrorHandler flow takes over.

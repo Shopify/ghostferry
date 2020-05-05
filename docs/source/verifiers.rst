@@ -5,30 +5,30 @@ Verifiers
 =========
 
 Verifiers in Ghostferry is designed to ensure that Ghostferry did not
-corrupt/miss data. There are two different verifiers: the
-``ChecksumTableVerifier`` and the ``IterativeVerifier``. A comparison of them
+corrupt/miss data. There are three different verifiers: the
+``ChecksumTableVerifier``, the ``IterativeVerifier``, and the ``InlineVerifier``. A comparison of them
 are given below:
 
-+-----------------------+-----------------------+-----------------------------+
-|                       | ChecksumTableVerifier | IterativeVerifier           |
-+-----------------------+-----------------------+-----------------------------+
-|Mechanism              | ``CHECKSUM TABLE``    | Verify row before cutover;  |
-|                       |                       | Reverify changed rows during|
-|                       |                       | cutover.                    |
-+-----------------------+-----------------------+-----------------------------+
-|Impacts on Cutover Time| Linear w.r.t data size| Linear w.r.t. change rate   |
-|                       |                       | [1]_                        |
-+-----------------------+-----------------------+-----------------------------+
-|Impacts on Copy Time   | None                  | Linear w.r.t data size      |
-|[2]_                   |                       |                             |
-+-----------------------+-----------------------+-----------------------------+
-|Memory Usage           | Minimal               | Linear w.r.t rows changed   |
-+-----------------------+-----------------------+-----------------------------+
-|Partial table copy     | Not supported         | Supported                   |
-+-----------------------+-----------------------+-----------------------------+
-|Worst Case Scenario    | Large databases causes| Verification is slower than |
-|                       | unacceptable downtime | the change rate of the DB;  |
-+-----------------------+-----------------------+-----------------------------+
++-----------------------+-----------------------+-----------------------------+-----------------------------+
+|                       | ChecksumTableVerifier | IterativeVerifier           | InlineVerifier              |
++-----------------------+-----------------------+-----------------------------+-----------------------------+
+|Mechanism              | ``CHECKSUM TABLE``    | Verify row before cutover;  | Verify row after insert;    |
+|                       |                       | Reverify changed rows during| Reverify changed rows before|
+|                       |                       | cutover.                    | and during cutover.         |
++-----------------------+-----------------------+-----------------------------+-----------------------------+
+|Impacts on Cutover Time| Linear w.r.t data size| Linear w.r.t. change rate   | Linear w.r.t. change rate   |
+|                       |                       | [1]_                        | [1]_                        |
++-----------------------+-----------------------+-----------------------------+-----------------------------+
+|Impacts on Copy Time   | None                  | Linear w.r.t data size      | Linear w.r.t data size      |
+|[2]_                   |                       |                             |                             |
++-----------------------+-----------------------+-----------------------------+-----------------------------+
+|Memory Usage           | Minimal               | Linear w.r.t rows changed   | Linear w.r.t rows changed   |
++-----------------------+-----------------------+-----------------------------+-----------------------------+
+|Partial table copy     | Not supported         | Supported                   | Supported                   |
++-----------------------+-----------------------+-----------------------------+-----------------------------+
+|Worst Case Scenario    | Large databases causes| Verification is slower than | Verification is slower than |
+|                       | unacceptable downtime | the change rate of the DB;  | the change rate of the DB;  |
++-----------------------+-----------------------+-----------------------------+-----------------------------+
 
 .. [1] Additional improvements could be made to reduce this as long as
        Ghostferry is faster than the rate of change. See
@@ -39,10 +39,12 @@ are given below:
 
 If you want verification, you should try with the ``ChecksumTableVerifier``
 first if you're copying whole tables at a time. If that takes too long, you can
-try using the ``IterativeVerifier``. Alternatively, you can verify in a staging
-run and not verify during the production run (see :ref:`copydbinprod`).
+try using the ``IterativeVerifier`` or ``InlineVerifier``. However, please note
+that the ``IterativeVerifier`` has been deprecated and will be removed.
+Alternatively, you can verify in a staging run and not verify during the
+production run (see :ref:`copydbinprod`).
 
-IterativeVerifier
+IterativeVerifier (Deprecated)
 -----------------
 
 IterativeVerifier verifies the source and target in a couple of steps:
@@ -73,3 +75,74 @@ IterativeVerifier verifies the source and target in a couple of steps:
 
 A proof of concept TLA+ verification of this algorithm is done in
 `<https://github.com/Shopify/ghostferry/tree/iterative-verifier-tla>`_.
+
+InlineVerifier
+-----------------
+
+InlineVerifier verifies the source and target inline with the other components with
+a few slight differences from the IterativeVerifier above. The primary difference
+being that this verification process happens while the data is being copied by the
+DataIterator instead of after the fact.
+
+With regards to the ``DataIterator`` and ``BatchWriter``:
+
+1. While selecting the data in the ``DataIterator``, a fingerprint is appended
+   to the end of the statement that ``SELECT`` s data from the source as
+   ``SELECT *, MD5(...) FROM ...``
+
+2. The fingerprint, gathered from the ``MD5(...)`` of the query above is stored
+   on the ``RowBatch`` to be used in the next verification step.
+
+3. The ``BatchWriter`` then attempts to write the ``RowBatch``, but instead of inserting
+   it directly, the following process is taken:
+
+   a. A transaction is opened.
+   b. The data contained in the ``RowBatch`` is inserted.
+   c. The PK and fingerprint is then ``SELECT`` ed from the Target
+      as ``SELECT pk, MD5(....) FROM ...``.
+   d. The fingerprint (``MD5``) is then checked against the fingerprint currently
+      stored on the ``RowBatch``.
+
+   The process in step 3 above is retried (with a limit) if there happens to be
+   a failure or mismatch, and will fail the run if they are not verified within
+   the retry limits.
+
+With regards to the BinlogStreamer:
+
+1. As DMLs are observed by the ``BinlogStreamer``, the PKs of the events are placed into
+   a ``reverifyStore`` to be periodically verified for correctness.
+
+2. This continues to happen in the background throughout the process of the Run.
+
+3. If a PK is found not to match, it is added back into the reverifyStore to be verified
+   again.
+
+4. When ``VerifyBeforeCutover`` starts, the InlineVerifier will verify enough of the
+   events in the ``reverifyStore`` to ensure it has a sufficiently small number of events
+   that can be successfully verified before cutover.
+
+5. When ``VerifyDuringCutover`` begins, all of the remaining events in the ``reverifyStore``
+   are verified and any mismatches are returned.
+
+TargetVerifier
+-----------------
+
+TargetVerifier ensures data on the Target is not corrupted during the move process
+and is meant to be used in conjunction with another verifier above.
+
+It uses a configurable annotation string that is prepended to DMLs that acts as
+a verified "signature" of all of Ghostferry's operations on the Target:
+
+1. A BinlogStreamer is created and attached to the Target
+
+2. As this BinlogStreamer receives DML events, it attempts to extract the annotation
+   from each for each of the ``RowsEvents``.
+
+3. If an annotation is not found for the DML, or the extracted annotation does not
+match the configured annotation of Ghostferry, an error is returned and the process fails.
+
+The TargetVerifier needs to be manually stopped before cutover. If it is not stopped,
+it may detect writes from the application (that are not from Ghostferry) and fail the run.
+Stopping before cutover also gives the TargetVerifier the opportunity to inspect all
+of the DMLs in its ``BinlogStreamer`` queue to ensure no corruption of the data has occurred.
+
