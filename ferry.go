@@ -508,14 +508,25 @@ func (f *Ferry) Start() error {
 	// miss some records that are inserted between the time the
 	// DataIterator determines the range of IDs to copy and the time that
 	// the starting binlog coordinates are determined.
+	//
+	// NOTE: If we don't use the inline verifier, we don't consider its last
+	// position for the resume position. We could be migrating for a long time,
+	// and the inline verifier position may grow outdated to the point that it
+	// is no-longer a valid position (the logs could have been deleted). Since
+	// the inline verifier position is not updated if it's not enabled and we
+	// use the oldest position in `MinBinlogPosition()`, resume may fail for
+	// the minimum position.
+	// In this case, using the last written position is the better state to use
 	var sourcePos siddontangmysql.Position
 	var targetPos siddontangmysql.Position
 
 	var err error
-	if f.StateToResumeFrom != nil {
+	if f.StateToResumeFrom == nil {
+		sourcePos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysql()
+	} else if f.inlineVerifier != nil {
 		sourcePos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.MinSourceBinlogPosition())
 	} else {
-		sourcePos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysql()
+		sourcePos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.LastWrittenBinlogPosition)
 	}
 	if err != nil {
 		return err
