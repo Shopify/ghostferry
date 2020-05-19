@@ -122,6 +122,8 @@ func (c *DatabaseConfig) Validate() error {
 
 	if c.Net == "" {
 		c.Net = DefaultNet
+	} else if c.Net == "unix" {
+		c.Port = 0
 	} else if c.Net != "tcp" && c.Net != "unix" {
 		return fmt.Errorf("net is unknown (valid modes: tcp, unix)")
 	}
