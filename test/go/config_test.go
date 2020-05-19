@@ -65,6 +65,12 @@ func (this *ConfigTestSuite) TestRequireSourceUser() {
 	this.Require().EqualError(err, "source: user is empty")
 }
 
+func (this *ConfigTestSuite) TestInvalidNetSorceMode() {
+	this.config.Source.Net = "invalid"
+	err := this.config.ValidateConfig()
+	this.Require().EqualError(err, "source: net is unknown (valid modes: tcp, unix)")
+}
+
 func (this *ConfigTestSuite) TestRequireTargetHost() {
 	this.config.Target.Host = ""
 	err := this.config.ValidateConfig()
@@ -75,6 +81,12 @@ func (this *ConfigTestSuite) TestRequireTargetPort() {
 	this.config.Target.Port = 0
 	err := this.config.ValidateConfig()
 	this.Require().EqualError(err, "target: port is not specified")
+}
+
+func (this *ConfigTestSuite) TestInvalidNetTargetMode() {
+	this.config.Target.Net = "invalid"
+	err := this.config.ValidateConfig()
+	this.Require().EqualError(err, "target: net is unknown (valid modes: tcp, unix)")
 }
 
 func (this *ConfigTestSuite) TestRequireTimezoneUTC() {
@@ -103,6 +115,8 @@ func (this *ConfigTestSuite) TestDefaultValues() {
 	err := this.config.ValidateConfig()
 	this.Require().Nil(err)
 
+	this.Require().Equal("tcp", this.config.Source.Net)
+	this.Require().Equal("tcp", this.config.Target.Net)
 	this.Require().Equal(5, this.config.DBWriteRetries)
 	this.Require().Equal(uint64(200), this.config.DataIterationBatchSize)
 	this.Require().Equal(4, this.config.DataIterationConcurrency)
@@ -148,6 +162,36 @@ func (this *ConfigTestSuite) TestParamsAndCollationGetsPassedToMysqlConfig() {
 	this.Require().Equal("utf8mb4_general_ci", mysqlConfig.Collation)
 	this.Require().Equal("'+00:00'", mysqlConfig.Params["time_zone"])
 	this.Require().Equal("'STRICT_ALL_TABLES,NO_BACKSLASH_ESCAPES'", mysqlConfig.Params["sql_mode"])
+}
+
+func (this *ConfigTestSuite) TestUnixNetMysqlConfig() {
+	this.config.Source.Net = "unix"
+	this.config.Source.Host = "/tmp/mysql.sock"
+	this.config.Source.Port = 1234
+
+	err := this.config.ValidateConfig()
+	this.Require().Nil(err)
+
+	mysqlConfig, err := this.config.Source.MySQLConfig()
+	this.Require().Nil(err)
+
+	this.Require().Equal("unix", mysqlConfig.Net)
+	this.Require().Equal("/tmp/mysql.sock", mysqlConfig.Addr)
+}
+
+func (this *ConfigTestSuite) TestTcpNetMysqlConfig() {
+	this.config.Source.Net = "tcp"
+	this.config.Source.Host = "127.0.0.1"
+	this.config.Source.Port = 1234
+
+	err := this.config.ValidateConfig()
+	this.Require().Nil(err)
+
+	mysqlConfig, err := this.config.Source.MySQLConfig()
+	this.Require().Nil(err)
+
+	this.Require().Equal("tcp", mysqlConfig.Net)
+	this.Require().Equal("127.0.0.1:1234", mysqlConfig.Addr)
 }
 
 func (this *ConfigTestSuite) TestDefaultMarginalia() {
