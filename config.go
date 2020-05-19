@@ -20,6 +20,7 @@ const (
 	VerifierTypeInline         = "Inline"
 	VerifierTypeNoVerification = "NoVerification"
 
+	DefaultNet        = "tcp"
 	DefaultMarginalia = "application:ghostferry"
 )
 
@@ -54,6 +55,7 @@ func (this *TLSConfig) BuildConfig() (*tls.Config, error) {
 type DatabaseConfig struct {
 	Host      string
 	Port      uint16
+	Net       string
 	User      string
 	Pass      string
 	Collation string
@@ -71,11 +73,19 @@ type DatabaseConfig struct {
 }
 
 func (c *DatabaseConfig) MySQLConfig() (*mysql.Config, error) {
+	var addr string
+
+	if c.Net == "unix" {
+		addr = c.Host
+	} else {
+		addr = fmt.Sprintf("%s:%d", c.Host, c.Port)
+	}
+
 	cfg := &mysql.Config{
 		User:                 c.User,
 		Passwd:               c.Pass,
-		Net:                  "tcp",
-		Addr:                 fmt.Sprintf("%s:%d", c.Host, c.Port),
+		Net:                  c.Net,
+		Addr:                 addr,
 		Collation:            c.Collation,
 		Params:               c.Params,
 		AllowNativePasswords: true,
@@ -108,6 +118,12 @@ func (c *DatabaseConfig) Validate() error {
 
 	if c.Port == 0 {
 		return fmt.Errorf("port is not specified")
+	}
+
+	if c.Net == "" {
+		c.Net = DefaultNet
+	} else if c.Net != "tcp" && c.Net != "unix" {
+		return fmt.Errorf("net is unknown (valid modes: tcp, unix)")
 	}
 
 	if c.User == "" {
