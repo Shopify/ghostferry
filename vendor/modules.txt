@@ -6,7 +6,7 @@ github.com/Masterminds/squirrel
 github.com/Shopify/go-dogstatsd
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
-# github.com/go-sql-driver/mysql v1.4.0
+# github.com/go-sql-driver/mysql v1.4.1
 ## explicit
 github.com/go-sql-driver/mysql
 # github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db
@@ -22,11 +22,12 @@ github.com/gorilla/mux
 ## explicit
 # github.com/juju/errors v0.0.0-20170703010042-c7d06af17c68
 ## explicit
-github.com/juju/errors
 # github.com/juju/loggo v0.0.0-20190526231331-6e530bcce5d8
 ## explicit
 # github.com/juju/testing v0.0.0-20191001232224-ce9dec17d28b
 ## explicit
+# github.com/konsorten/go-windows-terminal-sequences v1.0.1
+github.com/konsorten/go-windows-terminal-sequences
 # github.com/lann/builder v0.0.0-20180216234317-1b87b36280d0
 ## explicit
 github.com/lann/builder
@@ -47,12 +48,14 @@ github.com/lann/ps
 ## explicit
 # github.com/pingcap/check v0.0.0-20200212061837-5e12011dc712
 ## explicit
+# github.com/pingcap/errors v0.11.0
+github.com/pingcap/errors
 # github.com/pmezard/go-difflib v1.0.0
 github.com/pmezard/go-difflib/difflib
 # github.com/satori/go.uuid v1.2.0
 ## explicit
 github.com/satori/go.uuid
-# github.com/shopspring/decimal v0.0.0-20171108225254-9ca7f51822d2
+# github.com/shopspring/decimal v0.0.0-20180709203117-cd690d0c9e24
 ## explicit
 github.com/shopspring/decimal
 # github.com/siddontang/go v0.0.0-20180604090527-bdc77568d726
@@ -62,14 +65,14 @@ github.com/siddontang/go/hack
 ## explicit
 github.com/siddontang/go-log/log
 github.com/siddontang/go-log/loggers
-# github.com/siddontang/go-mysql v0.0.0-20180802024903-58848a70cf1a
+# github.com/siddontang/go-mysql v0.0.0-20200424072754-803944a6e4ea
 ## explicit
 github.com/siddontang/go-mysql/client
 github.com/siddontang/go-mysql/mysql
 github.com/siddontang/go-mysql/packet
 github.com/siddontang/go-mysql/replication
 github.com/siddontang/go-mysql/schema
-# github.com/sirupsen/logrus v1.0.4
+# github.com/sirupsen/logrus v1.4.1
 ## explicit
 github.com/sirupsen/logrus
 # github.com/stretchr/testify v1.4.0
@@ -77,11 +80,8 @@ github.com/sirupsen/logrus
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/require
 github.com/stretchr/testify/suite
-# golang.org/x/crypto v0.0.0-20190510104115-cbcb75029529
-golang.org/x/crypto/ssh/terminal
 # golang.org/x/sys v0.0.0-20191120155948-bd437916bb0e
 golang.org/x/sys/unix
-golang.org/x/sys/windows
 # google.golang.org/appengine v1.6.5
 ## explicit
 google.golang.org/appengine/cloudsql

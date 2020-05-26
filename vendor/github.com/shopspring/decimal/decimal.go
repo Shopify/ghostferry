@@ -153,31 +153,102 @@ func NewFromString(value string) (Decimal, error) {
 	}, nil
 }
 
-// NewFromFloat converts a float64 to Decimal.
+// RequireFromString returns a new Decimal from a string representation
+// or panics if NewFromString would have returned an error.
 //
 // Example:
 //
-//     NewFromFloat(123.45678901234567).String() // output: "123.4567890123456"
-//     NewFromFloat(.00000000000000001).String() // output: "0.00000000000000001"
+//     d := RequireFromString("-123.45")
+//     d2 := RequireFromString(".0001")
 //
-// NOTE: this will panic on NaN, +/-inf
-func NewFromFloat(value float64) Decimal {
-	floor := math.Floor(value)
-
-	// fast path, where float is an int
-	if floor == value && value <= math.MaxInt64 && value >= math.MinInt64 {
-		return New(int64(value), 0)
-	}
-
-	// slow path: float is a decimal
-	// HACK(vadim): do this the slow hacky way for now because the logic to
-	// convert a base-2 float to base-10 properly is not trivial
-	str := strconv.FormatFloat(value, 'f', -1, 64)
-	dec, err := NewFromString(str)
+func RequireFromString(value string) Decimal {
+	dec, err := NewFromString(value)
 	if err != nil {
 		panic(err)
 	}
 	return dec
+}
+
+// NewFromFloat converts a float64 to Decimal.
+//
+// The converted number will contain the number of significant digits that can be
+// represented in a float with reliable roundtrip.
+// This is typically 15 digits, but may be more in some cases.
+// See https://www.exploringbinary.com/decimal-precision-of-binary-floating-point-numbers/ for more information.
+//
+// For slightly faster conversion, use NewFromFloatWithExponent where you can specify the precision in absolute terms.
+//
+// NOTE: this will panic on NaN, +/-inf
+func NewFromFloat(value float64) Decimal {
+	if value == 0 {
+		return New(0, 0)
+	}
+	return newFromFloat(value, math.Float64bits(value), &float64info)
+}
+
+// NewFromFloat converts a float32 to Decimal.
+//
+// The converted number will contain the number of significant digits that can be
+// represented in a float with reliable roundtrip.
+// This is typically 6-8 digits depending on the input.
+// See https://www.exploringbinary.com/decimal-precision-of-binary-floating-point-numbers/ for more information.
+//
+// For slightly faster conversion, use NewFromFloatWithExponent where you can specify the precision in absolute terms.
+//
+// NOTE: this will panic on NaN, +/-inf
+func NewFromFloat32(value float32) Decimal {
+	if value == 0 {
+		return New(0, 0)
+	}
+	// XOR is workaround for https://github.com/golang/go/issues/26285
+	a := math.Float32bits(value) ^ 0x80808080
+	return newFromFloat(float64(value), uint64(a)^0x80808080, &float32info)
+}
+
+func newFromFloat(val float64, bits uint64, flt *floatInfo) Decimal {
+	if math.IsNaN(val) || math.IsInf(val, 0) {
+		panic(fmt.Sprintf("Cannot create a Decimal from %v", val))
+	}
+	exp := int(bits>>flt.mantbits) & (1<<flt.expbits - 1)
+	mant := bits & (uint64(1)<<flt.mantbits - 1)
+
+	switch exp {
+	case 0:
+		// denormalized
+		exp++
+
+	default:
+		// add implicit top bit
+		mant |= uint64(1) << flt.mantbits
+	}
+	exp += flt.bias
+
+	var d decimal
+	d.Assign(mant)
+	d.Shift(exp - int(flt.mantbits))
+	d.neg = bits>>(flt.expbits+flt.mantbits) != 0
+
+	roundShortest(&d, mant, exp, flt)
+	// If less than 19 digits, we can do calculation in an int64.
+	if d.nd < 19 {
+		tmp := int64(0)
+		m := int64(1)
+		for i := d.nd - 1; i >= 0; i-- {
+			tmp += m * int64(d.d[i]-'0')
+			m *= 10
+		}
+		if d.neg {
+			tmp *= -1
+		}
+		return Decimal{value: big.NewInt(tmp), exp: int32(d.dp) - int32(d.nd)}
+	}
+	dValue := new(big.Int)
+	dValue, ok := dValue.SetString(string(d.d[:d.nd]), 10)
+	if ok {
+		return Decimal{value: dValue, exp: int32(d.dp) - int32(d.nd)}
+	}
+
+	return NewFromFloatWithExponent(val, int32(d.dp)-int32(d.nd))
 }
 
 // NewFromFloatWithExponent converts a float64 to Decimal, with an arbitrary
@@ -188,15 +259,82 @@ func NewFromFloat(value float64) Decimal {
 //     NewFromFloatWithExponent(123.456, -2).String() // output: "123.46"
 //
 func NewFromFloatWithExponent(value float64, exp int32) Decimal {
-	mul := math.Pow(10, -float64(exp))
-	floatValue := value * mul
-	if math.IsNaN(floatValue) || math.IsInf(floatValue, 0) {
-		panic(fmt.Sprintf("Cannot create a Decimal from %v", floatValue))
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		panic(fmt.Sprintf("Cannot create a Decimal from %v", value))
 	}
-	dValue := big.NewInt(round(floatValue))
+
+	bits := math.Float64bits(value)
+	mant := bits & (1<<52 - 1)
+	exp2 := int32((bits >> 52) & (1<<11 - 1))
+	sign := bits >> 63
+
+	if exp2 == 0 {
+		// specials
+		if mant == 0 {
+			return Decimal{}
+		} else {
+			// subnormal
+			exp2++
+		}
+	} else {
+		// normal
+		mant |= 1 << 52
+	}
+
+	exp2 -= 1023 + 52
+
+	// normalizing base-2 values
+	for mant&1 == 0 {
+		mant = mant >> 1
+		exp2++
+	}
+
+	// maximum number of fractional base-10 digits to represent 2^N exactly cannot be more than -N if N<0
+	if exp < 0 && exp < exp2 {
+		if exp2 < 0 {
+			exp = exp2
+		} else {
+			exp = 0
+		}
+	}
+
+	// representing 10^M * 2^N as 5^M * 2^(M+N)
+	exp2 -= exp
+
+	temp := big.NewInt(1)
+	dMant := big.NewInt(int64(mant))
+
+	// applying 5^M
+	if exp > 0 {
+		temp = temp.SetInt64(int64(exp))
+		temp = temp.Exp(fiveInt, temp, nil)
+	} else if exp < 0 {
+		temp = temp.SetInt64(-int64(exp))
+		temp = temp.Exp(fiveInt, temp, nil)
+		dMant = dMant.Mul(dMant, temp)
+		temp = temp.SetUint64(1)
+	}
+
+	// applying 2^(M+N)
+	if exp2 > 0 {
+		dMant = dMant.Lsh(dMant, uint(exp2))
+	} else if exp2 < 0 {
+		temp = temp.Lsh(temp, uint(-exp2))
+	}
+
+	// rounding and downscaling
+	if exp > 0 || exp2 < 0 {
+		halfDown := new(big.Int).Rsh(temp, 1)
+		dMant = dMant.Add(dMant, halfDown)
+		dMant = dMant.Quo(dMant, temp)
+	}
+
+	if sign == 1 {
+		dMant = dMant.Neg(dMant)
+	}
 
 	return Decimal{
-		value: dValue,
+		value: dMant,
 		exp:   exp,
 	}
 }
@@ -278,6 +416,7 @@ func (d Decimal) Sub(d2 Decimal) Decimal {
 
 // Neg returns -d.
 func (d Decimal) Neg() Decimal {
+	d.ensureInitialized()
 	val := new(big.Int).Neg(d.value)
 	return Decimal{
 		value: val,
@@ -301,6 +440,18 @@ func (d Decimal) Mul(d2 Decimal) Decimal {
 	return Decimal{
 		value: d3Value,
 		exp:   int32(expInt64),
+	}
+}
+
+// Shift shifts the decimal in base 10.
+// It shifts left when shift is positive and right if shift is negative.
+// In simpler terms, the given value for shift is added to the exponent
+// of the decimal.
+func (d Decimal) Shift(shift int32) Decimal {
+	d.ensureInitialized()
+	return Decimal{
+		value: new(big.Int).Set(d.value),
+		exp:   d.exp + shift,
 	}
 }
 
@@ -472,6 +623,33 @@ func (d Decimal) Sign() int {
 	return d.value.Sign()
 }
 
+// IsPositive return
+//
+//	true if d > 0
+//	false if d == 0
+//	false if d < 0
+func (d Decimal) IsPositive() bool {
+	return d.Sign() == 1
+}
+
+// IsNegative return
+//
+//	true if d < 0
+//	false if d == 0
+//	false if d > 0
+func (d Decimal) IsNegative() bool {
+	return d.Sign() == -1
+}
+
+// IsZero return
+//
+//	true if d == 0
+//	false if d > 0
+//	false if d < 0
+func (d Decimal) IsZero() bool {
+	return d.Sign() == 0
+}
+
 // Exponent returns the exponent, or scale component of the decimal.
 func (d Decimal) Exponent() int32 {
 	return d.exp
@@ -619,7 +797,8 @@ func (d Decimal) RoundBank(places int32) Decimal {
 	round := d.Round(places)
 	remainder := d.Sub(round).Abs()
 
-	if remainder.value.Cmp(fiveInt) == 0 && round.value.Bit(0) != 0 {
+	half := New(5, -places-1)
+	if remainder.Cmp(half) == 0 && round.value.Bit(0) != 0 {
 		if round.value.Sign() < 0 {
 			round.value.Add(round.value, oneInt)
 		} else {
@@ -970,13 +1149,6 @@ func min(x, y int32) int32 {
 	return x
 }
 
-func round(n float64) int64 {
-	if n < 0 {
-		return int64(n - 0.5)
-	}
-	return int64(n + 0.5)
-}
-
 func unquoteIfQuoted(value interface{}) (string, error) {
 	var bytes []byte
 
@@ -1039,3 +1211,224 @@ func (d NullDecimal) MarshalJSON() ([]byte, error) {
 	}
 	return d.Decimal.MarshalJSON()
 }
+
+// Trig functions
+
+// Atan returns the arctangent, in radians, of x.
+func (x Decimal) Atan() Decimal {
+	if x.Equal(NewFromFloat(0.0)) {
+		return x
+	}
+	if x.GreaterThan(NewFromFloat(0.0)) {
+		return x.satan()
+	}
+	return x.Neg().satan().Neg()
+}
+
+func (d Decimal) xatan() Decimal {
+	P0 := NewFromFloat(-8.750608600031904122785e-01)
+	P1 := NewFromFloat(-1.615753718733365076637e+01)
+	P2 := NewFromFloat(-7.500855792314704667340e+01)
+	P3 := NewFromFloat(-1.228866684490136173410e+02)
+	P4 := NewFromFloat(-6.485021904942025371773e+01)
+	Q0 := NewFromFloat(2.485846490142306297962e+01)
+	Q1 := NewFromFloat(1.650270098316988542046e+02)
+	Q2 := NewFromFloat(4.328810604912902668951e+02)
+	Q3 := NewFromFloat(4.853903996359136964868e+02)
+	Q4 := NewFromFloat(1.945506571482613964425e+02)
+	z := d.Mul(d)
+	b1 := P0.Mul(z).Add(P1).Mul(z).Add(P2).Mul(z).Add(P3).Mul(z).Add(P4).Mul(z)
+	b2 := z.Add(Q0).Mul(z).Add(Q1).Mul(z).Add(Q2).Mul(z).Add(Q3).Mul(z).Add(Q4)
+	z = b1.Div(b2)
+	z = d.Mul(z).Add(d)
+	return z
+}
+
+// satan reduces its argument (known to be positive)
+// to the range [0, 0.66] and calls xatan.
+func (d Decimal) satan() Decimal {
+	Morebits := NewFromFloat(6.123233995736765886130e-17) // pi/2 = PIO2 + Morebits
+	Tan3pio8 := NewFromFloat(2.41421356237309504880)      // tan(3*pi/8)
+	pi := NewFromFloat(3.14159265358979323846264338327950288419716939937510582097494459)
+
+	if d.LessThanOrEqual(NewFromFloat(0.66)) {
+		return d.xatan()
+	}
+	if d.GreaterThan(Tan3pio8) {
+		return pi.Div(NewFromFloat(2.0)).Sub(NewFromFloat(1.0).Div(d).xatan()).Add(Morebits)
+	}
+	return pi.Div(NewFromFloat(4.0)).Add((d.Sub(NewFromFloat(1.0)).Div(d.Add(NewFromFloat(1.0)))).xatan()).Add(NewFromFloat(0.5).Mul(Morebits))
+}
+
+// sin coefficients
+  var _sin = [...]Decimal{
+  	NewFromFloat(1.58962301576546568060E-10), // 0x3de5d8fd1fd19ccd
+  	NewFromFloat(-2.50507477628578072866E-8), // 0xbe5ae5e5a9291f5d
+  	NewFromFloat(2.75573136213857245213E-6),  // 0x3ec71de3567d48a1
+  	NewFromFloat(-1.98412698295895385996E-4), // 0xbf2a01a019bfdf03
+  	NewFromFloat(8.33333333332211858878E-3),  // 0x3f8111111110f7d0
+  	NewFromFloat(-1.66666666666666307295E-1), // 0xbfc5555555555548
+  }
+
+// Sin returns the sine of the radian argument x.
+  func (d Decimal) Sin() Decimal {
+		PI4A := NewFromFloat(7.85398125648498535156E-1)                             // 0x3fe921fb40000000, Pi/4 split into three parts
+		PI4B := NewFromFloat(3.77489470793079817668E-8)                             // 0x3e64442d00000000,
+		PI4C := NewFromFloat(2.69515142907905952645E-15)                            // 0x3ce8469898cc5170,
+		M4PI := NewFromFloat(1.273239544735162542821171882678754627704620361328125) // 4/pi
+
+  	if d.Equal(NewFromFloat(0.0)) {
+			return d
+		}
+  	// make argument positive but save the sign
+  	sign := false
+  	if d.LessThan(NewFromFloat(0.0)) {
+  		d = d.Neg()
+  		sign = true
+  	}
+
+		j := d.Mul(M4PI).IntPart()    // integer part of x/(Pi/4), as integer for tests on the phase angle
+  	y := NewFromFloat(float64(j)) // integer part of x/(Pi/4), as float
+
+  	// map zeros to origin
+  	if j&1 == 1 {
+  		j++
+  		y = y.Add(NewFromFloat(1.0))
+  	}
+  	j &= 7 // octant modulo 2Pi radians (360 degrees)
+  	// reflect in x axis
+  	if j > 3 {
+  		sign = !sign
+  		j -= 4
+  	}
+		z := d.Sub(y.Mul(PI4A)).Sub(y.Mul(PI4B)).Sub(y.Mul(PI4C)) // Extended precision modular arithmetic
+  	zz := z.Mul(z)
+
+  	if j == 1 || j == 2 {
+			w := zz.Mul(zz).Mul(_cos[0].Mul(zz).Add(_cos[1]).Mul(zz).Add(_cos[2]).Mul(zz).Add(_cos[3]).Mul(zz).Add(_cos[4]).Mul(zz).Add(_cos[5]))
+			y = NewFromFloat(1.0).Sub(NewFromFloat(0.5).Mul(zz)).Add(w)
+  	} else {
+			y = z.Add(z.Mul(zz).Mul(_sin[0].Mul(zz).Add(_sin[1]).Mul(zz).Add(_sin[2]).Mul(zz).Add(_sin[3]).Mul(zz).Add(_sin[4]).Mul(zz).Add(_sin[5])))
+  	}
+  	if sign {
+  		y = y.Neg()
+  	}
+  	return y
+  }
+
+	// cos coefficients
+  var _cos = [...]Decimal{
+  	NewFromFloat(-1.13585365213876817300E-11), // 0xbda8fa49a0861a9b
+  	NewFromFloat(2.08757008419747316778E-9),   // 0x3e21ee9d7b4e3f05
+  	NewFromFloat(-2.75573141792967388112E-7),  // 0xbe927e4f7eac4bc6
+  	NewFromFloat(2.48015872888517045348E-5),   // 0x3efa01a019c844f5
+  	NewFromFloat(-1.38888888888730564116E-3),  // 0xbf56c16c16c14f91
+  	NewFromFloat(4.16666666666665929218E-2),   // 0x3fa555555555554b
+  }
+
+	// Cos returns the cosine of the radian argument x.
+  func (d Decimal) Cos() Decimal {
+
+		PI4A := NewFromFloat(7.85398125648498535156E-1)                             // 0x3fe921fb40000000, Pi/4 split into three parts
+		PI4B := NewFromFloat(3.77489470793079817668E-8)                             // 0x3e64442d00000000,
+		PI4C := NewFromFloat(2.69515142907905952645E-15)                            // 0x3ce8469898cc5170,
+		M4PI := NewFromFloat(1.273239544735162542821171882678754627704620361328125) // 4/pi
+
+  	// make argument positive
+		sign := false
+  	if d.LessThan(NewFromFloat(0.0)) {
+  		d = d.Neg()
+  	}
+
+		j := d.Mul(M4PI).IntPart()    // integer part of x/(Pi/4), as integer for tests on the phase angle
+  	y := NewFromFloat(float64(j)) // integer part of x/(Pi/4), as float
+
+  	// map zeros to origin
+  	if j&1 == 1 {
+  		j++
+  		y = y.Add(NewFromFloat(1.0))
+  	}
+  	j &= 7 // octant modulo 2Pi radians (360 degrees)
+  	// reflect in x axis
+  	if j > 3 {
+  		sign = !sign
+  		j -= 4
+  	}
+		if j > 1 {
+  		sign = !sign
+  	}
+
+		z := d.Sub(y.Mul(PI4A)).Sub(y.Mul(PI4B)).Sub(y.Mul(PI4C)) // Extended precision modular arithmetic
+  	zz := z.Mul(z)
+
+  	if j == 1 || j == 2 {
+			y = z.Add(z.Mul(zz).Mul(_sin[0].Mul(zz).Add(_sin[1]).Mul(zz).Add(_sin[2]).Mul(zz).Add(_sin[3]).Mul(zz).Add(_sin[4]).Mul(zz).Add(_sin[5])))
+  	} else {
+			w := zz.Mul(zz).Mul(_cos[0].Mul(zz).Add(_cos[1]).Mul(zz).Add(_cos[2]).Mul(zz).Add(_cos[3]).Mul(zz).Add(_cos[4]).Mul(zz).Add(_cos[5]))
+			y = NewFromFloat(1.0).Sub(NewFromFloat(0.5).Mul(zz)).Add(w)
+  	}
+  	if sign {
+  		y = y.Neg()
+  	}
+  	return y
+  }
+
+	var _tanP = [...]Decimal{
+  	NewFromFloat(-1.30936939181383777646E+4), // 0xc0c992d8d24f3f38
+  	NewFromFloat(1.15351664838587416140E+6),  // 0x413199eca5fc9ddd
+  	NewFromFloat(-1.79565251976484877988E+7), // 0xc1711fead3299176
+  }
+  var _tanQ = [...]Decimal{
+  	NewFromFloat(1.00000000000000000000E+0),
+  	NewFromFloat(1.36812963470692954678E+4),  //0x40cab8a5eeb36572
+  	NewFromFloat(-1.32089234440210967447E+6), //0xc13427bc582abc96
+  	NewFromFloat(2.50083801823357915839E+7),  //0x4177d98fc2ead8ef
+  	NewFromFloat(-5.38695755929454629881E+7), //0xc189afe03cbe5a31
+  }
+
+  // Tan returns the tangent of the radian argument x.
+  func (d Decimal) Tan() Decimal {
+
+		PI4A := NewFromFloat(7.85398125648498535156E-1)                             // 0x3fe921fb40000000, Pi/4 split into three parts
+		PI4B := NewFromFloat(3.77489470793079817668E-8)                             // 0x3e64442d00000000,
+		PI4C := NewFromFloat(2.69515142907905952645E-15)                            // 0x3ce8469898cc5170,
+		M4PI := NewFromFloat(1.273239544735162542821171882678754627704620361328125) // 4/pi
+
+		if d.Equal(NewFromFloat(0.0)) {
+			return d
+		}
+
+  	// make argument positive but save the sign
+  	sign := false
+  	if d.LessThan(NewFromFloat(0.0)) {
+  		d = d.Neg()
+  		sign = true
+  	}
+
+		j := d.Mul(M4PI).IntPart()    // integer part of x/(Pi/4), as integer for tests on the phase angle
+  	y := NewFromFloat(float64(j)) // integer part of x/(Pi/4), as float
+
+  	// map zeros to origin
+  	if j&1 == 1 {
+  		j++
+  		y = y.Add(NewFromFloat(1.0))
+  	}
+
+		z := d.Sub(y.Mul(PI4A)).Sub(y.Mul(PI4B)).Sub(y.Mul(PI4C)) // Extended precision modular arithmetic
+  	zz := z.Mul(z)
+
+  	if zz.GreaterThan(NewFromFloat(1e-14)) {
+			w := zz.Mul(_tanP[0].Mul(zz).Add(_tanP[1]).Mul(zz).Add(_tanP[2]))
+			x := zz.Add(_tanQ[1]).Mul(zz).Add(_tanQ[2]).Mul(zz).Add(_tanQ[3]).Mul(zz).Add(_tanQ[4])
+			y = z.Add(z.Mul(w.Div(x)))
+  	} else {
+  		y = z
+  	}
+  	if j&2 == 2 {
+			y = NewFromFloat(-1.0).Div(y)
+  	}
+  	if sign {
+  		y = y.Neg()
+  	}
+  	return y
+  }

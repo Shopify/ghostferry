@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/juju/errors"
-	"github.com/satori/go.uuid"
+	"github.com/pingcap/errors"
+	uuid "github.com/satori/go.uuid"
 	"github.com/siddontang/go/hack"
 )
 
@@ -108,7 +108,7 @@ func (s IntervalSlice) Normalize() IntervalSlice {
 	return n
 }
 
-// Return true if sub in s
+// Contain returns true if sub in s
 func (s IntervalSlice) Contain(sub IntervalSlice) bool {
 	j := 0
 	for i := 0; i < len(sub); i++ {
@@ -261,7 +261,7 @@ func (s *UUIDSet) decode(data []byte) (int, error) {
 	}
 	pos += 16
 
-	n := int64(binary.LittleEndian.Uint64(data[pos: pos+8]))
+	n := int64(binary.LittleEndian.Uint64(data[pos : pos+8]))
 	pos += 8
 	if len(data) < int(16*n)+pos {
 		return 0, errors.Errorf("invalid uuid set buffer, must %d, but %d", pos+int(16*n), len(data))
@@ -271,9 +271,9 @@ func (s *UUIDSet) decode(data []byte) (int, error) {
 
 	var in Interval
 	for i := int64(0); i < n; i++ {
-		in.Start = int64(binary.LittleEndian.Uint64(data[pos: pos+8]))
+		in.Start = int64(binary.LittleEndian.Uint64(data[pos : pos+8]))
 		pos += 8
-		in.Stop = int64(binary.LittleEndian.Uint64(data[pos: pos+8]))
+		in.Stop = int64(binary.LittleEndian.Uint64(data[pos : pos+8]))
 		pos += 8
 		s.Intervals = append(s.Intervals, in)
 	}
@@ -287,6 +287,15 @@ func (s *UUIDSet) Decode(data []byte) error {
 		return errors.Errorf("invalid uuid set buffer, must %d, but %d", n, len(data))
 	}
 	return err
+}
+
+func (s *UUIDSet) Clone() *UUIDSet {
+	clone := new(UUIDSet)
+
+	clone.SID, _ = uuid.FromString(s.SID.String())
+	clone.Intervals = s.Intervals.Normalize()
+
+	return clone
 }
 
 type MysqlGTIDSet struct {
@@ -389,6 +398,10 @@ func (s *MysqlGTIDSet) Equal(o GTIDSet) bool {
 		return false
 	}
 
+	if len(sub.Sets) != len(s.Sets) {
+		return false
+	}
+
 	for key, set := range sub.Sets {
 		o, ok := s.Sets[key]
 		if !ok {
@@ -421,7 +434,7 @@ func (s *MysqlGTIDSet) Encode() []byte {
 
 	binary.Write(&buf, binary.LittleEndian, uint64(len(s.Sets)))
 
-	for i, _ := range s.Sets {
+	for i := range s.Sets {
 		s.Sets[i].encode(&buf)
 	}
 
@@ -429,7 +442,12 @@ func (s *MysqlGTIDSet) Encode() []byte {
 }
 
 func (gtid *MysqlGTIDSet) Clone() GTIDSet {
-	clone := new(MysqlGTIDSet)
-	*clone = *gtid
+	clone := &MysqlGTIDSet{
+		Sets: make(map[string]*UUIDSet),
+	}
+	for sid, uuidSet := range gtid.Sets {
+		clone.Sets[sid] = uuidSet.Clone()
+	}
+
 	return clone
 }
