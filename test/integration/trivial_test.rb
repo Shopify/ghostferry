@@ -39,4 +39,13 @@ class TrivialIntegrationTests < GhostferryTestCase
       end
     end
   end
+
+  def test_lock_strategy_in_ghostferry
+    seed_simple_database_with_single_table
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { lock_strategy: "LockInGhostferry" })
+    ghostferry.run
+
+    assert_test_table_is_identical
+  end
 end

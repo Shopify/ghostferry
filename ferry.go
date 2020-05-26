@@ -110,6 +110,7 @@ func (f *Ferry) NewDataIterator() *DataIterator {
 			ReadRetries: f.Config.DBReadRetries,
 		},
 		StateTracker: f.StateTracker,
+		LockStrategy: f.Config.LockStrategy,
 	}
 
 	if f.CopyFilter != nil {
@@ -149,6 +150,7 @@ func (f *Ferry) NewBinlogWriter() *BinlogWriter {
 
 		BatchSize:    f.Config.BinlogEventBatchSize,
 		WriteRetries: f.Config.DBWriteRetries,
+		LockStrategy: f.Config.LockStrategy,
 
 		ErrorHandler: f.ErrorHandler,
 		StateTracker: f.StateTracker,

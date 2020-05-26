@@ -17,6 +17,7 @@ type DataIterator struct {
 	ErrorHandler ErrorHandler
 	CursorConfig *CursorConfig
 	StateTracker *StateTracker
+	LockStrategy string
 
 	targetPaginationKeys *sync.Map
 	batchListeners       []func(*RowBatch) error
@@ -88,7 +89,37 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 					return
 				}
 
-				cursor := d.CursorConfig.NewCursor(table, startPaginationKey, targetPaginationKeyInterface.(uint64))
+				// NOTE: Using a lock to synchronize data iteration and binlog writing is
+				// necessary. It is possible that we read data on the source while the
+				// binlog receives an update to the same data.
+				//
+				// Example event sequence:
+				// 1) application writes table row version "v1" to the source
+				// 2) data iterator reads v1
+				// 3) application updates row v1 to become v2
+				// 4) binlog reader receives UPDATE command v1 -> v2
+				// 5) binlog writer executes UPDATE v1 -> v2: this is a NOP due to how the
+				//    writer formats UPDATE statements (v1 does not exist in the target, so
+				//    the UPDATE has no rows to operate on)
+				// 6) batch writer inserts v1
+				// Outcome: Source contains v2 while target contains v1.
+				//
+				// There are similar events for DELETE statements. INSERT should be safe.
+				//
+				// To avoid the problem, we use a lock from steps 2 to 6 to ensure the
+				// source data is not modified between reading from the source and writing
+				// the batch to the target.
+				var cursor *Cursor
+				if d.LockStrategy == LockStrategySourceDB {
+					cursor = d.CursorConfig.NewCursor(table, startPaginationKey, targetPaginationKeyInterface.(uint64))
+				} else {
+					var tableLock *sync.RWMutex
+					if d.LockStrategy == LockStrategyInGhostferry {
+						tableLock = d.StateTracker.GetTableLock(table.Table.String())
+					}
+					cursor = d.CursorConfig.NewCursorWithoutRowLock(table, startPaginationKey, targetPaginationKeyInterface.(uint64), tableLock)
+				}
+
 				if d.SelectFingerprint {
 					if len(cursor.ColumnsToSelect) == 0 {
 						cursor.ColumnsToSelect = []string{"*"}

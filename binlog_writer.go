@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
+	"sync"
 
 	"github.com/sirupsen/logrus"
 )
@@ -16,6 +17,7 @@ type BinlogWriter struct {
 
 	BatchSize    int
 	WriteRetries int
+	LockStrategy string
 
 	ErrorHandler ErrorHandler
 	StateTracker *StateTracker
@@ -79,6 +81,7 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 	WaitForThrottle(b.Throttler)
 
 	queryBuffer := []byte(sql.AnnotateStmt("BEGIN;\n", b.DB.Marginalia))
+	locksToObtain := make(map[string]*sync.RWMutex)
 
 	for _, ev := range events {
 		eventDatabaseName := ev.Database()
@@ -98,6 +101,13 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 
 		queryBuffer = append(queryBuffer, sql.AnnotateStmt(sqlStmt, b.DB.Marginalia)...)
 		queryBuffer = append(queryBuffer, ";\n"...)
+
+		if b.LockStrategy == LockStrategyInGhostferry {
+			fullTableName := ev.TableSchema().Table.String()
+			if _, found := locksToObtain[fullTableName]; !found {
+				locksToObtain[fullTableName] = b.StateTracker.GetTableLock(fullTableName)
+			}
+		}
 	}
 
 	queryBuffer = append(queryBuffer, "COMMIT"...)
@@ -105,6 +115,13 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 	startEv := events[0]
 	endEv := events[len(events)-1]
 	query := string(queryBuffer)
+
+	for _, lock := range locksToObtain {
+		if lock != nil {
+			lock.Lock()
+			defer lock.Unlock()
+		}
+	}
 	_, err := b.DB.Exec(query)
 	if err != nil {
 		return fmt.Errorf("exec query at pos %v -> %v (%d bytes): %v", startEv.BinlogPosition(), endEv.BinlogPosition(), len(query), err)
