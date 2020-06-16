@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"sync/atomic"
 	"time"
 
 	"github.com/siddontang/go-mysql/mysql"
@@ -27,7 +26,7 @@ type StatusDeprecated struct {
 	SourceHostPort string
 	TargetHostPort string
 
-	OverallState            atomic.Value
+	OverallState            string
 	StartTime               time.Time
 	CurrentTime             time.Time
 	TimeTaken               time.Duration
@@ -64,7 +63,7 @@ func FetchStatusDeprecated(f *Ferry, v Verifier) *StatusDeprecated {
 	status.SourceHostPort = fmt.Sprintf("%s:%d", f.Source.Host, f.Source.Port)
 	status.TargetHostPort = fmt.Sprintf("%s:%d", f.Target.Host, f.Target.Port)
 
-	status.OverallState.Store(f.OverallState.Load())
+	status.OverallState = fmt.Sprintf("%s", f.OverallState.Load())
 	status.StartTime = f.StartTime
 	status.CurrentTime = time.Now()
 	if f.DoneTime.IsZero() {
@@ -203,7 +202,7 @@ func FetchStatusDeprecated(f *Ferry, v Verifier) *StatusDeprecated {
 		status.VerificationDone = result.IsDone()
 
 		// We can only run the verifier if we're not copying and not verifying
-		status.VerifierAvailable = status.OverallState.Load() != StateStarting && status.OverallState.Load() != StateCopying && (!status.VerificationStarted || status.VerificationDone)
+		status.VerifierAvailable = status.OverallState != StateStarting && status.OverallState != StateCopying && (!status.VerificationStarted || status.VerificationDone)
 		status.VerificationResult = result.VerificationResult
 		status.VerificationErr = err
 	} else {
