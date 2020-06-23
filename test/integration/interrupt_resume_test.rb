@@ -407,12 +407,12 @@ class InterruptResumeTest < GhostferryTestCase
     dumped_state = ghostferry.run_expecting_interrupt
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
-    ghostferry.run(dumped_state)
+    with_env('CI', nil) { ghostferry.run(dumped_state) }
 
     assert_test_table_is_identical
 
     # run again after first completion and assert the table is identical
-    ghostferry.run(dumped_state)
+    with_env('CI', nil) { ghostferry.run(dumped_state) }
 
     assert_test_table_is_identical
     assert_run_complete(ghostferry, times: 2)
@@ -442,12 +442,12 @@ class InterruptResumeTest < GhostferryTestCase
     # to stop it during cutover.
     stop_datawriter_during_cutover(datawriter, ghostferry)
 
-    ghostferry.run(dumped_state)
+    with_env('CI', nil) { ghostferry.run(dumped_state) }
 
     assert_test_table_is_identical
 
     # run again after first completion and assert the table is identical
-    ghostferry.run(dumped_state)
+    with_env('CI', nil) { ghostferry.run(dumped_state) }
 
     assert_test_table_is_identical
     assert_run_complete(ghostferry, times: 2)
