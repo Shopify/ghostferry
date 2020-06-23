@@ -369,11 +369,6 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 		}
 
 		events = append(events, dmlEv)
-		s.logger.WithFields(logrus.Fields{
-			"database": dmlEv.Database(),
-			"table":    dmlEv.Table(),
-			"position": pos,
-		}).Debugf("received event %T at %v", dmlEv, eventTime)
 
 		metrics.Count("RowEvent", 1, []MetricTag{
 			MetricTag{"table", dmlEv.Table()},
