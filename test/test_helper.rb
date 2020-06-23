@@ -119,6 +119,14 @@ class GhostferryTestCase < Minitest::Test
     refute dumped_state["LastWrittenBinlogPosition"].nil?
   end
 
+  def assert_run_complete(instance, times:)
+    started_runs = instance.logrus_lines["ferry"].select{ |line| line["msg"].include?("hello world") }.count
+    completed_runs = instance.logrus_lines["ferry"].select{ |line| line["msg"].include?("ghostferry run is complete") }.count
+
+    assert started_runs == times
+    assert completed_runs == times
+  end
+
   def with_env(key, value)
     previous_value = ENV.delete(key)
     ENV[key] = value
