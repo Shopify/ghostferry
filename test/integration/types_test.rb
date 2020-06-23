@@ -276,20 +276,24 @@ class TypesTest < GhostferryTestCase
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
 
-    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id) VALUES (12341234)")
+    max_uint64 = 18446744073709551615 # ^uint64(0)
+    expected = []
+    100.times do |i|
+      id = max_uint64 - i
+      expected << { "id" => id }
+      source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id) VALUES (#{id})")
+    end
 
     ghostferry.on_status(Ghostferry::Status::BINLOG_STREAMING_STARTED) do
       source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id) VALUES (72858243)")
     end
 
+    expected << { "id" => 72858243 }
+
     ghostferry.run
     assert_test_table_is_identical
 
-    expected = [
-      {"id" => 12341234},
-      {"id" => 72858248},
-    ]
-    res = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME} ORDER BY id ASC")
+    res = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME} ORDER BY id DESC")
 
     res.zip(expected).each do |row, expected_row|
       assert_equal expected_row, row
