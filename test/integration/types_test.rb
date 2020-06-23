@@ -268,6 +268,34 @@ class TypesTest < GhostferryTestCase
     end
   end
 
+  def test_unsigned_bigint_pk_with_inline_verifier
+    [source_db, target_db].each do |db|
+      db.query("CREATE DATABASE IF NOT EXISTS #{DEFAULT_DB}")
+      db.query("CREATE TABLE IF NOT EXISTS #{DEFAULT_FULL_TABLE_NAME} (id bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, primary key(id))")
+    end
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id) VALUES (12341234)")
+
+    ghostferry.on_status(Ghostferry::Status::BINLOG_STREAMING_STARTED) do
+      source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id) VALUES (72858243)")
+    end
+
+    ghostferry.run
+    assert_test_table_is_identical
+
+    expected = [
+      {"id" => 12341234},
+      {"id" => 72858248},
+    ]
+    res = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME} ORDER BY id ASC")
+
+    res.zip(expected).each do |row, expected_row|
+      assert_equal expected_row, row
+    end
+  end
+
   private
 
   def insert_json_on_source
