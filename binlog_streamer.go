@@ -329,7 +329,6 @@ func (s *BinlogStreamer) updateLastStreamedPosAndTime(evTimestamp uint32, evPos 
 }
 
 func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []byte) error {
-	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
 	if ev.Header.LogPos == 0 {
