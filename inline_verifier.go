@@ -424,6 +424,9 @@ func (v *InlineVerifier) getFingerprintDataFromDb(db *sql.DB, stmtCache *StmtCac
 	}
 
 	rows, err := fingerprintStmt.Query(args...)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	columns, err := rows.Columns()
 	if err != nil {
