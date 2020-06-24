@@ -653,6 +653,10 @@ func (f *Ferry) Run() {
 
 	dataIteratorWg.Wait()
 
+	f.logger.Info("data copy is complete, waiting for cutover")
+	f.OverallState.Store(StateWaitingForCutover)
+	f.waitUntilAutomaticCutoverIsTrue()
+
 	if f.inlineVerifier != nil {
 		// Stops the periodic verification of binlogs in the inline verifier
 		// This should be okay as we enqueue the binlog events into the verifier,
@@ -674,10 +678,6 @@ func (f *Ferry) Run() {
 			}
 		})
 	}
-
-	f.logger.Info("data copy is complete, waiting for cutover")
-	f.OverallState.Store(StateWaitingForCutover)
-	f.waitUntilAutomaticCutoverIsTrue()
 
 	// Cutover is a cooperative activity between the Ghostferry library and
 	// applications built on Ghostferry:
