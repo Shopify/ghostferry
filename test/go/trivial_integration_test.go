@@ -3,9 +3,10 @@ package test
 import (
 	sqlorig "database/sql"
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math/rand"
 	"testing"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry/testhelpers"
 )
@@ -67,20 +68,6 @@ func TestCopyDataWithDeleteLoad(t *testing.T) {
 			Tables:              []string{"gftest.table1"},
 		},
 		Ferry: testhelpers.NewTestFerry(),
-	}
-
-	testcase.Run()
-}
-
-func TestCopyDataWithLargePaginationKeyValues(t *testing.T) {
-	ferry := testhelpers.NewTestFerry()
-
-	ferry.Config.DataIterationBatchSize = 10
-
-	testcase := &testhelpers.IntegrationTestCase{
-		T:           t,
-		SetupAction: setupSingleTableDatabaseWithHighBitUint64PaginationKeys,
-		Ferry:       ferry,
 	}
 
 	testcase.Run()
@@ -171,11 +158,6 @@ func TestCopyDataWithNullInColumn(t *testing.T) {
 // Helper methods below
 // ====================
 
-func useUnsignedPaginationKey(db *sql.DB) {
-	_, err := db.Exec("ALTER TABLE gftest.table1 MODIFY id bigint(20) unsigned not null")
-	testhelpers.PanicIfError(err)
-}
-
 func setupSingleTableDatabase(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 	maxId := 1111
 	testhelpers.SeedInitialData(sourceDB, "gftest", "table1", maxId)
@@ -187,24 +169,6 @@ func setupSingleTableDatabase(f *testhelpers.TestFerry, sourceDB, targetDB *sql.
 	}
 
 	testhelpers.SeedInitialData(targetDB, "gftest", "table1", 0)
-}
-
-func setupSingleTableDatabaseWithHighBitUint64PaginationKeys(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
-	setupSingleTableDatabase(f, sourceDB, targetDB)
-
-	_, err := sourceDB.Exec("TRUNCATE gftest.table1")
-	testhelpers.PanicIfError(err)
-
-	useUnsignedPaginationKey(sourceDB)
-	useUnsignedPaginationKey(targetDB)
-
-	stmt, err := sourceDB.Prepare("INSERT INTO gftest.table1 (id, data) VALUES (?, ?)")
-	testhelpers.PanicIfError(err)
-
-	for i := uint64(0); i < 100; i++ {
-		_, err = stmt.Exec(^uint64(0)-i, testhelpers.RandData())
-		testhelpers.PanicIfError(err)
-	}
 }
 
 func setupSingleTableDatabaseWithExtraNullColumn(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
