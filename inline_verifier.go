@@ -3,6 +3,7 @@ package ghostferry
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -229,20 +230,49 @@ type InlineVerifier struct {
 	sourceStmtCache *StmtCache
 	targetStmtCache *StmtCache
 	logger          *logrus.Entry
+
+	// Used only for the ControlServer initiated VerifyDuringCutover
+	backgroundVerificationResultAndStatus VerificationResultAndStatus
+	backgroundVerificationErr             error
+	backgroundVerificationWg              *sync.WaitGroup
 }
 
+// This is called from the control server, which is triggered by pushing Run
+// Verification during cutover.
+// This step is necessary to ensure the binlogs are verified in Ghostferry.
 func (v *InlineVerifier) StartInBackground() error {
-	// not needed?
+	if v.verifyDuringCutoverStarted.Get() {
+		return errors.New("verification during cutover has already been started")
+	}
+
+	v.backgroundVerificationResultAndStatus = VerificationResultAndStatus{
+		StartTime: time.Now(),
+		DoneTime:  time.Time{},
+	}
+	v.backgroundVerificationErr = nil
+	v.backgroundVerificationWg = &sync.WaitGroup{}
+
+	v.logger.Info("starting InlineVerifier.VerifyDuringCutover in the background")
+
+	v.backgroundVerificationWg.Add(1)
+	go func() {
+		defer func() {
+			v.backgroundVerificationResultAndStatus.DoneTime = time.Now()
+			v.backgroundVerificationWg.Done()
+		}()
+
+		v.backgroundVerificationResultAndStatus.VerificationResult, v.backgroundVerificationErr = v.VerifyDuringCutover()
+	}()
+
 	return nil
 }
 
 func (v *InlineVerifier) Wait() {
-	// not needed?
+	v.backgroundVerificationWg.Wait()
 }
 
 func (v *InlineVerifier) Result() (VerificationResultAndStatus, error) {
-	// not implemented for now
-	return VerificationResultAndStatus{}, nil
+	return v.backgroundVerificationResultAndStatus, v.backgroundVerificationErr
 }
 
 func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, targetTable string, sourceBatch *RowBatch) ([]uint64, error) {

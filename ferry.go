@@ -654,6 +654,10 @@ func (f *Ferry) Run() {
 	dataIteratorWg.Wait()
 
 	if f.inlineVerifier != nil {
+		// Stops the periodic verification of binlogs in the inline verifier
+		// This should be okay as we enqueue the binlog events into the verifier,
+		// which will be verified both in VerifyBeforeCutover and
+		// VerifyDuringCutover.
 		stopInlineVerifier()
 		inlineVerifierWg.Wait()
 	}
@@ -675,19 +679,27 @@ func (f *Ferry) Run() {
 	f.OverallState.Store(StateWaitingForCutover)
 	f.waitUntilAutomaticCutoverIsTrue()
 
-	f.logger.Info("entering cutover phase, notifying caller that row copy is complete")
-	f.OverallState.Store(StateCutover)
-	f.notifyRowCopyComplete()
-
 	// Cutover is a cooperative activity between the Ghostferry library and
 	// applications built on Ghostferry:
 	//
-	// 1. At this point, the application should prepare to cutover, such as
-	//    setting the source database to READONLY.
+	// 1. At this point (before stopping the binlog streaming), the application
+	//    should prepare to cutover, such as setting the source database to
+	//    READONLY.
 	// 2. Once that is complete, trigger the cutover by requesting the
-	//    BinlogStreamer to stop.
-	// 3. Once the binlog stops, this function will return and the cutover will
-	//    be completed.
+	//    BinlogStreamer to stop (WaitUntilBinlogStreamerCatchesUp and
+	//    FlushBinlogAndStopStreaming).
+	// 3. Once the binlog stops, this Run function will return and the cutover
+	//    will be completed. Application and human operators can perform
+	//    additional operations, such as additional verification, and repointing
+	//    any consumers of the source database to use the target database.
+	//
+	// During cutover, if verifiers are enabled, VerifyDuringCutover should be
+	// called. This can be performed as a part of the ControlServer, if that
+	// component is used.
+
+	f.logger.Info("entering cutover phase, notifying caller that row copy is complete")
+	f.OverallState.Store(StateCutover)
+	f.notifyRowCopyComplete()
 
 	binlogWg.Wait()
 
