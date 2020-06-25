@@ -1,16 +1,34 @@
 ---
 sudo: required
 language: go
-go:
-  - "1.14.1"
 
 go_import_path: github.com/Shopify/ghostferry
 
 services:
   - docker
 
-env:
-  - DOCKER_COMPOSE_VERSION=1.21.2 RELEASE_BRANCH=master CI=true
+jobs:
+  include:
+  - name: "Go Test Suite"
+    go: "1.14.1"
+    env:
+    - MAKE_TARGET=test-go
+    - DOCKER_COMPOSE_VERSION=1.21.2
+    - RELEASE_BRANCH=master
+    - CI=true
+  - name: "Ruby Test Suite"
+    go: "1.14.1"
+    env:
+    - MAKE_TARGET=test-ruby
+    - DOCKER_COMPOSE_VERSION=1.21.2
+    - RELEASE_BRANCH=master
+    - CI=true
+
+before_script:
+  - ulimit -n 16384
+
+script:
+  - make $MAKE_TARGET
 
 install:
   # Installing Docker Compose
@@ -21,12 +39,6 @@ install:
 
   # Installing and Starting MySQL
   - .travisci/start-mysql.sh
-
-before_script:
-  - ulimit -n 16384
-
-script:
-  - make test
 
 before_deploy:
   # before_deploy runs once per provider on travis. We only need it to run

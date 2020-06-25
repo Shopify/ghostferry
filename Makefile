@@ -30,6 +30,9 @@ PROJECT_BIN      = ghostferry-$(proj)
 BIN_TARGET       = $(GOBIN)/$(PROJECT_BIN)
 DEB_TARGET       = $(BUILD_DIR)/$(PROJECT_BIN)_$(VERSION_STR).deb
 
+PLATFORM        := $(shell uname -s | tr A-Z a-z)
+GOTESTSUM_URL   := "https://github.com/gotestyourself/gotestsum/releases/download/v0.5.1/gotestsum_0.5.1_$(PLATFORM)_amd64.tar.gz"
+
 .PHONY: test clean reset-deb-dir $(PROJECTS) $(PROJECT_DEBS)
 .DEFAULT_GOAL := test
 
@@ -50,10 +53,21 @@ $(PROJECT_DEBS): reset-deb-dir
 $(GOBIN):
 	mkdir -p $(GOBIN)
 
-test:
+test-go:
 	@go version
-	go test ./test/go ./copydb/test ./sharding/test -p 1 -v -count 1
-	bundle install && bundle exec rake test DEBUG=1 TESTOPTS="-v"
+
+	@if [ ! -f $(GOBIN)/gotestsum ]; then \
+		curl -sL $(GOTESTSUM_URL) | tar -xz -C $(GOBIN) gotestsum; \
+	fi
+
+	$(GOBIN)/gotestsum --jsonfile json.log --format short-verbose ./test/go ./copydb/test ./sharding/test -count 1 -p 1 -failfast
+	$(GOBIN)/gotestsum tool slowest --jsonfile json.log --threshold 5s
+
+test-ruby:
+	bundle install
+	bundle exec rake test DEBUG=1 TESTOPTS="-v"
+
+test: test-go test-ruby
 
 clean:
 	rm -rf build
