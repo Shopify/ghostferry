@@ -56,7 +56,6 @@ deploy:
   # https://github.com/travis-ci/travis-ci/issues/7780
   - provider: pages
     strategy: git
-    skip_cleanup: true
     token: "$GITHUB_TOKEN"
     keep_history: true
     local_dir: docs/build/ghostferry-pages
@@ -64,23 +63,18 @@ deploy:
       tags: true
   - provider: pages
     strategy: git
-    skip_cleanup: true
     token: "$GITHUB_TOKEN"
     keep_history: true
     local_dir: docs/build/ghostferry-pages
     on:
       branch: master
   - provider: releases
-    strategy: git
-    skip_cleanup: true
     token: "$GITHUB_TOKEN"
     file_glob: true
     file: build/ghostferry-*.deb
     on:
       tags: true
   - provider: script
-    strategy: git
-    skip_cleanup: true
     script: .travisci/deploy-packagecloud.sh
     on:
       all_branches: true
