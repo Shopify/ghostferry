@@ -67,6 +67,11 @@ class GhostferryTestCase < Minitest::Test
     File.read(File.join(FIXTURE_PATH, filename))
   end
 
+  def setup_signal_watcher
+    Signal.trap("INT") { self.on_term }
+    Signal.trap("TERM") { self.on_term }
+  end
+
   ##############
   # Test Hooks #
   ##############
@@ -74,6 +79,7 @@ class GhostferryTestCase < Minitest::Test
   def before_all
     @log_capturer = LogCapturer.new
     initialize_db_connections
+    setup_signal_watcher
   end
 
   def before_setup
@@ -99,6 +105,11 @@ class GhostferryTestCase < Minitest::Test
 
     @log_capturer.print_output if self.failure
     @log_capturer.reset
+  end
+
+  def on_term
+    @log_capturer.print_output
+    exit
   end
 
   def after_all
