@@ -3,7 +3,6 @@ package ghostferry
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -19,24 +18,54 @@ var annotationRegex = regexp.MustCompile(`^/\*(.*?)\*/`)
 
 type RowData []interface{}
 
-// The mysql driver never actually gives you a uint64 from Scan, instead you
-// get an int64 for values that fit in int64 or a byte slice decimal string
-// with the uint64 value in it.
-func (r RowData) GetUint64(colIdx int) (res uint64, err error) {
+// For historical reasons, this function ended up being used at two different
+// places: the DataIterator and the DMLEvent (which indirectly is used by the
+// BinlogStreamer, InlineVerifier, etc).
+//
+// The original code here was introduced in
+// 152caec0ff5195d4698672df6dc0f72fb77b02fc, where it is used solely in context
+// of the DataIterator. In this context, the value being parsed here is given to
+// us by the go-sql-driver/mysql driver. This value could either by int64 or it
+// could be a byte slice decimal string with the uint64 value in it, which is
+// why we have this awkward byte slice to integer trick. This also means the
+// original code is not designed to handle uint64, as go-sql-driver/mysql never
+// returns uint64. This could possibly be an upstream problem that have since
+// been fixed, but this was not investigated.
+// (A possibly related PR: https://github.com/go-sql-driver/mysql/pull/690)
+//
+// At some point, this code was refactored into this function, such that the
+// BinlogStreamer also uses the same code to decode integers. The binlog data is
+// given to us by siddontang/go-mysql. The siddontang/go-mysql library should
+// not be giving us awkward byte slices. Instead, it should properly gives us
+// uint64. This code thus panics when it encounters such case. See
+// https://github.com/Shopify/ghostferry/issues/165.
+//
+// In summary:
+// - This code receives values from both go-sql-driver/mysql and
+//   siddontang/go-mysql.
+// - go-sql-driver/mysql gives us int64 for signed integer, and uint64 in a byte
+//   slice for unsigned integer.
+// - siddontang/go-mysql gives us int64 for signed integer, and uint64 for
+//   unsigned integer.
+// - We currently make this function deal with both cases. In the future we can
+//   investigate alternative solutions.
+func (r RowData) GetUint64(colIdx int) (uint64, error) {
+	u64, ok := Uint64Value(r[colIdx])
+	if ok {
+		return u64, nil
+	}
+
+	i64, ok := Int64Value(r[colIdx])
+	if ok {
+		return uint64(i64), nil
+	}
+
 	if valueByteSlice, ok := r[colIdx].([]byte); ok {
 		valueString := string(valueByteSlice)
-		res, err = strconv.ParseUint(valueString, 10, 64)
-		if err != nil {
-			return 0, err
-		}
-	} else {
-		signedInt := reflect.ValueOf(r[colIdx]).Int()
-		if signedInt < 0 {
-			return 0, fmt.Errorf("expected position %d in row to contain an unsigned number", colIdx)
-		}
-		res = uint64(signedInt)
+		return strconv.ParseUint(valueString, 10, 64)
 	}
-	return
+
+	return 0, fmt.Errorf("expected position %d to contain integer, but got type %T instead (with value of %v)", colIdx, r[colIdx], r[colIdx])
 }
 
 type DMLEvent interface {
