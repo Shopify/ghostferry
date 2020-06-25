@@ -55,6 +55,7 @@ $(GOBIN):
 
 test-go:
 	@go version
+	ulimit -n 1024
 
 	@if [ ! -f $(GOBIN)/gotestsum ]; then \
 		curl -sL $(GOTESTSUM_URL) | tar -xz -C $(GOBIN) gotestsum; \
