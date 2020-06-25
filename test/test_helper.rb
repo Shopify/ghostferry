@@ -20,6 +20,27 @@ Minitest.after_run do
   GhostferryHelper.remove_all_binaries
 end
 
+class LogCapturer
+  attr_reader :logger
+
+  def initialize(level: Logger::DEBUG)
+    @logger_device = StringIO.new
+    @logger = Logger.new(@logger_device, level: level)
+  end
+
+  def reset
+    @logger_device.truncate(0)
+  end
+
+  def print_output
+    puts "\n"
+    puts "--- Start of failed test output ---"
+    puts @logger_device.string
+    puts "--- End of failed test output ---"
+    puts "\n"
+  end
+end
+
 class GhostferryTestCase < Minitest::Test
   include Minitest::Hooks
   include GhostferryHelper
@@ -31,13 +52,13 @@ class GhostferryTestCase < Minitest::Test
   def new_ghostferry(filename, config: {})
     # Transform path to something ruby understands
     path = File.join(GO_CODE_PATH, filename)
-    g = Ghostferry.new(path, config: config, logger: @logger)
+    g = Ghostferry.new(path, config: config, logger: @log_capturer.logger)
     @ghostferry_instances << g
     g
   end
 
   def new_source_datawriter(*args)
-    dw = DataWriter.new(source_db_config, *args, logger: @logger)
+    dw = DataWriter.new(source_db_config, *args, logger: @log_capturer.logger)
     @datawriter_instances << dw
     dw
   end
@@ -51,16 +72,12 @@ class GhostferryTestCase < Minitest::Test
   ##############
 
   def before_all
-    @logger_device = StringIO.new
-    @logger = Logger.new(@logger_device)
-    @logger.level = Logger::DEBUG
-
+    @log_capturer = LogCapturer.new
     initialize_db_connections
   end
 
   def before_setup
     reset_data
-    @logger_device.truncate(0)
 
     # Any ghostferry instances created via the new_ghostferry method will be
     # pushed to here, which allows the test to kill the process after each test
@@ -80,13 +97,8 @@ class GhostferryTestCase < Minitest::Test
       datawriter.stop_and_join
     end
 
-    if self.failure
-      puts "\n"
-      puts "--- Start of failed test output ---"
-      puts @logger_device.string
-      puts "--- End of failed test output ---"
-      puts "\n"
-    end
+    @log_capturer.print_output if self.failure
+    @log_capturer.reset
   end
 
   def after_all
