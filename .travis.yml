@@ -1,7 +1,10 @@
----
-sudo: required
-language: go
+if: (type = push AND branch = master) OR type = pull_request
 
+os:
+  - linux
+dist: xenial
+
+language: go
 go_import_path: github.com/Shopify/ghostferry
 
 services:
@@ -52,28 +55,32 @@ deploy:
   # Need two providers for pages:
   # https://github.com/travis-ci/travis-ci/issues/7780
   - provider: pages
-    skip-cleanup: true
-    github-token: "$GITHUB_TOKEN"
-    keep-history: true
-    local-dir: docs/build/ghostferry-pages
+    strategy: git
+    skip_cleanup: true
+    token: "$GITHUB_TOKEN"
+    keep_history: true
+    local_dir: docs/build/ghostferry-pages
     on:
       tags: true
   - provider: pages
-    skip-cleanup: true
-    github-token: "$GITHUB_TOKEN"
-    keep-history: true
-    local-dir: docs/build/ghostferry-pages
+    strategy: git
+    skip_cleanup: true
+    token: "$GITHUB_TOKEN"
+    keep_history: true
+    local_dir: docs/build/ghostferry-pages
     on:
       branch: master
   - provider: releases
-    skip-cleanup: true
-    api_key: "$GITHUB_TOKEN"
+    strategy: git
+    skip_cleanup: true
+    token: "$GITHUB_TOKEN"
     file_glob: true
     file: build/ghostferry-*.deb
     on:
       tags: true
   - provider: script
-    skip-cleanup: true
+    strategy: git
+    skip_cleanup: true
     script: .travisci/deploy-packagecloud.sh
     on:
       all_branches: true
