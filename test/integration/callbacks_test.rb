@@ -4,7 +4,7 @@ class CallbacksTest < GhostferryTestCase
   def test_progress_callback
     seed_simple_database_with_single_table
 
-    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
     progress = []
     ghostferry.on_callback("progress") do |progress_data|
       progress << progress_data
@@ -24,6 +24,8 @@ class CallbacksTest < GhostferryTestCase
     refute progress.last["LastSuccessfulBinlogPos"]["Pos"].nil?
     assert progress.last["BinlogStreamerLag"] > 0
     assert_equal progress.last["LastSuccessfulBinlogPos"], progress.last["FinalBinlogPos"]
+
+    assert progress.last["VerifierMessage"].start_with?("BinlogVerifyStore.currentRowCount =")
 
     assert_equal false, progress.last["Throttled"]
 

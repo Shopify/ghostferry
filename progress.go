@@ -36,6 +36,9 @@ type Progress struct {
 	// For example: a long cutover is OK if
 	VerifierType string
 
+	// The message that the verifier may emit for additional information
+	VerifierMessage string
+
 	// These are some variables that are only filled when CurrentState == done.
 	FinalBinlogPos mysql.Position
 

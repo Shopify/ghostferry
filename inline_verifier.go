@@ -205,6 +205,10 @@ func (s *BinlogVerifyStore) Batches(batchsize int) []BinlogVerifyBatch {
 	return batches
 }
 
+func (s *BinlogVerifyStore) CurrentRowCount() uint64 {
+	return s.currentRowCount
+}
+
 func (s *BinlogVerifyStore) Serialize() BinlogVerifySerializedStore {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -273,6 +277,10 @@ func (v *InlineVerifier) StartInBackground() error {
 
 func (v *InlineVerifier) Wait() {
 	v.backgroundVerificationWg.Wait()
+}
+
+func (v *InlineVerifier) Message() string {
+	return fmt.Sprintf("BinlogVerifyStore.currentRowCount = %d", v.reverifyStore.CurrentRowCount())
 }
 
 func (v *InlineVerifier) Result() (VerificationResultAndStatus, error) {

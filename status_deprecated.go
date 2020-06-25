@@ -49,6 +49,7 @@ type StatusDeprecated struct {
 
 	VerifierSupport     bool
 	VerifierAvailable   bool
+	VerifierMessage     string
 	VerificationStarted bool
 	VerificationDone    bool
 	VerificationResult  VerificationResult
@@ -200,6 +201,7 @@ func FetchStatusDeprecated(f *Ferry, v Verifier) *StatusDeprecated {
 		result, err := v.Result()
 		status.VerificationStarted = result.IsStarted()
 		status.VerificationDone = result.IsDone()
+		status.VerifierMessage = v.Message()
 
 		// We can only run the verifier if we're not copying and not verifying
 		status.VerifierAvailable = status.OverallState != StateStarting && status.OverallState != StateCopying && (!status.VerificationStarted || status.VerificationDone)
