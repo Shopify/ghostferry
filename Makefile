@@ -60,8 +60,7 @@ test-go:
 		curl -sL $(GOTESTSUM_URL) | tar -xz -C $(GOBIN) gotestsum; \
 	fi
 
-	$(GOBIN)/gotestsum --jsonfile json.log --format short-verbose ./test/go ./copydb/test ./sharding/test -count 1 -p 1 -failfast
-	$(GOBIN)/gotestsum tool slowest --jsonfile json.log --threshold 5s
+	$(GOBIN)/gotestsum --format short-verbose ./test/go ./copydb/test ./sharding/test -count 1 -p 1 -failfast
 
 test-ruby:
 	bundle install
