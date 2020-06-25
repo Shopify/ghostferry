@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/siddontang/go-mysql/schema"
@@ -279,6 +280,10 @@ func (v *IterativeVerifier) StartInBackground() error {
 
 func (v *IterativeVerifier) Wait() {
 	v.backgroundVerificationWg.Wait()
+}
+
+func (v *IterativeVerifier) Message() string {
+	return ""
 }
 
 func (v *IterativeVerifier) Result() (VerificationResultAndStatus, error) {

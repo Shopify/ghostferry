@@ -94,6 +94,10 @@
                 <th>Verification Started</th>
                 <td>{{.VerificationStarted}}</td>
               </tr>
+              <tr>
+                <th>Verifier Message</th>
+                <td>{{.VerifierMessage}}</td>
+              </tr>
               {{if .VerificationDone}}
                 {{if not .VerificationErr }}
                   <tr>
@@ -102,7 +106,7 @@
                   </tr>
                   {{if .VerificationResult.Message}}
                     <tr>
-                      <th>Verification Message</th>
+                      <th>Verification Result Additional Message</th>
                       <td>{{.VerificationResult.Message}}</td>
                     </tr>
                   {{end}}

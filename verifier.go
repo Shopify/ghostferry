@@ -4,9 +4,10 @@ import (
 	sqlorig "database/sql"
 	"errors"
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"sync"
 	"time"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/sirupsen/logrus"
 )
@@ -72,6 +73,10 @@ type Verifier interface {
 	// A verification is "done" when it verified the dbs (either
 	// correct or incorrect) OR when it experiences an error.
 	Wait()
+
+	// Returns arbitrary message that is consumed by the control server.
+	// Can just be "".
+	Message() string
 
 	// Returns the result and the status of the verification.
 	// To check the status, call IsStarted() and IsDone() on
@@ -238,6 +243,10 @@ func (v *ChecksumTableVerifier) StartInBackground() error {
 	}()
 
 	return nil
+}
+
+func (v *ChecksumTableVerifier) Message() string {
+	return ""
 }
 
 func (v *ChecksumTableVerifier) Wait() {

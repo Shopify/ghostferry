@@ -828,6 +828,11 @@ func (f *Ferry) Progress() *Progress {
 		return true
 	})
 
+	// Verifier information
+	if f.Verifier != nil {
+		s.VerifierMessage = f.Verifier.Message()
+	}
+
 	tables := f.Tables.AsSlice()
 
 	for _, table := range tables {
