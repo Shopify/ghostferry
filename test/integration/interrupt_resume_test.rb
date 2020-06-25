@@ -416,7 +416,7 @@ class InterruptResumeTest < GhostferryTestCase
   end
 
   def test_interrupt_resume_idempotency_with_writes_to_source
-    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, batches_written: 2)
+    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, with_batches_written: 2)
 
     datawriter = new_source_datawriter
     start_datawriter_with_ghostferry(datawriter, ghostferry)
@@ -444,19 +444,12 @@ class InterruptResumeTest < GhostferryTestCase
   end
 
   def test_interrupt_resume_idempotency_with_multiple_interrupts
-    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
-    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
-      ghostferry.send_signal("TERM")
-    end
+    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, with_batches_written: 2)
 
     dumped_state = ghostferry.run_expecting_interrupt
     assert_basic_fields_exist_in_dumped_state(dumped_state)
 
-    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
-    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
-      ghostferry.send_signal("TERM")
-    end
-
+    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, with_batches_written: 2)
     ghostferry.run_expecting_interrupt(dumped_state)
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
@@ -467,32 +460,15 @@ class InterruptResumeTest < GhostferryTestCase
   end
 
   def test_interrupt_resume_idempotency_with_multiple_interrupts_and_writes_to_source
-    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, with_batches_written: 2)
 
     datawriter = new_source_datawriter
     start_datawriter_with_ghostferry(datawriter, ghostferry)
 
-    batches_written = 0
-    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
-      batches_written += 1
-      if batches_written >= 2
-        ghostferry.send_signal("TERM")
-      end
-    end
-
     dumped_state = ghostferry.run_expecting_interrupt
     assert_basic_fields_exist_in_dumped_state(dumped_state)
 
-    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
-
-    batches_written = 0
-    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
-      batches_written += 1
-      if batches_written >= 2
-        ghostferry.send_signal("TERM")
-      end
-    end
-
+    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, with_batches_written: 2)
     with_env('CI', nil) { ghostferry.run_expecting_interrupt(dumped_state) }
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
