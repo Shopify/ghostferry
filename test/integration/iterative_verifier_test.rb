@@ -24,7 +24,6 @@ class IterativeVerifierTest < GhostferryTestCase
   end
 
   def test_iterative_verifier_fails_if_binlog_streamer_incorrectly_copies_data
-    datawriter = new_source_datawriter
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Iterative" })
 
     table_name = DEFAULT_FULL_TABLE_NAME

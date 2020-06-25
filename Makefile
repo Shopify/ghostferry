@@ -65,7 +65,7 @@ test-go:
 
 test-ruby:
 	bundle install
-	bundle exec rake test DEBUG=1 TESTOPTS="-v"
+	bundle exec rake test
 
 test: test-go test-ruby
 

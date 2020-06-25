@@ -6,3 +6,7 @@ gem "mysql2"
 gem "pry-byebug"
 
 gem "rake"
+
+gem "minitest-reporters", "~> 1.4"
+
+gem "minitest-fail-fast", "~> 0.1.0"

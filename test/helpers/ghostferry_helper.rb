@@ -130,7 +130,7 @@ module GhostferryHelper
     def compile_binary
       return if File.exist?(@compiled_binary_path)
 
-      @logger.info("compiling test binary to #{@compiled_binary_path}")
+      @logger.debug("compiling test binary to #{@compiled_binary_path}")
       rc = system(
         "go", "build",
         "-o", @compiled_binary_path,
@@ -192,7 +192,7 @@ module GhostferryHelper
 
           data = JSON.parse(JSON.parse(req.body)["Payload"])
           @callback_handlers["progress"].each { |f| f.call(data) } unless @callback_handlers["progress"].nil?
-        rescue StandardError => e
+        rescue StandardError
         end
       end
 
@@ -201,9 +201,9 @@ module GhostferryHelper
       end
 
       @server_thread = Thread.new do
-        @logger.info("starting server thread")
+        @logger.debug("starting server thread")
         @server.start
-        @logger.info("server thread stopped")
+        @logger.debug("server thread stopped")
       end
     end
 
@@ -243,7 +243,7 @@ module GhostferryHelper
           environment["GHOSTFERRY_MARGINALIA"] = @config[:marginalia]
         end
 
-        @logger.info("starting ghostferry test binary #{@compiled_binary_path}")
+        @logger.debug("starting ghostferry test binary #{@compiled_binary_path}")
         Open3.popen3(environment, @compiled_binary_path) do |stdin, stdout, stderr, wait_thr|
           stdin.puts(resuming_state) unless resuming_state.nil?
           stdin.close
@@ -288,7 +288,7 @@ module GhostferryHelper
           @pid = 0
         end
 
-        @logger.info("ghostferry test binary exitted: #{@exit_status}")
+        @logger.debug("ghostferry test binary exitted: #{@exit_status}")
         if @exit_status.exitstatus != 0
           raise GhostferryExitFailure, "ghostferry test binary returned non-zero status: #{@exit_status}"
         end
@@ -310,7 +310,7 @@ module GhostferryHelper
         end
 
         @server.shutdown
-        @logger.info("server watchdog thread stopped")
+        @logger.debug("server watchdog thread stopped")
       end
     end
 
