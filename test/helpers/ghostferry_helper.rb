@@ -123,6 +123,10 @@ module GhostferryHelper
       raise "Ghostferry did not get interrupted"
     end
 
+    def run_with_logs(resuming_state = nil)
+      with_env('CI', nil) { run(resuming_state) }
+    end
+
     ######################################################
     # Methods representing the different stages of `run` #
     ######################################################
@@ -362,6 +366,14 @@ module GhostferryHelper
 
     def json_log_line?(line)
       line.start_with?("{")
+    end
+
+    def with_env(key, value)
+      previous_value = ENV.delete(key)
+      ENV[key] = value
+      yield
+    ensure
+      ENV[key] = previous_value
     end
   end
 end
