@@ -33,7 +33,7 @@ DEB_TARGET       = $(BUILD_DIR)/$(PROJECT_BIN)_$(VERSION_STR).deb
 PLATFORM        := $(shell uname -s | tr A-Z a-z)
 GOTESTSUM_URL   := "https://github.com/gotestyourself/gotestsum/releases/download/v0.5.1/gotestsum_0.5.1_$(PLATFORM)_amd64.tar.gz"
 
-.PHONY: test clean reset-deb-dir $(PROJECTS) $(PROJECT_DEBS)
+.PHONY: test test-go test-ruby clean reset-deb-dir $(PROJECTS) $(PROJECT_DEBS)
 .DEFAULT_GOAL := test
 
 $(PROJECTS): $(GOBIN)
@@ -57,11 +57,12 @@ test-go:
 	@go version
 	ulimit -n 1024
 
-	@if [ ! -f $(GOBIN)/gotestsum ]; then \
-		curl -sL $(GOTESTSUM_URL) | tar -xz -C $(GOBIN) gotestsum; \
+	@if [ ! -f ./bin/gotestsum ]; then \
+		mkdir ./bin; \
+		curl -sL $(GOTESTSUM_URL) | tar -xz -C ./bin gotestsum; \
 	fi
 
-	$(GOBIN)/gotestsum --format short-verbose ./test/go ./copydb/test ./sharding/test -count 1 -p 1 -failfast
+	./bin/gotestsum --format short-verbose ./test/go ./copydb/test ./sharding/test -count 1 -p 1 -failfast
 
 test-ruby:
 	bundle install
