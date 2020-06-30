@@ -55,14 +55,12 @@ $(GOBIN):
 
 test-go:
 	@go version
-	ulimit -n 1024
-
 	@if [ ! -f ./bin/gotestsum ]; then \
 		mkdir ./bin; \
 		curl -sL $(GOTESTSUM_URL) | tar -xz -C ./bin gotestsum; \
 	fi
 
-	./bin/gotestsum --format short-verbose ./test/go ./copydb/test ./sharding/test -count 1 -p 1 -failfast
+	ulimit -n 1024 && ./bin/gotestsum --format short-verbose ./test/go ./copydb/test ./sharding/test -count 1 -p 1 -failfast
 
 test-ruby:
 	bundle install
