@@ -59,6 +59,7 @@ deploy:
     token: "$GITHUB_TOKEN"
     keep_history: true
     local_dir: docs/build/ghostferry-pages
+    skip_cleanup: true
     on:
       tags: true
   - provider: pages
@@ -66,16 +67,19 @@ deploy:
     token: "$GITHUB_TOKEN"
     keep_history: true
     local_dir: docs/build/ghostferry-pages
+    skip_cleanup: true
     on:
       branch: master
   - provider: releases
     token: "$GITHUB_TOKEN"
     file_glob: true
     file: build/ghostferry-*.deb
+    skip_cleanup: true
     on:
       tags: true
   - provider: script
     script: .travisci/deploy-packagecloud.sh
+    skip_cleanup: true
     on:
       all_branches: true
       condition: $TRAVIS_BRANCH =~ ^(staging-.*)|(master)$
