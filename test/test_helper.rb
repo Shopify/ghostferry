@@ -57,13 +57,13 @@ class GhostferryTestCase < Minitest::Test
     g
   end
 
-  def new_ghostferry_with_interrupt_after_row_copy(filename, config: {}, with_batches_written: 0)
+  def new_ghostferry_with_interrupt_after_row_copy(filename, config: {}, after_batches_written: 0)
     g = new_ghostferry(filename, config)
 
     batches_written = 0
     g.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
       batches_written += 1
-      if batches_written >= with_batches_written
+      if batches_written >= after_batches_written
         g.send_signal("TERM")
       end
     end
