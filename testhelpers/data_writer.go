@@ -257,7 +257,7 @@ func (this *MixedActionDataWriter) getIdFromModifyIdRange(table string) (int64, 
 		idRange = this.ModifyIdRange
 	}
 
-	return idRange[0] + rand.Int63n(idRange[1]-idRange[0]), nil
+	return idRange[0] + rand.Int63n(idRange[1]-idRange[0]+1), nil
 }
 
 func (this *MixedActionDataWriter) pickRandomTable() string {

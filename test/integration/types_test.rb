@@ -42,7 +42,6 @@ class TypesTest < GhostferryTestCase
       nonstrict_source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id) VALUES (4)")
     end
 
-    timedout = false
     ghostferry.on_status(Ghostferry::Status::ROW_COPY_COMPLETED) do
       # Need to make sure we don't flush binlogs until we affirmatively see the
       # 3 rows on the target and issue the DELETE statements
@@ -59,7 +58,6 @@ class TypesTest < GhostferryTestCase
         end
 
         if Time.now - start > 10
-          timedout = true
           break
         end
       end

@@ -48,7 +48,7 @@ func setupMultiTypeTable(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
 	tx, err := sourceDB.Begin()
 	testhelpers.PanicIfError(err)
 
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 10; i++ {
 		query := "INSERT INTO gftest.table1 " +
 			"(id, data, tiny_col, float_col, double_col, decimal_col, year_col, date_col, time_col, dt_col, ts_col, varchar_col, enum_col, set_col, utfmb4_col, utf32_col, latin1_col, blob_col, uint64_col, uint32_col, uint16_col, uint8_col)" +
 			"VALUES (NULL, ?, ?, 3.14, 2.72, 42.42, NOW(), NOW(), NOW(), NOW(), NOW(), ?, ?, 'foo,baz', ?, ?, ?, ?, 18446744073709551615, 3221225472, 49152, 192)"

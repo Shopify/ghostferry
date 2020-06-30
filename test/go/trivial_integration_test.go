@@ -84,7 +84,7 @@ func TestCopyDataWhileRenamingDatabaseAndTable(t *testing.T) {
 		Ferry:                   testhelpers.NewTestFerry(),
 		DisableChecksumVerifier: true,
 		SetupAction: func(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
-			testhelpers.SeedInitialData(sourceDB, sourceDatabaseName, sourceTableName, 1111)
+			testhelpers.SeedInitialData(sourceDB, sourceDatabaseName, sourceTableName, 11)
 			testhelpers.SeedInitialData(targetDB, targetDatabaseName, targetTableName, 0)
 		},
 	}
@@ -159,10 +159,10 @@ func TestCopyDataWithNullInColumn(t *testing.T) {
 // ====================
 
 func setupSingleTableDatabase(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
-	maxId := 1111
+	maxId := 20
 	testhelpers.SeedInitialData(sourceDB, "gftest", "table1", maxId)
 
-	for i := 0; i < 140; i++ {
+	for i := 0; i < 4; i++ {
 		query := "DELETE FROM gftest.table1 WHERE id = ?"
 		_, err := sourceDB.Exec(query, rand.Intn(maxId-1)+1)
 		testhelpers.PanicIfError(err)

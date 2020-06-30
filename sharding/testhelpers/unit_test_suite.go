@@ -81,13 +81,13 @@ func (t *ShardingUnitTestSuite) SetupTest() {
 	t.dropTestDbs()
 	testhelpers.SetupTest()
 
-	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, testTable, 1000)
+	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, testTable, 100)
 	testhelpers.SeedInitialData(t.TargetDB, targetDbName, testTable, 0)
 
-	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, joinedTableName, 100)
+	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, joinedTableName, 10)
 	testhelpers.SeedInitialData(t.TargetDB, targetDbName, joinedTableName, 0)
 
-	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, joinTableName, 100)
+	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, joinTableName, 10)
 	testhelpers.SeedInitialData(t.TargetDB, targetDbName, joinTableName, 0)
 
 	testhelpers.AddTenantID(t.SourceDB, sourceDbName, testTable, 3)

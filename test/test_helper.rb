@@ -1,8 +1,13 @@
+require "stringio"
 require "logger"
 require "minitest"
 require "minitest/autorun"
+require "minitest/reporters"
+require "minitest/fail_fast"
 require "minitest/hooks/test"
 require "pry-byebug"
+
+Minitest::Reporters.use! Minitest::Reporters::SpecReporter.new
 
 GO_CODE_PATH = File.join(File.absolute_path(File.dirname(__FILE__)), "lib", "go")
 FIXTURE_PATH = File.join(File.absolute_path(File.dirname(__FILE__)), "fixtures")
@@ -13,6 +18,27 @@ require "data_writer_helper"
 
 Minitest.after_run do
   GhostferryHelper.remove_all_binaries
+end
+
+class LogCapturer
+  attr_reader :logger
+
+  def initialize(level: Logger::DEBUG)
+    @logger_device = StringIO.new
+    @logger = Logger.new(@logger_device, level: level)
+  end
+
+  def reset
+    @logger_device.truncate(0)
+  end
+
+  def print_output
+    puts "\n"
+    puts "--- Start of failed test output ---"
+    puts @logger_device.string
+    puts "--- End of failed test output ---"
+    puts "\n"
+  end
 end
 
 class GhostferryTestCase < Minitest::Test
@@ -26,13 +52,13 @@ class GhostferryTestCase < Minitest::Test
   def new_ghostferry(filename, config: {})
     # Transform path to something ruby understands
     path = File.join(GO_CODE_PATH, filename)
-    g = Ghostferry.new(path, config: config, logger: @logger)
+    g = Ghostferry.new(path, config: config, logger: @log_capturer.logger)
     @ghostferry_instances << g
     g
   end
 
   def new_source_datawriter(*args)
-    dw = DataWriter.new(source_db_config, *args, logger: @logger)
+    dw = DataWriter.new(source_db_config, *args, logger: @log_capturer.logger)
     @datawriter_instances << dw
     dw
   end
@@ -41,19 +67,19 @@ class GhostferryTestCase < Minitest::Test
     File.read(File.join(FIXTURE_PATH, filename))
   end
 
+  def setup_signal_watcher
+    Signal.trap("INT") { self.on_term }
+    Signal.trap("TERM") { self.on_term }
+  end
+
   ##############
   # Test Hooks #
   ##############
 
   def before_all
-    @logger = Logger.new(STDOUT)
-    if ENV["DEBUG"] == "1"
-      @logger.level = Logger::DEBUG
-    else
-      @logger.level = Logger::INFO
-    end
-
+    @log_capturer = LogCapturer.new
     initialize_db_connections
+    setup_signal_watcher
   end
 
   def before_setup
@@ -76,6 +102,14 @@ class GhostferryTestCase < Minitest::Test
     @datawriter_instances.each do |datawriter|
       datawriter.stop_and_join
     end
+
+    @log_capturer.print_output if self.failure
+    @log_capturer.reset
+  end
+
+  def on_term
+    @log_capturer.print_output
+    exit
   end
 
   def after_all

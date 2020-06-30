@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -xe
+set -e
 
 docker-compose up -d mysql-1 mysql-2
 
