@@ -42,7 +42,7 @@ jobs:
           skip_cleanup: true
     - stage: Package
       script:
-        - .travisci/build-docs.sh"
+        - .travisci/build-docs.sh
         - .travisci/build-debs.sh
         - .travisci/deploy-packagecloud.sh
       deploy:
