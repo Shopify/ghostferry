@@ -5,33 +5,57 @@ os:
 dist: xenial
 
 language: go
+
+go: "1.14.1"
 go_import_path: github.com/Shopify/ghostferry
 
 services:
   - docker
 
+stages:
+  - Test
+  - name: Documentation
+    if: type = push AND branch = master
+  - name: Package
+    if: type = push AND branch = master
+
+env:
+  global:
+    - CI=true
+    - DOCKER_COMPOSE_VERSION=1.21.2
+
 jobs:
   include:
-  - name: "Go Test Suite"
-    go: "1.14.1"
-    env:
-    - MAKE_TARGET=test-go
-    - DOCKER_COMPOSE_VERSION=1.21.2
-    - RELEASE_BRANCH=master
-    - CI=true
-  - name: "Ruby Test Suite"
-    go: "1.14.1"
-    env:
-    - MAKE_TARGET=test-ruby
-    - DOCKER_COMPOSE_VERSION=1.21.2
-    - RELEASE_BRANCH=master
-    - CI=true
+    - stage: Test
+      name: Go Tests
+      script: make test-go
+    - script: make test-ruby
+      name: Ruby Tests
+    - stage: Documentation
+      script: .travisci/build-docs.sh
+      deploy:
+        - provider: pages
+          strategy: git
+          token: "$GITHUB_TOKEN"
+          keep_history: true
+          local_dir: docs/build/ghostferry-pages
+          skip_cleanup: true
+    - stage: Package
+      script:
+        - .travisci/build-docs.sh"
+        - .travisci/build-debs.sh
+        - .travisci/deploy-packagecloud.sh
+      deploy:
+        - provider: releases
+          token: "$GITHUB_TOKEN"
+          file_glob: true
+          file: build/ghostferry-*.deb
+          skip_cleanup: true
+          on:
+            tags: true
 
 before_script:
   - ulimit -n 16384
-
-script:
-  - make $MAKE_TARGET
 
 install:
   # Installing Docker Compose
@@ -42,44 +66,3 @@ install:
 
   # Installing and Starting MySQL
   - .travisci/start-mysql.sh
-
-before_deploy:
-  # before_deploy runs once per provider on travis. We only need it to run
-  # once.
-  # https://github.com/travis-ci/travis-ci/issues/2570
-  - "[ \"$BEFORE_DEPLOY_RUN\" = '1' ] || .travisci/build-docs.sh"
-  - "[ \"$BEFORE_DEPLOY_RUN\" = '1' ] || .travisci/build-debs.sh"
-  - export BEFORE_DEPLOY_RUN=1
-
-deploy:
-  # Need two providers for pages:
-  # https://github.com/travis-ci/travis-ci/issues/7780
-  - provider: pages
-    strategy: git
-    token: "$GITHUB_TOKEN"
-    keep_history: true
-    local_dir: docs/build/ghostferry-pages
-    skip_cleanup: true
-    on:
-      tags: true
-  - provider: pages
-    strategy: git
-    token: "$GITHUB_TOKEN"
-    keep_history: true
-    local_dir: docs/build/ghostferry-pages
-    skip_cleanup: true
-    on:
-      branch: master
-  - provider: releases
-    token: "$GITHUB_TOKEN"
-    file_glob: true
-    file: build/ghostferry-*.deb
-    skip_cleanup: true
-    on:
-      tags: true
-  - provider: script
-    script: .travisci/deploy-packagecloud.sh
-    skip_cleanup: true
-    on:
-      all_branches: true
-      condition: $TRAVIS_BRANCH =~ ^(staging-.*)|(master)$
