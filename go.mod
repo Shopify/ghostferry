@@ -22,9 +22,7 @@ require (
 	github.com/onsi/gomega v1.9.0 // indirect
 	github.com/ooyala/go-dogstatsd v0.0.0-20140922214459-23f2a1659b02 // indirect
 	github.com/pingcap/check v0.0.0-20200212061837-5e12011dc712 // indirect
-	github.com/satori/go.uuid v1.2.0 // indirect
 	github.com/shopspring/decimal v0.0.0-20180709203117-cd690d0c9e24
-	github.com/siddontang/go v0.0.0-20180604090527-bdc77568d726 // indirect
 	github.com/siddontang/go-log v0.0.0-20180807004314-8d05993dda07
 	github.com/siddontang/go-mysql v0.0.0-20200424072754-803944a6e4ea
 	github.com/sirupsen/logrus v1.4.1

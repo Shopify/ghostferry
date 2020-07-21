@@ -30,10 +30,10 @@
  (the application/dba/whatever) will perform INSERT/UPDATE/DELETEs on the source
  database concurrently with respect to Ghostferry.
 
- This whole process is modeled as five separate processes:
+ This whole process is modeled as five (with an optional sixth) separate processes:
  1. TableIterator: Performs the job of the DataIterator, but only on one table
                    (see Data Model for justification).
- 2. BinlogStreamer: Tails and queues the binlog to be written by the 
+ 2. SourceBinlogStreamer: Tails and queues the binlog to be written by the
                     BinlogWriter.
  3. BinlogWriter: Writes binlogs in binlog writer queue.
  4. Application: Perform INSERT/UPDATE/DELETE on the source database and record
@@ -42,6 +42,8 @@
                  database (app/dba/whatever).
  5. Ferry: Coordinates the entire run by waiting for the data copy to complete,
            performing the cut over stage, and stopping the binlog streamer.
+ 6. (Optional) TargetBinlogStreamer: Tails and queues the target binlog to
+            verify all DMLs received by the Target for the duration of the move.
 
  ## Data Model ##
 
@@ -81,9 +83,9 @@
       is changed.
     - To ensure the binlog does not grow to infinity and checking with TLC stays
       feasible, a maximum size is constrained on it.
- 5. The BinlogWriter writes one binlog at a time as opposed to writing them in 
+ 5. The BinlogWriter writes one binlog at a time as opposed to writing them in
     batches atomically like it does in the implementation via transactions.
-    - The reasoning is that writing one binlog event at a time is a "worse" 
+    - The reasoning is that writing one binlog event at a time is a "worse"
       case than writing more than one binlog event atomically at a time. As long
       as they are ordered correctly, it should be okay.
 
@@ -128,12 +130,12 @@
 
  Philosophically, we can also think of the entire table as one giant super row.
  This would imply the table only needs a size of 1. However, without an actual
- proof of correness, the finite table size is chosen to be 2. To be more
+ proof of correctness, the finite table size is chosen to be 2. To be more
  cautious: The capacity of the table is 3 so we can INSERT a row.
 
  An alternative way to think about this:
 
- - We can either: app update a row OR copy the row OR binlog to apply the update.
+ - We can either: update a row OR copy the row OR binlog to apply the update.
  - For any particular row, the copy phase can only occur once. update and binlog
    can occur any number of times in any order.
  - Binlog respects the ordering of the update
@@ -141,8 +143,8 @@
    - copy -> update -> binlog: copy before update and binlog
    - update -> copy -> binlog: copy in between the update and binlog
    - update -> binlog -> copy: copy after update and binlog.
- - Logically, the copy operate can only happen within those time.
-   - This means copy \/ update \/ binlog.
+ - Logically, the copy operate can only happen within those times.
+   - This means copy \/ update \/ binlog (the \/ operator means "or" in TLA+).
    - No where did we need to involve the size of the table, thus copy and update
      can be their super equivalent, which means we only need 1 record to prove
      that this works.
@@ -177,7 +179,7 @@ EXTENDS Integers, Sequences, TLC
 \* Helper Methods
 \* ==============
 
-SetMin(S) == CHOOSE i \in S: \A j \in S : i <= j
+SetMin(S) == CHOOSE i \in S: \A j \in S: i <= j
 
 \* Constant Declarations
 \* =====================
@@ -284,13 +286,21 @@ PossibleRecords == Records \cup {NoRecordHere}
       \* It may be possible to perform some sort of locking via the Application,
       \* but this seems cumbersome and prone to implementation level error.
       \* TODO: model this with TLA+ and validate its correctness.
+
       tblit_loop:  while (lastSuccessfulPK < MaxPrimaryKey) {
       tblit_rw:      currentRow := SourceTable[lastSuccessfulPK + 1];
-                     if (currentRow # NoRecordHere) {
+                     if (currentRow # NoRecordHere /\ TargetTable[lastSuccessfulPK+1] = NoRecordHere) {
                        TargetTable[lastSuccessfulPK + 1] := currentRow;
                      };
-      tblit_upkey:   lastSuccessfulPK := lastSuccessfulPK + 1;
-                   };
+      tblit_upkey:
+        either {
+          lastSuccessfulPK := lastSuccessfulPK + 1;
+        } or {
+          \* Do not increment the PK to model a copy of the same data. In this
+          \* way, we verify the idempotency of the TableIterator
+          lastSuccessfulPK := lastSuccessfulPK + 0;
+        };
+      };
     }
 
     fair process (ProcBinlogStreamer = BinlogStreamer)
@@ -315,6 +325,22 @@ PossibleRecords == Records \cup {NoRecordHere}
 
     fair process (ProcBinlogWriter = BinlogWriter) {
       binlog_writer_loop: while(pc[BinlogStreamer] # "Done" \/ Len(BinlogWriteQueue) > 0) {
+
+      \* Inject the current binlog entry to the beginning of the
+      \* BinlogWriteQueue to be applied again to verify idempotence
+      \* in the BinlogWriter.
+      \*
+      \* The order is important here; We must retain the ordering of events
+      \* as they were in the binlog and place the current item again at the front.
+      \* Otherwise, we may violate correctness as we cannot apply binlog events in
+      \* any arbitrary order.
+      \*
+      \* Note that modifying the order of the below operation will violate SourceTargetEquality
+      reapply_binlog_write:
+                            if (Len(BinlogWriteQueue) > 0) {
+                              BinlogWriteQueue := <<Head(BinlogWriteQueue)>> \o BinlogWriteQueue;
+                            };
+
       binlog_write:         while (Len(BinlogWriteQueue) > 0) {
                               with (currentBinlog = Head(BinlogWriteQueue)) {
                                 if (TargetTable[currentBinlog.pk] = currentBinlog.oldr) {
@@ -322,7 +348,7 @@ PossibleRecords == Records \cup {NoRecordHere}
                                 };
                               };
                               \* Note that Tail returns everything in the sequence expect the Head().
-                              BinlogWriteQueue := Tail(BinlogWriteQueue); 
+                              BinlogWriteQueue := Tail(BinlogWriteQueue);
                             };
                           };
     }
@@ -407,18 +433,18 @@ PossibleRecords == Records \cup {NoRecordHere}
 }
 
  ***************************************************************************)
-\* BEGIN TRANSLATION
+\* BEGIN TRANSLATION - the hash of the PCal code: PCal-e66b2584539abc52024024c9c014a14a
 CONSTANT defaultInitValue
-VARIABLES CurrentMaxPrimaryKey, SourceTable, TargetTable, SourceBinlog, 
-          ApplicationReadonly, BinlogWriteQueue, TargetBinlogPos, 
-          BinlogStreamingStopRequested, pc, lastSuccessfulPK, currentRow, 
-          lastSuccessfulBinlogPos, currentBinlogEntry, oldRecord, newRecord, 
+VARIABLES CurrentMaxPrimaryKey, SourceTable, TargetTable, SourceBinlog,
+          ApplicationReadonly, BinlogWriteQueue, TargetBinlogPos,
+          BinlogStreamingStopRequested, pc, lastSuccessfulPK, currentRow,
+          lastSuccessfulBinlogPos, currentBinlogEntry, oldRecord, newRecord,
           chosenPK
 
-vars == << CurrentMaxPrimaryKey, SourceTable, TargetTable, SourceBinlog, 
-           ApplicationReadonly, BinlogWriteQueue, TargetBinlogPos, 
-           BinlogStreamingStopRequested, pc, lastSuccessfulPK, currentRow, 
-           lastSuccessfulBinlogPos, currentBinlogEntry, oldRecord, newRecord, 
+vars == << CurrentMaxPrimaryKey, SourceTable, TargetTable, SourceBinlog,
+           ApplicationReadonly, BinlogWriteQueue, TargetBinlogPos,
+           BinlogStreamingStopRequested, pc, lastSuccessfulPK, currentRow,
+           lastSuccessfulBinlogPos, currentBinlogEntry, oldRecord, newRecord,
            chosenPK >>
 
 ProcSet == {TableIterator} \cup {BinlogStreamer} \cup {BinlogWriter} \cup {Application} \cup {Ferry}
@@ -450,51 +476,67 @@ Init == (* Global variables *)
 
 tblit_loop == /\ pc[TableIterator] = "tblit_loop"
               /\ IF lastSuccessfulPK < MaxPrimaryKey
-                    THEN /\ pc' = [pc EXCEPT ![TableIterator] = "tblit_rw"]
+                    THEN /\ pc' = [pc EXCEPT ![TableIterator] = "reapply_tblit_rw"]
                     ELSE /\ pc' = [pc EXCEPT ![TableIterator] = "Done"]
-              /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable, 
-                              SourceBinlog, ApplicationReadonly, 
-                              BinlogWriteQueue, TargetBinlogPos, 
-                              BinlogStreamingStopRequested, lastSuccessfulPK, 
-                              currentRow, lastSuccessfulBinlogPos, 
-                              currentBinlogEntry, oldRecord, newRecord, 
+              /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable,
+                              SourceBinlog, ApplicationReadonly,
+                              BinlogWriteQueue, TargetBinlogPos,
+                              BinlogStreamingStopRequested, lastSuccessfulPK,
+                              currentRow, lastSuccessfulBinlogPos,
+                              currentBinlogEntry, oldRecord, newRecord,
                               chosenPK >>
+
+reapply_tblit_rw == /\ pc[TableIterator] = "reapply_tblit_rw"
+                    /\ IF lastSuccessfulPK > 0
+                          THEN /\ lastSuccessfulPK' = lastSuccessfulPK - 1
+                          ELSE /\ TRUE
+                               /\ UNCHANGED lastSuccessfulPK
+                    /\ pc' = [pc EXCEPT ![TableIterator] = "tblit_rw"]
+                    /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable,
+                                    TargetTable, SourceBinlog,
+                                    ApplicationReadonly, BinlogWriteQueue,
+                                    TargetBinlogPos,
+                                    BinlogStreamingStopRequested, currentRow,
+                                    lastSuccessfulBinlogPos,
+                                    currentBinlogEntry, oldRecord, newRecord,
+                                    chosenPK >>
 
 tblit_rw == /\ pc[TableIterator] = "tblit_rw"
             /\ currentRow' = SourceTable[lastSuccessfulPK + 1]
-            /\ IF currentRow' # NoRecordHere
+            /\ IF currentRow' # NoRecordHere /\ TargetTable[lastSuccessfulPK+1] = NoRecordHere
                   THEN /\ TargetTable' = [TargetTable EXCEPT ![lastSuccessfulPK + 1] = currentRow']
                   ELSE /\ TRUE
                        /\ UNCHANGED TargetTable
             /\ pc' = [pc EXCEPT ![TableIterator] = "tblit_upkey"]
-            /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, SourceBinlog, 
-                            ApplicationReadonly, BinlogWriteQueue, 
-                            TargetBinlogPos, BinlogStreamingStopRequested, 
-                            lastSuccessfulPK, lastSuccessfulBinlogPos, 
+            /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, SourceBinlog,
+                            ApplicationReadonly, BinlogWriteQueue,
+                            TargetBinlogPos, BinlogStreamingStopRequested,
+                            lastSuccessfulPK, lastSuccessfulBinlogPos,
                             currentBinlogEntry, oldRecord, newRecord, chosenPK >>
 
 tblit_upkey == /\ pc[TableIterator] = "tblit_upkey"
                /\ lastSuccessfulPK' = lastSuccessfulPK + 1
                /\ pc' = [pc EXCEPT ![TableIterator] = "tblit_loop"]
-               /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable, 
-                               SourceBinlog, ApplicationReadonly, 
-                               BinlogWriteQueue, TargetBinlogPos, 
-                               BinlogStreamingStopRequested, currentRow, 
-                               lastSuccessfulBinlogPos, currentBinlogEntry, 
+               /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable,
+                               SourceBinlog, ApplicationReadonly,
+                               BinlogWriteQueue, TargetBinlogPos,
+                               BinlogStreamingStopRequested, currentRow,
+                               lastSuccessfulBinlogPos, currentBinlogEntry,
                                oldRecord, newRecord, chosenPK >>
 
-ProcTableIterator == tblit_loop \/ tblit_rw \/ tblit_upkey
+ProcTableIterator == tblit_loop \/ reapply_tblit_rw \/ tblit_rw
+                        \/ tblit_upkey
 
 binlog_loop == /\ pc[BinlogStreamer] = "binlog_loop"
                /\ IF BinlogStreamingStopRequested = FALSE \/ (BinlogStreamingStopRequested = TRUE /\ lastSuccessfulBinlogPos < TargetBinlogPos)
                      THEN /\ pc' = [pc EXCEPT ![BinlogStreamer] = "binlog_read"]
                      ELSE /\ pc' = [pc EXCEPT ![BinlogStreamer] = "Done"]
-               /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable, 
-                               SourceBinlog, ApplicationReadonly, 
-                               BinlogWriteQueue, TargetBinlogPos, 
-                               BinlogStreamingStopRequested, lastSuccessfulPK, 
-                               currentRow, lastSuccessfulBinlogPos, 
-                               currentBinlogEntry, oldRecord, newRecord, 
+               /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable,
+                               SourceBinlog, ApplicationReadonly,
+                               BinlogWriteQueue, TargetBinlogPos,
+                               BinlogStreamingStopRequested, lastSuccessfulPK,
+                               currentRow, lastSuccessfulBinlogPos,
+                               currentBinlogEntry, oldRecord, newRecord,
                                chosenPK >>
 
 binlog_read == /\ pc[BinlogStreamer] = "binlog_read"
@@ -503,31 +545,31 @@ binlog_read == /\ pc[BinlogStreamer] = "binlog_read"
                           /\ pc' = [pc EXCEPT ![BinlogStreamer] = "binlog_queue"]
                      ELSE /\ pc' = [pc EXCEPT ![BinlogStreamer] = "binlog_loop"]
                           /\ UNCHANGED currentBinlogEntry
-               /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable, 
-                               SourceBinlog, ApplicationReadonly, 
-                               BinlogWriteQueue, TargetBinlogPos, 
-                               BinlogStreamingStopRequested, lastSuccessfulPK, 
-                               currentRow, lastSuccessfulBinlogPos, oldRecord, 
+               /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable,
+                               SourceBinlog, ApplicationReadonly,
+                               BinlogWriteQueue, TargetBinlogPos,
+                               BinlogStreamingStopRequested, lastSuccessfulPK,
+                               currentRow, lastSuccessfulBinlogPos, oldRecord,
                                newRecord, chosenPK >>
 
 binlog_queue == /\ pc[BinlogStreamer] = "binlog_queue"
                 /\ BinlogWriteQueue' = Append(BinlogWriteQueue, currentBinlogEntry)
                 /\ pc' = [pc EXCEPT ![BinlogStreamer] = "binlog_upkey"]
-                /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable, 
-                                SourceBinlog, ApplicationReadonly, 
-                                TargetBinlogPos, BinlogStreamingStopRequested, 
-                                lastSuccessfulPK, currentRow, 
-                                lastSuccessfulBinlogPos, currentBinlogEntry, 
+                /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable,
+                                SourceBinlog, ApplicationReadonly,
+                                TargetBinlogPos, BinlogStreamingStopRequested,
+                                lastSuccessfulPK, currentRow,
+                                lastSuccessfulBinlogPos, currentBinlogEntry,
                                 oldRecord, newRecord, chosenPK >>
 
 binlog_upkey == /\ pc[BinlogStreamer] = "binlog_upkey"
                 /\ lastSuccessfulBinlogPos' = lastSuccessfulBinlogPos + 1
                 /\ pc' = [pc EXCEPT ![BinlogStreamer] = "binlog_loop"]
-                /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable, 
-                                SourceBinlog, ApplicationReadonly, 
-                                BinlogWriteQueue, TargetBinlogPos, 
-                                BinlogStreamingStopRequested, lastSuccessfulPK, 
-                                currentRow, currentBinlogEntry, oldRecord, 
+                /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable,
+                                SourceBinlog, ApplicationReadonly,
+                                BinlogWriteQueue, TargetBinlogPos,
+                                BinlogStreamingStopRequested, lastSuccessfulPK,
+                                currentRow, currentBinlogEntry, oldRecord,
                                 newRecord, chosenPK >>
 
 ProcBinlogStreamer == binlog_loop \/ binlog_read \/ binlog_queue
@@ -535,17 +577,32 @@ ProcBinlogStreamer == binlog_loop \/ binlog_read \/ binlog_queue
 
 binlog_writer_loop == /\ pc[BinlogWriter] = "binlog_writer_loop"
                       /\ IF pc[BinlogStreamer] # "Done" \/ Len(BinlogWriteQueue) > 0
-                            THEN /\ pc' = [pc EXCEPT ![BinlogWriter] = "binlog_write"]
+                            THEN /\ pc' = [pc EXCEPT ![BinlogWriter] = "reapply_binlog_write"]
                             ELSE /\ pc' = [pc EXCEPT ![BinlogWriter] = "Done"]
-                      /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, 
-                                      TargetTable, SourceBinlog, 
-                                      ApplicationReadonly, BinlogWriteQueue, 
-                                      TargetBinlogPos, 
-                                      BinlogStreamingStopRequested, 
-                                      lastSuccessfulPK, currentRow, 
-                                      lastSuccessfulBinlogPos, 
-                                      currentBinlogEntry, oldRecord, newRecord, 
+                      /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable,
+                                      TargetTable, SourceBinlog,
+                                      ApplicationReadonly, BinlogWriteQueue,
+                                      TargetBinlogPos,
+                                      BinlogStreamingStopRequested,
+                                      lastSuccessfulPK, currentRow,
+                                      lastSuccessfulBinlogPos,
+                                      currentBinlogEntry, oldRecord, newRecord,
                                       chosenPK >>
+
+reapply_binlog_write == /\ pc[BinlogWriter] = "reapply_binlog_write"
+                        /\ IF Len(BinlogWriteQueue) > 0
+                              THEN /\ BinlogWriteQueue' = <<Head(BinlogWriteQueue)>> \o BinlogWriteQueue
+                              ELSE /\ TRUE
+                                   /\ UNCHANGED BinlogWriteQueue
+                        /\ pc' = [pc EXCEPT ![BinlogWriter] = "binlog_write"]
+                        /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable,
+                                        TargetTable, SourceBinlog,
+                                        ApplicationReadonly, TargetBinlogPos,
+                                        BinlogStreamingStopRequested,
+                                        lastSuccessfulPK, currentRow,
+                                        lastSuccessfulBinlogPos,
+                                        currentBinlogEntry, oldRecord,
+                                        newRecord, chosenPK >>
 
 binlog_write == /\ pc[BinlogWriter] = "binlog_write"
                 /\ IF Len(BinlogWriteQueue) > 0
@@ -558,24 +615,25 @@ binlog_write == /\ pc[BinlogWriter] = "binlog_write"
                            /\ pc' = [pc EXCEPT ![BinlogWriter] = "binlog_write"]
                       ELSE /\ pc' = [pc EXCEPT ![BinlogWriter] = "binlog_writer_loop"]
                            /\ UNCHANGED << TargetTable, BinlogWriteQueue >>
-                /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, 
-                                SourceBinlog, ApplicationReadonly, 
-                                TargetBinlogPos, BinlogStreamingStopRequested, 
-                                lastSuccessfulPK, currentRow, 
-                                lastSuccessfulBinlogPos, currentBinlogEntry, 
+                /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable,
+                                SourceBinlog, ApplicationReadonly,
+                                TargetBinlogPos, BinlogStreamingStopRequested,
+                                lastSuccessfulPK, currentRow,
+                                lastSuccessfulBinlogPos, currentBinlogEntry,
                                 oldRecord, newRecord, chosenPK >>
 
-ProcBinlogWriter == binlog_writer_loop \/ binlog_write
+ProcBinlogWriter == binlog_writer_loop \/ reapply_binlog_write
+                       \/ binlog_write
 
 app_loop == /\ pc[Application] = "app_loop"
             /\ IF ApplicationReadonly = FALSE
                   THEN /\ pc' = [pc EXCEPT ![Application] = "app_write"]
                   ELSE /\ pc' = [pc EXCEPT ![Application] = "Done"]
-            /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable, 
-                            SourceBinlog, ApplicationReadonly, 
-                            BinlogWriteQueue, TargetBinlogPos, 
-                            BinlogStreamingStopRequested, lastSuccessfulPK, 
-                            currentRow, lastSuccessfulBinlogPos, 
+            /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable,
+                            SourceBinlog, ApplicationReadonly,
+                            BinlogWriteQueue, TargetBinlogPos,
+                            BinlogStreamingStopRequested, lastSuccessfulPK,
+                            currentRow, lastSuccessfulBinlogPos,
                             currentBinlogEntry, oldRecord, newRecord, chosenPK >>
 
 app_write == /\ pc[Application] = "app_write"
@@ -594,16 +652,16 @@ app_write == /\ pc[Application] = "app_write"
                                 )
              /\ SourceTable' = [SourceTable EXCEPT ![chosenPK'] = newRecord']
              /\ IF oldRecord' = NoRecordHere /\ chosenPK' > CurrentMaxPrimaryKey
-                   THEN /\ Assert((chosenPK' - 1 = CurrentMaxPrimaryKey), 
-                                  "Failure of assertion at line 379, column 21.")
+                   THEN /\ Assert((chosenPK' - 1 = CurrentMaxPrimaryKey),
+                                  "Failure of assertion at line 406, column 21.")
                         /\ CurrentMaxPrimaryKey' = chosenPK'
                    ELSE /\ TRUE
                         /\ UNCHANGED CurrentMaxPrimaryKey
              /\ pc' = [pc EXCEPT ![Application] = "app_loop"]
-             /\ UNCHANGED << TargetTable, ApplicationReadonly, 
-                             BinlogWriteQueue, TargetBinlogPos, 
-                             BinlogStreamingStopRequested, lastSuccessfulPK, 
-                             currentRow, lastSuccessfulBinlogPos, 
+             /\ UNCHANGED << TargetTable, ApplicationReadonly,
+                             BinlogWriteQueue, TargetBinlogPos,
+                             BinlogStreamingStopRequested, lastSuccessfulPK,
+                             currentRow, lastSuccessfulBinlogPos,
                              currentBinlogEntry >>
 
 ProcApplication == app_loop \/ app_write
@@ -612,53 +670,56 @@ ferry_setro == /\ pc[Ferry] = "ferry_setro"
                /\ pc[TableIterator] = "Done"
                /\ ApplicationReadonly' = TRUE
                /\ pc' = [pc EXCEPT ![Ferry] = "ferry_waitro"]
-               /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable, 
-                               SourceBinlog, BinlogWriteQueue, TargetBinlogPos, 
-                               BinlogStreamingStopRequested, lastSuccessfulPK, 
-                               currentRow, lastSuccessfulBinlogPos, 
-                               currentBinlogEntry, oldRecord, newRecord, 
+               /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable,
+                               SourceBinlog, BinlogWriteQueue, TargetBinlogPos,
+                               BinlogStreamingStopRequested, lastSuccessfulPK,
+                               currentRow, lastSuccessfulBinlogPos,
+                               currentBinlogEntry, oldRecord, newRecord,
                                chosenPK >>
 
 ferry_waitro == /\ pc[Ferry] = "ferry_waitro"
                 /\ pc[Application] = "Done"
                 /\ pc' = [pc EXCEPT ![Ferry] = "ferry_binlogpos"]
-                /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable, 
-                                SourceBinlog, ApplicationReadonly, 
-                                BinlogWriteQueue, TargetBinlogPos, 
-                                BinlogStreamingStopRequested, lastSuccessfulPK, 
-                                currentRow, lastSuccessfulBinlogPos, 
-                                currentBinlogEntry, oldRecord, newRecord, 
+                /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, TargetTable,
+                                SourceBinlog, ApplicationReadonly,
+                                BinlogWriteQueue, TargetBinlogPos,
+                                BinlogStreamingStopRequested, lastSuccessfulPK,
+                                currentRow, lastSuccessfulBinlogPos,
+                                currentBinlogEntry, oldRecord, newRecord,
                                 chosenPK >>
 
 ferry_binlogpos == /\ pc[Ferry] = "ferry_binlogpos"
                    /\ TargetBinlogPos' = Len(SourceBinlog)
                    /\ pc' = [pc EXCEPT ![Ferry] = "ferry_binlogstop"]
-                   /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, 
-                                   TargetTable, SourceBinlog, 
-                                   ApplicationReadonly, BinlogWriteQueue, 
-                                   BinlogStreamingStopRequested, 
-                                   lastSuccessfulPK, currentRow, 
-                                   lastSuccessfulBinlogPos, currentBinlogEntry, 
+                   /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable,
+                                   TargetTable, SourceBinlog,
+                                   ApplicationReadonly, BinlogWriteQueue,
+                                   BinlogStreamingStopRequested,
+                                   lastSuccessfulPK, currentRow,
+                                   lastSuccessfulBinlogPos, currentBinlogEntry,
                                    oldRecord, newRecord, chosenPK >>
 
 ferry_binlogstop == /\ pc[Ferry] = "ferry_binlogstop"
                     /\ BinlogStreamingStopRequested' = TRUE
                     /\ pc' = [pc EXCEPT ![Ferry] = "Done"]
-                    /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable, 
-                                    TargetTable, SourceBinlog, 
-                                    ApplicationReadonly, BinlogWriteQueue, 
-                                    TargetBinlogPos, lastSuccessfulPK, 
-                                    currentRow, lastSuccessfulBinlogPos, 
-                                    currentBinlogEntry, oldRecord, newRecord, 
+                    /\ UNCHANGED << CurrentMaxPrimaryKey, SourceTable,
+                                    TargetTable, SourceBinlog,
+                                    ApplicationReadonly, BinlogWriteQueue,
+                                    TargetBinlogPos, lastSuccessfulPK,
+                                    currentRow, lastSuccessfulBinlogPos,
+                                    currentBinlogEntry, oldRecord, newRecord,
                                     chosenPK >>
 
 ProcFerry == ferry_setro \/ ferry_waitro \/ ferry_binlogpos
                 \/ ferry_binlogstop
 
+(* Allow infinite stuttering to prevent deadlock on termination. *)
+Terminating == /\ \A self \in ProcSet: pc[self] = "Done"
+               /\ UNCHANGED vars
+
 Next == ProcTableIterator \/ ProcBinlogStreamer \/ ProcBinlogWriter
            \/ ProcApplication \/ ProcFerry
-           \/ (* Disjunct to prevent deadlock on termination *)
-              ((\A self \in ProcSet: pc[self] = "Done") /\ UNCHANGED vars)
+           \/ Terminating
 
 Spec == /\ Init /\ [][Next]_vars
         /\ WF_vars(ProcTableIterator)
@@ -669,7 +730,7 @@ Spec == /\ Init /\ [][Next]_vars
 
 Termination == <>(\A self \in ProcSet: pc[self] = "Done")
 
-\* END TRANSLATION
+\* END TRANSLATION - the hash of the generated TLA code (remove to silence divergence warnings): TLA-55703eade60583a8e2d35aab06539a8d
 
 \* Safety Constraints
 \* ==================
@@ -688,7 +749,8 @@ CONSTANT MaxBinlogSize
 
 BinlogSizeActionConstraint == Len(SourceBinlog) <= MaxBinlogSize
 
-=============================================================================
+ =============================================================================
 \* Modification History
+\* Last modified Tue Jul 21 12:57:44 CDT 2020 by forrest
 \* Last modified Tue Sep 18 13:26:30 EDT 2018 by shuhao
 \* Created Thu Jan 18 11:35:40 EST 2018 by shuhao

@@ -1,60 +1,62 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <launchConfiguration type="org.lamport.tla.toolbox.tool.tlc.modelCheck">
-<stringAttribute key="TLCCmdLineParameters" value=""/>
-<stringAttribute key="configurationName" value="GhostferryPrimaryModel"/>
-<booleanAttribute key="deferLiveness" value="false"/>
-<intAttribute key="dfidDepth" value="100"/>
-<booleanAttribute key="dfidMode" value="false"/>
-<intAttribute key="distributedFPSetCount" value="0"/>
-<stringAttribute key="distributedNetworkInterface" value="172.17.0.1"/>
-<intAttribute key="distributedNodesCount" value="1"/>
-<stringAttribute key="distributedTLC" value="off"/>
-<stringAttribute key="distributedTLCVMArgs" value=""/>
-<intAttribute key="fpBits" value="1"/>
-<intAttribute key="fpIndex" value="1"/>
-<intAttribute key="maxHeapSize" value="25"/>
-<intAttribute key="maxSetSize" value="1000000"/>
-<booleanAttribute key="mcMode" value="true"/>
-<stringAttribute key="modelBehaviorInit" value=""/>
-<stringAttribute key="modelBehaviorNext" value=""/>
-<stringAttribute key="modelBehaviorSpec" value="Spec"/>
-<intAttribute key="modelBehaviorSpecType" value="1"/>
-<stringAttribute key="modelBehaviorVars" value="lastSuccessfulPK, CurrentMaxPrimaryKey, BinlogWriteQueue, chosenPK, SourceBinlog, currentRow, BinlogStreamingStopRequested, pc, newRecord, oldRecord, TargetTable, TargetBinlogPos, currentBinlogEntry, lastWrittenBinlogPos, ApplicationReadonly, SourceTable, lastSuccessfulBinlogPos"/>
-<stringAttribute key="modelComments" value=""/>
-<booleanAttribute key="modelCorrectnessCheckDeadlock" value="true"/>
-<listAttribute key="modelCorrectnessInvariants">
-<listEntry value="1SourceTargetEquality"/>
-</listAttribute>
-<listAttribute key="modelCorrectnessProperties">
-<listEntry value="1Termination"/>
-</listAttribute>
-<stringAttribute key="modelExpressionEval" value=""/>
-<stringAttribute key="modelParameterActionConstraint" value="BinlogSizeActionConstraint"/>
-<listAttribute key="modelParameterConstants">
-<listEntry value="defaultInitValue;;defaultInitValue;1;0"/>
-<listEntry value="Records;;{r0, r1};1;0"/>
-<listEntry value="MaxPrimaryKey;;2;0;0"/>
-<listEntry value="Ferry;;Ferry;1;0"/>
-<listEntry value="InitialTable;;&lt;&lt;r0, r1, NoRecordHere&gt;&gt;;0;0"/>
-<listEntry value="Application;;Application;1;0"/>
-<listEntry value="BinlogStreamer;;BinlogStreamer;1;0"/>
-<listEntry value="TableIterator;;TableIterator;1;0"/>
-<listEntry value="MaxBinlogSize;;3;0;0"/>
-<listEntry value="BinlogWriter;;BinlogWriter;1;0"/>
-</listAttribute>
-<stringAttribute key="modelParameterContraint" value=""/>
-<listAttribute key="modelParameterDefinitions">
-<listEntry value="NoRecordHere;;NoRecordHere;1;0"/>
-</listAttribute>
-<stringAttribute key="modelParameterModelValues" value="{}"/>
-<stringAttribute key="modelParameterNewDefinitions" value=""/>
-<intAttribute key="numberOfWorkers" value="3"/>
-<booleanAttribute key="recover" value="false"/>
-<stringAttribute key="result.mail.address" value=""/>
-<intAttribute key="simuAril" value="-1"/>
-<intAttribute key="simuDepth" value="100"/>
-<intAttribute key="simuSeed" value="-1"/>
-<stringAttribute key="specName" value="ghostferry"/>
-<stringAttribute key="view" value=""/>
-<booleanAttribute key="visualizeStateGraph" value="false"/>
+    <stringAttribute key="TLCCmdLineParameters" value=""/>
+    <stringAttribute key="configurationName" value="GhostferryPrimaryModel"/>
+    <booleanAttribute key="deferLiveness" value="false"/>
+    <intAttribute key="dfidDepth" value="100"/>
+    <booleanAttribute key="dfidMode" value="false"/>
+    <intAttribute key="distributedFPSetCount" value="0"/>
+    <stringAttribute key="distributedNetworkInterface" value="172.17.0.1"/>
+    <intAttribute key="distributedNodesCount" value="1"/>
+    <stringAttribute key="distributedTLC" value="off"/>
+    <stringAttribute key="distributedTLCVMArgs" value=""/>
+    <intAttribute key="fpBits" value="1"/>
+    <intAttribute key="fpIndex" value="117"/>
+    <intAttribute key="maxHeapSize" value="25"/>
+    <intAttribute key="maxSetSize" value="1000000"/>
+    <booleanAttribute key="mcMode" value="true"/>
+    <stringAttribute key="modelBehaviorInit" value=""/>
+    <stringAttribute key="modelBehaviorNext" value=""/>
+    <stringAttribute key="modelBehaviorSpec" value="Spec"/>
+    <intAttribute key="modelBehaviorSpecType" value="1"/>
+    <stringAttribute key="modelBehaviorVars" value="lastSuccessfulPK, CurrentMaxPrimaryKey, BinlogWriteQueue, chosenPK, SourceBinlog, currentRow, BinlogStreamingStopRequested, pc, newRecord, oldRecord, TargetTable, TargetBinlogPos, currentBinlogEntry, lastWrittenBinlogPos, ApplicationReadonly, SourceTable, lastSuccessfulBinlogPos"/>
+    <stringAttribute key="modelComments" value=""/>
+    <booleanAttribute key="modelCorrectnessCheckDeadlock" value="true"/>
+    <listAttribute key="modelCorrectnessInvariants">
+        <listEntry value="1SourceTargetEquality"/>
+    </listAttribute>
+    <listAttribute key="modelCorrectnessProperties">
+        <listEntry value="1Termination"/>
+    </listAttribute>
+    <intAttribute key="modelEditorOpenTabs" value="8"/>
+    <stringAttribute key="modelExpressionEval" value=""/>
+    <stringAttribute key="modelParameterActionConstraint" value="BinlogSizeActionConstraint"/>
+    <listAttribute key="modelParameterConstants">
+        <listEntry value="defaultInitValue;;defaultInitValue;1;0"/>
+        <listEntry value="Records;;{r0, r1};1;0"/>
+        <listEntry value="MaxPrimaryKey;;2;0;0"/>
+        <listEntry value="Ferry;;Ferry;1;0"/>
+        <listEntry value="InitialTable;;&lt;&lt;r0, r1, NoRecordHere&gt;&gt;;0;0"/>
+        <listEntry value="Application;;Application;1;0"/>
+        <listEntry value="BinlogStreamer;;BinlogStreamer;1;0"/>
+        <listEntry value="TableIterator;;TableIterator;1;0"/>
+        <listEntry value="MaxBinlogSize;;3;0;0"/>
+        <listEntry value="BinlogWriter;;BinlogWriter;1;0"/>
+    </listAttribute>
+    <stringAttribute key="modelParameterContraint" value=""/>
+    <listAttribute key="modelParameterDefinitions">
+        <listEntry value="NoRecordHere;;NoRecordHere;1;0"/>
+    </listAttribute>
+    <stringAttribute key="modelParameterModelValues" value="{}"/>
+    <stringAttribute key="modelParameterNewDefinitions" value=""/>
+    <intAttribute key="modelVersion" value="20191005"/>
+    <intAttribute key="numberOfWorkers" value="3"/>
+    <booleanAttribute key="recover" value="false"/>
+    <stringAttribute key="result.mail.address" value=""/>
+    <intAttribute key="simuAril" value="-1"/>
+    <intAttribute key="simuDepth" value="100"/>
+    <intAttribute key="simuSeed" value="-1"/>
+    <stringAttribute key="specName" value="ghostferry"/>
+    <stringAttribute key="view" value=""/>
+    <booleanAttribute key="visualizeStateGraph" value="false"/>
 </launchConfiguration>
