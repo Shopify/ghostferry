@@ -397,7 +397,7 @@ class InterruptResumeTest < GhostferryTestCase
     )
   end
 
-  def test_interrupt_resume_idempotency
+  def test_interrupt_resume_idempotence
     ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY)
     dumped_state = ghostferry.run_expecting_interrupt
 
@@ -415,7 +415,7 @@ class InterruptResumeTest < GhostferryTestCase
     assert_ghostferry_completed(ghostferry, times: 2)
   end
 
-  def test_interrupt_resume_idempotency_with_writes_to_source
+  def test_interrupt_resume_idempotence_with_writes_to_source
     ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, after_batches_written: 2)
 
     datawriter = new_source_datawriter
@@ -439,7 +439,7 @@ class InterruptResumeTest < GhostferryTestCase
     assert_ghostferry_completed(ghostferry, times: 2)
   end
 
-  def test_interrupt_resume_idempotency_with_multiple_interrupts
+  def test_interrupt_resume_idempotence_with_multiple_interrupts
     ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, after_batches_written: 2)
 
     dumped_state = ghostferry.run_expecting_interrupt
@@ -455,7 +455,7 @@ class InterruptResumeTest < GhostferryTestCase
     assert_ghostferry_completed(ghostferry, times: 1)
   end
 
-  def test_interrupt_resume_idempotency_with_multiple_interrupts_and_writes_to_source
+  def test_interrupt_resume_idempotence_with_multiple_interrupts_and_writes_to_source
     ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, after_batches_written: 2)
 
     datawriter = new_source_datawriter
@@ -474,4 +474,23 @@ class InterruptResumeTest < GhostferryTestCase
     assert_test_table_is_identical
     assert_ghostferry_completed(ghostferry, times: 1)
   end
+
+  def test_interrupt_resume_idempotence_with_failure
+    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY)
+    dumped_state = ghostferry.run_expecting_interrupt
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+    ghostferry.run_with_logs(dumped_state)
+
+    assert_test_table_is_identical
+
+    # Logs are needed to assert how many times ghostferry successfully completed
+    ghostferry.run_with_logs(dumped_state)
+
+    assert_test_table_is_identical
+
+    # assert ghostferry successfuly ran twice
+    assert_ghostferry_completed(ghostferry, times: 2)
+  end
+
 end
