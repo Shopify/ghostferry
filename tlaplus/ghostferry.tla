@@ -296,8 +296,8 @@ PossibleRecords == Records \cup {NoRecordHere}
         either {
           lastSuccessfulPK := lastSuccessfulPK + 1;
         } or {
-          \* Do not increment the PK to model a copy of the same data. In this
-          \* way, we verify the idempotency of the TableIterator
+          \* Do not increment the PK to cause the spec to copy of the same data
+          \* multiple times to test idempotence in the TableIterator.
           lastSuccessfulPK := lastSuccessfulPK + 0;
         };
       };
@@ -330,10 +330,9 @@ PossibleRecords == Records \cup {NoRecordHere}
       \* BinlogWriteQueue to be applied again to verify idempotence
       \* in the BinlogWriter.
       \*
-      \* The order is important here; We must retain the ordering of events
-      \* as they were in the binlog and place the current item again at the front.
-      \* Otherwise, we may violate correctness as we cannot apply binlog events in
-      \* any arbitrary order.
+      \* We must retain the ordering of events as they were in the binlog and place
+      \* the current item again at the front of the BinlogWriteQueue. Otherwise,
+      \* we may violate correctness as we cannot apply binlog events in any arbitrary order.
       \*
       \* Note that modifying the order of the below operation will violate SourceTargetEquality
       reapply_binlog_write:
