@@ -123,6 +123,15 @@ module GhostferryHelper
       raise "Ghostferry did not get interrupted"
     end
 
+    # Same as above - ensure that the datawriter has been
+    # stopped properly (if you're using stop_datawriter_during_cutover).
+    def run_expecting_failure(resuming_state = nil)
+      run(resuming_state)
+    rescue GhostferryExitFailure
+    else
+      raise "Ghostferry did not fail"
+    end
+
     def run_with_logs(resuming_state = nil)
       with_env('CI', nil) { run(resuming_state) }
     end
@@ -343,6 +352,11 @@ module GhostferryHelper
 
     def term_and_wait_for_exit
       send_signal("TERM")
+      @subprocess_thread.join
+    end
+
+    def kill_and_wait_for_exit
+      send_signal("KILL")
       @subprocess_thread.join
     end
 
