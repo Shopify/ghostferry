@@ -107,7 +107,6 @@ class InterruptResumeTest < GhostferryTestCase
 
       assert(found_signal, "Expected to receive a termination signal")
     end
-
   end
 
   def test_interrupt_resume_will_not_emit_binlog_position_for_inline_verifier_if_no_verification_is_used
@@ -396,5 +395,126 @@ class InterruptResumeTest < GhostferryTestCase
     assert ghostferry.error["ErrMessage"].include?(
       "row data with paginationKey #{chosen_id} on `gftest`.`test_table_1` has been corrupted"
     )
+  end
+
+  def test_interrupt_resume_idempotence
+    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY)
+    dumped_state = ghostferry.run_expecting_interrupt
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+    ghostferry.run_with_logs(dumped_state)
+
+    assert_test_table_is_identical
+
+    # Logs are needed to assert how many times ghostferry successfully completed
+    ghostferry.run_with_logs(dumped_state)
+
+    assert_test_table_is_identical
+
+    # assert ghostferry successfuly ran twice
+    assert_ghostferry_completed(ghostferry, times: 2)
+  end
+
+  def test_interrupt_resume_idempotence_with_writes_to_source
+    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, after_batches_written: 2)
+
+    datawriter = new_source_datawriter
+    start_datawriter_with_ghostferry(datawriter, ghostferry)
+
+    dumped_state = ghostferry.run_expecting_interrupt
+
+    assert_basic_fields_exist_in_dumped_state(dumped_state)
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+
+    # stop datawriter in this ghostferry instance as it will run to completion
+    stop_datawriter_during_cutover(datawriter, ghostferry)
+    ghostferry.run_with_logs(dumped_state)
+
+    assert_test_table_is_identical
+
+    ghostferry.run_with_logs(dumped_state)
+
+    assert_test_table_is_identical
+    assert_ghostferry_completed(ghostferry, times: 2)
+  end
+
+  def test_interrupt_resume_idempotence_with_multiple_interrupts
+    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, after_batches_written: 2)
+
+    dumped_state = ghostferry.run_expecting_interrupt
+    assert_basic_fields_exist_in_dumped_state(dumped_state)
+
+    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, after_batches_written: 2)
+    ghostferry.run_expecting_interrupt(dumped_state)
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+    ghostferry.run_with_logs(dumped_state)
+
+    assert_test_table_is_identical
+    assert_ghostferry_completed(ghostferry, times: 1)
+  end
+
+  def test_interrupt_resume_idempotence_with_multiple_interrupts_and_writes_to_source
+    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, after_batches_written: 2)
+
+    datawriter = new_source_datawriter
+    start_datawriter_with_ghostferry(datawriter, ghostferry)
+
+    dumped_state = ghostferry.run_expecting_interrupt
+    assert_basic_fields_exist_in_dumped_state(dumped_state)
+
+    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, after_batches_written: 2)
+    ghostferry.run_expecting_interrupt(dumped_state)
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+    stop_datawriter_during_cutover(datawriter, ghostferry)
+    ghostferry.run_with_logs(dumped_state)
+
+    assert_test_table_is_identical
+    assert_ghostferry_completed(ghostferry, times: 1)
+  end
+
+  def test_interrupt_resume_idempotence_with_failure
+    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY)
+    dumped_state = ghostferry.run_expecting_interrupt
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+    # Fail the ghostferry run instead of interrupting a second time
+    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      ghostferry.kill_and_wait_for_exit
+    end
+    ghostferry.run_expecting_failure(dumped_state)
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+    ghostferry.run_with_logs(dumped_state)
+
+    assert_test_table_is_identical
+
+    assert_ghostferry_completed(ghostferry, times: 1)
+  end
+
+  def test_interrupt_resume_idempotence_with_failure_and_writes_to_source
+    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, after_batches_written: 2)
+
+    datawriter = new_source_datawriter
+    start_datawriter_with_ghostferry(datawriter, ghostferry)
+
+    dumped_state = ghostferry.run_expecting_interrupt
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+    # Fail the ghostferry run instead of interrupting a second time
+    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      ghostferry.kill_and_wait_for_exit
+    end
+    ghostferry.run_expecting_failure(dumped_state)
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+    stop_datawriter_during_cutover(datawriter, ghostferry)
+    ghostferry.run_with_logs(dumped_state)
+
+    assert_test_table_is_identical
+
+    assert_ghostferry_completed(ghostferry, times: 1)
   end
 end

@@ -123,6 +123,19 @@ module GhostferryHelper
       raise "Ghostferry did not get interrupted"
     end
 
+    # Same as above - ensure that the datawriter has been
+    # stopped properly (if you're using stop_datawriter_during_cutover).
+    def run_expecting_failure(resuming_state = nil)
+      run(resuming_state)
+    rescue GhostferryExitFailure
+    else
+      raise "Ghostferry did not fail"
+    end
+
+    def run_with_logs(resuming_state = nil)
+      with_env('CI', nil) { run(resuming_state) }
+    end
+
     ######################################################
     # Methods representing the different stages of `run` #
     ######################################################
@@ -342,6 +355,11 @@ module GhostferryHelper
       @subprocess_thread.join
     end
 
+    def kill_and_wait_for_exit
+      send_signal("KILL")
+      @subprocess_thread.join
+    end
+
     def kill
       @server.shutdown unless @server.nil?
       send_signal("KILL")
@@ -362,6 +380,14 @@ module GhostferryHelper
 
     def json_log_line?(line)
       line.start_with?("{")
+    end
+
+    def with_env(key, value)
+      previous_value = ENV.delete(key)
+      ENV[key] = value
+      yield
+    ensure
+      ENV[key] = previous_value
     end
   end
 end
