@@ -329,7 +329,6 @@ func (s *BinlogStreamer) updateLastStreamedPosAndTime(evTimestamp uint32, evPos 
 }
 
 func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []byte) error {
-	eventTime := time.Unix(int64(ev.Header.Timestamp), 0)
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
 	if ev.Header.LogPos == 0 {
@@ -369,11 +368,6 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 		}
 
 		events = append(events, dmlEv)
-		s.logger.WithFields(logrus.Fields{
-			"database": dmlEv.Database(),
-			"table":    dmlEv.Table(),
-			"position": pos,
-		}).Debugf("received event %T at %v", dmlEv, eventTime)
 
 		metrics.Count("RowEvent", 1, []MetricTag{
 			MetricTag{"table", dmlEv.Table()},

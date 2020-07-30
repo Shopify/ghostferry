@@ -57,6 +57,20 @@ class GhostferryTestCase < Minitest::Test
     g
   end
 
+  def new_ghostferry_with_interrupt_after_row_copy(filename, config: {}, after_batches_written: 0)
+    g = new_ghostferry(filename, config)
+
+    batches_written = 0
+    g.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      batches_written += 1
+      if batches_written >= after_batches_written
+        g.send_signal("TERM")
+      end
+    end
+
+    g
+  end
+
   def new_source_datawriter(*args)
     dw = DataWriter.new(source_db_config, *args, logger: @log_capturer.logger)
     @datawriter_instances << dw
@@ -151,6 +165,14 @@ class GhostferryTestCase < Minitest::Test
     refute dumped_state["LastSuccessfulPaginationKeys"].nil?
     refute dumped_state["CompletedTables"].nil?
     refute dumped_state["LastWrittenBinlogPosition"].nil?
+  end
+
+  def assert_ghostferry_completed(instance, times:)
+    started_runs = instance.logrus_lines["ferry"].select{ |line| line["msg"].include?("hello world") }.count
+    completed_runs = instance.logrus_lines["ferry"].select{ |line| line["msg"].include?("ghostferry run is complete") }.count
+
+    assert started_runs == times
+    assert completed_runs == times
   end
 
   def with_env(key, value)
