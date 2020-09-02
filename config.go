@@ -441,13 +441,13 @@ type Config struct {
 
 	// Report progress via an HTTP callback. The Payload field of the callback
 	// will be sent to the server as the CustomPayload field in the Progress
-	// struct The unit of ProgressReportFrequency is in milliseconds.
+	// struct. The unit of ProgressReportFrequency is in milliseconds.
 	ProgressCallback        HTTPCallback
 	ProgressReportFrequency int
 
-	// Report state via an HTTP callback. The Payload field of the callback
-	// will be sent to the server as the CustomPayload field in the State
-	// struct The unit of StateReportFrequency is in milliseconds.
+	// Report state via an HTTP callback. The SerializedState struct will be
+	// sent as the Payload parameter. The unit of StateReportFrequency is
+	// in milliseconds.
 	StateCallback        HTTPCallback
 	StateReportFrequency int
 
