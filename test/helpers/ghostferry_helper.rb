@@ -209,6 +209,19 @@ module GhostferryHelper
         end
       end
 
+      @server.mount_proc "/callbacks/state" do |req, resp|
+        begin
+          unless req.body
+            @server_last_error = ArgumentError.new("Ghostferry is improperly implemented and did not send data")
+            resp.status = 400
+            @server.shutdown
+          end
+          data = JSON.parse(JSON.parse(req.body)["Payload"])
+          @callback_handlers["state"].each { |f| f.call(data) } unless @callback_handlers["state"].nil?
+        rescue StandardError
+        end
+      end
+
       @server.mount_proc "/callbacks/error" do |req, resp|
         @error = JSON.parse(JSON.parse(req.body)["Payload"])
       end

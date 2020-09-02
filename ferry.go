@@ -587,6 +587,24 @@ func (f *Ferry) Run() {
 		}()
 	}
 
+	if f.Config.StateCallback.URI != "" {
+		supportingServicesWg.Add(1)
+		go func() {
+			defer supportingServicesWg.Done()
+
+			frequency := time.Duration(f.Config.StateReportFrequency) * time.Millisecond
+
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(frequency):
+					f.ReportState()
+				}
+			}
+		}()
+	}
+
 	if f.DumpStateOnSignal {
 		go func() {
 			c := make(chan os.Signal, 1)
@@ -887,6 +905,21 @@ func (f *Ferry) ReportProgress() {
 	err = callback.Post(&http.Client{})
 	if err != nil {
 		f.logger.WithError(err).Warn("failed to post status, but that's probably okay")
+	}
+}
+
+func (f *Ferry) ReportState() {
+	callback := f.Config.StateCallback
+	state, err := f.SerializeStateToJSON()
+	if err != nil {
+		f.logger.WithError(err).Error("failed to dump state to JSON")
+		return
+	}
+
+	callback.Payload = string(state)
+	err = callback.Post(&http.Client{})
+	if err != nil {
+		f.logger.WithError(err).Errorf("failed to post state to callback: %s", callback)
 	}
 }
 

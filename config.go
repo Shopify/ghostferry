@@ -445,6 +445,12 @@ type Config struct {
 	ProgressCallback        HTTPCallback
 	ProgressReportFrequency int
 
+	// Report state via an HTTP callback. The Payload field of the callback
+	// will be sent to the server as the CustomPayload field in the State
+	// struct The unit of StateReportFrequency is in milliseconds.
+	StateCallback        HTTPCallback
+	StateReportFrequency int
+
 	// The state to resume from as dumped by the PanicErrorHandler.
 	// If this is null, a new Ghostferry run will be started. Otherwise, the
 	// reconciliation process will start and Ghostferry will resume after that.
