@@ -517,4 +517,25 @@ class InterruptResumeTest < GhostferryTestCase
 
     assert_ghostferry_completed(ghostferry, times: 1)
   end
+
+  def test_resume_from_failure_with_state_callback
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+
+    state_from_callback = nil
+    ghostferry.on_callback("state") do |state_data|
+      state_from_callback = state_data
+      ghostferry.kill_and_wait_for_exit
+    end
+
+    ghostferry.run_expecting_failure
+
+    refute_nil state_from_callback
+    assert_basic_fields_exist_in_dumped_state(state_from_callback)
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+    ghostferry.run_with_logs(state_from_callback)
+
+    assert_test_table_is_identical
+    assert_ghostferry_completed(ghostferry, times: 1)
+  end
 end
