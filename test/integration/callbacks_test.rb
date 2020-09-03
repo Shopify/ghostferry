@@ -38,14 +38,16 @@ class CallbacksTest < GhostferryTestCase
     seed_simple_database_with_single_table
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
-    state = []
+    states = []
     ghostferry.on_callback("state") do |state_data|
-      state << state_data
+      states << state_data
     end
 
     ghostferry.run
 
-    assert state.length >= 1
-    assert_basic_fields_exist_in_dumped_state(state.last)
+    assert states.length >= 1
+    states.each do |state|
+      assert_basic_fields_exist_in_dumped_state(state)
+    end
   end
 end
