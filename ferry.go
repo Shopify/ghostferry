@@ -908,6 +908,8 @@ func (f *Ferry) ReportProgress() {
 	}
 }
 
+// ReportState may have a slight performance impact as it will temporarily
+// lock the StateTracker when it is serialized before posting to the callback
 func (f *Ferry) ReportState() {
 	callback := f.Config.StateCallback
 	state, err := f.SerializeStateToJSON()
