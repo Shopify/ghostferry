@@ -216,6 +216,11 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 	}
 	config.ProgressReportFrequency = 500
 
+	config.StateCallback = ghostferry.HTTPCallback{
+		URI: fmt.Sprintf("http://localhost:%s/callbacks/state", integrationPort),
+	}
+	config.StateReportFrequency = 500
+
 	resumeStateJSON, err := ioutil.ReadAll(os.Stdin)
 	if err != nil {
 		return nil, err

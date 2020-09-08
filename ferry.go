@@ -587,6 +587,24 @@ func (f *Ferry) Run() {
 		}()
 	}
 
+	if f.Config.StateCallback.URI != "" {
+		supportingServicesWg.Add(1)
+		go func() {
+			defer supportingServicesWg.Done()
+
+			frequency := time.Duration(f.Config.StateReportFrequency) * time.Millisecond
+
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(frequency):
+					f.ReportState()
+				}
+			}
+		}()
+	}
+
 	if f.DumpStateOnSignal {
 		go func() {
 			c := make(chan os.Signal, 1)
@@ -887,6 +905,22 @@ func (f *Ferry) ReportProgress() {
 	err = callback.Post(&http.Client{})
 	if err != nil {
 		f.logger.WithError(err).Warn("failed to post status, but that's probably okay")
+	}
+}
+
+// ReportState may have a slight performance impact as it will temporarily
+// lock the StateTracker when it is serialized before posting to the callback
+func (f *Ferry) ReportState() {
+	callback := f.Config.StateCallback
+	state, err := f.SerializeStateToJSON()
+	if err != nil {
+		f.logger.Panicf("failed to serialize state to JSON: %s", err)
+	}
+
+	callback.Payload = string(state)
+	err = callback.Post(&http.Client{})
+	if err != nil {
+		f.logger.Panicf("failed to post state to callback: %s with err: %s", callback, err)
 	}
 }
 

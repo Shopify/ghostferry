@@ -33,4 +33,21 @@ class CallbacksTest < GhostferryTestCase
     refute progress.last["ETA"].nil?
     assert progress.last["TimeTaken"] > 0
   end
+
+  def test_state_callback
+    seed_simple_database_with_single_table
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+    states = []
+    ghostferry.on_callback("state") do |state_data|
+      states << state_data
+    end
+
+    ghostferry.run
+
+    assert states.length >= 1
+    states.each do |state|
+      assert_basic_fields_exist_in_dumped_state(state)
+    end
+  end
 end
