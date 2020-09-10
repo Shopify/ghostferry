@@ -5,6 +5,7 @@ import (
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math"
 	"sync"
+	"sort"
 
 	"github.com/sirupsen/logrus"
 )
@@ -52,7 +53,7 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 			// We don't need to reiterate those tables as it has already been done.
 			delete(tablesWithData, table)
 		} else {
-			d.targetPaginationKeys.Store(table.String(), maxPaginationKey)
+			d.targetPaginationKeys.Store(tableName, maxPaginationKey)
 		}
 	}
 
@@ -165,11 +166,25 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 		loggingIncrement = 1
 	}
 
-	for table, _ := range tablesWithData {
-		tablesQueue <- table
+	type kv struct {
+		Table *TableSchema
+		MaxPaginationKey uint64
+	}
+
+	sortedTableData := make([]kv, 0, len(tablesWithData))
+	for k, v := range tablesWithData {
+		sortedTableData = append(sortedTableData, kv{k, v})
+	}
+
+	sort.Slice(sortedTableData, func(i, j int) bool {
+		return sortedTableData[i].MaxPaginationKey > sortedTableData[j].MaxPaginationKey
+	})
+
+	for _, tableData := range sortedTableData {
+		tablesQueue <- tableData.Table
 		i++
 		if i%loggingIncrement == 0 {
-			d.logger.WithField("table", table.String()).Infof("queued table for processing (%d/%d)", i, len(tablesWithData))
+			d.logger.WithField("table", tableData.Table.String()).Infof("queued table for processing (%d/%d)", i, len(sortedTableData))
 		}
 	}
 
