@@ -349,7 +349,7 @@ PossibleSourceBinlogs == [{1} -> PossibleBinlogEntries]
       \* TODO: model this with TLA+ and validate its correctness.
       tblit_loop:  while (LastSuccessfulPK < MaxPrimaryKey) {
       tblit_rw:      currentRow := SourceTable[LastSuccessfulPK + 1];
-                     if (currentRow # NoRecordHere /\ TargetTable[LastSuccessfulPK + 1] = NoRecordHere) { \* TODO (NOW): This should fail because the second part of the database is not correctly constructed?
+                     if (currentRow # NoRecordHere /\ TargetTable[LastSuccessfulPK + 1] = NoRecordHere) {
                        TargetTable[LastSuccessfulPK + 1] := currentRow;
                      };
       tblit_upkey:   LastSuccessfulPK := LastSuccessfulPK + 1;
@@ -470,7 +470,7 @@ PossibleSourceBinlogs == [{1} -> PossibleBinlogEntries]
 }
 
  ***************************************************************************)
-\* BEGIN TRANSLATION - the hash of the PCal code: PCal-0fb2191b7ea3f2d9d2ddacddfb52ede1 (chksum(pcal) \in STRING /\ chksum(tla) \in STRING) (chksum(pcal) = "cad34be2" /\ chksum(tla) = "7a595238") (chksum(pcal) = "5f2f1443" /\ chksum(tla) = "7ebd37e2") (chksum(pcal) = "59302a14" /\ chksum(tla) = "7ebd37e2") (chksum(pcal) = "605b0be6" /\ chksum(tla) = "9b1e66de") (chksum(pcal) = "cccf8dab" /\ chksum(tla) = "fb6ea81b") (chksum(pcal) = "ddab7822" /\ chksum(tla) = "8c2fdca7") (chksum(pcal) = "dd200a77" /\ chksum(tla) = "108353c1") (chksum(pcal) = "dd200a77" /\ chksum(tla) = "5f47d505") PCal-88d6f264d1db8757d257b45fcc829f8a
+\* BEGIN TRANSLATION - the hash of the PCal code: PCal-88d6f264d1db8757d257b45fcc829f8a
 CONSTANT defaultInitValue
 VARIABLES MaxPrimaryKey, CurrentMaxPrimaryKey, LastSuccessfulPK, 
           ActualCopiedPK, SourceTable, TargetTable, SourceBinlog, 
@@ -781,5 +781,5 @@ BinlogSizeActionConstraint == Len(SourceBinlog) <= MaxBinlogSize
 
 =============================================================================
 \* Modification History
-\* Last modified Wed Sep 16 15:27:21 EDT 2020 by shuhao
+\* Last modified Wed Sep 16 16:07:45 EDT 2020 by shuhao
 \* Created Thu Jan 18 11:35:40 EST 2018 by shuhao
