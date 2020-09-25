@@ -43,7 +43,7 @@ try using the ``InlineVerifier``.  Alternatively, you can verify in a staging
 run and not verify during the production run (see :ref:`copydbinprod`).
 
 Note that the ``InlineVerifier`` on its own may miss some potentially
-cases, and the use of it with the ``TargetVerifier`` is recommended if it these
+cases, and using it with the ``TargetVerifier`` is recommended if these
 cases are possible.
 
 +---------------------------------------------------+---------------+---------------+-----------------+
@@ -198,4 +198,3 @@ The TargetVerifier needs to be manually stopped before cutover. If it is not sto
 it may detect writes from the application (that are not from Ghostferry) and fail the run.
 Stopping before cutover also gives the TargetVerifier the opportunity to inspect all
 of the DMLs in its ``BinlogStreamer`` queue to ensure no corruption of the data has occurred.
-
