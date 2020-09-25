@@ -6,29 +6,29 @@ Verifiers
 
 Verifiers in Ghostferry is designed to ensure that Ghostferry did not
 corrupt/miss data. There are three different verifiers: the
-``ChecksumTableVerifier``, the ``IterativeVerifier``, and the ``InlineVerifier``. A comparison of them
-are given below:
+``ChecksumTableVerifier`` and the ``InlineVerifier``. A comparison of them are
+given below:
 
-+-----------------------+-----------------------+-----------------------------+-----------------------------+
-|                       | ChecksumTableVerifier | IterativeVerifier           | InlineVerifier              |
-+-----------------------+-----------------------+-----------------------------+-----------------------------+
-|Mechanism              | ``CHECKSUM TABLE``    | Verify row before cutover;  | Verify row after insert;    |
-|                       |                       | Reverify changed rows during| Reverify changed rows before|
-|                       |                       | cutover.                    | and during cutover.         |
-+-----------------------+-----------------------+-----------------------------+-----------------------------+
-|Impacts on Cutover Time| Linear w.r.t data size| Linear w.r.t. change rate   | Linear w.r.t. change rate   |
-|                       |                       | [1]_                        | [1]_                        |
-+-----------------------+-----------------------+-----------------------------+-----------------------------+
-|Impacts on Copy Time   | None                  | Linear w.r.t data size      | Linear w.r.t data size      |
-|[2]_                   |                       |                             |                             |
-+-----------------------+-----------------------+-----------------------------+-----------------------------+
-|Memory Usage           | Minimal               | Linear w.r.t rows changed   | Linear w.r.t rows changed   |
-+-----------------------+-----------------------+-----------------------------+-----------------------------+
-|Partial table copy     | Not supported         | Supported                   | Supported                   |
-+-----------------------+-----------------------+-----------------------------+-----------------------------+
-|Worst Case Scenario    | Large databases causes| Verification is slower than | Verification is slower than |
-|                       | unacceptable downtime | the change rate of the DB;  | the change rate of the DB;  |
-+-----------------------+-----------------------+-----------------------------+-----------------------------+
++-----------------------+-----------------------+-----------------------------+
+|                       | ChecksumTableVerifier | InlineVerifier              |
++-----------------------+-----------------------+-----------------------------+
+|Mechanism              | ``CHECKSUM TABLE``    | Verify row after insert;    |
+|                       |                       | Reverify changed rows before|
+|                       |                       | and during cutover.         |
++-----------------------+-----------------------+-----------------------------+
+|Impacts on Cutover Time| Linear w.r.t data size| Linear w.r.t. change rate   |
+|                       |                       | [1]_                        |
++-----------------------+-----------------------+-----------------------------+
+|Impacts on Copy Time   | None                  | Linear w.r.t data size      |
+|[2]_                   |                       |                             |
++-----------------------+-----------------------+-----------------------------+
+|Memory Usage           | Minimal               | Linear w.r.t rows changed   |
++-----------------------+-----------------------+-----------------------------+
+|Partial table copy     | Not supported         | Supported                   |
++-----------------------+-----------------------+-----------------------------+
+|Worst Case Scenario    | Large databases causes| Verification is slower than |
+|                       | unacceptable downtime | the change rate of the DB;  |
++-----------------------+-----------------------+-----------------------------+
 
 .. [1] Additional improvements could be made to reduce this as long as
        Ghostferry is faster than the rate of change. See
@@ -39,13 +39,66 @@ are given below:
 
 If you want verification, you should try with the ``ChecksumTableVerifier``
 first if you're copying whole tables at a time. If that takes too long, you can
-try using the ``IterativeVerifier`` or ``InlineVerifier``. However, please note
-that the ``IterativeVerifier`` has been deprecated and will be removed.
-Alternatively, you can verify in a staging run and not verify during the
-production run (see :ref:`copydbinprod`).
+try using the ``InlineVerifier``.  Alternatively, you can verify in a staging
+run and not verify during the production run (see :ref:`copydbinprod`).
+
+Note that the ``InlineVerifier`` on its own may miss some potentially
+cases, and using it with the ``TargetVerifier`` is recommended if these
+cases are possible.
+
++---------------------------------------------------+---------------+---------------+-----------------+
+| Conditions                                        | ChecksumTable | Inline        | Inline + Target |
++---------------------------------------------------+---------------+---------------+-----------------+
+| Data inconsistency due to Ghostferry issuing an   | Yes [3]_      | Yes           | Yes             |
+| incorrect UPDATE on the target database (example: |               |               |                 |
+| encoding-type issues).                            |               |               |                 |
++---------------------------------------------------+---------------+---------------+-----------------+
+| Data inconsistency due to Ghostferry failing to   | Yes           | Yes           | Yes             |
+| INSERT on the target database.                    |               |               |                 |
++---------------------------------------------------+---------------+---------------+-----------------+
+| Data inconsistency due to Ghostferry failing to   | Yes           | Yes           | Yes             |
+| DELETE on the target database.                    |               |               |                 |
++---------------------------------------------------+---------------+---------------+-----------------+
+| Data inconsistency due to rogue application       | Yes           | Sometimes [4]_| Yes             |
+| issuing writes (INSERT/UPDATE/DELETE) against the |               |               |                 |
+| target database.                                  |               |               |                 |
++---------------------------------------------------+---------------+---------------+-----------------+
+| Data inconsistency due to missing binlog events   | Yes           | Sometimes [5]_| Sometimes [5]_  |
+| when Ghostferry is resumed from the wrong         |               |               |                 |
+| binlog coordinates.                               |               |               |                 |
++---------------------------------------------------+---------------+---------------+-----------------+
+| Data inconsistency if Ghostferry's Binlog writing | Yes           | Probably not  | Probably not    |
+| implementation is incorrect and modified the      |               | [6]_          | [6]_            |
+| wrong row on the target (example, an UPDATE is    |               |               |                 |
+| supposed to go to id = 1 but Ghostferry instead   |               |               |                 |
+| issued a query for id = 2). This is an unrealistic|               |               |                 |
+| scenario, but is included for illustrative        |               |               |                 |
+| purposes.                                         |               |               |                 |
++---------------------------------------------------+---------------+---------------+-----------------+
+
+
+.. [3] Note that the CHECKSUM TABLE statement is broken in MySQL 5.7 for tables
+       with JSON columns. These tables will result in a false positive event:
+       even if two tables are identical, they can emit different checksums. See
+       https://bugs.mysql.com/bug.php?id=87847. This applies to every row in
+       this table.
+
+.. [4] If the rows modified by the the rogue application is modified again on
+       the source after Ghostferry starts, the InlineVerifier's binlog tailer
+       should pick up that row and attempt to reverify it.
+
+.. [5] If the rows missed after resume is modified again on the source after
+       Ghostferry starts, the InlineVerifier's binlog tailer should pick up
+       that row and attempt to reverify it.
+
+.. [6] If the implementation of the Ghostferry algorithm is so broken, chances
+       are the InlineVerifier won't catch it either as it relies on the same
+       algorithm to enumerate the table and tail the binlogs.
 
 IterativeVerifier (Deprecated)
 -----------------
+
+**NOTE! This is a deprecated verifier. Use the InlineVerifier instead.**
 
 IterativeVerifier verifies the source and target in a couple of steps:
 
@@ -145,4 +198,3 @@ The TargetVerifier needs to be manually stopped before cutover. If it is not sto
 it may detect writes from the application (that are not from Ghostferry) and fail the run.
 Stopping before cutover also gives the TargetVerifier the opportunity to inspect all
 of the DMLs in its ``BinlogStreamer`` queue to ensure no corruption of the data has occurred.
-

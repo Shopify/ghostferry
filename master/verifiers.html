@@ -38,26 +38,21 @@
 <span id="id1"></span><h1>Verifiers<a class="headerlink" href="#verifiers" title="Permalink to this headline">¶</a></h1>
 <p>Verifiers in Ghostferry is designed to ensure that Ghostferry did not
 corrupt/miss data. There are three different verifiers: the
-<code class="docutils literal notranslate"><span class="pre">ChecksumTableVerifier</span></code>, the <code class="docutils literal notranslate"><span class="pre">IterativeVerifier</span></code>, and the <code class="docutils literal notranslate"><span class="pre">InlineVerifier</span></code>. A comparison of them
-are given below:</p>
+<code class="docutils literal notranslate"><span class="pre">ChecksumTableVerifier</span></code> and the <code class="docutils literal notranslate"><span class="pre">InlineVerifier</span></code>. A comparison of them are
+given below:</p>
 <table border="1" class="docutils">
 <colgroup>
-<col width="22%" />
-<col width="22%" />
-<col width="28%" />
-<col width="28%" />
+<col width="31%" />
+<col width="31%" />
+<col width="39%" />
 </colgroup>
 <tbody valign="top">
 <tr class="row-odd"><td>&#160;</td>
 <td>ChecksumTableVerifier</td>
-<td>IterativeVerifier</td>
 <td>InlineVerifier</td>
 </tr>
 <tr class="row-even"><td>Mechanism</td>
 <td><code class="docutils literal notranslate"><span class="pre">CHECKSUM</span> <span class="pre">TABLE</span></code></td>
-<td>Verify row before cutover;
-Reverify changed rows during
-cutover.</td>
 <td>Verify row after insert;
 Reverify changed rows before
 and during cutover.</td>
@@ -65,24 +60,19 @@ and during cutover.</td>
 <tr class="row-odd"><td>Impacts on Cutover Time</td>
 <td>Linear w.r.t data size</td>
 <td>Linear w.r.t. change rate
-<a class="footnote-reference" href="#id5" id="id2">[1]</a></td>
-<td>Linear w.r.t. change rate
-<a class="footnote-reference" href="#id5" id="id3">[1]</a></td>
+<a class="footnote-reference" href="#id4" id="id2">[1]</a></td>
 </tr>
 <tr class="row-even"><td>Impacts on Copy Time
-<a class="footnote-reference" href="#id6" id="id4">[2]</a></td>
+<a class="footnote-reference" href="#id5" id="id3">[2]</a></td>
 <td>None</td>
-<td>Linear w.r.t data size</td>
 <td>Linear w.r.t data size</td>
 </tr>
 <tr class="row-odd"><td>Memory Usage</td>
 <td>Minimal</td>
 <td>Linear w.r.t rows changed</td>
-<td>Linear w.r.t rows changed</td>
 </tr>
 <tr class="row-even"><td>Partial table copy</td>
 <td>Not supported</td>
-<td>Supported</td>
 <td>Supported</td>
 </tr>
 <tr class="row-odd"><td>Worst Case Scenario</td>
@@ -90,34 +80,129 @@ and during cutover.</td>
 unacceptable downtime</td>
 <td>Verification is slower than
 the change rate of the DB;</td>
-<td>Verification is slower than
-the change rate of the DB;</td>
 </tr>
+</tbody>
+</table>
+<table class="docutils footnote" frame="void" id="id4" rules="none">
+<colgroup><col class="label" /><col /></colgroup>
+<tbody valign="top">
+<tr><td class="label"><a class="fn-backref" href="#id2">[1]</a></td><td>Additional improvements could be made to reduce this as long as
+Ghostferry is faster than the rate of change. See
+<a class="reference external" href="https://github.com/Shopify/ghostferry/issues/13">https://github.com/Shopify/ghostferry/issues/13</a>.</td></tr>
 </tbody>
 </table>
 <table class="docutils footnote" frame="void" id="id5" rules="none">
 <colgroup><col class="label" /><col /></colgroup>
 <tbody valign="top">
-<tr><td class="label">[1]</td><td><em>(<a class="fn-backref" href="#id2">1</a>, <a class="fn-backref" href="#id3">2</a>)</em> Additional improvements could be made to reduce this as long as
-Ghostferry is faster than the rate of change. See
-<a class="reference external" href="https://github.com/Shopify/ghostferry/issues/13">https://github.com/Shopify/ghostferry/issues/13</a>.</td></tr>
-</tbody>
-</table>
-<table class="docutils footnote" frame="void" id="id6" rules="none">
-<colgroup><col class="label" /><col /></colgroup>
-<tbody valign="top">
-<tr><td class="label"><a class="fn-backref" href="#id4">[2]</a></td><td>Increase in copy time does not increase downtime. Downtime occurs only
+<tr><td class="label"><a class="fn-backref" href="#id3">[2]</a></td><td>Increase in copy time does not increase downtime. Downtime occurs only
 in cutover.</td></tr>
 </tbody>
 </table>
 <p>If you want verification, you should try with the <code class="docutils literal notranslate"><span class="pre">ChecksumTableVerifier</span></code>
 first if you’re copying whole tables at a time. If that takes too long, you can
-try using the <code class="docutils literal notranslate"><span class="pre">IterativeVerifier</span></code> or <code class="docutils literal notranslate"><span class="pre">InlineVerifier</span></code>. However, please note
-that the <code class="docutils literal notranslate"><span class="pre">IterativeVerifier</span></code> has been deprecated and will be removed.
-Alternatively, you can verify in a staging run and not verify during the
-production run (see <a class="reference internal" href="copydbinprod.html#copydbinprod"><span class="std std-ref">Running ghostferry-copydb in production</span></a>).</p>
+try using the <code class="docutils literal notranslate"><span class="pre">InlineVerifier</span></code>.  Alternatively, you can verify in a staging
+run and not verify during the production run (see <a class="reference internal" href="copydbinprod.html#copydbinprod"><span class="std std-ref">Running ghostferry-copydb in production</span></a>).</p>
+<p>Note that the <code class="docutils literal notranslate"><span class="pre">InlineVerifier</span></code> on its own may miss some potentially
+cases, and using it with the <code class="docutils literal notranslate"><span class="pre">TargetVerifier</span></code> is recommended if these
+cases are possible.</p>
+<table border="1" class="docutils">
+<colgroup>
+<col width="52%" />
+<col width="15%" />
+<col width="15%" />
+<col width="17%" />
+</colgroup>
+<tbody valign="top">
+<tr class="row-odd"><td>Conditions</td>
+<td>ChecksumTable</td>
+<td>Inline</td>
+<td>Inline + Target</td>
+</tr>
+<tr class="row-even"><td>Data inconsistency due to Ghostferry issuing an
+incorrect UPDATE on the target database (example:
+encoding-type issues).</td>
+<td>Yes <a class="footnote-reference" href="#id12" id="id6">[3]</a></td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr class="row-odd"><td>Data inconsistency due to Ghostferry failing to
+INSERT on the target database.</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr class="row-even"><td>Data inconsistency due to Ghostferry failing to
+DELETE on the target database.</td>
+<td>Yes</td>
+<td>Yes</td>
+<td>Yes</td>
+</tr>
+<tr class="row-odd"><td>Data inconsistency due to rogue application
+issuing writes (INSERT/UPDATE/DELETE) against the
+target database.</td>
+<td>Yes</td>
+<td>Sometimes <a class="footnote-reference" href="#id13" id="id7">[4]</a></td>
+<td>Yes</td>
+</tr>
+<tr class="row-even"><td>Data inconsistency due to missing binlog events
+when Ghostferry is resumed from the wrong
+binlog coordinates.</td>
+<td>Yes</td>
+<td>Sometimes <a class="footnote-reference" href="#id14" id="id8">[5]</a></td>
+<td>Sometimes <a class="footnote-reference" href="#id14" id="id9">[5]</a></td>
+</tr>
+<tr class="row-odd"><td>Data inconsistency if Ghostferry’s Binlog writing
+implementation is incorrect and modified the
+wrong row on the target (example, an UPDATE is
+supposed to go to id = 1 but Ghostferry instead
+issued a query for id = 2). This is an unrealistic
+scenario, but is included for illustrative
+purposes.</td>
+<td>Yes</td>
+<td>Probably not
+<a class="footnote-reference" href="#id15" id="id10">[6]</a></td>
+<td>Probably not
+<a class="footnote-reference" href="#id15" id="id11">[6]</a></td>
+</tr>
+</tbody>
+</table>
+<table class="docutils footnote" frame="void" id="id12" rules="none">
+<colgroup><col class="label" /><col /></colgroup>
+<tbody valign="top">
+<tr><td class="label"><a class="fn-backref" href="#id6">[3]</a></td><td>Note that the CHECKSUM TABLE statement is broken in MySQL 5.7 for tables
+with JSON columns. These tables will result in a false positive event:
+even if two tables are identical, they can emit different checksums. See
+<a class="reference external" href="https://bugs.mysql.com/bug.php?id=87847">https://bugs.mysql.com/bug.php?id=87847</a>. This applies to every row in
+this table.</td></tr>
+</tbody>
+</table>
+<table class="docutils footnote" frame="void" id="id13" rules="none">
+<colgroup><col class="label" /><col /></colgroup>
+<tbody valign="top">
+<tr><td class="label"><a class="fn-backref" href="#id7">[4]</a></td><td>If the rows modified by the the rogue application is modified again on
+the source after Ghostferry starts, the InlineVerifier’s binlog tailer
+should pick up that row and attempt to reverify it.</td></tr>
+</tbody>
+</table>
+<table class="docutils footnote" frame="void" id="id14" rules="none">
+<colgroup><col class="label" /><col /></colgroup>
+<tbody valign="top">
+<tr><td class="label">[5]</td><td><em>(<a class="fn-backref" href="#id8">1</a>, <a class="fn-backref" href="#id9">2</a>)</em> If the rows missed after resume is modified again on the source after
+Ghostferry starts, the InlineVerifier’s binlog tailer should pick up
+that row and attempt to reverify it.</td></tr>
+</tbody>
+</table>
+<table class="docutils footnote" frame="void" id="id15" rules="none">
+<colgroup><col class="label" /><col /></colgroup>
+<tbody valign="top">
+<tr><td class="label">[6]</td><td><em>(<a class="fn-backref" href="#id10">1</a>, <a class="fn-backref" href="#id11">2</a>)</em> If the implementation of the Ghostferry algorithm is so broken, chances
+are the InlineVerifier won’t catch it either as it relies on the same
+algorithm to enumerate the table and tail the binlogs.</td></tr>
+</tbody>
+</table>
 <div class="section" id="iterativeverifier-deprecated">
 <h2>IterativeVerifier (Deprecated)<a class="headerlink" href="#iterativeverifier-deprecated" title="Permalink to this headline">¶</a></h2>
+<p><strong>NOTE! This is a deprecated verifier. Use the InlineVerifier instead.</strong></p>
 <p>IterativeVerifier verifies the source and target in a couple of steps:</p>
 <ol class="arabic simple">
 <li>After the data copy, it first compares the hashes of each applicable rows
