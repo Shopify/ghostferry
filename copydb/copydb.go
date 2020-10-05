@@ -22,9 +22,10 @@ func NewFerry(config *Config) *CopydbFerry {
 	}
 
 	controlServer := &ghostferry.ControlServer{
-		F:       ferry,
-		Addr:    config.ServerBindAddr,
-		Basedir: config.WebBasedir,
+		F:             ferry,
+		Addr:          config.ServerBindAddr,
+		Basedir:       config.WebBasedir,
+		CustomScripts: config.ControlServerCustomScripts,
 	}
 
 	return &CopydbFerry{

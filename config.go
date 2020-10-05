@@ -439,6 +439,13 @@ type Config struct {
 	ServerBindAddr string
 	WebBasedir     string
 
+	// TODO: refactor control server config out of the base ferry at some point
+	// This adds optional buttons in the web ui that runs a script located at the
+	// path specified.
+	// The format is "script name" => ["path to script", "arg1", "arg2"]. The script name
+	// will be displayed on the web ui.
+	ControlServerCustomScripts map[string][]string
+
 	// Report progress via an HTTP callback. The Payload field of the callback
 	// will be sent to the server as the CustomPayload field in the Progress
 	// struct. The unit of ProgressReportFrequency is in milliseconds.
