@@ -54,6 +54,11 @@ type StatusDeprecated struct {
 	VerificationDone    bool
 	VerificationResult  VerificationResult
 	VerificationErr     error
+
+	// TODO: this is populated by the control server. Clearly this all needs a refactor.
+	CustomScriptsNames  []string
+	CustomScriptsStatus map[string]string
+	CustomScriptsLogs   map[string]string
 }
 
 func FetchStatusDeprecated(f *Ferry, v Verifier) *StatusDeprecated {
