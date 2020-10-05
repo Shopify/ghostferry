@@ -128,41 +128,74 @@
       </div>
     </div>
 
-      <div class="row">
-        <div class="twelve columns">
-          <!-- NOTE: there are not CSRF protection against these routes -->
-          {{if .VerifierAvailable}}
-            <form action="/api/actions/verify" method="POST">
-              <input type="submit" class="button-primary" value="Run Verification" />
-            </form>
+    <div class="row">
+      <div class="twelve columns">
+        <!-- NOTE: there are not CSRF protection against these routes -->
+        {{if .VerifierAvailable}}
+          <form action="/api/actions/verify" method="POST">
+            <input type="submit" class="button-primary" value="Run Verification" />
+          </form>
+        {{end}}
+
+        {{if not (eq .OverallState "done")}}
+          <form action="/api/actions/pause" method="POST">
+            <input type="submit" value="Pause" />
+          </form>
+          <form action="/api/actions/unpause" method="POST">
+            <input type="submit" value="Unpause" />
+          </form>
+
+          {{if .AutomaticCutover}}
+          <form action="/api/actions/cutover?type=manual" method="POST">
+            <input type="submit" value="Disallow Automatic Cutover" />
+          </form>
+          {{else}}
+          <form action="/api/actions/cutover?type=automatic" method="POST">
+            <input type="submit" class="button-destroy" value="Allow Automatic Cutover" />
+          </form>
           {{end}}
 
-          {{if not (eq .OverallState "done")}}
-            <form action="/api/actions/pause" method="POST">
-              <input type="submit" value="Pause" />
-            </form>
-            <form action="/api/actions/unpause" method="POST">
-              <input type="submit" value="Unpause" />
-            </form>
-
-            {{if .AutomaticCutover}}
-            <form action="/api/actions/cutover?type=manual" method="POST">
-              <input type="submit" value="Disallow Automatic Cutover" />
-            </form>
-            {{else}}
-            <form action="/api/actions/cutover?type=automatic" method="POST">
-              <input type="submit" class="button-destroy" value="Allow Automatic Cutover" />
-            </form>
-            {{end}}
-
-            <!--
-            <form action="/api/actions/stop" method="POST">
-              <input type="submit" class="button-destroy" value="Emergency Stop" />
-            </form>
-            -->
-          {{end}}
-        </div>
+          <!--
+          <form action="/api/actions/stop" method="POST">
+            <input type="submit" class="button-destroy" value="Emergency Stop" />
+          </form>
+          -->
+        {{end}}
       </div>
+    </div>
+
+    {{if .CustomScriptsNames}}
+    <div class="row">
+      <div class="twelve columns">
+        <h4>Custom Scripts</h4>
+        <table class="u-full-width">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Action</th>
+              <th>Status</th>
+              <th>Logs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range $name := .CustomScriptsNames}}
+            <tr>
+              <td>{{ $name }}</td>
+              <td>
+                <form action="/api/actions/script" method="POST">
+                  <input type="hidden" name="script" value="{{$name}}" />
+                  <input type="submit" value="Run" />
+                </form>
+              </td>
+              <td>{{index $.CustomScriptsStatus $name}}</td>
+              <td><details><pre>{{index $.CustomScriptsLogs $name}}</pre></details></td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {{end}}
 
     <div class="row">
       <div class="twelve columns">
