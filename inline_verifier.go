@@ -287,14 +287,14 @@ func (v *InlineVerifier) Result() (VerificationResultAndStatus, error) {
 	return v.backgroundVerificationResultAndStatus, v.backgroundVerificationErr
 }
 
-func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, targetTable string, sourceBatch *RowBatch) ([]uint64, error) {
+func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, targetTable string, sourceBatch *RowBatch) error {
 	table := sourceBatch.TableSchema()
 
 	paginationKeys := make([]uint64, len(sourceBatch.Values()))
 	for i, row := range sourceBatch.Values() {
 		paginationKey, err := row.GetUint64(sourceBatch.PaginationKeyIndex())
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		paginationKeys[i] = paginationKey
@@ -303,7 +303,7 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, target
 	// Fetch target data
 	targetFingerprints, targetDecompressedData, err := v.getFingerprintDataFromTargetDb(targetSchema, targetTable, tx, table, paginationKeys)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Fetch source data
@@ -313,7 +313,7 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, target
 	for _, rowData := range sourceBatch.Values() {
 		paginationKey, err := rowData.GetUint64(sourceBatch.PaginationKeyIndex())
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		sourceDecompressedData[paginationKey] = make(map[string][]byte)
@@ -326,14 +326,24 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, target
 
 			compressedData, ok = rowData[idx].([]byte)
 			if !ok {
-				return nil, fmt.Errorf("cannot convert column %v to []byte", col.Name)
+				return fmt.Errorf("cannot convert column %v to []byte", col.Name)
 			}
 
 			sourceDecompressedData[paginationKey][col.Name], err = v.decompressData(table, col.Name, compressedData)
 		}
 	}
 
-	return v.compareHashesAndData(sourceFingerprints, targetFingerprints, sourceDecompressedData, targetDecompressedData), nil
+	mismatches := v.compareHashesAndData(sourceFingerprints, targetFingerprints, sourceDecompressedData, targetDecompressedData)
+
+	for _, mismatchedPk := range mismatches {
+		v.reverifyStore.Add(table, mismatchedPk)
+	}
+
+	if len(mismatches) > 0 {
+		v.logger.WithField("mismatches", mismatches).Info("inline verification during data copy noticed mismatched pk, which is okay (issue 149)")
+	}
+
+	return nil
 }
 
 func (v *InlineVerifier) PeriodicallyVerifyBinlogEvents(ctx context.Context) {

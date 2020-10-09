@@ -95,15 +95,10 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 		}
 
 		if w.InlineVerifier != nil {
-			mismatches, err := w.InlineVerifier.CheckFingerprintInline(tx, db, table, batch)
+			err := w.InlineVerifier.CheckFingerprintInline(tx, db, table, batch)
 			if err != nil {
 				tx.Rollback()
 				return fmt.Errorf("during fingerprint checking for paginationKey %v -> %v (%s): %v", startPaginationKeypos, endPaginationKeypos, query, err)
-			}
-
-			if len(mismatches) > 0 {
-				tx.Rollback()
-				return BatchWriterVerificationFailed{mismatches, batch.TableSchema().String()}
 			}
 		}
 

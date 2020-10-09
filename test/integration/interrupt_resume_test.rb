@@ -538,4 +538,139 @@ class InterruptResumeTest < GhostferryTestCase
     assert_test_table_is_identical
     assert_ghostferry_completed(ghostferry, times: 1)
   end
+
+  # https://github.com/Shopify/ghostferry/issues/149
+  def test_issue_149_correct
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+
+    # Writes one batch
+    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      ghostferry.send_signal("TERM")
+    end
+
+    dumped_state = ghostferry.run_expecting_interrupt
+    assert_basic_fields_exist_in_dumped_state(dumped_state)
+
+    last_pk = dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]
+    assert last_pk > 200
+
+    # We need to rewind the state backwards, and then change that row on the
+    # source. We also need to block the binlog streamer to prevent writing to
+    # the target until that row is copied by the BatchWriter. This ensures the
+    # following behaviour is tested:
+    #
+    # The data copier should try to INSERT IGNORE the changed row, which should
+    # have no effect on the target. It then should perform a CHECKSUM, which
+    # should not fail and should add to the verify queue and keep checking until
+    # cutover.  Eventually, the binlog streamer will be unblocked and then it will
+    # apply the insert. The verification status should be correct.
+    id_to_change = source_db.query("SELECT id FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id <= #{last_pk} ORDER BY id DESC LIMIT 1").first["id"]
+    assert id_to_change > 2, "the last row of the batch should have an id of greater than 2, not #{id_to_change}"
+    source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'changed' WHERE id = #{id_to_change}")
+
+    data_changed = source_db.query("SELECT data FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{id_to_change}").first["data"]
+    assert_equal "changed", data_changed
+
+    dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"] = id_to_change - 1
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+    changed_row_copied = false
+    start_time = Time.now
+
+    ghostferry.on_status(Ghostferry::Status::BEFORE_BINLOG_APPLY) do
+      until changed_row_copied
+        raise "timedout waiting for the first batch row to be copied" if Time.now - start_time > 10
+        sleep 0.1
+      end
+    end
+
+    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      changed_row_copied = true
+    end
+
+    ghostferry.on_callback("error") do |err|
+      raise "Ghostferry crashed with this error: #{err}"
+    end
+
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
+
+    ghostferry.run(dumped_state)
+
+    assert verification_ran
+    assert_equal 0, incorrect_tables.length
+    assert_test_table_is_identical
+
+    target_data = target_db.query("SELECT data FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{id_to_change}").first["data"]
+    assert_equal "changed", target_data
+  end
+
+  # https://github.com/Shopify/ghostferry/issues/149
+  def test_issue_149_corrupted
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+
+    # Writes one batch
+    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      ghostferry.send_signal("TERM")
+    end
+
+    dumped_state = ghostferry.run_expecting_interrupt
+    assert_basic_fields_exist_in_dumped_state(dumped_state)
+
+    last_pk = dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]
+    assert last_pk > 200
+
+    # This should be similar to test_issue_149_correct, except we force the
+    # BinlogStremer to corrupt the data on the target. We need to check that
+    # the InlineVerifier indeed fails this run, if a corruption happens on the
+    # row this race condition exists for.
+    id_to_change = source_db.query("SELECT id FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id <= #{last_pk} ORDER BY id DESC LIMIT 1").first["id"]
+    assert id_to_change > 2, "the last row of the batch should have an id of greater than 2, not #{id_to_change}"
+    source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'changed' WHERE id = #{id_to_change}")
+    target_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'corrupted' WHERE id = #{id_to_change}")
+
+    data_changed = source_db.query("SELECT data FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{id_to_change}").first["data"]
+    assert_equal "changed", data_changed
+
+    data_corrupted = target_db.query("SELECT data FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{id_to_change}").first["data"]
+    assert_equal "corrupted", data_corrupted
+
+    dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"] = id_to_change - 1
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+    changed_row_copied = false
+    start_time = Time.now
+
+    ghostferry.on_status(Ghostferry::Status::BEFORE_BINLOG_APPLY) do
+      until changed_row_copied
+        raise "timedout waiting for the first batch row to be copied" if Time.now - start_time > 10
+        sleep 0.1
+      end
+    end
+
+    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      changed_row_copied = true
+    end
+
+    ghostferry.on_callback("error") do |err|
+      raise "Ghostferry crashed with this error: #{err}"
+    end
+
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
+
+    ghostferry.run(dumped_state)
+
+    assert verification_ran
+    assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
+    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: #{id_to_change} ] ", ghostferry.error_lines.last["msg"]
+  end
 end

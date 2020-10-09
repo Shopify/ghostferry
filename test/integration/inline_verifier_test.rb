@@ -28,15 +28,19 @@ class InlineVerifierTest < GhostferryTestCase
     enable_corrupting_insert_trigger(corrupting_id)
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
-    ghostferry.run_expecting_interrupt
 
-    refute_nil ghostferry.error
-    err_msg = ghostferry.error["ErrMessage"]
-    assert err_msg.include?("row fingerprints for paginationKeys [#{corrupting_id}] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
 
-    # Make sure it is not inserted into the target
-    results = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{corrupting_id}")
-    assert_equal 0, results.count
+    ghostferry.run
+
+    assert verification_ran
+    assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
+    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: #{corrupting_id} ] ", ghostferry.error_lines.last["msg"]
   end
 
   def test_different_compressed_data_is_detected_inline_with_batch_writer
@@ -52,11 +56,19 @@ class InlineVerifierTest < GhostferryTestCase
     target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, _binary'#{compressed_data2}')")
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline", compressed_data: true })
-    ghostferry.run_expecting_interrupt
 
-    refute_nil ghostferry.error
-    err_msg = ghostferry.error["ErrMessage"]
-    assert err_msg.include?("row fingerprints for paginationKeys [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
+
+    ghostferry.run
+
+    assert verification_ran
+    assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
+    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: 1 ] ", ghostferry.error_lines.last["msg"]
   end
 
   def test_same_decompressed_data_different_compressed_test_passes_inline_verification
@@ -72,9 +84,17 @@ class InlineVerifierTest < GhostferryTestCase
     target_db.prepare("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (?, ?)").execute(1, compressed_data2)
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline", compressed_data: true })
+
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
     ghostferry.run
 
-    assert_nil ghostferry.error
+    assert verification_ran
+    assert_equal [], incorrect_tables
   end
 
   def test_different_data_in_ignored_column_passes_inline_verification
@@ -92,8 +112,17 @@ class InlineVerifierTest < GhostferryTestCase
       source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'data3' WHERE id = 1")
     end
 
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
+
     ghostferry.run
-    assert_nil ghostferry.error
+
+    assert verification_ran
+    assert_equal [], incorrect_tables
 
     rows = source_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME}")
     assert_equal 1, rows.count
@@ -153,8 +182,18 @@ class InlineVerifierTest < GhostferryTestCase
       target_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'data5' WHERE id = #{corrupting_id}", exclude_marginalia: true)
     end
 
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
+
     ghostferry.run
+
     assert_nil ghostferry.error
+    assert verification_ran
+    assert_equal [], incorrect_tables
   end
 
   def test_target_corruption_is_detected
@@ -196,8 +235,18 @@ class InlineVerifierTest < GhostferryTestCase
       target_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'data3' WHERE id = #{corrupting_id}")
     end
 
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
+
     ghostferry.run
+
     assert_nil ghostferry.error
+    assert verification_ran
+    assert_equal [], incorrect_tables
   end
 
   def test_target_modification_with_different_annotation
@@ -245,8 +294,18 @@ class InlineVerifierTest < GhostferryTestCase
       )
     end
 
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
+
     ghostferry.run
+
     assert_nil ghostferry.error
+    assert verification_ran
+    assert_equal [], incorrect_tables
   end
 
   def test_target_modification_with_incorrect_annotation_order
@@ -359,10 +418,19 @@ class InlineVerifierTest < GhostferryTestCase
     target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, 1.0)")
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
-    ghostferry.run_expecting_interrupt
-    refute_nil ghostferry.error
-    err_msg = ghostferry.error["ErrMessage"]
-    assert err_msg.include?("row fingerprints for paginationKeys [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
+
+    ghostferry.run
+
+    assert verification_ran
+    assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
+    assert_equal "cutover verification failed for: #{DEFAULT_DB}.#{DEFAULT_TABLE} [paginationKeys: 1 ] ", ghostferry.error_lines.last["msg"]
 
     # Now we run the real test case.
     target_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = -0.0 WHERE id = 1")
@@ -404,10 +472,19 @@ class InlineVerifierTest < GhostferryTestCase
     target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, '')")
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
-    ghostferry.run_expecting_interrupt
-    refute_nil ghostferry.error
-    err_msg = ghostferry.error["ErrMessage"]
-    assert err_msg.include?("row fingerprints for paginationKeys [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
+
+    ghostferry.run
+
+    assert verification_ran
+    assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
+    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: 1 ] ", ghostferry.error_lines.last["msg"]
   end
 
   def test_null_vs_null_string
@@ -418,10 +495,19 @@ class InlineVerifierTest < GhostferryTestCase
     target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, 'NULL')")
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
-    ghostferry.run_expecting_interrupt
-    refute_nil ghostferry.error
-    err_msg = ghostferry.error["ErrMessage"]
-    assert err_msg.include?("row fingerprints for paginationKeys [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
+
+    ghostferry.run
+
+    assert verification_ran
+    assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
+    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: 1 ] ", ghostferry.error_lines.last["msg"]
   end
 
   def test_null_in_different_order
@@ -435,10 +521,19 @@ class InlineVerifierTest < GhostferryTestCase
     target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, 'data', NULL)")
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
-    ghostferry.run_expecting_interrupt
-    refute_nil ghostferry.error
-    err_msg = ghostferry.error["ErrMessage"]
-    assert err_msg.include?("row fingerprints for paginationKeys [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
+
+    ghostferry.run
+
+    assert verification_ran
+    assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
+    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: 1 ] ", ghostferry.error_lines.last["msg"]
   end
 
   ###################
@@ -503,11 +598,11 @@ class InlineVerifierTest < GhostferryTestCase
         assert_equal data, row["data"]
       end
     else
-      ghostferry.run_expecting_interrupt
+      ghostferry.run
 
-      refute_nil ghostferry.error
-      err_msg = ghostferry.error["ErrMessage"]
-      assert err_msg.include?("row fingerprints for paginationKeys [1] on #{DEFAULT_DB}.#{DEFAULT_TABLE} do not match"), message: err_msg
+      assert verify_during_cutover_ran
+      assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
+      assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: 1 ] ", ghostferry.error_lines.last["msg"]
     end
   end
 
