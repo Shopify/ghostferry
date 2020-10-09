@@ -819,6 +819,10 @@ func (f *Ferry) SerializeStateToJSON() (string, error) {
 
 	serializedState := f.StateTracker.Serialize(f.Tables, binlogVerifyStore)
 
+	if f.Config.DoNotIncludeSchemaCacheInStateDump {
+		serializedState.LastKnownTableSchemaCache = nil
+	}
+
 	stateBytes, err := json.MarshalIndent(serializedState, "", " ")
 	return string(stateBytes), err
 }
