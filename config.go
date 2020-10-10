@@ -435,6 +435,11 @@ type Config struct {
 	// The dumped state can be used to resume Ghostferry.
 	DumpStateOnSignal bool
 
+	// This excludes schema cache from the state dump in both the HTTP callback
+	// and the stdout dumping. This may save a lot of space if you don't need
+	// to deal with schema migrations.
+	DoNotIncludeSchemaCacheInStateDump bool
+
 	// Config for the ControlServer
 	ServerBindAddr string
 	WebBasedir     string
