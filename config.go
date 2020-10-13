@@ -62,6 +62,10 @@ type DatabaseConfig struct {
 	Params    map[string]string
 	TLS       *TLSConfig
 
+	ConnMaxLifetime time.Duration
+	MaxOpenConns    int
+	MaxIdleConns    int
+
 	// SQL annotations used to differentiate Ghostferry's DMLs
 	// against other actor's. This will default to the defaultMarginalia
 	// constant above if not set.
@@ -146,6 +150,18 @@ func (c *DatabaseConfig) Validate() error {
 		c.Marginalia = DefaultMarginalia
 	}
 
+	if c.ConnMaxLifetime == 0 {
+		c.ConnMaxLifetime = 3 * time.Minute
+	}
+
+	if c.MaxOpenConns == 0 {
+		c.MaxOpenConns = 64
+	}
+
+	if c.MaxIdleConns == 0 {
+		c.MaxIdleConns = 64
+	}
+
 	return nil
 }
 
@@ -159,7 +175,16 @@ func (c *DatabaseConfig) SqlDB(logger *logrus.Entry) (*sql.DB, error) {
 		logger.WithField("dsn", MaskedDSN(dbCfg)).Info("connecting to database")
 	}
 
-	return sql.Open("mysql", dbCfg.FormatDSN(), c.Marginalia)
+	db, err := sql.Open("mysql", dbCfg.FormatDSN(), c.Marginalia)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to database: %s", err)
+	}
+
+	db.SetConnMaxLifetime(c.ConnMaxLifetime)
+	db.SetMaxOpenConns(c.MaxOpenConns)
+	db.SetMaxIdleConns(c.MaxIdleConns)
+
+	return db, nil
 }
 
 func (c *DatabaseConfig) assertParamSet(param, value string) error {
