@@ -76,18 +76,18 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 }
 
 func (r *ShardingFerry) Initialize() error {
-	err := r.Ferry.Initialize()
-	if err != nil {
-		r.Ferry.ErrorHandler.ReportError("ferry.initialize", err)
-		return err
-	}
-
 	if r.config.RunFerryFromReplica {
 		err := r.initializeWaitUntilReplicaIsCaughtUpToMasterConnection()
 		if err != nil {
 			r.logger.WithField("error", err).Errorf("could not open connection to master replica")
 			return err
 		}
+	}
+
+	err := r.Ferry.Initialize()
+	if err != nil {
+		r.Ferry.ErrorHandler.ReportError("ferry.initialize", err)
+		return err
 	}
 
 	return nil
