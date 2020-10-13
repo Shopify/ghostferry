@@ -43,7 +43,7 @@ func (c *Config) ValidateConfig() error {
 		c.CutoverRetryWaitSeconds = 1
 	}
 
-	if c.SourceReplicationMaster != nil {
+	if c.RunFerryFromReplica && c.SourceReplicationMaster != nil {
 		if err := c.SourceReplicationMaster.Validate(); err != nil {
 			return err
 		}
