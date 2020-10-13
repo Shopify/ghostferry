@@ -79,6 +79,9 @@ func (c *DatabaseConfig) MySQLConfig() (*mysql.Config, error) {
 		addr = c.Host
 	} else {
 		addr = fmt.Sprintf("%s:%d", c.Host, c.Port)
+		if c.Net == "" {
+			c.Net = DefaultNet
+		}
 	}
 
 	cfg := &mysql.Config{
