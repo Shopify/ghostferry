@@ -101,6 +101,12 @@ func (c *Config) InitializeAndValidateConfig() error {
 		}
 	}
 
+	if c.RunFerryFromReplica && c.SourceReplicationMaster != nil {
+		if err := c.SourceReplicationMaster.Validate(); err != nil {
+			return err
+		}
+	}
+
 	if err := c.Config.ValidateConfig(); err != nil {
 		return err
 	}

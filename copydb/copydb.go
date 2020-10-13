@@ -35,16 +35,16 @@ func NewFerry(config *Config) *CopydbFerry {
 }
 
 func (this *CopydbFerry) Initialize() error {
-	err := this.Ferry.Initialize()
-	if err != nil {
-		return err
-	}
-
 	if this.config.RunFerryFromReplica {
 		err := this.initializeWaitUntilReplicaIsCaughtUpToMasterConnection()
 		if err != nil {
 			return err
 		}
+	}
+
+	err := this.Ferry.Initialize()
+	if err != nil {
+		return err
 	}
 
 	this.controlServer.Verifier = this.Ferry.Verifier
