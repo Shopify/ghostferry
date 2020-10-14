@@ -224,7 +224,7 @@ module GhostferryHelper
 
       @server.mount_proc "/callbacks/error" do |req, resp|
         @error = JSON.parse(JSON.parse(req.body)["Payload"])
-        @callback_handlers["error"].each { |f| f.call(@error) } unless @callback_handlers["state"].nil?
+        @callback_handlers["error"].each { |f| f.call(@error) } unless @callback_handlers["error"].nil?
       end
 
       @server_thread = Thread.new do

@@ -287,7 +287,7 @@ func (v *InlineVerifier) Result() (VerificationResultAndStatus, error) {
 	return v.backgroundVerificationResultAndStatus, v.backgroundVerificationErr
 }
 
-func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, targetTable string, sourceBatch *RowBatch) ([]uint64, error) {
+func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, targetTable string, sourceBatch *RowBatch, enforceInlineVerification bool) ([]uint64, error) {
 	table := sourceBatch.TableSchema()
 
 	paginationKeys := make([]uint64, len(sourceBatch.Values()))
@@ -335,12 +335,14 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, target
 
 	mismatches := v.compareHashesAndData(sourceFingerprints, targetFingerprints, sourceDecompressedData, targetDecompressedData)
 
-	for _, mismatchedPk := range mismatches {
-		v.reverifyStore.Add(table, mismatchedPk)
-	}
+	if !enforceInlineVerification {
+		for _, mismatchedPk := range mismatches {
+			v.reverifyStore.Add(table, mismatchedPk)
+		}
 
-	if len(mismatches) > 0 {
-		v.logger.WithField("mismatches", mismatches).Info("inline verification during data copy noticed mismatched pk, which may be okay (issue 149, unless overwritten due to EnforceInlineVerification)")
+		if len(mismatches) > 0 {
+			v.logger.WithField("mismatches", mismatches).Info("inline verification during data copy noticed mismatched pk, which is okay")
+		}
 	}
 
 	return mismatches, nil
