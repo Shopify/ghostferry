@@ -744,6 +744,7 @@ func (f *Ferry) RunStandaloneDataCopy(tables []*TableSchema) error {
 	// Always use the InlineVerifier to verify the copied data here.
 	dataIterator.SelectFingerprint = true
 	batchWriter.InlineVerifier = f.NewInlineVerifierWithoutStateTracker()
+	batchWriter.EnforceInlineVerification = true // Don't have the Binlog component at this stage, so no reverify
 
 	// BUG: if the PanicErrorHandler fires while running the standalone copy, we
 	// will get an error dump even though we should not get one, which could be

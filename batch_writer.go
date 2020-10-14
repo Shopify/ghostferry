@@ -28,9 +28,10 @@ func (e BatchWriterVerificationFailed) Error() string {
 }
 
 type BatchWriter struct {
-	DB             *sql.DB
-	InlineVerifier *InlineVerifier
-	StateTracker   *StateTracker
+	DB                        *sql.DB
+	InlineVerifier            *InlineVerifier
+	StateTracker              *StateTracker
+	EnforceInlineVerification bool // Only needed when running the BatchWriter during cutover
 
 	DatabaseRewrites map[string]string
 	TableRewrites    map[string]string
@@ -95,15 +96,21 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 		}
 
 		if w.InlineVerifier != nil {
-			mismatches, err := w.InlineVerifier.CheckFingerprintInline(tx, db, table, batch)
+			mismatches, err := w.InlineVerifier.CheckFingerprintInline(tx, db, table, batch, w.EnforceInlineVerification)
 			if err != nil {
 				tx.Rollback()
 				return fmt.Errorf("during fingerprint checking for paginationKey %v -> %v (%s): %v", startPaginationKeypos, endPaginationKeypos, query, err)
 			}
 
-			if len(mismatches) > 0 {
-				tx.Rollback()
-				return BatchWriterVerificationFailed{mismatches, batch.TableSchema().String()}
+			if w.EnforceInlineVerification {
+				// This code should only be active if the InlineVerifier background
+				// reverification is not occuring. An example of this would be when you
+				// run the BatchWriter as a part of copying the primary table or delta
+				// copying the joined table.
+				if len(mismatches) > 0 {
+					tx.Rollback()
+					return BatchWriterVerificationFailed{mismatches, batch.TableSchema().String()}
+				}
 			}
 		}
 
