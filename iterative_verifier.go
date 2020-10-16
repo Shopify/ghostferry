@@ -674,7 +674,7 @@ func compareHashes(source, target map[uint64][]byte) []uint64 {
 func GetMd5HashesSql(schema, table, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []uint64) (string, []interface{}, error) {
 	quotedPaginationKey := quoteField(paginationKeyColumn)
 	return rowMd5Selector(columns, paginationKeyColumn).
-		From(QuotedTableNameFromString(schema, table)).
+		From(fmt.Sprintf("%s FORCE INDEX (index_tracking_events_on_id)", QuotedTableNameFromString(schema, table))).
 		Where(sq.Eq{quotedPaginationKey: paginationKeys}).
 		OrderBy(quotedPaginationKey).
 		ToSql()
