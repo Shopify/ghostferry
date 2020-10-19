@@ -66,7 +66,7 @@ func (t *TableSchema) FingerprintQuery(schemaName, tableName string, numRows int
 	}
 
 	return fmt.Sprintf(
-		"SELECT %s FROM %s WHERE %s IN (%s)",
+		"SELECT %s FROM %s FORCE INDEX (index_tracking_events_on_id) WHERE %s IN (%s)",
 		strings.Join(columnsToSelect, ","),
 		QuotedTableNameFromString(schemaName, tableName),
 		columnsToSelect[0],
