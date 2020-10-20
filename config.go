@@ -62,6 +62,14 @@ type DatabaseConfig struct {
 	Params    map[string]string
 	TLS       *TLSConfig
 
+	// ReadTimeout is used to configure the MySQL client timeout for waiting for data from server.
+	// Timeout is in seconds. Defaults to unlimited.
+	ReadTimeout uint64
+
+	// WriteTimeout is used to configure the MySQL client timeout for writing data to server.
+	// Timeout is in seconds. Defaults to unlimited.
+	WriteTimeout uint64
+
 	// SQL annotations used to differentiate Ghostferry's DMLs
 	// against other actor's. This will default to the defaultMarginalia
 	// constant above if not set.
@@ -90,6 +98,14 @@ func (c *DatabaseConfig) MySQLConfig() (*mysql.Config, error) {
 		Params:               c.Params,
 		AllowNativePasswords: true,
 		MultiStatements:      true,
+	}
+
+	if c.ReadTimeout != 0 {
+		cfg.ReadTimeout = time.Duration(c.ReadTimeout) * time.Second
+	}
+
+	if c.WriteTimeout != 0 {
+		cfg.WriteTimeout = time.Duration(c.WriteTimeout) * time.Second
 	}
 
 	if c.TLS != nil {
