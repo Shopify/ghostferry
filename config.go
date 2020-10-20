@@ -63,11 +63,11 @@ type DatabaseConfig struct {
 	TLS       *TLSConfig
 
 	// ReadTimeout is used to configure the MySQL client timeout for waiting for data from server.
-	// Timeout is in seconds. Defaults to unlimited.
+	// Timeout is in seconds. Defaults to 0, which means no timeout.
 	ReadTimeout uint64
 
 	// WriteTimeout is used to configure the MySQL client timeout for writing data to server.
-	// Timeout is in seconds. Defaults to unlimited.
+	// Timeout is in seconds. Defaults to 0, which means no timeout.
 	WriteTimeout uint64
 
 	// SQL annotations used to differentiate Ghostferry's DMLs
