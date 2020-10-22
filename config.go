@@ -554,6 +554,15 @@ type Config struct {
 
 	// Map an index to a table, will add `FORCE INDEX (index_name)` to the fingerprint SELECT query.
 	// Index hinting might be necessary if you are running into slow queries during copy on your target.
+	//
+	// Example:
+	//
+	// "ForceIndexForVerification": {
+	//   "gftest": {
+	//     "table1": "forced_index_name"
+	//   }
+	// }
+	//
 	ForceIndexForVerification ForceIndexConfig
 
 	// Ghostferry requires a single numeric column to paginate over tables. Inferring that column is done in the following exact order:
