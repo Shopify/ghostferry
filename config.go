@@ -558,8 +558,8 @@ type Config struct {
 	// Example:
 	//
 	// "ForceIndexForVerification": {
-	//   "gftest": {
-	//     "table1": "forced_index_name"
+	//   "blog": {
+	//     "users": "ix_users_some_id"
 	//   }
 	// }
 	//
