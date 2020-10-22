@@ -32,7 +32,7 @@
   "ForceIndexForVerification": {
     "abc": {
       "table1": "forced_index_name"
-    },
+    }
   },
 
   "DumpStateOnSignal": true,
