@@ -37,6 +37,7 @@ type TableSchema struct {
 
 	CompressedColumnsForVerification map[string]string   // Map of column name => compression type
 	IgnoredColumnsForVerification    map[string]struct{} // Set of column name
+	ForcedIndexForVerification       string              // Forced index name
 	PaginationKeyColumn              *schema.TableColumn
 	PaginationKeyIndex               int
 
@@ -56,6 +57,8 @@ type TableSchema struct {
 // This is to say that there should never be a case where the MD5 hash is
 // derived from an empty string.
 func (t *TableSchema) FingerprintQuery(schemaName, tableName string, numRows int) string {
+	var forceIndex string
+
 	columnsToSelect := make([]string, 2+len(t.CompressedColumnsForVerification))
 	columnsToSelect[0] = quoteField(t.GetPaginationColumn().Name)
 	columnsToSelect[1] = t.RowMd5Query()
@@ -65,10 +68,15 @@ func (t *TableSchema) FingerprintQuery(schemaName, tableName string, numRows int
 		i += 1
 	}
 
+	if t.ForcedIndexForVerification != "" {
+		forceIndex = fmt.Sprintf(" FORCE INDEX (%s)", t.ForcedIndexForVerification)
+	}
+
 	return fmt.Sprintf(
-		"SELECT %s FROM %s WHERE %s IN (%s)",
+		"SELECT %s FROM %s%s WHERE %s IN (%s)",
 		strings.Join(columnsToSelect, ","),
 		QuotedTableNameFromString(schemaName, tableName),
+		forceIndex,
 		columnsToSelect[0],
 		strings.Repeat("?,", numRows-1)+"?",
 	)
@@ -141,7 +149,7 @@ func MaxPaginationKeys(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) 
 	return tablesWithData, emptyTables, nil
 }
 
-func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig ColumnCompressionConfig, columnIgnoreConfig ColumnIgnoreConfig, cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (TableSchemaCache, error) {
+func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig ColumnCompressionConfig, columnIgnoreConfig ColumnIgnoreConfig, forceIndexConfig ForceIndexConfig, cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (TableSchemaCache, error) {
 	logger := logrus.WithField("tag", "table_schema_cache")
 
 	tableSchemaCache := make(TableSchemaCache)
@@ -183,6 +191,7 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 				Table:                            tableSchema,
 				CompressedColumnsForVerification: columnCompressionConfig.CompressedColumnsFor(dbname, table),
 				IgnoredColumnsForVerification:    columnIgnoreConfig.IgnoredColumnsFor(dbname, table),
+				ForcedIndexForVerification:       forceIndexConfig.IndexFor(dbname, table),
 			})
 		}
 

@@ -427,7 +427,7 @@ func (f *Ferry) Initialize() (err error) {
 	// changed.
 	if f.StateToResumeFrom == nil || f.StateToResumeFrom.LastKnownTableSchemaCache == nil {
 		metrics.Measure("LoadTables", nil, 1.0, func() {
-			f.Tables, err = LoadTables(f.SourceDB, f.TableFilter, f.CompressedColumnsForVerification, f.IgnoredColumnsForVerification, f.CascadingPaginationColumnConfig)
+			f.Tables, err = LoadTables(f.SourceDB, f.TableFilter, f.CompressedColumnsForVerification, f.IgnoredColumnsForVerification, f.ForceIndexForVerification, f.CascadingPaginationColumnConfig)
 		})
 		if err != nil {
 			return err

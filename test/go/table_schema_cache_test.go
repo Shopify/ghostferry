@@ -2,6 +2,7 @@ package test
 
 import (
 	"fmt"
+	"sort"
 	"testing"
 
 	"github.com/Shopify/ghostferry"
@@ -30,7 +31,7 @@ func dropTestTables(this *TableSchemaCacheTestSuite) {
 }
 
 func (t *TableSchemaCacheTestSuite) assertLoadTablesWithCascadingPaginationColumnConfig(table, expectedpaginationColumn string, cascadingPaginationColumnConfig *ghostferry.CascadingPaginationColumnConfig) {
-	tableSchemaCache, err := ghostferry.LoadTables(t.Ferry.SourceDB, t.tableFilter, nil, nil, cascadingPaginationColumnConfig)
+	tableSchemaCache, err := ghostferry.LoadTables(t.Ferry.SourceDB, t.tableFilter, nil, nil, nil, cascadingPaginationColumnConfig)
 	actual := tableSchemaCache.Get(testhelpers.TestSchemaName, table).PaginationKeyColumn.Name
 	t.Require().Equal(expectedpaginationColumn, actual)
 	t.Require().Nil(err)
@@ -58,6 +59,7 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesWithoutFiltering() {
 	tables, err := ghostferry.LoadTables(
 		this.Ferry.SourceDB,
 		this.tableFilter,
+		nil,
 		nil,
 		nil,
 		nil,
@@ -89,7 +91,7 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutNumericP
 	_, err := this.Ferry.SourceDB.Exec(query)
 	this.Require().Nil(err)
 
-	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil)
+	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
 
 	this.Require().NotNil(err)
 	this.Require().EqualError(err, ghostferry.NonNumericPaginationKeyError(testhelpers.TestSchemaName, table, paginationColumn).Error())
@@ -159,7 +161,7 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWhenCascadingPa
 	_, err := this.Ferry.SourceDB.Exec(query)
 	this.Require().Nil(err)
 
-	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, cascadingPaginationColumnConfig)
+	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, cascadingPaginationColumnConfig)
 
 	this.Require().NotNil(err)
 	this.Require().EqualError(err, ghostferry.NonExistingPaginationKeyColumnError(testhelpers.TestSchemaName, table, paginationColumn).Error())
@@ -176,7 +178,7 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWhenCascadingPa
 	_, err := this.Ferry.SourceDB.Exec(query)
 	this.Require().Nil(err)
 
-	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, cascadingPaginationColumnConfig)
+	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, cascadingPaginationColumnConfig)
 
 	this.Require().NotNil(err)
 	this.Require().EqualError(err, ghostferry.NonExistingPaginationKeyColumnError(testhelpers.TestSchemaName, table, paginationColumn).Error())
@@ -188,7 +190,7 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesWithPaginationKeyColumnFall
 	_, err := this.Ferry.SourceDB.Exec(query)
 	this.Require().Nil(err)
 
-	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil)
+	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
 
 	this.Require().Nil(err)
 }
@@ -199,7 +201,7 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutPKColumn
 	_, err := this.Ferry.SourceDB.Exec(query)
 	this.Require().Nil(err)
 
-	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil)
+	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
 
 	this.Require().NotNil(err)
 	this.Require().EqualError(err, ghostferry.NonExistingPaginationKeyError(testhelpers.TestSchemaName, table).Error())
@@ -211,7 +213,7 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithCompositePK
 	_, err := this.Ferry.SourceDB.Exec(query)
 	this.Require().Nil(err)
 
-	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil)
+	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
 
 	this.Require().NotNil(err)
 	this.Require().EqualError(err, ghostferry.NonExistingPaginationKeyError(testhelpers.TestSchemaName, table).Error())
@@ -241,7 +243,7 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesWithCompositePKButIDColumnT
 }
 
 func (this *TableSchemaCacheTestSuite) TestAllTableNames() {
-	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil)
+	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
 	this.Require().Nil(err)
 
 	tablesList := tables.AllTableNames()
@@ -256,7 +258,7 @@ func (this *TableSchemaCacheTestSuite) TestAllTableNamesEmpty() {
 		TablesFunc: func(tables []*ghostferry.TableSchema) []*ghostferry.TableSchema { return []*ghostferry.TableSchema{} },
 	}
 
-	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, tableFilter, nil, nil, nil)
+	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, tableFilter, nil, nil, nil, nil)
 
 	this.Require().Nil(err)
 	this.Require().Equal(ghostferry.TableSchemaCache{}, tables)
@@ -266,7 +268,7 @@ func (this *TableSchemaCacheTestSuite) TestAllTableNamesEmpty() {
 }
 
 func (this *TableSchemaCacheTestSuite) TestAsSlice() {
-	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil)
+	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
 	this.Require().Nil(err)
 
 	tablesSlice := tables.AsSlice()
@@ -283,7 +285,7 @@ func (this *TableSchemaCacheTestSuite) TestAsSliceEmpty() {
 		TablesFunc: func(tables []*ghostferry.TableSchema) []*ghostferry.TableSchema { return []*ghostferry.TableSchema{} },
 	}
 
-	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, tableFilter, nil, nil, nil)
+	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, tableFilter, nil, nil, nil, nil)
 
 	this.Require().Nil(err)
 	this.Require().Equal(ghostferry.TableSchemaCache{}, tables)
@@ -292,7 +294,7 @@ func (this *TableSchemaCacheTestSuite) TestAsSliceEmpty() {
 }
 
 func (this *TableSchemaCacheTestSuite) TestFingerprintQuery() {
-	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil)
+	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
 	this.Require().Nil(err)
 
 	tables := tableSchemaCache.AsSlice()
@@ -307,7 +309,7 @@ func (this *TableSchemaCacheTestSuite) TestFingerprintQuery() {
 }
 
 func (this *TableSchemaCacheTestSuite) TestTableRowMd5Query() {
-	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil)
+	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
 	this.Require().Nil(err)
 
 	tables := tableSchemaCache.AsSlice()
@@ -322,7 +324,7 @@ func (this *TableSchemaCacheTestSuite) TestTableRowMd5Query() {
 }
 
 func (this *TableSchemaCacheTestSuite) TestFingerprintQueryWithIgnoredColumns() {
-	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil)
+	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
 	this.Require().Nil(err)
 
 	tables := tableSchemaCache.AsSlice()
@@ -332,6 +334,33 @@ func (this *TableSchemaCacheTestSuite) TestFingerprintQueryWithIgnoredColumns() 
 	}
 	query := table.FingerprintQuery("s", "t", 10)
 	this.Require().Equal("SELECT `id`,MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5 FROM `s`.`t` WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
+}
+
+func (this *TableSchemaCacheTestSuite) TestFingerprintQueryWithForcedIndex() {
+	var query string
+
+	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, ghostferry.ForceIndexConfig{
+		"gftest": {
+			"non_existent": "non_existent",
+			"test_table_1": "forced_index_1",
+			"test_table_2": "forced_index_2",
+		},
+	}, nil)
+	this.Require().Nil(err)
+
+	tables := tableSchemaCache.AsSlice()
+	sort.SliceStable(tables, func(i, j int) bool {
+		return tables[i].Table.Name < tables[j].Table.Name
+	})
+
+	query = tables[0].FingerprintQuery("gftest", "test_table_1", 10)
+	this.Require().Equal("SELECT `id`,MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')),MD5(COALESCE(`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5 FROM `gftest`.`test_table_1` FORCE INDEX (forced_index_1) WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
+
+	query = tables[1].FingerprintQuery("gftest", "test_table_2", 10)
+	this.Require().Equal("SELECT `id`,MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')),MD5(COALESCE(`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5 FROM `gftest`.`test_table_2` FORCE INDEX (forced_index_2) WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
+
+	query = tables[2].FingerprintQuery("gftest", "test_table_3", 10)
+	this.Require().Equal("SELECT `id`,MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')),MD5(COALESCE(`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5 FROM `gftest`.`test_table_3` WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
 }
 
 func (this *TableSchemaCacheTestSuite) TestQuotedTableName() {

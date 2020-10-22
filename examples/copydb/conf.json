@@ -29,6 +29,12 @@
     "Blacklist": ["schema_migrations"]
   },
 
+  "ForceIndexForVerification": {
+    "abc": {
+      "table1": "forced_index_name"
+    },
+  },
+
   "DumpStateOnSignal": true,
 
   "VerifierType": "ChecksumTable"
