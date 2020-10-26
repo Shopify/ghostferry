@@ -150,6 +150,8 @@ func (s *BinlogStreamer) Run() {
 			if er == context.DeadlineExceeded {
 				timedOut = true
 				return nil
+			} else if er != nil {
+				s.logger.WithError(er).Warn("failed to call binlogStreamer.GetEvent")
 			}
 
 			return er
