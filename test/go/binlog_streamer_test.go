@@ -46,6 +46,7 @@ func (this *BinlogStreamerTestSuite) SetupTest() {
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 	this.Require().Nil(err)
 

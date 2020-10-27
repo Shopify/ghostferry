@@ -317,6 +317,24 @@ func (c ColumnIgnoreConfig) IgnoredColumnsFor(schemaName, tableName string) map[
 	return columnsConfig
 }
 
+// SchemaName => TableName => IndexName
+// These indices will be forced for queries in InlineVerification
+type ForceIndexConfig map[string]map[string]string
+
+func (c ForceIndexConfig) IndexFor(schemaName, tableName string) string {
+	tableConfig, found := c[schemaName]
+	if !found {
+		return ""
+	}
+
+	index, found := tableConfig[tableName]
+	if !found {
+		return ""
+	}
+
+	return index
+}
+
 // CascadingPaginationColumnConfig to configure pagination columns to be
 // used. The term `Cascading` to denote that greater specificity takes
 // precedence.
@@ -533,6 +551,19 @@ type Config struct {
 	// - Putting the column in this config will cause the InlineVerifier to skip
 	//   this column for verification.
 	IgnoredColumnsForVerification ColumnIgnoreConfig
+
+	// Map an index to a table, will add `FORCE INDEX (index_name)` to the fingerprint SELECT query.
+	// Index hinting might be necessary if you are running into slow queries during copy on your target.
+	//
+	// Example:
+	//
+	// "ForceIndexForVerification": {
+	//   "blog": {
+	//     "users": "ix_users_some_id"
+	//   }
+	// }
+	//
+	ForceIndexForVerification ForceIndexConfig
 
 	// Ghostferry requires a single numeric column to paginate over tables. Inferring that column is done in the following exact order:
 	// 1. Use the PerTable pagination column, if configured for a table. Fail if we cannot find this column in the table.

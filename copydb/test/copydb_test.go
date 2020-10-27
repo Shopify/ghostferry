@@ -67,7 +67,7 @@ func (t *CopydbTestSuite) TearDownTest() {
 
 func (t *CopydbTestSuite) TestCreateDatabaseAndTableWithRewrites() {
 	var err error
-	t.copydbFerry.Ferry.Tables, err = ghostferry.LoadTables(t.ferry.SourceDB, t.copydbFerry.Ferry.TableFilter, nil, nil, nil)
+	t.copydbFerry.Ferry.Tables, err = ghostferry.LoadTables(t.ferry.SourceDB, t.copydbFerry.Ferry.TableFilter, nil, nil, nil, nil)
 	t.Require().Nil(err)
 
 	err = t.copydbFerry.CreateDatabasesAndTables()
@@ -87,7 +87,7 @@ func (t *CopydbTestSuite) TestCreateDatabaseAndTableWithRewrites() {
 
 func (t *CopydbTestSuite) TestCreateDatabasesAndTablesAlreadyExists() {
 	var err error
-	t.copydbFerry.Ferry.Tables, err = ghostferry.LoadTables(t.ferry.SourceDB, t.copydbFerry.Ferry.TableFilter, nil, nil, nil)
+	t.copydbFerry.Ferry.Tables, err = ghostferry.LoadTables(t.ferry.SourceDB, t.copydbFerry.Ferry.TableFilter, nil, nil, nil, nil)
 	t.Require().Nil(err)
 
 	testhelpers.SeedInitialData(t.ferry.TargetDB, renamedSchemaName, renamedTableName, 1)
@@ -98,7 +98,7 @@ func (t *CopydbTestSuite) TestCreateDatabasesAndTablesAlreadyExists() {
 
 func (t *CopydbTestSuite) TestCreateDatabasesAndTablesAlreadyExistsAllowed() {
 	var err error
-	t.copydbFerry.Ferry.Tables, err = ghostferry.LoadTables(t.ferry.SourceDB, t.copydbFerry.Ferry.TableFilter, nil, nil, nil)
+	t.copydbFerry.Ferry.Tables, err = ghostferry.LoadTables(t.ferry.SourceDB, t.copydbFerry.Ferry.TableFilter, nil, nil, nil, nil)
 	t.Require().Nil(err)
 
 	testhelpers.SeedInitialData(t.ferry.TargetDB, renamedSchemaName, renamedTableName, 1)
