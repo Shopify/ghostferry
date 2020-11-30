@@ -113,5 +113,5 @@ Some other considerations/notes:
 
 * Verifiers are not resumable, including the IterativeVerifier. This may change
   in the future.
-* While we are confident that the algorithm to be correct, this is still a
+* While we are confident the algorithm is correct, this is still a
   highly experimental feature. USE AT YOUR OWN RISK.

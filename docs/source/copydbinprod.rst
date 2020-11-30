@@ -78,7 +78,7 @@ To Verify Or Not To Verify
 Ghostferry has two built-in verifiers. They are designed to give you certainty
 that the data of the source and the target are identical after a move and
 nothing was corrupted/missed. They are designed to be used during the cutover
-process, when writes to the source database has stopped and writes to the
+process, when writes to the source database have stopped and writes to the
 target have not yet started. During the run, both the source and target must
 be kept read only and thus incur downtime for your dataset. The two different
 verifiers have different downtime characteristics. See the :ref:`verifiers`
