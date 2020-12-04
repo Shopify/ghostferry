@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"os"
 	"os/signal"
@@ -411,9 +410,9 @@ func (f *Ferry) Initialize() (err error) {
 	}
 
 	if f.StateToResumeFrom == nil {
-		f.StateTracker = NewStateTracker(f.DataIterationConcurrency * 10)
+		f.StateTracker = NewStateTracker()
 	} else {
-		f.StateTracker = NewStateTrackerFromSerializedState(f.DataIterationConcurrency*10, f.StateToResumeFrom)
+		f.StateTracker = NewStateTrackerFromSerializedState(f.StateToResumeFrom)
 	}
 
 	// Loads the schema of the tables that are applicable.
@@ -596,7 +595,6 @@ func (f *Ferry) Run() {
 			if ctx.Err() == nil {
 				// Ghostferry is still running
 				if f.OverallState.Load() != StateCutover {
-					// Save state dump and exit if not during the cutover stage
 					f.ErrorHandler.Fatal("user_interrupt", fmt.Errorf("signal received: %v", s.String()))
 				} else {
 					// Log and ignore the signal during cutover
@@ -822,11 +820,6 @@ func (f *Ferry) Progress() *Progress {
 	// Table Progress
 	serializedState := f.StateTracker.Serialize(nil, nil)
 	s.Tables = make(map[string]TableProgress)
-	targetPaginationKeys := make(map[string]uint64)
-	f.DataIterator.targetPaginationKeys.Range(func(k, v interface{}) bool {
-		targetPaginationKeys[k.(string)] = v.(uint64)
-		return true
-	})
 
 	// Verifier information
 	if f.Verifier != nil {
@@ -838,7 +831,8 @@ func (f *Ferry) Progress() *Progress {
 	for _, table := range tables {
 		var currentAction string
 		tableName := table.String()
-		lastSuccessfulPaginationKey, foundInProgress := serializedState.LastSuccessfulPaginationKeys[tableName]
+		batch := f.DataIterator.batches[tableName]
+		_, foundInProgress := serializedState.BatchProgress[tableName]
 
 		if serializedState.CompletedTables[tableName] {
 			currentAction = TableActionCompleted
@@ -849,26 +843,11 @@ func (f *Ferry) Progress() *Progress {
 		}
 
 		s.Tables[tableName] = TableProgress{
-			LastSuccessfulPaginationKey: lastSuccessfulPaginationKey,
-			TargetPaginationKey:         targetPaginationKeys[tableName],
-			CurrentAction:               currentAction,
+			TargetPaginationKey: batch.paginationKeys.MaxPaginationKey,
+			CurrentAction:       currentAction,
 		}
 	}
 
-	// ETA
-	var totalPaginationKeysToCopy uint64 = 0
-	var completedPaginationKeys uint64 = 0
-	estimatedPaginationKeysPerSecond := f.StateTracker.EstimatedPaginationKeysPerSecond()
-	for _, targetPaginationKey := range targetPaginationKeys {
-		totalPaginationKeysToCopy += targetPaginationKey
-	}
-
-	for _, completedPaginationKey := range serializedState.LastSuccessfulPaginationKeys {
-		completedPaginationKeys += completedPaginationKey
-	}
-
-	s.ETA = (time.Duration(math.Ceil(float64(totalPaginationKeysToCopy-completedPaginationKeys)/estimatedPaginationKeysPerSecond)) * time.Second).Seconds()
-	s.PaginationKeysPerSecond = uint64(estimatedPaginationKeysPerSecond)
 	s.TimeTaken = time.Now().Sub(f.StartTime).Seconds()
 
 	return s

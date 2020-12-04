@@ -8,6 +8,7 @@ type RowBatch struct {
 	values             []RowData
 	paginationKeyIndex int
 	table              *TableSchema
+	batchID            uint64
 	fingerprints       map[uint64][]byte
 }
 
@@ -33,6 +34,14 @@ func (e *RowBatch) ValuesContainPaginationKey() bool {
 
 func (e *RowBatch) Size() int {
 	return len(e.values)
+}
+
+func (e *RowBatch) BatchID() uint64 {
+	return e.batchID
+}
+
+func (e *RowBatch) TableName() string {
+	return e.table.String()
 }
 
 func (e *RowBatch) TableSchema() *TableSchema {

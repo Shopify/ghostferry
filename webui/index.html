@@ -63,10 +63,12 @@
               <td>{{.TimeTaken}}</td>
             </tr>
             <tr>
-              <th><abbr title="This number is just an estimate, it probably is not accurate.">ETA</abbr></th>
-              <td>
-                {{.ETA}} (at {{.PaginationKeysPerSecond}} PaginationKeys/s)
-              </td>
+              <th>Data Iterator Speed</th>
+              <td>{{.DataIteratorSpeed}} keys/s</td>
+            </tr>
+            <tr>
+              <th>Data Iterator ETA</th>
+              <td>{{.DataIteratorETA}}</td>
             </tr>
             <tr>
               <th>Throttling</th>
@@ -199,8 +201,7 @@
               <th>Table</th>
               <th><abbr title="Pagination Column">PaginationKey</abbr></th>
               <th>Status</th>
-              <th>Last Successful PaginationKey</th>
-              <th>Target PaginationKey</th>
+              <th>Progress</th>
             </tr>
           </thead>
           <tbody>
@@ -209,8 +210,7 @@
                 <td><code>{{.TableName}}</code></td>
                 <td><code>{{.PaginationKeyName}}</code></td>
                 <td>{{.Status}}</td>
-                <td>{{.LastSuccessfulPaginationKey}}</td>
-                <td>{{.TargetPaginationKey}}</td>
+                <td>{{.CompletedPercentage}}%</td>
               </tr>
             {{end}}
           </tbody>

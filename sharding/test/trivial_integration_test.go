@@ -106,7 +106,7 @@ func TestSelectiveCopyDataWithInsertLoadOnAllTenants(t *testing.T) {
 	assert.Equal(t, 0, count)
 
 	rows := testcase.AssertQueriesHaveEqualResult("SELECT * FROM gftest.table1 WHERE tenant_id = 2")
-	assert.True(t, len(rows) > 33)
+	assert.True(t, len(rows) >= 33)
 }
 
 type ChangeShardingKeyDataWriter struct {
