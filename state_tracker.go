@@ -78,6 +78,23 @@ func (s *SerializableState) CalculateTableProgress(table string) uint64 {
 	return totalPercentage / uint64(len(batches))
 }
 
+func (s *SerializableState) GetEndPaginationKey(table string) (uint64, bool) {
+	var endPaginationKey uint64 = 0
+
+	batches, ok := s.BatchProgress[table]
+	if !ok {
+		return 0, false
+	}
+
+	for _, batch := range batches {
+		if batch.EndPaginationKey > endPaginationKey {
+			endPaginationKey = batch.EndPaginationKey
+		}
+	}
+
+	return endPaginationKey, true
+}
+
 func (s *SerializableState) CalculateKeysWaitingForCopy() uint64 {
 	var totalKeys uint64 = 0
 	for table, _ := range s.BatchProgress {

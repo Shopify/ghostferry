@@ -831,8 +831,7 @@ func (f *Ferry) Progress() *Progress {
 	for _, table := range tables {
 		var currentAction string
 		tableName := table.String()
-		batch := f.DataIterator.batches[tableName]
-		_, foundInProgress := serializedState.BatchProgress[tableName]
+		targetPaginationKey, foundInProgress := serializedState.GetEndPaginationKey(tableName)
 
 		if serializedState.CompletedTables[tableName] {
 			currentAction = TableActionCompleted
@@ -843,7 +842,7 @@ func (f *Ferry) Progress() *Progress {
 		}
 
 		s.Tables[tableName] = TableProgress{
-			TargetPaginationKey: batch.paginationKeys.MaxPaginationKey,
+			TargetPaginationKey: targetPaginationKey,
 			CurrentAction:       currentAction,
 		}
 	}
