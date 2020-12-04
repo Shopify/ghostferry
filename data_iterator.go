@@ -100,7 +100,7 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 				},
 			}
 
-			d.StateTracker.RegisterBatch(tableName, batch.BatchID(), keys.MinPaginationKey, keys.MaxPaginationKey)
+			d.StateTracker.RegisterBatch(tableName, batch)
 			batchQueue <- batch
 
 			batchSize = d.nextBatchSize(batchStartPaginationKey, batchSize)

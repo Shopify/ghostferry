@@ -193,7 +193,7 @@ func (s *StateTracker) UpdateLastResumableBinlogPositionForTargetVerifier(pos my
 	s.lastStoredBinlogPositionForTargetVerifier = pos
 }
 
-func (s *StateTracker) RegisterBatch(table string, index uint64, startPaginationKey uint64, endPaginationKey uint64) {
+func (s *StateTracker) RegisterBatch(table string, batch *DataIteratorBatch) {
 	s.CopyRWMutex.Lock()
 	defer s.CopyRWMutex.Unlock()
 
@@ -201,10 +201,10 @@ func (s *StateTracker) RegisterBatch(table string, index uint64, startPagination
 		s.batchProgress[table] = make(map[uint64]*BatchProgress)
 	}
 
-	s.batchProgress[table][index] = &BatchProgress{
-		StartPaginationKey:  startPaginationKey,
-		EndPaginationKey:    endPaginationKey,
-		LatestPaginationKey: startPaginationKey,
+	s.batchProgress[table][batch.BatchID()] = &BatchProgress{
+		StartPaginationKey:  batch.paginationKeys.MinPaginationKey,
+		EndPaginationKey:    batch.paginationKeys.MaxPaginationKey,
+		LatestPaginationKey: batch.paginationKeys.MinPaginationKey,
 		Completed:           false,
 	}
 }
