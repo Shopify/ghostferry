@@ -173,8 +173,8 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 			tableEndPaginationKey := batch.paginationKeys.MaxPaginationKey
 
 			// Number of batches are set to number of processes, unless each batch becomes smaller than the cursor size
-			keyInterval := tableEndPaginationKey - tableStartPaginationKey
-			concurrencyBatchSize := math.Ceil(float64(keyInterval) / float64(d.Concurrency))
+			numKeys := tableEndPaginationKey - tableStartPaginationKey
+			concurrencyBatchSize := math.Ceil(float64(numKeys) / float64(d.Concurrency))
 			batchSize := uint64(math.Max(concurrencyBatchSize, float64(d.CursorConfig.BatchSize)))
 
 			d.logger.WithFields(logrus.Fields{
@@ -182,7 +182,7 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 				"batchSize":          batchSize,
 				"endPaginationKey":   tableEndPaginationKey,
 				"startPaginationKey": tableStartPaginationKey,
-			}).Debugf("queueing %d batches", (keyInterval/batchSize)+1)
+			}).Debugf("queueing %d batches", (numKeys/batchSize)+1)
 
 			for batchStartPaginationKey := tableStartPaginationKey; batchStartPaginationKey < tableEndPaginationKey; batchStartPaginationKey += batchSize {
 				batchEndPaginationKey := batchStartPaginationKey + batchSize
