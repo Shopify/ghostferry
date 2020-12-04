@@ -37,7 +37,7 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 	// tracking state. However, some methods are still useful so we initialize
 	// a minimal local instance.
 	if d.StateTracker == nil {
-		d.StateTracker = NewStateTracker()
+		d.StateTracker = NewStateTracker(0)
 	}
 
 	d.logger.WithField("tablesCount", len(tables)).Info("starting data iterator run")

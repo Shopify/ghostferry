@@ -136,8 +136,8 @@ type PaginationKeyPositionLog struct {
 	At       time.Time
 }
 
-func newSpeedLogRing() *ring.Ring {
-	speedLog := ring.New(100)
+func newSpeedLogRing(speedLogCount int) *ring.Ring {
+	speedLog := ring.New(speedLogCount)
 	speedLog.Value = PaginationKeyPositionLog{
 		Position: 0,
 		At:       time.Now(),
@@ -146,7 +146,7 @@ func newSpeedLogRing() *ring.Ring {
 	return speedLog
 }
 
-func NewStateTracker() *StateTracker {
+func NewStateTracker(speedLogCount int) *StateTracker {
 	return &StateTracker{
 		BinlogRWMutex: &sync.RWMutex{},
 		CopyRWMutex:   &sync.RWMutex{},
@@ -154,7 +154,7 @@ func NewStateTracker() *StateTracker {
 		completedTables: make(map[string]bool),
 		batchProgress:   make(map[string]map[uint64]*BatchProgress),
 
-		iterationSpeedLog: newSpeedLogRing(),
+		iterationSpeedLog: newSpeedLogRing(speedLogCount),
 
 		logger: logrus.WithField("tag", "state_tracker"),
 	}
@@ -162,8 +162,8 @@ func NewStateTracker() *StateTracker {
 
 // serializedState is a state the tracker should start from, as opposed to
 // starting from the beginning.
-func NewStateTrackerFromSerializedState(serializedState *SerializableState) *StateTracker {
-	s := NewStateTracker()
+func NewStateTrackerFromSerializedState(speedLogCount int, serializedState *SerializableState) *StateTracker {
+	s := NewStateTracker(speedLogCount)
 	s.completedTables = serializedState.CompletedTables
 	s.batchProgress = serializedState.BatchProgress
 	s.lastWrittenBinlogPosition = serializedState.LastWrittenBinlogPosition

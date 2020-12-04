@@ -54,7 +54,7 @@ func (this *DataIteratorTestSuite) SetupTest() {
 			BatchSize:   config.DataIterationBatchSize,
 			ReadRetries: config.DBReadRetries,
 		},
-		StateTracker: ghostferry.NewStateTracker(),
+		StateTracker: ghostferry.NewStateTracker(config.DataIterationConcurrency * 10),
 	}
 
 	this.receivedRows = make(map[string][]ghostferry.RowData, 0)

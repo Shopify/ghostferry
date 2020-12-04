@@ -3,7 +3,6 @@ source "https://rubygems.org"
 gem "minitest"
 gem "minitest-hooks"
 gem "mysql2"
-gem "connection_pool"
 gem "pry-byebug"
 
 gem "rake"

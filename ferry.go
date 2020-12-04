@@ -410,9 +410,9 @@ func (f *Ferry) Initialize() (err error) {
 	}
 
 	if f.StateToResumeFrom == nil {
-		f.StateTracker = NewStateTracker()
+		f.StateTracker = NewStateTracker(f.DataIterationConcurrency * 10)
 	} else {
-		f.StateTracker = NewStateTrackerFromSerializedState(f.StateToResumeFrom)
+		f.StateTracker = NewStateTrackerFromSerializedState(f.DataIterationConcurrency*10, f.StateToResumeFrom)
 	}
 
 	// Loads the schema of the tables that are applicable.
