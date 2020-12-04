@@ -67,7 +67,23 @@ state will be dumped to stdout with JSON. An example of this can be seen below:
         "Name": "mysql-bin.000008",
         "Pos": 193989
       },
-      "CompletedTables": {}
+      "CompletedTables": {},
+      "BatchProgress": {
+        "table1": {
+          "0": {
+            "StartPaginationKey": 0,
+            "EndPaginationKey": 200,
+            "LatestPaginationKey": 0,
+            "Completed": false
+          },
+          "1": {
+            "StartPaginationKey": 200,
+            "EndPaginationKey": 400,
+            "LatestPaginationKey": 200,
+            "Completed": false
+          }
+        }
+      }
     },
     "VerifierStage": null
   }
