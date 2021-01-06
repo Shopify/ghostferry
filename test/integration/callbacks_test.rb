@@ -20,6 +20,8 @@ class CallbacksTest < GhostferryTestCase
     assert_equal 1111, progress.last["Tables"]["gftest.test_table_1"]["TargetPaginationKey"]
     assert_equal "completed", progress.last["Tables"]["gftest.test_table_1"]["CurrentAction"]
 
+    assert_equal 0, progress.last["ActiveDataIterators"]
+
     refute progress.last["LastSuccessfulBinlogPos"]["Name"].nil?
     refute progress.last["LastSuccessfulBinlogPos"]["Pos"].nil?
     assert progress.last["BinlogStreamerLag"] > 0

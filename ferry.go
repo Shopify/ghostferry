@@ -867,6 +867,7 @@ func (f *Ferry) Progress() *Progress {
 			currentAction = TableActionCompleted
 		} else if foundInProgress {
 			currentAction = TableActionCopying
+			s.ActiveDataIterators += 1
 		} else {
 			currentAction = TableActionWaiting
 		}

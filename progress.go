@@ -32,6 +32,9 @@ type Progress struct {
 	BinlogStreamerLag       float64 // seconds
 	Throttled               bool
 
+	// The number of data iterators currently active.
+	ActiveDataIterators int
+
 	// The behaviour of Ghostferry varies with respect to the VerifierType.
 	// For example: a long cutover is OK if
 	VerifierType string
