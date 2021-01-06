@@ -20,6 +20,11 @@ class CallbacksTest < GhostferryTestCase
     assert_equal 1111, progress.last["Tables"]["gftest.test_table_1"]["TargetPaginationKey"]
     assert_equal "completed", progress.last["Tables"]["gftest.test_table_1"]["CurrentAction"]
 
+    result = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
+    count = result.first["cnt"]
+    assert count > 0, "There should be some rows on the target, not 0."
+    assert_equal count, progress.last["Tables"]["gftest.test_table_1"]["RowsWritten"]
+
     assert_equal 0, progress.last["ActiveDataIterators"]
 
     refute progress.last["LastSuccessfulBinlogPos"]["Name"].nil?
