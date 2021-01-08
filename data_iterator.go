@@ -2,11 +2,10 @@ package ghostferry
 
 import (
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math"
 	"sync"
-	"sort"
-	"strings"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/sirupsen/logrus"
 )
@@ -19,6 +18,7 @@ type DataIterator struct {
 	ErrorHandler ErrorHandler
 	CursorConfig *CursorConfig
 	StateTracker *StateTracker
+	TableSorter DataIteratorSorter
 
 	targetPaginationKeys *sync.Map
 	batchListeners       []func(*RowBatch) error
@@ -26,8 +26,8 @@ type DataIterator struct {
 	logger               *logrus.Entry
 }
 
-type TableKeyInfo struct {
-	Table *TableSchema
+type TableMaxPaginationKey struct {
+	Table            *TableSchema
 	MaxPaginationKey uint64
 }
 
@@ -166,7 +166,8 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 		}()
 	}
 
-	sortedTableData, err := GetOrderedTables(tablesWithData, d.DB)
+	sorter := MaxTableSizeSorter{DataIterator: d}
+	sortedTableData, err := sorter.Sort(tablesWithData)
 
 	if err != nil {
 		d.logger.WithError(err).Error("failed to retrieve sorted tables")
@@ -203,63 +204,4 @@ func (d *DataIterator) AddBatchListener(listener func(*RowBatch) error) {
 
 func (d *DataIterator) AddDoneListener(listener func() error) {
 	d.doneListeners = append(d.doneListeners, listener)
-}
-
-func GetOrderedTables(unorderedTables map[*TableSchema]uint64, db *sql.DB) ([]TableKeyInfo, error) {
-	orderedTables := make([]TableKeyInfo, len(unorderedTables))
-	i := 0
-
-	for k, v := range unorderedTables {
-		orderedTables[i] = TableKeyInfo{k, v}
-		i++
-	}
-
-	tableNames := make([]string, len(unorderedTables))
-	databaseSchemasMap := make(map[string]int, len(unorderedTables))
-
-	i = 0
-	for t := range unorderedTables {
-			tableNames[i] = t.Name
-			databaseSchemasMap[t.Schema] = 0
-			i++
-	}
-
-	databaseSchemas := make([]string, len(databaseSchemasMap))
-
-	i = 0
-	for schema := range databaseSchemasMap {
-		databaseSchemas[i] = schema
-	}
-
-	query := fmt.Sprintf("SELECT TABLE_NAME, TABLE_SCHEMA, DATA_LENGTH FROM information_schema.tables WHERE TABLE_SCHEMA IN (\"%s\") AND TABLE_NAME IN (\"%s\") ORDER BY DATA_LENGTH DESC", strings.Join(databaseSchemas, `", "`), strings.Join(tableNames, `", "`))
-	rows, err := db.Query(query)
-
-	if err != nil {
-		return orderedTables, err
-	}
-
-	defer rows.Close()
-
-	databaseOrder := make(map[string]int, len(unorderedTables))
-	i = 0
-	for rows.Next() {
-		var tableName, schemaName string
-		var size uint64
-		err = rows.Scan(&tableName, &schemaName, &size)
-
-		if err != nil {
-			return orderedTables, err
-		}
-
-		databaseOrder[fmt.Sprintf("%s %s", tableName, schemaName)] = i
-		i++
-	}
-
-	sort.Slice(orderedTables, func(i, j int) bool {
-		iName := fmt.Sprintf("%s %s", orderedTables[i].Table.Name, orderedTables[i].Table.Schema)
-		jName := fmt.Sprintf("%s %s", orderedTables[j].Table.Name, orderedTables[j].Table.Schema)
-		return databaseOrder[iName] < databaseOrder[jName]
-	})
-
-	return orderedTables, nil
 }
