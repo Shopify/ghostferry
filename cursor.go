@@ -3,8 +3,9 @@ package ghostferry
 import (
 	sqlorig "database/sql"
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"strings"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Masterminds/squirrel"
 	"github.com/siddontang/go-mysql/schema"
@@ -68,6 +69,7 @@ type Cursor struct {
 
 	paginationKeyColumn         *schema.TableColumn
 	lastSuccessfulPaginationKey uint64
+	rowsExamined                uint64
 	logger                      *logrus.Entry
 }
 
@@ -140,6 +142,7 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 		tx.Rollback()
 
 		c.lastSuccessfulPaginationKey = paginationKeypos
+		c.rowsExamined += uint64(batch.Size())
 	}
 
 	return nil

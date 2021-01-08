@@ -90,7 +90,10 @@ type StateTracker struct {
 	lastSuccessfulPaginationKeys map[string]uint64
 	completedTables              map[string]bool
 
-	iterationSpeedLog *ring.Ring
+	// TODO: Performance tracking should be refactored out of the state tracker,
+	// as it confuses the focus of this struct.
+	iterationSpeedLog   *ring.Ring
+	rowsWrittenPerTable map[string]uint64
 }
 
 func NewStateTracker(speedLogCount int) *StateTracker {
@@ -101,6 +104,7 @@ func NewStateTracker(speedLogCount int) *StateTracker {
 		lastSuccessfulPaginationKeys: make(map[string]uint64),
 		completedTables:              make(map[string]bool),
 		iterationSpeedLog:            newSpeedLogRing(speedLogCount),
+		rowsWrittenPerTable:          make(map[string]uint64),
 	}
 }
 
@@ -137,14 +141,32 @@ func (s *StateTracker) UpdateLastResumableBinlogPositionForTargetVerifier(pos my
 	s.lastStoredBinlogPositionForTargetVerifier = pos
 }
 
-func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginationKey uint64) {
+func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginationKey uint64, rowsWrittenForThisBatch uint64) {
 	s.CopyRWMutex.Lock()
 	defer s.CopyRWMutex.Unlock()
 
 	deltaPaginationKey := paginationKey - s.lastSuccessfulPaginationKeys[table]
 	s.lastSuccessfulPaginationKeys[table] = paginationKey
 
+	// TODO: this code is intentionally left here so it is kind of crappy and
+	// hopefully will motivate us to fix it by refactoring the state tracker a bit
+	// in the future. Namely, the tracking of performance metrics and the tracking
+	// of pagination key locations should be done more separately than it is now.
+	s.rowsWrittenPerTable[table] += rowsWrittenForThisBatch
+
 	s.updateSpeedLog(deltaPaginationKey)
+}
+
+func (s *StateTracker) RowsWrittenPerTable() map[string]uint64 {
+	s.CopyRWMutex.RLock()
+	defer s.CopyRWMutex.RUnlock()
+
+	d := make(map[string]uint64)
+	for k, v := range s.rowsWrittenPerTable {
+		d[k] = v
+	}
+
+	return d
 }
 
 func (s *StateTracker) LastSuccessfulPaginationKey(table string) uint64 {

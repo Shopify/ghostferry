@@ -844,6 +844,10 @@ func (f *Ferry) Progress() *Progress {
 
 	// Table Progress
 	serializedState := f.StateTracker.Serialize(nil, nil)
+	// Note the below will not necessarily be synchronized with serializedState.
+	// This is fine as we don't need to be super precise with performance data.
+	rowsWrittenPerTable := f.StateTracker.RowsWrittenPerTable()
+
 	s.Tables = make(map[string]TableProgress)
 	targetPaginationKeys := make(map[string]uint64)
 	f.DataIterator.targetPaginationKeys.Range(func(k, v interface{}) bool {
@@ -867,14 +871,18 @@ func (f *Ferry) Progress() *Progress {
 			currentAction = TableActionCompleted
 		} else if foundInProgress {
 			currentAction = TableActionCopying
+			s.ActiveDataIterators += 1
 		} else {
 			currentAction = TableActionWaiting
 		}
+
+		rowsWritten, _ := rowsWrittenPerTable[tableName]
 
 		s.Tables[tableName] = TableProgress{
 			LastSuccessfulPaginationKey: lastSuccessfulPaginationKey,
 			TargetPaginationKey:         targetPaginationKeys[tableName],
 			CurrentAction:               currentAction,
+			RowsWritten:                 rowsWritten,
 		}
 	}
 

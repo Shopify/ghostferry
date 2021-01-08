@@ -14,6 +14,7 @@ type TableProgress struct {
 	LastSuccessfulPaginationKey uint64
 	TargetPaginationKey         uint64
 	CurrentAction               string // Possible values are defined via the constants TableAction*
+	RowsWritten                 uint64
 }
 
 type Progress struct {
@@ -31,6 +32,9 @@ type Progress struct {
 	LastSuccessfulBinlogPos mysql.Position
 	BinlogStreamerLag       float64 // seconds
 	Throttled               bool
+
+	// The number of data iterators currently active.
+	ActiveDataIterators int
 
 	// The behaviour of Ghostferry varies with respect to the VerifierType.
 	// For example: a long cutover is OK if
