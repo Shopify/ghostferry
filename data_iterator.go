@@ -2,9 +2,10 @@ package ghostferry
 
 import (
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math"
 	"sync"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/sirupsen/logrus"
 )
@@ -17,11 +18,17 @@ type DataIterator struct {
 	ErrorHandler ErrorHandler
 	CursorConfig *CursorConfig
 	StateTracker *StateTracker
+	TableSorter DataIteratorSorter
 
 	targetPaginationKeys *sync.Map
 	batchListeners       []func(*RowBatch) error
 	doneListeners        []func() error
 	logger               *logrus.Entry
+}
+
+type TableMaxPaginationKey struct {
+	Table            *TableSchema
+	MaxPaginationKey uint64
 }
 
 func (d *DataIterator) Run(tables []*TableSchema) {
@@ -52,7 +59,7 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 			// We don't need to reiterate those tables as it has already been done.
 			delete(tablesWithData, table)
 		} else {
-			d.targetPaginationKeys.Store(table.String(), maxPaginationKey)
+			d.targetPaginationKeys.Store(tableName, maxPaginationKey)
 		}
 	}
 
@@ -159,17 +166,26 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 		}()
 	}
 
-	i := 0
+	sorter := MaxTableSizeSorter{DataIterator: d}
+	sortedTableData, err := sorter.Sort(tablesWithData)
+
+	if err != nil {
+		d.logger.WithError(err).Error("failed to retrieve sorted tables")
+		d.ErrorHandler.Fatal("data_iterator", err)
+		return
+	}
+
 	loggingIncrement := len(tablesWithData) / 50
 	if loggingIncrement == 0 {
 		loggingIncrement = 1
 	}
 
-	for table, _ := range tablesWithData {
-		tablesQueue <- table
+	i := 0
+	for _, tableData := range sortedTableData {
+		tablesQueue <- tableData.Table
 		i++
 		if i%loggingIncrement == 0 {
-			d.logger.WithField("table", table.String()).Infof("queued table for processing (%d/%d)", i, len(tablesWithData))
+			d.logger.WithField("table", tableData.Table.String()).Infof("queued table for processing (%d/%d)", i, len(sortedTableData))
 		}
 	}
 
