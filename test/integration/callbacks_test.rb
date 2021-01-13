@@ -25,6 +25,9 @@ class CallbacksTest < GhostferryTestCase
     assert count > 0, "There should be some rows on the target, not 0."
     assert_equal count, progress.last["Tables"]["gftest.test_table_1"]["RowsWritten"]
 
+    # data column is 32 characters so each row should be at least 32 bytes
+    assert count * 32 < progress.last["Tables"]["gftest.test_table_1"]["BytesWritten"], "Each row should have more than 32 bytes"
+
     assert_equal 0, progress.last["ActiveDataIterators"]
 
     refute progress.last["LastSuccessfulBinlogPos"]["Name"].nil?
