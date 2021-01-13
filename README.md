@@ -32,7 +32,13 @@ https://shopify.github.io/ghostferry/master/technicaloverview.html
 Development Setup
 -----------------
 
-Install:
+### Installation
+
+#### For Internal Contributors
+
+`dev up`
+
+#### For External Contributors
 
 - Have Docker installed
 - Clone the repo
