@@ -79,6 +79,10 @@ func newSpeedLogRing(speedLogCount int) *ring.Ring {
 	return speedLog
 }
 
+type RowStats struct {
+	NumRows  uint64
+	NumBytes uint64
+}
 type StateTracker struct {
 	BinlogRWMutex *sync.RWMutex
 	CopyRWMutex   *sync.RWMutex
@@ -92,8 +96,8 @@ type StateTracker struct {
 
 	// TODO: Performance tracking should be refactored out of the state tracker,
 	// as it confuses the focus of this struct.
-	iterationSpeedLog   *ring.Ring
-	rowsWrittenPerTable map[string]uint64
+	iterationSpeedLog       *ring.Ring
+	rowStatsWrittenPerTable map[string]RowStats
 }
 
 func NewStateTracker(speedLogCount int) *StateTracker {
@@ -104,7 +108,7 @@ func NewStateTracker(speedLogCount int) *StateTracker {
 		lastSuccessfulPaginationKeys: make(map[string]uint64),
 		completedTables:              make(map[string]bool),
 		iterationSpeedLog:            newSpeedLogRing(speedLogCount),
-		rowsWrittenPerTable:          make(map[string]uint64),
+		rowStatsWrittenPerTable:      make(map[string]RowStats),
 	}
 }
 
@@ -141,7 +145,7 @@ func (s *StateTracker) UpdateLastResumableBinlogPositionForTargetVerifier(pos my
 	s.lastStoredBinlogPositionForTargetVerifier = pos
 }
 
-func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginationKey uint64, rowsWrittenForThisBatch uint64) {
+func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginationKey uint64, rowsWrittenForThisBatch uint64, bytesWrittenForThisBatch uint64) {
 	s.CopyRWMutex.Lock()
 	defer s.CopyRWMutex.Unlock()
 
@@ -152,17 +156,21 @@ func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginatio
 	// hopefully will motivate us to fix it by refactoring the state tracker a bit
 	// in the future. Namely, the tracking of performance metrics and the tracking
 	// of pagination key locations should be done more separately than it is now.
-	s.rowsWrittenPerTable[table] += rowsWrittenForThisBatch
+	prev := s.rowStatsWrittenPerTable[table]
+	rowsTotal := prev.NumRows + rowsWrittenForThisBatch
+	bytesTotal := prev.NumBytes + bytesWrittenForThisBatch
+
+	s.rowStatsWrittenPerTable[table] = RowStats{NumRows: rowsTotal, NumBytes: bytesTotal}
 
 	s.updateSpeedLog(deltaPaginationKey)
 }
 
-func (s *StateTracker) RowsWrittenPerTable() map[string]uint64 {
+func (s *StateTracker) RowStatsWrittenPerTable() map[string]RowStats {
 	s.CopyRWMutex.RLock()
 	defer s.CopyRWMutex.RUnlock()
 
-	d := make(map[string]uint64)
-	for k, v := range s.rowsWrittenPerTable {
+	d := make(map[string]RowStats)
+	for k, v := range s.rowStatsWrittenPerTable {
 		d[k] = v
 	}
 
