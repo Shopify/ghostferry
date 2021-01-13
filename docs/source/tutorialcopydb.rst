@@ -58,8 +58,8 @@ This created two tables under the database ``abc``. We will be moving
 (Mirrors Production) Create Ghostferry Users
 --------------------------------------------
 
-We then need to create an user with the appropriate permissions for Ghostferry
-to connect with to perform the move with on both server. For this move, we
+We then need to create a user with the appropriate permissions for Ghostferry
+to connect with, to perform the move on both servers. For this move, we
 neglect SSL connections to MySQL and thus do not require SSL for the user. In
 production, you may want to enable that.
 
@@ -264,7 +264,7 @@ we get into the habit of thinking of this step:
 
 The last step ``FLUSH BINARY LOGS`` is not necessarily required if you run your
 MySQL server with ``sync_binlog=1``. If you're running Ghostferry from a source
-that is a replica, you need to also use turn option ``RunFerryFromReplica`` on
+that is a replica, you need to also turn on the option ``RunFerryFromReplica`` 
 in the config json as well as other options. See
 `<https://godoc.org/github.com/Shopify/ghostferry/copydb#Config>`_ for more
 details.
@@ -297,7 +297,7 @@ Ghostferry will no longer propagate data from 29291 to 29292. In a production
 situation, you can now notify all applications using the source database to use
 the target database.
 
-The control server UI will stay up indefinitely, to stop it, simply press
+The control server UI will stay up indefinitely. To stop it, simply press
 CTRL+C to interrupt the ghostferry-copydb process.
 
 To run Ghostferry in production, you should read through :ref:`copydbinprod`.

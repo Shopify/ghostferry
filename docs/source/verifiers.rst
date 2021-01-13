@@ -4,10 +4,10 @@
 Verifiers
 =========
 
-Verifiers in Ghostferry is designed to ensure that Ghostferry did not
+Verifiers in Ghostferry are designed to ensure that Ghostferry did not
 corrupt/miss data. There are three different verifiers: the
-``ChecksumTableVerifier`` and the ``InlineVerifier``. A comparison of them are
-given below:
+``ChecksumTableVerifier``, the ``InlineVerifier``, and the ``TargetVerifier``. A comparison of the 
+``ChecksumTableVerifier`` and ``InlineVerifier`` are given below:
 
 +-----------------------+-----------------------+-----------------------------+
 |                       | ChecksumTableVerifier | InlineVerifier              |
@@ -27,7 +27,7 @@ given below:
 |Partial table copy     | Not supported         | Supported                   |
 +-----------------------+-----------------------+-----------------------------+
 |Worst Case Scenario    | Large databases causes| Verification is slower than |
-|                       | unacceptable downtime | the change rate of the DB;  |
+|                       | unacceptable downtime | the change rate of the DB   |
 +-----------------------+-----------------------+-----------------------------+
 
 .. [1] Additional improvements could be made to reduce this as long as
@@ -42,7 +42,7 @@ first if you're copying whole tables at a time. If that takes too long, you can
 try using the ``InlineVerifier``.  Alternatively, you can verify in a staging
 run and not verify during the production run (see :ref:`copydbinprod`).
 
-Note that the ``InlineVerifier`` on its own may miss some potentially
+Note that the ``InlineVerifier`` on its own may potentially miss some 
 cases, and using it with the ``TargetVerifier`` is recommended if these
 cases are possible.
 
@@ -83,11 +83,11 @@ cases are possible.
        https://bugs.mysql.com/bug.php?id=87847. This applies to every row in
        this table.
 
-.. [4] If the rows modified by the the rogue application is modified again on
+.. [4] If the rows modified by the rogue application are modified again on
        the source after Ghostferry starts, the InlineVerifier's binlog tailer
        should pick up that row and attempt to reverify it.
 
-.. [5] If the rows missed after resume is modified again on the source after
+.. [5] If the rows missed after resume are modified again on the source after
        Ghostferry starts, the InlineVerifier's binlog tailer should pick up
        that row and attempt to reverify it.
 
