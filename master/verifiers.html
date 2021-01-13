@@ -36,10 +36,10 @@
             
   <div class="section" id="verifiers">
 <span id="id1"></span><h1>Verifiers<a class="headerlink" href="#verifiers" title="Permalink to this headline">¶</a></h1>
-<p>Verifiers in Ghostferry is designed to ensure that Ghostferry did not
+<p>Verifiers in Ghostferry are designed to ensure that Ghostferry did not
 corrupt/miss data. There are three different verifiers: the
-<code class="docutils literal notranslate"><span class="pre">ChecksumTableVerifier</span></code> and the <code class="docutils literal notranslate"><span class="pre">InlineVerifier</span></code>. A comparison of them are
-given below:</p>
+<code class="docutils literal notranslate"><span class="pre">ChecksumTableVerifier</span></code>, the <code class="docutils literal notranslate"><span class="pre">InlineVerifier</span></code>, and the <code class="docutils literal notranslate"><span class="pre">TargetVerifier</span></code>. A comparison of the
+<code class="docutils literal notranslate"><span class="pre">ChecksumTableVerifier</span></code> and <code class="docutils literal notranslate"><span class="pre">InlineVerifier</span></code> are given below:</p>
 <table border="1" class="docutils">
 <colgroup>
 <col width="31%" />
@@ -79,7 +79,7 @@ and during cutover.</td>
 <td>Large databases causes
 unacceptable downtime</td>
 <td>Verification is slower than
-the change rate of the DB;</td>
+the change rate of the DB</td>
 </tr>
 </tbody>
 </table>
@@ -102,7 +102,7 @@ in cutover.</td></tr>
 first if you’re copying whole tables at a time. If that takes too long, you can
 try using the <code class="docutils literal notranslate"><span class="pre">InlineVerifier</span></code>.  Alternatively, you can verify in a staging
 run and not verify during the production run (see <a class="reference internal" href="copydbinprod.html#copydbinprod"><span class="std std-ref">Running ghostferry-copydb in production</span></a>).</p>
-<p>Note that the <code class="docutils literal notranslate"><span class="pre">InlineVerifier</span></code> on its own may miss some potentially
+<p>Note that the <code class="docutils literal notranslate"><span class="pre">InlineVerifier</span></code> on its own may potentially miss some
 cases, and using it with the <code class="docutils literal notranslate"><span class="pre">TargetVerifier</span></code> is recommended if these
 cases are possible.</p>
 <table border="1" class="docutils">
@@ -179,7 +179,7 @@ this table.</td></tr>
 <table class="docutils footnote" frame="void" id="id13" rules="none">
 <colgroup><col class="label" /><col /></colgroup>
 <tbody valign="top">
-<tr><td class="label"><a class="fn-backref" href="#id7">[4]</a></td><td>If the rows modified by the the rogue application is modified again on
+<tr><td class="label"><a class="fn-backref" href="#id7">[4]</a></td><td>If the rows modified by the rogue application are modified again on
 the source after Ghostferry starts, the InlineVerifier’s binlog tailer
 should pick up that row and attempt to reverify it.</td></tr>
 </tbody>
@@ -187,7 +187,7 @@ should pick up that row and attempt to reverify it.</td></tr>
 <table class="docutils footnote" frame="void" id="id14" rules="none">
 <colgroup><col class="label" /><col /></colgroup>
 <tbody valign="top">
-<tr><td class="label">[5]</td><td><em>(<a class="fn-backref" href="#id8">1</a>, <a class="fn-backref" href="#id9">2</a>)</em> If the rows missed after resume is modified again on the source after
+<tr><td class="label">[5]</td><td><em>(<a class="fn-backref" href="#id8">1</a>, <a class="fn-backref" href="#id9">2</a>)</em> If the rows missed after resume are modified again on the source after
 Ghostferry starts, the InlineVerifier’s binlog tailer should pick up
 that row and attempt to reverify it.</td></tr>
 </tbody>

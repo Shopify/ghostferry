@@ -38,7 +38,7 @@ Ghostferry works:
    available position on the source database. This is done so we don't initiate
    the cutover process when there is a large backlog of binlog entries to be
    applied to the target, thereby reducing the downtime required.
-5. Outside of Ghostferry: you should allow no more writes to to the source
+5. Outside of Ghostferry: you should allow no more writes to the source
    database via either a read_only flag (for whole database copies) or some
    sort of application level lock (for partial database copies).
 6. Instruct Ghostferry to enter the cutover phase. This essentially tells
@@ -71,7 +71,7 @@ figure below. It shows the basic flow of all the background tasks, along with
 how each task is spawned (starting from ``Ferry.Run``). Arrows pointing towards
 outside of an encapsulating box indicate the task will exit.  The red arrows
 with "Error action" indicates an error has occurred and the error is sent to
-the ``ErrorHandler``, at which the ErrorHandler flow takes over.
+the ``ErrorHandler``, at which point the ErrorHandler flow takes over.
 
 .. image:: _static/ghostferry-architecture.png
    :align: center
@@ -88,13 +88,13 @@ Limitations
   - An error will be emitted during the beginning of the run if such a primary
     key is not detected.
   - In the near future, we will extend support to arbitrary primary key types.
-  - To work around this restrictions, you can use mysqldump to dump and restore
+  - To work around these restrictions, you can use mysqldump to dump and restore
     the table during the cutover.
 
 - Ghostferry can only be used on a source database with FULL RBR.
 
   - An error will be emitted during the beginning of the run if FULL RBR is
-    not turned on the source database.
+    An error will be emitted during the beginning of the run if FULL RBR is not enabled on the source database.
   - Without FULL RBR, the integrity of the data cannot be guaranteed.
 
 - Ghostferry does not support tables with foreign key constraints.

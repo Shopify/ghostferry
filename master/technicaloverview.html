@@ -67,7 +67,7 @@ The binlog apply operation of (1) continues in the background.</li>
 available position on the source database. This is done so we don’t initiate
 the cutover process when there is a large backlog of binlog entries to be
 applied to the target, thereby reducing the downtime required.</li>
-<li>Outside of Ghostferry: you should allow no more writes to to the source
+<li>Outside of Ghostferry: you should allow no more writes to the source
 database via either a read_only flag (for whole database copies) or some
 sort of application level lock (for partial database copies).</li>
 <li>Instruct Ghostferry to enter the cutover phase. This essentially tells
@@ -96,7 +96,7 @@ figure below. It shows the basic flow of all the background tasks, along with
 how each task is spawned (starting from <code class="docutils literal notranslate"><span class="pre">Ferry.Run</span></code>). Arrows pointing towards
 outside of an encapsulating box indicate the task will exit.  The red arrows
 with “Error action” indicates an error has occurred and the error is sent to
-the <code class="docutils literal notranslate"><span class="pre">ErrorHandler</span></code>, at which the ErrorHandler flow takes over.</p>
+the <code class="docutils literal notranslate"><span class="pre">ErrorHandler</span></code>, at which point the ErrorHandler flow takes over.</p>
 <img alt="_images/ghostferry-architecture.png" class="align-center" src="_images/ghostferry-architecture.png" />
 <p>You can see an example of an application built with Ghostferry in the
 <code class="docutils literal notranslate"><span class="pre">copydb</span></code> package.</p>
@@ -109,13 +109,13 @@ numeric, and unique primary keys.<ul>
 <li>An error will be emitted during the beginning of the run if such a primary
 key is not detected.</li>
 <li>In the near future, we will extend support to arbitrary primary key types.</li>
-<li>To work around this restrictions, you can use mysqldump to dump and restore
+<li>To work around these restrictions, you can use mysqldump to dump and restore
 the table during the cutover.</li>
 </ul>
 </li>
 <li>Ghostferry can only be used on a source database with FULL RBR.<ul>
 <li>An error will be emitted during the beginning of the run if FULL RBR is
-not turned on the source database.</li>
+An error will be emitted during the beginning of the run if FULL RBR is not enabled on the source database.</li>
 <li>Without FULL RBR, the integrity of the data cannot be guaranteed.</li>
 </ul>
 </li>

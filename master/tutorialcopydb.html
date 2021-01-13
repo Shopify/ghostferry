@@ -80,8 +80,8 @@ we must first create some test data on the 29291 server to be copied over:</p>
 </div>
 <div class="section" id="mirrors-production-create-ghostferry-users">
 <h2>(Mirrors Production) Create Ghostferry Users<a class="headerlink" href="#mirrors-production-create-ghostferry-users" title="Permalink to this headline">¶</a></h2>
-<p>We then need to create an user with the appropriate permissions for Ghostferry
-to connect with to perform the move with on both server. For this move, we
+<p>We then need to create a user with the appropriate permissions for Ghostferry
+to connect with, to perform the move on both servers. For this move, we
 neglect SSL connections to MySQL and thus do not require SSL for the user. In
 production, you may want to enable that.</p>
 <p>On the source server, the minimum permissions required are:</p>
@@ -257,7 +257,7 @@ we get into the habit of thinking of this step:</p>
 </div>
 <p>The last step <code class="docutils literal notranslate"><span class="pre">FLUSH</span> <span class="pre">BINARY</span> <span class="pre">LOGS</span></code> is not necessarily required if you run your
 MySQL server with <code class="docutils literal notranslate"><span class="pre">sync_binlog=1</span></code>. If you’re running Ghostferry from a source
-that is a replica, you need to also use turn option <code class="docutils literal notranslate"><span class="pre">RunFerryFromReplica</span></code> on
+that is a replica, you need to also turn on the option <code class="docutils literal notranslate"><span class="pre">RunFerryFromReplica</span></code>
 in the config json as well as other options. See
 <a class="reference external" href="https://godoc.org/github.com/Shopify/ghostferry/copydb#Config">https://godoc.org/github.com/Shopify/ghostferry/copydb#Config</a> for more
 details.</p>
@@ -284,7 +284,7 @@ find it via:</p>
 Ghostferry will no longer propagate data from 29291 to 29292. In a production
 situation, you can now notify all applications using the source database to use
 the target database.</p>
-<p>The control server UI will stay up indefinitely, to stop it, simply press
+<p>The control server UI will stay up indefinitely. To stop it, simply press
 CTRL+C to interrupt the ghostferry-copydb process.</p>
 <p>To run Ghostferry in production, you should read through <a class="reference internal" href="copydbinprod.html#copydbinprod"><span class="std std-ref">Running ghostferry-copydb in production</span></a>.
 If you need to interrupt and resume Ghostferry, you should also read through
