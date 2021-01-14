@@ -91,12 +91,14 @@ class GhostferryTestCase < Minitest::Test
   ##############
 
   def before_all
+    super
     @log_capturer = LogCapturer.new
     initialize_db_connections
     setup_signal_watcher
   end
 
   def before_setup
+    super
     reset_data
 
     # Any ghostferry instances created via the new_ghostferry method will be
@@ -119,6 +121,7 @@ class GhostferryTestCase < Minitest::Test
 
     @log_capturer.print_output if self.failure
     @log_capturer.reset
+    super
   end
 
   def on_term
@@ -127,7 +130,9 @@ class GhostferryTestCase < Minitest::Test
   end
 
   def after_all
+    reset_data
     teardown_connections
+    super
   end
 
   #####################
