@@ -20,8 +20,8 @@ Talk to us on IRC at [irc.freenode.net #ghostferry](https://webchat.freenode.net
 Overview of How it Works
 ------------------------
 
-An overview of Ghostferry's high-level design is expressed in the TLA+
-specification, under the `tlaplus` directory. It maybe good to consult with
+An overview of Ghostferry's high-level design is expressed in the [TLA+
+specification](https://en.wikipedia.org/wiki/TLA%2B), under the `tlaplus` directory. It may be good to consult with
 that as it has a concise definition. However, the specification might not be
 entirely correct as proofs remain elusive.
 
@@ -32,24 +32,32 @@ https://shopify.github.io/ghostferry/master/technicaloverview.html
 Development Setup
 -----------------
 
-Install:
+### Installation
+
+#### For Internal Contributors
+
+`dev up`
+
+#### For External Contributors
 
 - Have Docker installed
 - Clone the repo
 - `docker-compose up -d mysql-1 mysql-2`
 
-Run tests:
+Testing
+---------------
+
+#### Run all tests
 
 - `make test`
 
-Test copydb:
+#### Run example copydb usage
 
 - `make copydb && ghostferry-copydb -verbose examples/copydb/conf.json`
 - For a more detailed tutorial, see the
   [documentation](https://shopify.github.io/ghostferry).
 
-Ruby Integration Tests
-----
+### Ruby Integration Tests
 
 Kindly take note of following options:
 *   `DEBUG=1`: To see more detailed debug output by `Ghostferry`

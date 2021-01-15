@@ -9,8 +9,11 @@ up:
       version: 1.14.1
   - custom:
       name: Docker for Mac
-      met?: test -e /Applications/Docker.app
-      meet: echo "Docker not found. Install from https://docs.docker.com/docker-for-mac/"; false
+      met?: test -e /Applications/Docker.app && which docker-compose
+      meet: |
+        echo "Docker.app not found." ;
+        echo "Download Docker Desktop from https://docs.docker.com/docker-for-mac/install.\nInstallation includes necessary dependencies (ie. docker-compose)";
+        open "https://docs.docker.com/docker-for-mac/install" ;
   - custom:
       name: Go Dependencies
       met?: go mod download
