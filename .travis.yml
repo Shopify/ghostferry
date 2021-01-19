@@ -1,4 +1,4 @@
-if: (type = push AND branch = master) OR type = pull_request
+if: (type = push AND (branch = master OR branch = experimental)) OR type = pull_request
 
 os:
   - linux
@@ -17,7 +17,7 @@ stages:
   - name: Documentation
     if: type = push AND branch = master
   - name: Package
-    if: type = push AND branch = master
+    if: type = push AND (branch = master OR branch = experimental)
 
 env:
   global:
