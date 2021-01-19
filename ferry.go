@@ -453,6 +453,7 @@ func (f *Ferry) Initialize() (err error) {
 			if err != nil {
 				return err
 			}
+			return nil
 		});
 	}
 

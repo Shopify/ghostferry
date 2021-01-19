@@ -188,7 +188,8 @@ func (s *BinlogStreamer) Run() {
 			for _, listener := range s.schemaChangeListeners {
 				err := listener(ddl)
 				if err != nil {
-					return err
+					s.logger.WithError(err).Error("failed to handle query event")
+					s.ErrorHandler.Fatal("binlog_streamer", err)
 				}
 			}
 		case *replication.RotateEvent:
