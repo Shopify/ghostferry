@@ -717,6 +717,9 @@ func (f *Ferry) Run() {
 
 	f.logger.Info("entering cutover phase, notifying caller that row copy is complete")
 	f.OverallState.Store(StateCutover)
+	if f.Config.ProgressCallback.URI != "" {
+		f.ReportProgress()
+	}
 	f.notifyRowCopyComplete()
 
 	binlogWg.Wait()
