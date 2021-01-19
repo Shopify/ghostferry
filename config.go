@@ -585,6 +585,8 @@ type Config struct {
 	//
 	// Required: defaults to false
 	SkipTargetVerification bool
+
+	ReplicateSchemaChanges bool
 }
 
 func (c *Config) ValidateConfig() error {

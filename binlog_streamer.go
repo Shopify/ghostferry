@@ -39,6 +39,7 @@ type BinlogStreamer struct {
 
 	logger         *logrus.Entry
 	eventListeners []func([]DMLEvent) error
+	schemaChangeListeners []func(query byte[]) error
 }
 
 func (s *BinlogStreamer) ensureLogger() {
@@ -182,6 +183,14 @@ func (s *BinlogStreamer) Run() {
 		isEventPositionValid := true
 
 		switch e := ev.Event.(type) {
+		case *replication.QueryEvent:
+			ddl := ev.Event.(*replication.QueryEvent).Query
+			for _, listener := range s.schemaChangeListeners {
+				err := listener(ddl)
+				if err != nil {
+					return err
+				}
+			}
 		case *replication.RotateEvent:
 			// This event is used to keep the "current binlog filename" of the binlog streamer in sync.
 			nextFilename = string(e.NextLogName)
@@ -271,6 +280,11 @@ func (s *BinlogStreamer) Run() {
 
 func (s *BinlogStreamer) AddEventListener(listener func([]DMLEvent) error) {
 	s.eventListeners = append(s.eventListeners, listener)
+}
+
+
+func (s *BinlogStreamer) AddSchemaChangeListener(listener func(query []byte) error) {
+	s.schemaChangeListeners = append(s.schemaChangeListeners, listener)
 }
 
 func (s *BinlogStreamer) GetLastStreamedBinlogPosition() mysql.Position {
