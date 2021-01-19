@@ -39,7 +39,7 @@ type BinlogStreamer struct {
 
 	logger         *logrus.Entry
 	eventListeners []func([]DMLEvent) error
-	schemaChangeListeners []func(byte[]) error
+	schemaChangeListeners []func([]byte) error
 }
 
 func (s *BinlogStreamer) ensureLogger() {
