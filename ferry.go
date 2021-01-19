@@ -497,7 +497,8 @@ func (f *Ferry) Start() error {
 	// of the library to register event listeners that gets called before
 	// and after the data gets written to the target database.
 	f.BinlogStreamer.AddEventListener(f.BinlogWriter.BufferBinlogEvents)
-	f.DataIterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
+	// f.DataIterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
+	f.DataIterator.AddBatchListener(f.BatchWriter.WriteRowBatchWithConcurrency(f.RowBatchConcurrency))
 
 	if f.inlineVerifier != nil {
 		f.BinlogStreamer.AddEventListener(f.inlineVerifier.binlogEventListener)

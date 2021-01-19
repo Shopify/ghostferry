@@ -459,6 +459,18 @@ type Config struct {
 	// Optional: defaults to 4
 	DataIterationConcurrency int
 
+	// This specify the number of concurrent goroutines, each writing an
+	// equally sized chunk of data to the target.
+	//
+	// Number of records per goroutine is calculated using
+	// `DataIterationBatchSize / RowBatchConcurrency`.
+	//
+	// Number of potential simultaneous goroutine are calculated using
+	// `DataIterationConcurrency * RowBatchConcurrency`.
+	//
+	// Optional: defaults to 4
+	RowBatchConcurrency int
+
 	// This specifies if Ghostferry will pause before cutover or not.
 	//
 	// Optional: defaults to false
@@ -628,6 +640,10 @@ func (c *Config) ValidateConfig() error {
 
 	if c.DataIterationConcurrency == 0 {
 		c.DataIterationConcurrency = 4
+	}
+
+	if c.RowBatchConcurrency == 0 {
+		c.RowBatchConcurrency = 4
 	}
 
 	if c.DBReadRetries == 0 {

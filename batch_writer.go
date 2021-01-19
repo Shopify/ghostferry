@@ -3,6 +3,7 @@ package ghostferry
 import (
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -47,7 +48,76 @@ func (w *BatchWriter) Initialize() {
 	w.logger = logrus.WithField("tag", "batch_writer")
 }
 
+func (w *BatchWriter) WriteRowBatchWithConcurrency(concurrency int) func(batch *RowBatch) error {
+	w.logger.WithField("concurrency", concurrency).Infof("running batch writer with concurrency")
+
+	return func(batch *RowBatch) error {
+		wg := &sync.WaitGroup{}
+
+		splitBatches, err := batch.Split(concurrency)
+		if err != nil {
+			return err
+		}
+
+		wg.Add(len(splitBatches))
+
+		for _, splitBatch := range splitBatches {
+			go func(batch *RowBatch) error {
+				defer wg.Done()
+
+				err := w.writeRowBatch(batch)
+				if err != nil {
+					panic(err) // TODO: Handle this error
+				}
+
+				return nil
+			}(splitBatch)
+		}
+
+		wg.Wait()
+
+		err := w.saveBatchProgressToState(batch)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
+}
+
 func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
+	w.logger.Infof("running batch writer with no concurrency")
+
+	err := w.writeRowBatch(batch)
+	if err != nil {
+		return err
+	}
+
+	err = w.saveBatchProgressToState(batch)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (w *BatchWriter) saveBatchProgressToState(batch *RowBatch) error {
+	values := batch.Values()
+	endPaginationKeypos, err := values[len(values)-1].GetUint64(batch.PaginationKeyIndex())
+	if err != nil {
+		return err
+	}
+
+	// Note that the state tracker expects us the track based on the original
+	// database and table names as opposed to the target ones.
+	if w.StateTracker != nil {
+		w.StateTracker.UpdateLastSuccessfulPaginationKey(batch.TableSchema().String(), endPaginationKeypos, uint64(batch.Size()))
+	}
+
+	return nil
+}
+
+func (w *BatchWriter) writeRowBatch(batch *RowBatch) error {
 	return WithRetries(w.WriteRetries, batchWriteRetryDelay, w.logger, "write batch to target", func() error {
 		values := batch.Values()
 		if len(values) == 0 {
@@ -118,12 +188,6 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 		if err != nil {
 			tx.Rollback()
 			return fmt.Errorf("during commit near paginationKey %v -> %v (%s): %v", startPaginationKeypos, endPaginationKeypos, query, err)
-		}
-
-		// Note that the state tracker expects us the track based on the original
-		// database and table names as opposed to the target ones.
-		if w.StateTracker != nil {
-			w.StateTracker.UpdateLastSuccessfulPaginationKey(batch.TableSchema().String(), endPaginationKeypos, uint64(batch.Size()))
 		}
 
 		return nil
