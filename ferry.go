@@ -443,13 +443,13 @@ func (f *Ferry) Initialize() (err error) {
 	if f.Config.ReplicateSchemaChanges {
 		// On schema change, refresh schema on source and apply DDL on the target
 		f.BinlogStreamer.AddSchemaChangeListener(func(query []byte) error {
-			tables, err := LoadTables(t.SourceDB, f.TableFilter, f.CompressedColumnsForVerification, f.IgnoredColumnsForVerification, f.ForceIndexForVerification, f.CascadingPaginationColumnConfig)
+			tables, err := LoadTables(f.SourceDB, f.TableFilter, f.CompressedColumnsForVerification, f.IgnoredColumnsForVerification, f.ForceIndexForVerification, f.CascadingPaginationColumnConfig)
 			if err != nil {
 				return err
 			}
-			f.TableSchema = tables
+			f.BinlogStreamer.TableSchema = tables
 
-			_, err := f.TargetDB.Exec(query)
+			_, err = f.TargetDB.Exec(string(query))
 			if err != nil {
 				return err
 			}
