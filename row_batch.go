@@ -4,6 +4,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"math"
 	"strings"
+	"encoding/json"
 )
 
 type RowBatch struct {
@@ -23,6 +24,19 @@ func NewRowBatch(table *TableSchema, values []RowData, paginationKeyIndex int) *
 
 func (e *RowBatch) Values() []RowData {
 	return e.values
+}
+
+func (e *RowBatch) EstimateByteSize() uint64 {
+	var total int
+	for _, v := range e.values {
+		size, err := json.Marshal(v)
+		if err != nil {
+			continue
+		}
+		total += len(size)
+	}
+
+	return uint64(total)
 }
 
 func (e *RowBatch) PaginationKeyIndex() int {
