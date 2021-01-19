@@ -15,7 +15,7 @@ Prerequisites
 Before you start, you need to know if you can even use Ghostferry. Some points
 to consider about this are:
 
-- Ghostferry on its own does not enable 0 downtime moves. The downtime for the
+- Ghostferry on its own does not enable zero downtime moves. The downtime for the
   app will be minimal compared to other methods but still non-zero.
 
   - Figure out how much downtime you are willing to tolerate. Using Ghostferry,
