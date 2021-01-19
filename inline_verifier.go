@@ -67,6 +67,17 @@ func (s BinlogVerifySerializedStore) RowCount() uint64 {
 	return v
 }
 
+func (s BinlogVerifySerializedStore) EntriesCount() uint64 {
+	var v uint64 = 0
+	for _, dbStore := range s {
+		for _, tableStore := range dbStore {
+			v += uint64(len(tableStore))
+		}
+	}
+
+	return v
+}
+
 func (s BinlogVerifySerializedStore) Copy() BinlogVerifySerializedStore {
 	copyS := make(BinlogVerifySerializedStore)
 
@@ -209,6 +220,12 @@ func (s *BinlogVerifyStore) CurrentRowCount() uint64 {
 	return s.currentRowCount
 }
 
+func (s *BinlogVerifyStore) CurrentEntriesCount() uint64 {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.store.EntriesCount()
+}
+
 func (s *BinlogVerifyStore) Serialize() BinlogVerifySerializedStore {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -280,7 +297,7 @@ func (v *InlineVerifier) Wait() {
 }
 
 func (v *InlineVerifier) Message() string {
-	return fmt.Sprintf("BinlogVerifyStore.currentRowCount = %d", v.reverifyStore.CurrentRowCount())
+	return fmt.Sprintf("currentRowCount = %d, currentEntryCount = %d", v.reverifyStore.CurrentRowCount(), v.reverifyStore.CurrentEntriesCount())
 }
 
 func (v *InlineVerifier) Result() (VerificationResultAndStatus, error) {

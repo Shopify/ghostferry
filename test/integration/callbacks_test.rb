@@ -32,7 +32,8 @@ class CallbacksTest < GhostferryTestCase
     assert progress.last["BinlogStreamerLag"] > 0
     assert_equal progress.last["LastSuccessfulBinlogPos"], progress.last["FinalBinlogPos"]
 
-    assert progress.last["VerifierMessage"].start_with?("BinlogVerifyStore.currentRowCount =")
+    assert progress.last["VerifierMessage"].include?("currentRowCount =")
+    assert progress.last["VerifierMessage"].include?("currentEntryCount =")
 
     assert_equal false, progress.last["Throttled"]
 
