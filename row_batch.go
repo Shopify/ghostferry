@@ -39,7 +39,12 @@ func (e *RowBatch) Size() int {
 
 func (e *RowBatch) Split(num int) ([]*RowBatch, error) {
 	chunks := e.chunkValues(e.Values(), num)
-	logrus.Infof("splitting %d records in %d batches", e.Size(), len(chunks))
+
+	logrus.WithFields(logrus.Fields{
+		"tag":     "row_batch",
+		"size":    e.Size(),
+		"batches": len(chunks),
+	}).Infof("splitting records in batches")
 
 	var out []*RowBatch
 	for _, chunkValues := range chunks {
@@ -84,11 +89,22 @@ func (e *RowBatch) AsSQLQuery(schemaName, tableName string) (string, []interface
 }
 
 func (e *RowBatch) chunkValues(values []RowData, numChunks int) (chunks [][]RowData) {
+	numChunkedValues := 0
+	numValues := len(values)
+
 	chunkSize := int(math.Ceil(float64(len(values)) / float64(numChunks)))
-	for chunkSize < len(values) {
-		values, chunks = values[chunkSize:], append(chunks, values[0:chunkSize:chunkSize])
+	for i := 0; i < numValues; i += chunkSize {
+		chunkValues := values[i:Min(chunkSize+i, numValues)]
+		chunks = append(chunks, chunkValues)
+
+		numChunkedValues += len(chunkValues)
 	}
-	return append(chunks, values)
+
+	if numChunkedValues != numValues {
+		panic("total length of chunked values are not the same length as input values")
+	}
+
+	return chunks
 }
 
 func (e *RowBatch) getFingerprintsForValues(values []RowData) (map[uint64][]byte, error) {

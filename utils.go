@@ -235,3 +235,10 @@ func CheckDbIsAReplica(db *sql.DB) (bool, error) {
 	err := row.Scan(&isReadOnly)
 	return isReadOnly, err
 }
+
+func Min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
