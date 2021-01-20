@@ -66,7 +66,11 @@ class IterateByColumnTest < GhostferryTestCase
     }, fallback_column: pagination_key_column_2)
 
     assert_source_target_eql_data(DbHelper.full_table_name(db_name, table_name_1))
-    assert_source_target_eql_data(DbHelper.full_table_name(db_name, table_name_2))
+
+    data_at_source_db = source_db.query("SELECT * FROM #{DbHelper.full_table_name(db_name, table_name_2)} ORDER BY other_column")
+    data_at_target_db = target_db.query("SELECT * FROM #{DbHelper.full_table_name(db_name, table_name_2)} ORDER BY other_column")
+
+    assert_equal data_at_source_db.to_a, data_at_target_db.to_a
   end
 
   private
@@ -101,10 +105,10 @@ class IterateByColumnTest < GhostferryTestCase
   end
 
   def assert_source_target_eql_data(full_table_name)
-    data_at_source_db = source_db.query("SELECT * FROM #{full_table_name}")
-    data_at_target_db = target_db.query("SELECT * FROM #{full_table_name}")
+    data_at_source_db = source_db.query("SELECT * FROM #{full_table_name} ORDER BY some_column")
+    data_at_target_db = target_db.query("SELECT * FROM #{full_table_name} ORDER BY some_column")
 
-    assert data_at_source_db.to_a == data_at_target_db.to_a
+    assert_equal data_at_source_db.to_a, data_at_target_db.to_a
   end
 
   def assert_ghostferry_run(per_table: nil, fallback_column: nil)
