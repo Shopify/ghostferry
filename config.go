@@ -469,7 +469,7 @@ type Config struct {
 	// Number of potential simultaneous goroutine are calculated using
 	// `DataIterationConcurrency * RowBatchConcurrency`.
 	//
-	// Optional: defaults to 4
+	// Optional: defaults to 1
 	RowBatchConcurrency int
 
 	// This specifies if Ghostferry will pause before cutover or not.
