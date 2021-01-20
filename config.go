@@ -463,7 +463,8 @@ type Config struct {
 	// equally sized chunk of data to the target.
 	//
 	// Number of records per goroutine is calculated using
-	// `DataIterationBatchSize / RowBatchConcurrency`.
+	// `DataIterationBatchSize / RowBatchConcurrency`. We round up if the
+	// quotient is a floating point, resulting in a smaller last batch.
 	//
 	// Number of potential simultaneous goroutine are calculated using
 	// `DataIterationConcurrency * RowBatchConcurrency`.
@@ -643,7 +644,7 @@ func (c *Config) ValidateConfig() error {
 	}
 
 	if c.RowBatchConcurrency == 0 {
-		c.RowBatchConcurrency = 4
+		c.RowBatchConcurrency = 1
 	}
 
 	if c.DBReadRetries == 0 {
