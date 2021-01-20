@@ -52,13 +52,12 @@ func (w *BatchWriter) WriteRowBatchWithConcurrency(concurrency int) func(batch *
 	w.logger.WithField("concurrency", concurrency).Infof("running batch writer with concurrency")
 
 	return func(batch *RowBatch) error {
-		wg := &sync.WaitGroup{}
-
 		splitBatches, err := batch.Split(concurrency)
 		if err != nil {
 			return err
 		}
 
+		wg := &sync.WaitGroup{}
 		wg.Add(len(splitBatches))
 
 		for _, splitBatch := range splitBatches {
@@ -76,7 +75,7 @@ func (w *BatchWriter) WriteRowBatchWithConcurrency(concurrency int) func(batch *
 
 		wg.Wait()
 
-		err := w.saveBatchProgressToState(batch)
+		err = w.saveBatchProgressToState(batch)
 		if err != nil {
 			return err
 		}
