@@ -39,6 +39,7 @@ type CursorConfig struct {
 	ColumnsToSelect []string
 	BuildSelect     func([]string, *TableSchema, uint64, uint64) (squirrel.SelectBuilder, error)
 	BatchSize       uint64
+	BatchSizeMap    map[string]map[string]uint64
 	ReadRetries     int
 }
 
@@ -58,6 +59,13 @@ func (c *CursorConfig) NewCursorWithoutRowLock(table *TableSchema, startPaginati
 	cursor := c.NewCursor(table, startPaginationKey, maxPaginationKey)
 	cursor.RowLock = false
 	return cursor
+}
+
+func (c CursorConfig) GetBatchSize(schemaName string, tableName string) uint64 {
+	if batchSize, found := c.BatchSizeMap[schemaName][tableName]; found {
+		return batchSize
+	}
+	return c.BatchSize
 }
 
 type Cursor struct {
@@ -150,15 +158,16 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 
 func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos uint64, err error) {
 	var selectBuilder squirrel.SelectBuilder
+	batchSize := c.CursorConfig.GetBatchSize(c.Table.Schema, c.Table.Name)
 
 	if c.BuildSelect != nil {
-		selectBuilder, err = c.BuildSelect(c.ColumnsToSelect, c.Table, c.lastSuccessfulPaginationKey, c.BatchSize)
+		selectBuilder, err = c.BuildSelect(c.ColumnsToSelect, c.Table, c.lastSuccessfulPaginationKey, batchSize)
 		if err != nil {
 			c.logger.WithError(err).Error("failed to apply filter for select")
 			return
 		}
 	} else {
-		selectBuilder = DefaultBuildSelect(c.ColumnsToSelect, c.Table, c.lastSuccessfulPaginationKey, c.BatchSize)
+		selectBuilder = DefaultBuildSelect(c.ColumnsToSelect, c.Table, c.lastSuccessfulPaginationKey, batchSize)
 	}
 
 	if c.RowLock {

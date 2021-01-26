@@ -68,22 +68,23 @@ func (r *ReverifyStore) Add(entry ReverifyEntry) {
 	}
 }
 
-func (r *ReverifyStore) FlushAndBatchByTable(batchsize int) []ReverifyBatch {
+func (r *ReverifyStore) FlushAndBatchByTable(c *CursorConfig) []ReverifyBatch {
 	r.mapStoreMutex.Lock()
 	defer r.mapStoreMutex.Unlock()
 
 	r.BatchStore = make([]ReverifyBatch, 0)
 	for tableId, paginationKeySet := range r.MapStore {
-		paginationKeyBatch := make([]uint64, 0, batchsize)
+		batchSize := int(c.GetBatchSize(tableId.SchemaName, tableId.TableName))
+		paginationKeyBatch := make([]uint64, 0, batchSize)
 		for paginationKey, _ := range paginationKeySet {
 			paginationKeyBatch = append(paginationKeyBatch, paginationKey)
 			delete(paginationKeySet, paginationKey)
-			if len(paginationKeyBatch) >= batchsize {
+			if len(paginationKeyBatch) >= batchSize {
 				r.BatchStore = append(r.BatchStore, ReverifyBatch{
 					PaginationKeys: paginationKeyBatch,
 					Table:          tableId,
 				})
-				paginationKeyBatch = make([]uint64, 0, batchsize)
+				paginationKeyBatch = make([]uint64, 0, batchSize)
 			}
 		}
 
@@ -435,7 +436,7 @@ func (v *IterativeVerifier) iterateTableFingerprints(table *TableSchema, mismatc
 }
 
 func (v *IterativeVerifier) verifyStore(sourceTag string, additionalTags []MetricTag) (VerificationResult, error) {
-	allBatches := v.reverifyStore.FlushAndBatchByTable(int(v.CursorConfig.BatchSize))
+	allBatches := v.reverifyStore.FlushAndBatchByTable(v.CursorConfig)
 	v.logger.WithField("batches", len(allBatches)).Debug("reverifying")
 
 	if len(allBatches) == 0 {
