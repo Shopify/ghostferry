@@ -1,8 +1,9 @@
 with (import <nixpkgs> {});
 let
+  ruby = ruby_2_7;
   env = bundlerEnv {
     name = "ghostferry-bundler-env";
-    ruby = ruby_2_7;
+    ruby = ruby;
     gemfile  = ./Gemfile;
     lockfile = ./Gemfile.lock;
     gemset   = ./gemset.nix;

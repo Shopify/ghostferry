@@ -1,4 +1,24 @@
 {
+  ansi = {
+    groups = ["default"];
+    platforms = [];
+    source = {
+      remotes = ["https://rubygems.org"];
+      sha256 = "14ims9zfal4gs2wpx2m5rd8zsrl2k794d359shkrsgg3fhr2a22l";
+      type = "gem";
+    };
+    version = "1.5.0";
+  };
+  builder = {
+    groups = ["default"];
+    platforms = [];
+    source = {
+      remotes = ["https://rubygems.org"];
+      sha256 = "045wzckxpwcqzrjr353cxnyaxgf0qg22jh00dcx7z38cys5g1jlr";
+      type = "gem";
+    };
+    version = "3.2.4";
+  };
   byebug = {
     groups = ["default"];
     platforms = [];
@@ -39,6 +59,17 @@
     };
     version = "5.11.3";
   };
+  minitest-fail-fast = {
+    dependencies = ["minitest"];
+    groups = ["default"];
+    platforms = [];
+    source = {
+      remotes = ["https://rubygems.org"];
+      sha256 = "0kgxx7v1wyk1zaim41zim3z4s9nx1ybani2097v39h1fqn2mzdr5";
+      type = "gem";
+    };
+    version = "0.1.0";
+  };
   minitest-hooks = {
     dependencies = ["minitest"];
     groups = ["default"];
@@ -49,6 +80,17 @@
       type = "gem";
     };
     version = "1.5.0";
+  };
+  minitest-reporters = {
+    dependencies = ["ansi" "builder" "minitest" "ruby-progressbar"];
+    groups = ["default"];
+    platforms = [];
+    source = {
+      remotes = ["https://rubygems.org"];
+      sha256 = "0accficr4nyqfv0rjbmdir20qdl7hgyxlgwksb7adfy3h08mvrxp";
+      type = "gem";
+    };
+    version = "1.4.2";
   };
   mysql2 = {
     groups = ["default"];
@@ -91,5 +133,25 @@
       type = "gem";
     };
     version = "12.3.2";
+  };
+  ruby-progressbar = {
+    groups = ["default"];
+    platforms = [];
+    source = {
+      remotes = ["https://rubygems.org"];
+      sha256 = "1k77i0d4wsn23ggdd2msrcwfy0i376cglfqypkk2q77r2l3408zf";
+      type = "gem";
+    };
+    version = "1.10.1";
+  };
+  tqdm = {
+    groups = ["default"];
+    platforms = [];
+    source = {
+      remotes = ["https://rubygems.org"];
+      sha256 = "1xmc2y990s0k3yydijyqifkgirzhlicb0p7b12habcksfs0h4rna";
+      type = "gem";
+    };
+    version = "0.3.0";
   };
 }
