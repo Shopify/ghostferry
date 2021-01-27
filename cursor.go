@@ -36,11 +36,11 @@ type CursorConfig struct {
 	DB        *sql.DB
 	Throttler Throttler
 
-	ColumnsToSelect []string
-	BuildSelect     func([]string, *TableSchema, uint64, uint64) (squirrel.SelectBuilder, error)
-	BatchSize       uint64
-	BatchSizeMap    map[string]map[string]uint64
-	ReadRetries     int
+	ColumnsToSelect           []string
+	BuildSelect               func([]string, *TableSchema, uint64, uint64) (squirrel.SelectBuilder, error)
+	BatchSize                 uint64
+	BatchSizePerTableOverride map[string]map[string]uint64
+	ReadRetries               int
 }
 
 // returns a new Cursor with an embedded copy of itself
@@ -62,7 +62,7 @@ func (c *CursorConfig) NewCursorWithoutRowLock(table *TableSchema, startPaginati
 }
 
 func (c CursorConfig) GetBatchSize(schemaName string, tableName string) uint64 {
-	if batchSize, found := c.BatchSizeMap[schemaName][tableName]; found {
+	if batchSize, found := c.BatchSizePerTableOverride[schemaName][tableName]; found {
 		return batchSize
 	}
 	return c.BatchSize

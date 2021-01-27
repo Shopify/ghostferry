@@ -106,9 +106,9 @@ func (f *Ferry) NewDataIterator() *DataIterator {
 			DB:        f.SourceDB,
 			Throttler: f.Throttler,
 
-			BatchSize:    f.Config.DataIterationBatchSize,
-			BatchSizeMap: f.Config.DataIterationBatchSizePerTableOverride,
-			ReadRetries:  f.Config.DBReadRetries,
+			BatchSize:                 f.Config.DataIterationBatchSize,
+			BatchSizePerTableOverride: f.Config.DataIterationBatchSizePerTableOverride,
+			ReadRetries:               f.Config.DBReadRetries,
 		},
 		StateTracker: f.StateTracker,
 	}
@@ -265,10 +265,10 @@ func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
 
 	v := &IterativeVerifier{
 		CursorConfig: &CursorConfig{
-			DB:           f.SourceDB,
-			BatchSize:    f.Config.DataIterationBatchSize,
-			BatchSizeMap: f.Config.DataIterationBatchSizePerTableOverride,
-			ReadRetries:  f.Config.DBReadRetries,
+			DB:                        f.SourceDB,
+			BatchSize:                 f.Config.DataIterationBatchSize,
+			BatchSizePerTableOverride: f.Config.DataIterationBatchSizePerTableOverride,
+			ReadRetries:               f.Config.DBReadRetries,
 		},
 
 		BinlogStreamer:      f.BinlogStreamer,

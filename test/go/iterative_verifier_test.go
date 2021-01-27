@@ -416,11 +416,6 @@ func (t *ReverifyStoreTestSuite) TestFlushAndBatchByTableWillCreateReverifyBatch
 	expectedTable1PaginationKeys := make([]uint64, 0, 55)
 	table1 := &ghostferry.TableSchema{Table: &schema.Table{Schema: "gftest", Name: "table1"}}
 	table2 := &ghostferry.TableSchema{Table: &schema.Table{Schema: "gftest", Name: "table2"}}
-	cursorConfig := &ghostferry.CursorConfig{
-		BatchSizeMap: map[string]map[string]uint64{"gftest": {"table1": 20}},
-		BatchSize: 10,
-	}
-
 	for i := uint64(100); i < 155; i++ {
 		t.store.Add(ghostferry.ReverifyEntry{PaginationKey: i, Table: table1})
 		expectedTable1PaginationKeys = append(expectedTable1PaginationKeys, i)
@@ -432,8 +427,8 @@ func (t *ReverifyStoreTestSuite) TestFlushAndBatchByTableWillCreateReverifyBatch
 		expectedTable2PaginationKeys = append(expectedTable2PaginationKeys, i)
 	}
 
-	batches := t.store.FlushAndBatchByTable(cursorConfig)
-	t.Require().Equal(8, len(batches))
+	batches := t.store.FlushAndBatchByTable(10)
+	t.Require().Equal(11, len(batches))
 	table1Batches := make([]ghostferry.ReverifyBatch, 0)
 	table2Batches := make([]ghostferry.ReverifyBatch, 0)
 
@@ -446,7 +441,7 @@ func (t *ReverifyStoreTestSuite) TestFlushAndBatchByTableWillCreateReverifyBatch
 		}
 	}
 
-	t.Require().Equal(3, len(table1Batches))
+	t.Require().Equal(6, len(table1Batches))
 	t.Require().Equal(5, len(table2Batches))
 
 	actualTable1PaginationKeys := make([]uint64, 0)
