@@ -40,6 +40,7 @@ func (this *DataIteratorTestSuite) SetupTest() {
 	this.tables = tables.AsSlice()
 
 	config.DataIterationBatchSize = 2
+	config.DataIterationBatchSizePerTableOverride = map[string]map[string]uint64{}
 
 	this.di = &ghostferry.DataIterator{
 		DB:          sourceDb,
@@ -50,9 +51,10 @@ func (this *DataIteratorTestSuite) SetupTest() {
 			DB:        sourceDb,
 			Throttler: throttler,
 
-			BuildSelect: nil,
-			BatchSize:   config.DataIterationBatchSize,
-			ReadRetries: config.DBReadRetries,
+			BuildSelect:               nil,
+			BatchSize:                 config.DataIterationBatchSize,
+			BatchSizePerTableOverride: config.DataIterationBatchSizePerTableOverride,
+			ReadRetries:               config.DBReadRetries,
 		},
 		StateTracker: ghostferry.NewStateTracker(config.DataIterationConcurrency * 10),
 	}
@@ -162,6 +164,21 @@ func (this *DataIteratorTestSuite) TestDoneListenerGetsNotifiedWhenDone() {
 
 func (this *DataIteratorTestSuite) completedTables() map[string]bool {
 	return this.di.StateTracker.Serialize(nil, nil).CompletedTables
+}
+
+func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverride() {
+	for _, table := range this.tables {
+		if _, found := this.Ferry.Config.DataIterationBatchSizePerTableOverride[table.Schema]; !found {
+			this.Ferry.Config.DataIterationBatchSizePerTableOverride[table.Schema] = map[string]uint64{}
+		}
+		this.Ferry.Config.DataIterationBatchSizePerTableOverride[table.Schema][table.Name] = uint64(30)
+	}
+
+	for _, table := range this.tables {
+		this.Require().Equal(uint64(30), this.di.CursorConfig.GetBatchSize(table.Schema, table.Name))
+	}
+	this.Require().Equal(this.Ferry.Config.DataIterationBatchSize,
+		this.di.CursorConfig.GetBatchSize("DNE", "DNE"))
 }
 
 func TestDataIterator(t *testing.T) {

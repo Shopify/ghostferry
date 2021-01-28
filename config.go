@@ -443,6 +443,8 @@ type Config struct {
 	//
 	// Optional: defaults to 200
 	DataIterationBatchSize uint64
+	// Optional: Map of schemaName => tableName => uint64 to override default values for certain tables
+	DataIterationBatchSizePerTableOverride map[string]map[string]uint64
 
 	// The maximum number of retries for reads if the reads fail on the source
 	// database.
