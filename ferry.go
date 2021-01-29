@@ -443,7 +443,9 @@ func (f *Ferry) Initialize() (err error) {
 	f.BinlogStreamer = f.NewBinlogStreamer(f.SourceDB, f.Config.Source)
 
 	if !f.Config.SkipTargetVerification {
-		targetVerifier, err := NewTargetVerifier(f.TargetDB, f.StateTracker, f.NewBinlogStreamer(f.TargetDB, f.Config.Target))
+		targetBinlogStreamer := f.NewBinlogStreamer(f.TargetDB, f.Config.Target)
+		targetBinlogStreamer.LogTag = "tgt_binlog_streamer"
+		targetVerifier, err := NewTargetVerifier(f.TargetDB, f.StateTracker, targetBinlogStreamer)
 		if err != nil {
 			return err
 		}
