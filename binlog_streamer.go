@@ -24,6 +24,7 @@ type BinlogStreamer struct {
 	Filter       CopyFilter
 
 	TableSchema TableSchemaCache
+	LogTag      string
 
 	binlogSyncer   *replication.BinlogSyncer
 	binlogStreamer *replication.BinlogStreamer
@@ -42,8 +43,12 @@ type BinlogStreamer struct {
 }
 
 func (s *BinlogStreamer) ensureLogger() {
+	if s.LogTag == "" {
+		s.LogTag = "binlog_streamer"
+	}
+
 	if s.logger == nil {
-		s.logger = logrus.WithField("tag", "binlog_streamer")
+		s.logger = logrus.WithField("tag", s.LogTag)
 	}
 }
 
