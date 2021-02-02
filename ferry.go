@@ -36,6 +36,7 @@ const (
 	StateVerifyBeforeCutover = "verify-before-cutover"
 	StateCutover             = "cutover"
 	StateDone                = "done"
+	MySQLNumParamsLimit      = 65535
 )
 
 func quoteField(field string) string {
@@ -436,6 +437,13 @@ func (f *Ferry) Initialize() (err error) {
 		}
 	} else {
 		f.Tables = f.StateToResumeFrom.LastKnownTableSchemaCache
+	}
+
+	if f.Config.DataIterationBatchSizePerTableOverride != nil {
+		err = f.UpdateBatchSizes()
+		if err != nil {
+			f.logger.WithError(err).Warn("Failed to update batch sizes for all tables")
+		}
 	}
 
 	// The iterative verifier needs the binlog streamer so this has to be first.
@@ -890,6 +898,7 @@ func (f *Ferry) Progress() *Progress {
 			TargetPaginationKey:         targetPaginationKeys[tableName],
 			CurrentAction:               currentAction,
 			RowsWritten:                 rowsWritten,
+			BatchSize:                   f.DataIterator.CursorConfig.GetBatchSize(table.Schema, table.Name),
 		}
 	}
 
@@ -1020,4 +1029,85 @@ func (f *Ferry) checkConnectionForBinlogFormat(db *sql.DB) error {
 	}
 
 	return nil
+}
+
+func (f *Ferry) UpdateBatchSizes() error {
+	schemaTablesMap := map[string][]string{}
+
+	for _, table := range f.Tables {
+		if _, found := f.Config.DataIterationBatchSizePerTableOverride.TableOverride[table.Schema][table.Name]; found {
+			continue
+		}
+		schemaTablesMap[table.Schema] = append(schemaTablesMap[table.Schema], table.Name)
+	}
+
+	for schemaName, tables := range schemaTablesMap {
+		if _, found := f.Config.DataIterationBatchSizePerTableOverride.TableOverride[schemaName]; !found {
+			f.Config.DataIterationBatchSizePerTableOverride.TableOverride[schemaName] = map[string]uint64{}
+		}
+		query := fmt.Sprintf(
+			`SELECT T1.TABLE_NAME, AVG_ROW_LENGTH, MAX_BATCH_SIZE
+					FROM information_schema.TABLES T1
+						JOIN (SELECT TABLE_NAME, TABLE_SCHEMA, floor(%d / count(*)) MAX_BATCH_SIZE
+						FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = '%s' AND TABLE_NAME in (%s)
+						GROUP BY table_name) T2 USING (TABLE_SCHEMA, TABLE_NAME);`,
+			MySQLNumParamsLimit,
+			schemaName,
+			"'"+strings.Join(tables, "', '")+"'",
+		)
+		rows, err := f.SourceDB.Query(query)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var avgRowLength, maxRowLength int
+			var tableName string
+			err = rows.Scan(&tableName, &avgRowLength, &maxRowLength)
+			if err != nil {
+				return err
+			}
+			f.Config.DataIterationBatchSizePerTableOverride.TableOverride[schemaName][tableName] = f.calculateBatchSize(avgRowLength, maxRowLength)
+		}
+
+	}
+	return nil
+}
+
+func (f *Ferry) calculateBatchSize(rowLength, maxRowLength int) uint64 {
+	batchSizePoints := f.Config.DataIterationBatchSizePerTableOverride
+
+	if batchSize, found := batchSizePoints.ControlPoints[rowLength]; found {
+		return batchSize
+	}
+	if rowLength >= batchSizePoints.MaxAvgRowLength {
+		return batchSizePoints.ControlPoints[batchSizePoints.MaxAvgRowLength]
+	}
+	if rowLength <= batchSizePoints.MinAvgRowLength {
+		return batchSizePoints.ControlPoints[batchSizePoints.MinAvgRowLength]
+	}
+	if rowLength >= maxRowLength {
+		return uint64(maxRowLength)
+	}
+
+	closestPointLessThanRowLength := batchSizePoints.MinAvgRowLength
+	closestPointGreaterThanRowLength := batchSizePoints.MaxAvgRowLength
+	for length := range batchSizePoints.ControlPoints {
+		if length < rowLength && rowLength-length < rowLength-closestPointLessThanRowLength {
+			closestPointLessThanRowLength = length
+		}
+		if length > rowLength && length-rowLength < closestPointGreaterThanRowLength-rowLength {
+			closestPointGreaterThanRowLength = length
+		}
+	}
+	return uint64(linearInterpolation(
+		rowLength, closestPointLessThanRowLength,
+		int(batchSizePoints.ControlPoints[closestPointLessThanRowLength]),
+		closestPointGreaterThanRowLength,
+		int(batchSizePoints.ControlPoints[closestPointGreaterThanRowLength])),
+	)
+}
+
+func linearInterpolation(x, x0, y0, x1, y1 int) int {
+	return y0*(x1-x)/(x1-x0) + y1*(x-x0)/(x1-x0)
 }

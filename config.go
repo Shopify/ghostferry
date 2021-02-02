@@ -375,6 +375,33 @@ func (c *CascadingPaginationColumnConfig) FallbackPaginationColumnName() (string
 	return c.FallbackColumn, true
 }
 
+type DataIterationBatchSizePerTableOverride struct {
+	// Lower limit for rowLength, if a rowLength <= MinAvgRowLength, ControlPoints[MinAvgRowLength] will be used
+	MinAvgRowLength int
+	// Upper limit for rowLength, if a rowLength >= MaxAvgRowLength, ControlPoints[MaxAvgRowLength] will be used
+	MaxAvgRowLength int
+	// Map of rowLength => batchSize used to calculate batchSize for new rowLengths, results stored in TableOverride
+	ControlPoints map[int]uint64
+	// Map of schemaName(source schema) => tableName => batchSize to override default values for certain tables
+	TableOverride map[string]map[string]uint64
+}
+
+func (d *DataIterationBatchSizePerTableOverride) Validate() error {
+	if d != nil {
+		if _, found := d.ControlPoints[d.MinAvgRowLength]; !found {
+			return fmt.Errorf("must provide batch size for MinAvgRowLength")
+		}
+		if _, found := d.ControlPoints[d.MaxAvgRowLength]; !found {
+			return fmt.Errorf("must provide batch size for MaxAvgRowLength")
+		}
+		if d.TableOverride == nil {
+			d.TableOverride = map[string]map[string]uint64{}
+		}
+
+	}
+	return nil
+}
+
 type Config struct {
 	// Source database connection configuration
 	//
@@ -443,8 +470,11 @@ type Config struct {
 	//
 	// Optional: defaults to 200
 	DataIterationBatchSize uint64
-	// Optional: Map of schemaName(source schema) => tableName => uint64 to override default values for certain tables
-	DataIterationBatchSizePerTableOverride map[string]map[string]uint64
+	// Optional: Data Points to dynamically calculate batch size
+
+	// This optional config uses different data points to calculate
+	// batch size per table using linear interpolation
+	DataIterationBatchSizePerTableOverride *DataIterationBatchSizePerTableOverride
 
 	// The maximum number of retries for reads if the reads fail on the source
 	// database.
@@ -622,6 +652,10 @@ func (c *Config) ValidateConfig() error {
 
 	if c.DataIterationBatchSize == 0 {
 		c.DataIterationBatchSize = 200
+	}
+
+	if err := c.DataIterationBatchSizePerTableOverride.Validate(); err != nil {
+		return fmt.Errorf("DataIterationBatchSizePoints invalid: %s", err)
 	}
 
 	if c.BinlogEventBatchSize == 0 {

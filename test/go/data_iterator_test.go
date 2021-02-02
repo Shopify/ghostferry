@@ -37,10 +37,24 @@ func (this *DataIteratorTestSuite) SetupTest() {
 	tables, err := ghostferry.LoadTables(sourceDb, tableFilter, nil, nil, nil, nil)
 	this.Require().Nil(err)
 
+	this.Ferry.Tables = tables
 	this.tables = tables.AsSlice()
 
 	config.DataIterationBatchSize = 2
-	config.DataIterationBatchSizePerTableOverride = map[string]map[string]uint64{}
+	config.DataIterationBatchSizePerTableOverride = &ghostferry.DataIterationBatchSizePerTableOverride{
+		MinAvgRowLength: 1000,
+		MaxAvgRowLength: 10000,
+		ControlPoints: map[int]uint64{
+			1000:  5000,
+			10000: 200,
+			3000:  4000,
+			4000:  3500,
+			5000:  3000,
+		},
+		TableOverride: map[string]map[string]uint64{},
+	}
+	err = this.Ferry.UpdateBatchSizes()
+	this.Require().Nil(err)
 
 	this.di = &ghostferry.DataIterator{
 		DB:          sourceDb,
@@ -168,17 +182,9 @@ func (this *DataIteratorTestSuite) completedTables() map[string]bool {
 
 func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverride() {
 	for _, table := range this.tables {
-		if _, found := this.Ferry.Config.DataIterationBatchSizePerTableOverride[table.Schema]; !found {
-			this.Ferry.Config.DataIterationBatchSizePerTableOverride[table.Schema] = map[string]uint64{}
-		}
-		this.Ferry.Config.DataIterationBatchSizePerTableOverride[table.Schema][table.Name] = uint64(30)
+		this.Require().Equal(uint64(3862), this.di.CursorConfig.GetBatchSize(table.Schema, table.Name))
 	}
-
-	for _, table := range this.tables {
-		this.Require().Equal(uint64(30), this.di.CursorConfig.GetBatchSize(table.Schema, table.Name))
-	}
-	this.Require().Equal(this.Ferry.Config.DataIterationBatchSize,
-		this.di.CursorConfig.GetBatchSize("DNE", "DNE"))
+	this.Require().Equal(this.Ferry.Config.DataIterationBatchSize, this.di.CursorConfig.GetBatchSize("DNE", "DNE"))
 }
 
 func TestDataIterator(t *testing.T) {

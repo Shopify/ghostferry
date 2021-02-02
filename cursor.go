@@ -39,7 +39,7 @@ type CursorConfig struct {
 	ColumnsToSelect           []string
 	BuildSelect               func([]string, *TableSchema, uint64, uint64) (squirrel.SelectBuilder, error)
 	BatchSize                 uint64
-	BatchSizePerTableOverride map[string]map[string]uint64
+	BatchSizePerTableOverride *DataIterationBatchSizePerTableOverride
 	ReadRetries               int
 }
 
@@ -62,8 +62,10 @@ func (c *CursorConfig) NewCursorWithoutRowLock(table *TableSchema, startPaginati
 }
 
 func (c CursorConfig) GetBatchSize(schemaName string, tableName string) uint64 {
-	if batchSize, found := c.BatchSizePerTableOverride[schemaName][tableName]; found {
-		return batchSize
+	if c.BatchSizePerTableOverride != nil{
+		if batchSize, found := c.BatchSizePerTableOverride.TableOverride[schemaName][tableName]; found {
+			return batchSize
+		}
 	}
 	return c.BatchSize
 }
