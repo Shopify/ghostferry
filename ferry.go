@@ -36,7 +36,7 @@ const (
 	StateVerifyBeforeCutover = "verify-before-cutover"
 	StateCutover             = "cutover"
 	StateDone                = "done"
-	MySQLNumParamsLimit      = 65535
+	MySQLNumParamsLimit = 65535 // 2 ^ 16 - 1 see num_params https://dev.mysql.com/doc/internals/en/com-stmt-prepare-response.html
 )
 
 func quoteField(field string) string {
@@ -1041,7 +1041,7 @@ func (f *Ferry) UpdateBatchSizes() error {
 		schemaTablesMap[table.Schema] = append(schemaTablesMap[table.Schema], table.Name)
 	}
 
-	for schemaName, tables := range schemaTablesMap {
+	for schemaName, tableNames := range schemaTablesMap {
 		if _, found := f.Config.DataIterationBatchSizePerTableOverride.TableOverride[schemaName]; !found {
 			f.Config.DataIterationBatchSizePerTableOverride.TableOverride[schemaName] = map[string]uint64{}
 		}
@@ -1053,7 +1053,7 @@ func (f *Ferry) UpdateBatchSizes() error {
 						GROUP BY table_name) T2 USING (TABLE_SCHEMA, TABLE_NAME);`,
 			MySQLNumParamsLimit,
 			schemaName,
-			"'"+strings.Join(tables, "', '")+"'",
+			"'"+strings.Join(tableNames, "', '")+"'",
 		)
 		rows, err := f.SourceDB.Query(query)
 		if err != nil {
@@ -1061,50 +1061,54 @@ func (f *Ferry) UpdateBatchSizes() error {
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var avgRowLength, maxRowLength int
+			var avgRowLength, maxBatchSize int
 			var tableName string
-			err = rows.Scan(&tableName, &avgRowLength, &maxRowLength)
+			err = rows.Scan(&tableName, &avgRowLength, &maxBatchSize)
 			if err != nil {
 				return err
 			}
-			f.Config.DataIterationBatchSizePerTableOverride.TableOverride[schemaName][tableName] = f.calculateBatchSize(avgRowLength, maxRowLength)
+			// MySQL has an upper limit of 2^16 for num_params for prepared statements. This will cause an error when
+			// we attempt to execute a INSERT statement with > 65535 parameters.
+			// If batchSize > 65535/num_columns, we will use 65535/num_columns
+			batchSize := f.calculateBatchSize(avgRowLength)
+			if batchSize >= maxBatchSize {
+				batchSize = maxBatchSize
+			}
+			f.Config.DataIterationBatchSizePerTableOverride.TableOverride[schemaName][tableName] = uint64(batchSize)
 		}
 
 	}
 	return nil
 }
 
-func (f *Ferry) calculateBatchSize(rowLength, maxRowLength int) uint64 {
+func (f *Ferry) calculateBatchSize(rowSize int) int {
 	batchSizePoints := f.Config.DataIterationBatchSizePerTableOverride
 
-	if batchSize, found := batchSizePoints.ControlPoints[rowLength]; found {
-		return batchSize
+	if batchSize, found := batchSizePoints.ControlPoints[rowSize]; found {
+		return int(batchSize)
 	}
-	if rowLength >= batchSizePoints.MaxAvgRowLength {
-		return batchSizePoints.ControlPoints[batchSizePoints.MaxAvgRowLength]
+	if rowSize >= batchSizePoints.MaxRowSize {
+		return int(batchSizePoints.ControlPoints[batchSizePoints.MaxRowSize])
 	}
-	if rowLength <= batchSizePoints.MinAvgRowLength {
-		return batchSizePoints.ControlPoints[batchSizePoints.MinAvgRowLength]
-	}
-	if rowLength >= maxRowLength {
-		return uint64(maxRowLength)
+	if rowSize <= batchSizePoints.MinRowSize {
+		return int(batchSizePoints.ControlPoints[batchSizePoints.MinRowSize])
 	}
 
-	closestPointLessThanRowLength := batchSizePoints.MinAvgRowLength
-	closestPointGreaterThanRowLength := batchSizePoints.MaxAvgRowLength
-	for length := range batchSizePoints.ControlPoints {
-		if length < rowLength && rowLength-length < rowLength-closestPointLessThanRowLength {
-			closestPointLessThanRowLength = length
+	closestPointLessThanRowSize := batchSizePoints.MinRowSize
+	closestPointGreaterThanRowSize := batchSizePoints.MaxRowSize
+	for size := range batchSizePoints.ControlPoints {
+		if size < rowSize && rowSize-size < rowSize-closestPointLessThanRowSize {
+			closestPointLessThanRowSize = size
 		}
-		if length > rowLength && length-rowLength < closestPointGreaterThanRowLength-rowLength {
-			closestPointGreaterThanRowLength = length
+		if size > rowSize && size-rowSize < closestPointGreaterThanRowSize-rowSize {
+			closestPointGreaterThanRowSize = size
 		}
 	}
-	return uint64(linearInterpolation(
-		rowLength, closestPointLessThanRowLength,
-		int(batchSizePoints.ControlPoints[closestPointLessThanRowLength]),
-		closestPointGreaterThanRowLength,
-		int(batchSizePoints.ControlPoints[closestPointGreaterThanRowLength])),
+	return linearInterpolation(
+		rowSize, closestPointLessThanRowSize,
+		int(batchSizePoints.ControlPoints[closestPointLessThanRowSize]),
+		closestPointGreaterThanRowSize,
+		int(batchSizePoints.ControlPoints[closestPointGreaterThanRowSize]),
 	)
 }
 

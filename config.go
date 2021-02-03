@@ -376,11 +376,11 @@ func (c *CascadingPaginationColumnConfig) FallbackPaginationColumnName() (string
 }
 
 type DataIterationBatchSizePerTableOverride struct {
-	// Lower limit for rowLength, if a rowLength <= MinAvgRowLength, ControlPoints[MinAvgRowLength] will be used
-	MinAvgRowLength int
-	// Upper limit for rowLength, if a rowLength >= MaxAvgRowLength, ControlPoints[MaxAvgRowLength] will be used
-	MaxAvgRowLength int
-	// Map of rowLength => batchSize used to calculate batchSize for new rowLengths, results stored in TableOverride
+	// Lower limit for rowSize, if a rowSize <= MinRowSize, ControlPoints[MinRowSize] will be used
+	MinRowSize int
+	// Upper limit for rowSize, if a rowSize >= MaxRowSize, ControlPoints[MaxRowSize] will be used
+	MaxRowSize int
+	// Map of rowSize  => batchSize used to calculate batchSize for new rowSizes, results stored in TableOverride
 	ControlPoints map[int]uint64
 	// Map of schemaName(source schema) => tableName => batchSize to override default values for certain tables
 	TableOverride map[string]map[string]uint64
@@ -388,16 +388,15 @@ type DataIterationBatchSizePerTableOverride struct {
 
 func (d *DataIterationBatchSizePerTableOverride) Validate() error {
 	if d != nil {
-		if _, found := d.ControlPoints[d.MinAvgRowLength]; !found {
-			return fmt.Errorf("must provide batch size for MinAvgRowLength")
+		if _, found := d.ControlPoints[d.MinRowSize]; !found {
+			return fmt.Errorf("must provide batch size for MinRowSize")
 		}
-		if _, found := d.ControlPoints[d.MaxAvgRowLength]; !found {
-			return fmt.Errorf("must provide batch size for MaxAvgRowLength")
+		if _, found := d.ControlPoints[d.MaxRowSize]; !found {
+			return fmt.Errorf("must provide batch size for MaxRowSize")
 		}
 		if d.TableOverride == nil {
 			d.TableOverride = map[string]map[string]uint64{}
 		}
-
 	}
 	return nil
 }
@@ -470,7 +469,6 @@ type Config struct {
 	//
 	// Optional: defaults to 200
 	DataIterationBatchSize uint64
-	// Optional: Data Points to dynamically calculate batch size
 
 	// This optional config uses different data points to calculate
 	// batch size per table using linear interpolation

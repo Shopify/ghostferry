@@ -62,7 +62,7 @@ func (c *CursorConfig) NewCursorWithoutRowLock(table *TableSchema, startPaginati
 }
 
 func (c CursorConfig) GetBatchSize(schemaName string, tableName string) uint64 {
-	if c.BatchSizePerTableOverride != nil{
+	if c.BatchSizePerTableOverride != nil {
 		if batchSize, found := c.BatchSizePerTableOverride.TableOverride[schemaName][tableName]; found {
 			return batchSize
 		}

@@ -41,20 +41,6 @@ func (this *DataIteratorTestSuite) SetupTest() {
 	this.tables = tables.AsSlice()
 
 	config.DataIterationBatchSize = 2
-	config.DataIterationBatchSizePerTableOverride = &ghostferry.DataIterationBatchSizePerTableOverride{
-		MinAvgRowLength: 1000,
-		MaxAvgRowLength: 10000,
-		ControlPoints: map[int]uint64{
-			1000:  5000,
-			10000: 200,
-			3000:  4000,
-			4000:  3500,
-			5000:  3000,
-		},
-		TableOverride: map[string]map[string]uint64{},
-	}
-	err = this.Ferry.UpdateBatchSizes()
-	this.Require().Nil(err)
 
 	this.di = &ghostferry.DataIterator{
 		DB:          sourceDb,
@@ -181,10 +167,70 @@ func (this *DataIteratorTestSuite) completedTables() map[string]bool {
 }
 
 func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverride() {
+	this.Ferry.DataIterationBatchSizePerTableOverride = &ghostferry.DataIterationBatchSizePerTableOverride{
+		MinRowSize: 1000,
+		MaxRowSize: 10000,
+		ControlPoints: map[int]uint64{
+			1000:  5000,
+			10000: 200,
+			3000:  4000,
+			4000:  3500,
+			5000:  3000,
+		},
+		TableOverride: map[string]map[string]uint64{},
+	}
+	err := this.Ferry.UpdateBatchSizes()
+	this.di.CursorConfig.BatchSizePerTableOverride = this.Ferry.DataIterationBatchSizePerTableOverride
+	this.Require().Nil(err)
+
 	for _, table := range this.tables {
+		// AVG_ROW_LENGTH for both tables are 3276
+		// Using linear interpolation with points ControlPoints[3000] and ControlPoints[4000] gives 3862
 		this.Require().Equal(uint64(3862), this.di.CursorConfig.GetBatchSize(table.Schema, table.Name))
 	}
 	this.Require().Equal(this.Ferry.Config.DataIterationBatchSize, this.di.CursorConfig.GetBatchSize("DNE", "DNE"))
+}
+
+func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverrideMinRowSize() {
+	this.Ferry.DataIterationBatchSizePerTableOverride = &ghostferry.DataIterationBatchSizePerTableOverride{
+		MinRowSize: 5000,
+		MaxRowSize: 10000,
+		ControlPoints: map[int]uint64{
+			10000: 200,
+			5000:  3000,
+		},
+		TableOverride: map[string]map[string]uint64{},
+	}
+	err := this.Ferry.UpdateBatchSizes()
+	this.di.CursorConfig.BatchSizePerTableOverride = this.Ferry.DataIterationBatchSizePerTableOverride
+	this.Require().Nil(err)
+
+	for _, table := range this.tables {
+		// AVG_ROW_LENGTH for both tables are 3276
+		// since 3276 < MinRowSize, we default to use point ControlPoints[5000]
+		this.Require().Equal(uint64(3000), this.di.CursorConfig.GetBatchSize(table.Schema, table.Name))
+	}
+}
+
+func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverrideMaxRowSize() {
+	this.Ferry.DataIterationBatchSizePerTableOverride = &ghostferry.DataIterationBatchSizePerTableOverride{
+		MinRowSize: 1000,
+		MaxRowSize: 3000,
+		ControlPoints: map[int]uint64{
+			1000:  5000,
+			3000:  4000,
+		},
+		TableOverride: map[string]map[string]uint64{},
+	}
+	err := this.Ferry.UpdateBatchSizes()
+	this.di.CursorConfig.BatchSizePerTableOverride = this.Ferry.DataIterationBatchSizePerTableOverride
+	this.Require().Nil(err)
+
+	for _, table := range this.tables {
+		// AVG_ROW_LENGTH for both tables are 3276
+		// since 3276 > MaxRowSize  we default to use point ControlPoints[3000]
+		this.Require().Equal(uint64(4000), this.di.CursorConfig.GetBatchSize(table.Schema, table.Name))
+	}
 }
 
 func TestDataIterator(t *testing.T) {
