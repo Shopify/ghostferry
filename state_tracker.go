@@ -116,7 +116,7 @@ func NewStateTrackerFromSerializedState(speedLogCount int, serializedState *Seri
 	s.completedTables = serializedState.CompletedTables
 	s.lastWrittenBinlogPosition = serializedState.LastWrittenBinlogPosition
 	s.lastStoredBinlogPositionForInlineVerifier = serializedState.LastStoredBinlogPositionForInlineVerifier
-	s.lastStoredBinlogPositionForTargetVerifier = serializedState.LastStoredBinlogPositionForInlineVerifier
+	s.lastStoredBinlogPositionForTargetVerifier = serializedState.LastStoredBinlogPositionForTargetVerifier
 	return s
 }
 
