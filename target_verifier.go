@@ -2,6 +2,8 @@ package ghostferry
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"github.com/sirupsen/logrus"
@@ -48,6 +50,26 @@ func (t *TargetVerifier) BinlogEventListener(evs []DMLEvent) error {
 
 	if t.StateTracker != nil {
 		t.StateTracker.UpdateLastResumableBinlogPositionForTargetVerifier(evs[len(evs)-1].ResumableBinlogPosition())
+
+		lastTargetPos := t.StateTracker.lastStoredBinlogPositionForTargetVerifier
+
+		binlogFile := strings.Split(lastTargetPos.Name, ",")[1]
+
+		// last_filename=binlog.259484 last_position=105060633
+		// If we do 259484.105060633
+		// this wil truncate the decimal place, which is why I reversed
+		// it so we use <position>.<
+		pos, err := strconv.ParseFloat(fmt.Sprintf("%s.%s", lastTargetPos.Pos, binlogFile), 64)
+
+		if err != nil {
+			// Can't parse
+		} else {
+			metrics.Gauge(
+				"LastStoredBinlogPositionForTargetVerifier",
+				pos,
+				[]MetricTag{MetricTag{"origin", "Writer"}},
+				1.0)
+		}
 	}
 
 	return nil

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -829,6 +830,23 @@ func (f *Ferry) SerializeStateToJSON() (string, error) {
 
 	if f.Config.DoNotIncludeSchemaCacheInStateDump {
 		serializedState.LastKnownTableSchemaCache = nil
+	}
+
+	lastTargetPos := f.StateTracker.lastStoredBinlogPositionForTargetVerifier
+
+	binlogFile := strings.Split(lastTargetPos.Name, ",")[1]
+
+	// ex. binlog.259484 position=105060633
+	pos, err := strconv.ParseFloat(fmt.Sprintf("%s.%s", lastTargetPos.Pos, binlogFile), 64)
+
+	if err != nil {
+		// Can't parse
+	} else {
+		metrics.Gauge(
+			"LastStoredBinlogPositionForTargetVerifier",
+			pos,
+			[]MetricTag{MetricTag{"origin", "Reader"}},
+			1.0)
 	}
 
 	stateBytes, err := json.MarshalIndent(serializedState, "", " ")

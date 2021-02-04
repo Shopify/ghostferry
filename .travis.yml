@@ -17,7 +17,7 @@ stages:
   - name: Documentation
     if: type = push AND branch = master
   - name: Package
-    if: type = push AND (branch = master OR branch = experimental)
+    if: type = push
 
 env:
   global:
