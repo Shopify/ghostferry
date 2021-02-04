@@ -415,6 +415,11 @@ func (f *Ferry) Initialize() (err error) {
 	if f.StateToResumeFrom == nil {
 		f.StateTracker = NewStateTracker(f.DataIterationConcurrency * 10)
 	} else {
+		f.logger.WithFields(logrus.Fields{
+			"LastWrittenBinlogPosition":                 f.StateToResumeFrom.LastWrittenBinlogPosition,
+			"LastStoredBinlogPositionForInlineVerifier": f.StateToResumeFrom.LastStoredBinlogPositionForInlineVerifier,
+			"LastStoredBinlogPositionForTargetVerifier": f.StateToResumeFrom.LastStoredBinlogPositionForTargetVerifier,
+		}).Info("resuming from state")
 		f.StateTracker = NewStateTrackerFromSerializedState(f.DataIterationConcurrency*10, f.StateToResumeFrom)
 	}
 
