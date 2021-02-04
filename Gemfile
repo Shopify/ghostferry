@@ -4,8 +4,8 @@ gem "minitest"
 gem "minitest-hooks"
 gem "mysql2"
 gem "pry-byebug"
-
 gem "rake"
+gem "tqdm"
 
 gem "minitest-reporters", "~> 1.4"
 
