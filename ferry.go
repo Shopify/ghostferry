@@ -36,7 +36,6 @@ const (
 	StateVerifyBeforeCutover = "verify-before-cutover"
 	StateCutover             = "cutover"
 	StateDone                = "done"
-	MySQLNumParamsLimit = 65535 // 2 ^ 16 - 1 see num_params https://dev.mysql.com/doc/internals/en/com-stmt-prepare-response.html
 )
 
 func quoteField(field string) string {
@@ -440,7 +439,7 @@ func (f *Ferry) Initialize() (err error) {
 	}
 
 	if f.Config.DataIterationBatchSizePerTableOverride != nil {
-		err = f.UpdateBatchSizes()
+		err = f.Config.DataIterationBatchSizePerTableOverride.UpdateBatchSizes(f.SourceDB, f.Tables)
 		if err != nil {
 			f.logger.WithError(err).Warn("Failed to update batch sizes for all tables")
 		}
@@ -1029,89 +1028,4 @@ func (f *Ferry) checkConnectionForBinlogFormat(db *sql.DB) error {
 	}
 
 	return nil
-}
-
-func (f *Ferry) UpdateBatchSizes() error {
-	schemaTablesMap := map[string][]string{}
-
-	for _, table := range f.Tables {
-		if _, found := f.Config.DataIterationBatchSizePerTableOverride.TableOverride[table.Schema][table.Name]; found {
-			continue
-		}
-		schemaTablesMap[table.Schema] = append(schemaTablesMap[table.Schema], table.Name)
-	}
-
-	for schemaName, tableNames := range schemaTablesMap {
-		if _, found := f.Config.DataIterationBatchSizePerTableOverride.TableOverride[schemaName]; !found {
-			f.Config.DataIterationBatchSizePerTableOverride.TableOverride[schemaName] = map[string]uint64{}
-		}
-		query := fmt.Sprintf(
-			`SELECT T1.TABLE_NAME, AVG_ROW_LENGTH, MAX_BATCH_SIZE
-					FROM information_schema.TABLES T1
-						JOIN (SELECT TABLE_NAME, TABLE_SCHEMA, floor(%d / count(*)) MAX_BATCH_SIZE
-						FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = '%s' AND TABLE_NAME in (%s)
-						GROUP BY table_name) T2 USING (TABLE_SCHEMA, TABLE_NAME);`,
-			MySQLNumParamsLimit,
-			schemaName,
-			"'"+strings.Join(tableNames, "', '")+"'",
-		)
-		rows, err := f.SourceDB.Query(query)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var avgRowLength, maxBatchSize int
-			var tableName string
-			err = rows.Scan(&tableName, &avgRowLength, &maxBatchSize)
-			if err != nil {
-				return err
-			}
-			// MySQL has an upper limit of 2^16 for num_params for prepared statements. This will cause an error when
-			// we attempt to execute a INSERT statement with > 65535 parameters.
-			// If batchSize > 65535/num_columns, we will use 65535/num_columns
-			batchSize := f.calculateBatchSize(avgRowLength)
-			if batchSize >= maxBatchSize {
-				batchSize = maxBatchSize
-			}
-			f.Config.DataIterationBatchSizePerTableOverride.TableOverride[schemaName][tableName] = uint64(batchSize)
-		}
-
-	}
-	return nil
-}
-
-func (f *Ferry) calculateBatchSize(rowSize int) int {
-	batchSizePoints := f.Config.DataIterationBatchSizePerTableOverride
-
-	if batchSize, found := batchSizePoints.ControlPoints[rowSize]; found {
-		return int(batchSize)
-	}
-	if rowSize >= batchSizePoints.MaxRowSize {
-		return int(batchSizePoints.ControlPoints[batchSizePoints.MaxRowSize])
-	}
-	if rowSize <= batchSizePoints.MinRowSize {
-		return int(batchSizePoints.ControlPoints[batchSizePoints.MinRowSize])
-	}
-
-	closestPointLessThanRowSize := batchSizePoints.MinRowSize
-	closestPointGreaterThanRowSize := batchSizePoints.MaxRowSize
-	for size := range batchSizePoints.ControlPoints {
-		if size < rowSize && rowSize-size < rowSize-closestPointLessThanRowSize {
-			closestPointLessThanRowSize = size
-		}
-		if size > rowSize && size-rowSize < closestPointGreaterThanRowSize-rowSize {
-			closestPointGreaterThanRowSize = size
-		}
-	}
-	return linearInterpolation(
-		rowSize, closestPointLessThanRowSize,
-		int(batchSizePoints.ControlPoints[closestPointLessThanRowSize]),
-		closestPointGreaterThanRowSize,
-		int(batchSizePoints.ControlPoints[closestPointGreaterThanRowSize]),
-	)
-}
-
-func linearInterpolation(x, x0, y0, x1, y1 int) int {
-	return y0*(x1-x)/(x1-x0) + y1*(x-x0)/(x1-x0)
 }

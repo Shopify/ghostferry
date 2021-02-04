@@ -179,7 +179,7 @@ func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverride() 
 		},
 		TableOverride: map[string]map[string]uint64{},
 	}
-	err := this.Ferry.UpdateBatchSizes()
+	err := this.Ferry.DataIterationBatchSizePerTableOverride.UpdateBatchSizes(this.Ferry.SourceDB, this.Ferry.Tables)
 	this.di.CursorConfig.BatchSizePerTableOverride = this.Ferry.DataIterationBatchSizePerTableOverride
 	this.Require().Nil(err)
 
@@ -201,7 +201,7 @@ func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverrideMin
 		},
 		TableOverride: map[string]map[string]uint64{},
 	}
-	err := this.Ferry.UpdateBatchSizes()
+	err := this.Ferry.DataIterationBatchSizePerTableOverride.UpdateBatchSizes(this.Ferry.SourceDB, this.Ferry.Tables)
 	this.di.CursorConfig.BatchSizePerTableOverride = this.Ferry.DataIterationBatchSizePerTableOverride
 	this.Require().Nil(err)
 
@@ -217,12 +217,12 @@ func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverrideMax
 		MinRowSize: 1000,
 		MaxRowSize: 3000,
 		ControlPoints: map[int]uint64{
-			1000:  5000,
-			3000:  4000,
+			1000: 5000,
+			3000: 4000,
 		},
 		TableOverride: map[string]map[string]uint64{},
 	}
-	err := this.Ferry.UpdateBatchSizes()
+	err := this.Ferry.DataIterationBatchSizePerTableOverride.UpdateBatchSizes(this.Ferry.SourceDB, this.Ferry.Tables)
 	this.di.CursorConfig.BatchSizePerTableOverride = this.Ferry.DataIterationBatchSizePerTableOverride
 	this.Require().Nil(err)
 

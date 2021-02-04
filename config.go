@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"strings"
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -20,8 +21,9 @@ const (
 	VerifierTypeInline         = "Inline"
 	VerifierTypeNoVerification = "NoVerification"
 
-	DefaultNet        = "tcp"
-	DefaultMarginalia = "application:ghostferry"
+	DefaultNet          = "tcp"
+	DefaultMarginalia   = "application:ghostferry"
+	MySQLNumParamsLimit = 1<<16 - 1 // see num_params https://dev.mysql.com/doc/internals/en/com-stmt-prepare-response.html
 )
 
 type TLSConfig struct {
@@ -399,6 +401,89 @@ func (d *DataIterationBatchSizePerTableOverride) Validate() error {
 		}
 	}
 	return nil
+}
+
+func (d *DataIterationBatchSizePerTableOverride) UpdateBatchSizes(db *sql.DB, tables TableSchemaCache) error {
+	schemaTablesMap := map[string][]string{}
+
+	for _, table := range tables {
+		if _, found := d.TableOverride[table.Schema][table.Name]; found {
+			continue
+		}
+		schemaTablesMap[table.Schema] = append(schemaTablesMap[table.Schema], table.Name)
+	}
+
+	for schemaName, tableNames := range schemaTablesMap {
+		if _, found := d.TableOverride[schemaName]; !found {
+			d.TableOverride[schemaName] = map[string]uint64{}
+		}
+		query := fmt.Sprintf(
+			`SELECT T1.TABLE_NAME, AVG_ROW_LENGTH, MAX_BATCH_SIZE
+					FROM information_schema.TABLES T1
+						JOIN (SELECT TABLE_NAME, TABLE_SCHEMA, floor(%d / count(*)) MAX_BATCH_SIZE
+						FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = '%s' AND TABLE_NAME in ('%s')
+						GROUP BY table_name) T2 USING (TABLE_SCHEMA, TABLE_NAME);`,
+			MySQLNumParamsLimit,
+			schemaName,
+			strings.Join(tableNames, `', '`),
+		)
+		rows, err := db.Query(query)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var avgRowLength, maxBatchSize int
+			var tableName string
+			err = rows.Scan(&tableName, &avgRowLength, &maxBatchSize)
+			if err != nil {
+				return err
+			}
+			// MySQL has an upper limit of 2^16 for num_params for prepared statements. This will cause an error when
+			// we attempt to execute a INSERT statement with > 65535 parameters.
+			// If batchSize > 65535/num_columns, we will use 65535/num_columns
+			batchSize := d.calculateBatchSize(avgRowLength)
+			if batchSize >= maxBatchSize {
+				batchSize = maxBatchSize
+			}
+			d.TableOverride[schemaName][tableName] = uint64(batchSize)
+		}
+
+	}
+	return nil
+}
+
+func (d *DataIterationBatchSizePerTableOverride) calculateBatchSize(rowSize int) int {
+	if batchSize, found := d.ControlPoints[rowSize]; found {
+		return int(batchSize)
+	}
+	if rowSize >= d.MaxRowSize {
+		return int(d.ControlPoints[d.MaxRowSize])
+	}
+	if rowSize <= d.MinRowSize {
+		return int(d.ControlPoints[d.MinRowSize])
+	}
+
+	closestPointLessThanRowSize := d.MinRowSize
+	closestPointGreaterThanRowSize := d.MaxRowSize
+	for size := range d.ControlPoints {
+		if size < rowSize && rowSize-size < rowSize-closestPointLessThanRowSize {
+			closestPointLessThanRowSize = size
+		}
+		if size > rowSize && size-rowSize < closestPointGreaterThanRowSize-rowSize {
+			closestPointGreaterThanRowSize = size
+		}
+	}
+	return linearInterpolation(
+		rowSize, closestPointLessThanRowSize,
+		int(d.ControlPoints[closestPointLessThanRowSize]),
+		closestPointGreaterThanRowSize,
+		int(d.ControlPoints[closestPointGreaterThanRowSize]),
+	)
+}
+
+func linearInterpolation(x, x0, y0, x1, y1 int) int {
+	return y0*(x1-x)/(x1-x0) + y1*(x-x0)/(x1-x0)
 }
 
 type Config struct {
