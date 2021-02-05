@@ -442,7 +442,7 @@ func (d *DataIterationBatchSizePerTableOverride) UpdateBatchSizes(db *sql.DB, ta
 			// MySQL has an upper limit of 2^16 for num_params for prepared statements. This will cause an error when
 			// we attempt to execute a INSERT statement with > 65535 parameters.
 			// If batchSize > 65535/num_columns, we will use 65535/num_columns
-			batchSize := d.calculateBatchSize(avgRowLength)
+			batchSize := d.CalculateBatchSize(avgRowLength)
 			if batchSize >= maxBatchSize {
 				batchSize = maxBatchSize
 			}
@@ -453,7 +453,7 @@ func (d *DataIterationBatchSizePerTableOverride) UpdateBatchSizes(db *sql.DB, ta
 	return nil
 }
 
-func (d *DataIterationBatchSizePerTableOverride) calculateBatchSize(rowSize int) int {
+func (d *DataIterationBatchSizePerTableOverride) CalculateBatchSize(rowSize int) int {
 	if batchSize, found := d.ControlPoints[rowSize]; found {
 		return int(batchSize)
 	}

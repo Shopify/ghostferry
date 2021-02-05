@@ -233,6 +233,37 @@ func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverrideMax
 	}
 }
 
+func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverrideCalculateBatchSize() {
+	this.Ferry.DataIterationBatchSizePerTableOverride = &ghostferry.DataIterationBatchSizePerTableOverride{
+		MinRowSize: 100,
+		MaxRowSize: 10000,
+		ControlPoints: map[int]uint64{
+			100:   2000,
+			10000: 200,
+		},
+		TableOverride: map[string]map[string]uint64{},
+	}
+
+	expectedResults := map[int]int{
+		1:     2000,
+		100:   2000,
+		200:   1981,
+		500:   1927,
+		1000:  1836,
+		2000:  1654,
+		3500:  1381,
+		5000:  1108,
+		10000: 200,
+		15000: 200,
+		20000: 200,
+	}
+
+	for rowSize, expectedBatchSize := range expectedResults {
+		batchSize := this.Ferry.DataIterationBatchSizePerTableOverride.CalculateBatchSize(rowSize)
+		this.Require().Equal(batchSize, expectedBatchSize)
+	}
+}
+
 func TestDataIterator(t *testing.T) {
 	testhelpers.SetupTest()
 	suite.Run(t, &DataIteratorTestSuite{GhostferryUnitTestSuite: &testhelpers.GhostferryUnitTestSuite{}})
