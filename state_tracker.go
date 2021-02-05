@@ -83,6 +83,7 @@ type RowStats struct {
 	NumRows  uint64
 	NumBytes uint64
 }
+
 type StateTracker struct {
 	BinlogRWMutex *sync.RWMutex
 	CopyRWMutex   *sync.RWMutex
@@ -145,7 +146,7 @@ func (s *StateTracker) UpdateLastResumableBinlogPositionForTargetVerifier(pos my
 	s.lastStoredBinlogPositionForTargetVerifier = pos
 }
 
-func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginationKey uint64, rowsWrittenForThisBatch uint64, bytesWrittenForThisBatch uint64) {
+func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginationKey uint64, rowStats RowStats) {
 	s.CopyRWMutex.Lock()
 	defer s.CopyRWMutex.Unlock()
 
@@ -156,11 +157,7 @@ func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginatio
 	// hopefully will motivate us to fix it by refactoring the state tracker a bit
 	// in the future. Namely, the tracking of performance metrics and the tracking
 	// of pagination key locations should be done more separately than it is now.
-	prev := s.rowStatsWrittenPerTable[table]
-	rowsTotal := prev.NumRows + rowsWrittenForThisBatch
-	bytesTotal := prev.NumBytes + bytesWrittenForThisBatch
-
-	s.rowStatsWrittenPerTable[table] = RowStats{NumRows: rowsTotal, NumBytes: bytesTotal}
+	s.updateRowStatsForTable(table, rowStats)
 
 	s.updateSpeedLog(deltaPaginationKey)
 }
@@ -234,6 +231,13 @@ func (s *StateTracker) EstimatedPaginationKeysPerSecond() float64 {
 	deltaT := currentValue.At.Sub(earliestValue.At).Seconds()
 
 	return float64(deltaPaginationKey) / deltaT
+}
+
+func (s *StateTracker) updateRowStatsForTable(table string, rowStats RowStats) {
+	s.rowStatsWrittenPerTable[table] = RowStats{
+		NumBytes: rowStats.NumBytes + s.rowStatsWrittenPerTable[table].NumBytes,
+		NumRows:  rowStats.NumRows + s.rowStatsWrittenPerTable[table].NumRows,
+	}
 }
 
 func (s *StateTracker) updateSpeedLog(deltaPaginationKey uint64) {

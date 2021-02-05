@@ -4,7 +4,7 @@ class CallbacksTest < GhostferryTestCase
   def test_progress_callback
     seed_simple_database_with_single_table
 
-    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline"})
     progress = []
     ghostferry.on_callback("progress") do |progress_data|
       progress << progress_data

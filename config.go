@@ -700,7 +700,7 @@ type Config struct {
 	//
 	// Required: defaults to false
 	SkipTargetVerification bool
-	//
+
 	// During initialization, Ghostferry will raise an error if any
 	// foreign key constraints are detected in the source database.
 	//
@@ -712,6 +712,11 @@ type Config struct {
 	//
 	// Required: defaults to false
 	SkipForeignKeyConstraintsCheck bool
+
+	// EnableRowBatchsize is used to enable or disable the calculation of number of bytes written for each row batch.
+	//
+	// Optional: Defaults to false.
+	EnableRowBatchSize bool
 }
 
 func (c *Config) ValidateConfig() error {

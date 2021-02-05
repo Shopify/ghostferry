@@ -108,6 +108,17 @@ func (this *RowBatchTestSuite) TestRowBatchNoPaginationKeyIndex() {
 	this.Require().Equal(false, batch.ValuesContainPaginationKey())
 }
 
+func (this *RowBatchTestSuite) TestEstimateBytesSize() {
+	vals := []ghostferry.RowData{
+		ghostferry.RowData{make([]byte, 100)},
+		ghostferry.RowData{make([]byte, 100)},
+	}
+
+	batch := ghostferry.NewRowBatch(this.sourceTable, vals, 0)
+
+	this.Require().GreaterOrEqual(batch.EstimateByteSize(), uint64(200), "estimated batch size should be greater then 200")
+}
+
 func TestRowBatchTestSuite(t *testing.T) {
 	suite.Run(t, new(RowBatchTestSuite))
 }

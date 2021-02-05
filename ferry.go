@@ -193,7 +193,8 @@ func (f *Ferry) NewBatchWriter() *BatchWriter {
 		DatabaseRewrites: f.Config.DatabaseRewrites,
 		TableRewrites:    f.Config.TableRewrites,
 
-		WriteRetries: f.Config.DBWriteRetries,
+		WriteRetries:       f.Config.DBWriteRetries,
+		enableRowBatchSize: f.Config.EnableRowBatchSize,
 	}
 
 	batchWriter.Initialize()

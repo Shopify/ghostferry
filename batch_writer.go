@@ -40,6 +40,8 @@ type BatchWriter struct {
 
 	stmtCache *StmtCache
 	logger    *logrus.Entry
+
+	enableRowBatchSize bool
 }
 
 func (w *BatchWriter) Initialize() {
@@ -123,7 +125,12 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 		// Note that the state tracker expects us the track based on the original
 		// database and table names as opposed to the target ones.
 		if w.StateTracker != nil {
-			w.StateTracker.UpdateLastSuccessfulPaginationKey(batch.TableSchema().String(), endPaginationKeypos, uint64(batch.Size()), batch.EstimateByteSize())
+			bytesWrittenForThisBatch := uint64(0)
+			if w.enableRowBatchSize {
+				bytesWrittenForThisBatch = batch.EstimateByteSize()
+			}
+			w.StateTracker.UpdateLastSuccessfulPaginationKey(batch.TableSchema().String(), endPaginationKeypos,
+				RowStats{NumBytes: bytesWrittenForThisBatch, NumRows: uint64(batch.Size())})
 		}
 
 		return nil
