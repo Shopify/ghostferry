@@ -443,6 +443,13 @@ func (f *Ferry) Initialize() (err error) {
 		f.Tables = f.StateToResumeFrom.LastKnownTableSchemaCache
 	}
 
+	if f.Config.DataIterationBatchSizePerTableOverride != nil {
+		err = f.Config.DataIterationBatchSizePerTableOverride.UpdateBatchSizes(f.SourceDB, f.Tables)
+		if err != nil {
+			f.logger.WithError(err).Warn("Failed to update batch sizes for all tables")
+		}
+	}
+
 	// The iterative verifier needs the binlog streamer so this has to be first.
 	// Eventually this can be moved below the verifier initialization.
 	f.BinlogStreamer = f.NewBinlogStreamer(f.SourceDB, f.Config.Source)
@@ -895,6 +902,7 @@ func (f *Ferry) Progress() *Progress {
 			TargetPaginationKey:         targetPaginationKeys[tableName],
 			CurrentAction:               currentAction,
 			RowsWritten:                 rowsWritten,
+			BatchSize:                   f.DataIterator.CursorConfig.GetBatchSize(table.Schema, table.Name),
 		}
 	}
 

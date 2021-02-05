@@ -15,6 +15,7 @@ type TableProgress struct {
 	TargetPaginationKey         uint64
 	CurrentAction               string // Possible values are defined via the constants TableAction*
 	RowsWritten                 uint64
+	BatchSize                   uint64
 }
 
 type Progress struct {
