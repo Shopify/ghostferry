@@ -1,0 +1,35 @@
+{
+  "Source": {
+    "Host": "127.0.0.1",
+    "Port": 29291,
+    "User": "root",
+    "Pass": "",
+    "Collation": "utf8mb4_unicode_ci",
+    "Params": {
+      "charset": "utf8mb4"
+    }
+  },
+
+  "Target": {
+    "Host": "127.0.0.1",
+    "Port": 29292,
+    "User": "root",
+    "Pass": "",
+    "Collation": "utf8mb4_unicode_ci",
+    "Params": {
+      "charset": "utf8mb4"
+    }
+  },
+
+  "Databases": {
+    "Whitelist": ["abc"]
+  },
+
+  "Tables": {
+    "Blacklist": [""]
+  },
+
+  "VerifierType": "Inline",
+  "SkipTargetVerification": true,
+  "DataIterationBatchSize": 200
+}
