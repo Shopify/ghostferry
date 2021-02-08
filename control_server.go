@@ -1,15 +1,56 @@
 package ghostferry
 
 import (
+	"fmt"
 	"html/template"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
 )
+
+type ControlServerTableStatus struct {
+	TableName                   string
+	PaginationKeyName           string
+	Status                      string
+	LastSuccessfulPaginationKey uint64
+	TargetPaginationKey         uint64
+}
+
+type ControlServerStatus struct {
+	Progress
+	GhostferryVersion string
+
+	SourceHostPort string
+	TargetHostPort string
+
+	OverallState      string
+	StartTime         time.Time
+	CurrentTime       time.Time
+	TimeTaken         time.Duration
+	ETA               time.Duration
+	BinlogStreamerLag time.Duration
+
+	AutomaticCutover            bool
+	BinlogStreamerStopRequested bool
+
+	CompletedTableCount int
+	TotalTableCount     int
+	TableStatuses       []*ControlServerTableStatus
+	AllTableNames       []string
+	AllDatabaseNames    []string
+
+	VerifierSupport     bool
+	VerifierAvailable   bool
+	VerificationStarted bool
+	VerificationDone    bool
+	VerificationResult  VerificationResult
+	VerificationErr     error
+}
 
 type ControlServer struct {
 	F        *Ferry
@@ -83,9 +124,7 @@ func (this *ControlServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
-	status := FetchStatus(this.F, this.Verifier)
-
-	err := this.templates.ExecuteTemplate(w, "index.html", status)
+	err := this.templates.ExecuteTemplate(w, "index.html", this.fetchStatus())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -135,4 +174,81 @@ func (this *ControlServer) HandleVerify(w http.ResponseWriter, r *http.Request) 
 	}
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (this *ControlServer) fetchStatus() *ControlServerStatus {
+	status := &ControlServerStatus{}
+	status.Progress = *(this.F.Progress())
+
+	status.GhostferryVersion = VersionString
+
+	status.SourceHostPort = fmt.Sprintf("%s:%d", this.F.Source.Host, this.F.Source.Port)
+	status.TargetHostPort = fmt.Sprintf("%s:%d", this.F.Target.Host, this.F.Target.Port)
+
+	status.OverallState = fmt.Sprintf("%s", this.F.OverallState.Load())
+
+	status.StartTime = this.F.StartTime
+	status.CurrentTime = time.Now()
+	status.TimeTaken = time.Duration(status.TimeTaken)
+
+	status.BinlogStreamerLag = time.Duration(status.BinlogStreamerLag)
+
+	status.AutomaticCutover = this.F.Config.AutomaticCutover
+	status.BinlogStreamerStopRequested = this.F.BinlogStreamer.stopRequested
+
+	// Getting all table statuses
+	status.TableStatuses = make([]*ControlServerTableStatus, 0, len(status.Tables))
+	status.CompletedTableCount = 0
+	status.TotalTableCount = len(status.Tables)
+	status.AllTableNames = make([]string, 0, len(status.Tables))
+
+	dbSet := make(map[string]bool)
+	for name, tableProgress := range status.Tables {
+		status.TableStatuses = append(status.TableStatuses, &ControlServerTableStatus{
+			TableName:                   name,
+			PaginationKeyName:           this.F.Tables[name].GetPaginationColumn().Name,
+			Status:                      tableProgress.CurrentAction,
+			LastSuccessfulPaginationKey: tableProgress.LastSuccessfulPaginationKey,
+			TargetPaginationKey:         tableProgress.LastSuccessfulPaginationKey,
+		})
+
+		status.AllTableNames = append(status.AllTableNames, name)
+		dbSet[this.F.Tables[name].Schema] = true
+
+		if tableProgress.CurrentAction == TableActionCompleted {
+			status.CompletedTableCount++
+		}
+	}
+
+	status.AllDatabaseNames = make([]string, 0, len(dbSet))
+	for dbName := range dbSet {
+		status.AllDatabaseNames = append(status.AllDatabaseNames, dbName)
+	}
+
+	sort.Strings(status.AllDatabaseNames)
+	sort.Strings(status.AllTableNames)
+
+	// ETA estimation
+	// We do it here rather than in DataIteratorState to give the lock back
+	// ASAP. It's not supposed to be that accurate anyway.
+	status.ETA = time.Duration(status.ETA)
+
+	// Verifier display
+	if this.Verifier != nil {
+		status.VerifierSupport = true
+
+		result, err := this.Verifier.Result()
+		status.VerificationStarted = result.IsStarted()
+		status.VerificationDone = result.IsDone()
+
+		// We can only run the verifier if we're not copying and not verifying
+		status.VerifierAvailable = status.OverallState != StateStarting && status.OverallState != StateCopying && (!status.VerificationStarted || status.VerificationDone)
+		status.VerificationResult = result.VerificationResult
+		status.VerificationErr = err
+	} else {
+		status.VerifierSupport = false
+		status.VerifierAvailable = false
+	}
+
+	return status
 }
