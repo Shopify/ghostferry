@@ -1,2 +1,4 @@
 /webui
 out
+out*
+*.svg
