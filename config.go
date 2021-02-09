@@ -716,6 +716,11 @@ type Config struct {
 	// EnableRowBatchsize is used to enable or disable the calculation of number of bytes written for each row batch.
 	//
 	// Optional: Defaults to false.
+	//
+	// NOTE:
+	// Turning off the EnableRowBatchSize flag would show the NumBytes written per RowBatch to be zero
+	// in the Progress. This behaviour is perfectly okay and doesn't mean there are no rows being written
+	// to the target DB.
 	EnableRowBatchSize bool
 }
 

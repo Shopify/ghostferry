@@ -107,7 +107,7 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 			if w.EnforceInlineVerification {
 				// This code should only be active if the InlineVerifier background
 				// reverification is not occuring. An example of this would be when you
-				// run the BatchWriter as a part of copying the primary table or delta
+				// run the BatchWriter as a part of copying the primary table or the delta
 				// copying the joined table.
 				if len(mismatches) > 0 {
 					tx.Rollback()
