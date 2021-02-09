@@ -143,6 +143,8 @@ which should look like the following:
       "Blacklist": ["table2"]
     },
 
+    "SkipTargetVerification": true,
+
     "VerifierType": "ChecksumTable"
   }
 
