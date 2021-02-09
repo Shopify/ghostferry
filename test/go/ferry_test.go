@@ -39,6 +39,33 @@ func (t *FerryTestSuite) TestReadOnlyDatabaseFailsInitialization() {
 	t.Require().Nil(err)
 }
 
+func (t *FerryTestSuite) TestSourceDatabaseWithForeignKeyConstraintFailsInitialization() {
+	createTableWithFkConstraint := `
+		CREATE TABLE gftest.test_fk (
+			id bigint(20) NOT NULL AUTO_INCREMENT,
+			tt1_id BIGINT(20),
+			PRIMARY KEY(ID),
+			FOREIGN KEY(tt1_id) REFERENCES test_table_1(id)
+		)
+	`
+
+	testhelpers.SeedInitialData(t.Ferry.SourceDB, "gftest", "test_table_1", 0)
+	t.Ferry.SourceDB.Exec(createTableWithFkConstraint)
+
+	ferry := testhelpers.NewTestFerry().Ferry
+	err := ferry.Initialize()
+
+	t.Require().Equal("found at least 1 foreign key constraint on source DB. table: gftest.test_fk, constraint: test_fk_ibfk_1", err.Error())
+
+	// Initialize a ferry with SkipForeignKeyConstraintsCheck, assert no error
+	ferry = testhelpers.NewTestFerry().Ferry
+	ferry.Config.SkipForeignKeyConstraintsCheck = true
+
+	err = ferry.Initialize()
+
+	t.Require().Nil(err)
+}
+
 func TestFerryTestSuite(t *testing.T) {
 	suite.Run(t, &FerryTestSuite{GhostferryUnitTestSuite: &testhelpers.GhostferryUnitTestSuite{}})
 }
