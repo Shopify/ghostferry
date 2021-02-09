@@ -18,11 +18,6 @@ func (t *FerryTestSuite) SetupTest() {
 	t.GhostferryUnitTestSuite.SetupTest()
 }
 
-func (t *FerryTestSuite) TearDownTest() {
-	_, err := t.Ferry.TargetDB.Exec("SET GLOBAL read_only = OFF")
-	t.Require().Nil(err)
-}
-
 func (t *FerryTestSuite) TestReadOnlyDatabaseFailsInitialization() {
 	_, err := t.Ferry.TargetDB.Exec("SET GLOBAL read_only = ON")
 	t.Require().Nil(err)
