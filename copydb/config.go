@@ -50,6 +50,8 @@ type Config struct {
 	// If a table is to be created on start and appears in this list, it is
 	// created before any other table, and is created in the order listed here.
 	// All tables not specified in this list are created in arbitrary order.
+	//
+	// Note: if used to overcome foreign key restrictions, ensure SkipForeignKeyConstraintsCheck is true.
 	TablesToBeCreatedFirst []string
 
 	// If you're running Ghostferry from a read only replica, turn this option
