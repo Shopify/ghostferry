@@ -241,8 +241,14 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 		status.VerificationStarted = result.IsStarted()
 		status.VerificationDone = result.IsDone()
 
-		// We can only run the verifier if we're not copying and not verifying
-		status.VerifierAvailable = status.OverallState != StateStarting && status.OverallState != StateCopying && (!status.VerificationStarted || status.VerificationDone)
+		// If the VerifierType is CheckSumTable we can only run the verifier when the we're done.
+		// For other verifiers we can run verification if we're not copying or verifying.
+		if this.F.Config.VerifierType == VerifierTypeChecksumTable {
+			status.VerifierAvailable = (status.OverallState == StateDone)
+		} else {
+			status.VerifierAvailable = status.OverallState != StateStarting && status.OverallState != StateCopying && (!status.VerificationStarted || status.VerificationDone)
+		}
+
 		status.VerificationResult = result.VerificationResult
 		status.VerificationErr = err
 	} else {
