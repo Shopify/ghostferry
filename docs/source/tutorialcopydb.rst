@@ -234,11 +234,12 @@ to:
   allow external scripts (configured via the json configuration) to be
   automatically executed with the push of this button so you can perform
   operations you need to perform during cutover.
-- Run Verification: This button is only available during the Wait-For-Cutover
-  and Done phase of the move. It will run the ChecksumTable verifier we
-  specified earlier ensure the data are identical on the source and target. You
-  should only run this while the source is read only and when the target is not
-  yet written to.
+- Run Verification: This button is only available during the Done phase of the move 
+  if the VerifierType is ChecksumTable. For Verifiers other then ChecksumTable this 
+  button is available in Wait-For-Cutover and Done phase of the move. It will run 
+  the ChecksumTable verifier we specified earlier ensure the data are identical 
+  on the source and target. You should only run this while the source is read only 
+  and when the target is not yet written to.
 
 The page will refresh itself every 60 seconds.
 
