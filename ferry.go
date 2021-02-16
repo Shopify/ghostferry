@@ -917,8 +917,12 @@ func (f *Ferry) Progress() *Progress {
 	for _, completedPaginationKey := range serializedState.LastSuccessfulPaginationKeys {
 		completedPaginationKeys += completedPaginationKey
 	}
+	var remainingPaginationKeys float64 = 0
 
-	s.ETA = (time.Duration(math.Ceil(float64(totalPaginationKeysToCopy-completedPaginationKeys)/estimatedPaginationKeysPerSecond)) * time.Second).Seconds()
+	// We do this because if rows are inserted between when ghostferry is started and when all the copy is completed
+	// we can end up with a negative value.
+	remainingPaginationKeys = math.Max(0, float64(totalPaginationKeysToCopy-completedPaginationKeys))
+	s.ETA = (time.Duration(math.Ceil(remainingPaginationKeys/estimatedPaginationKeysPerSecond)) * time.Second).Seconds()
 	s.PaginationKeysPerSecond = uint64(estimatedPaginationKeysPerSecond)
 	s.TimeTaken = time.Now().Sub(f.StartTime).Seconds()
 

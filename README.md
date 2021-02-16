@@ -5,7 +5,7 @@ Ghostferry is a library that enables you to selectively copy data from one mysql
 
 It is inspired by Github's [gh-ost](https://github.com/github/gh-ost),
 although instead of copying data from and to the same database, Ghostferry
-copies data from one database to another and have the ability to only
+copies data from one database to another and has the ability to only
 partially copy data.
 
 There is an example application called ghostferry-copydb included (under the
