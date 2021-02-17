@@ -3,8 +3,9 @@ package ghostferry
 import (
 	sqlorig "database/sql"
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"strings"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/siddontang/go-mysql/schema"
@@ -300,6 +301,26 @@ func (c TableSchemaCache) AllTableNames() (tableNames []string) {
 
 func (c TableSchemaCache) Get(database, table string) *TableSchema {
 	return c[fullTableName(database, table)]
+}
+
+func targetToSourceSchemaRewrites(databaseRewrites map[string]string) map[string]string {
+	targetToSourceSchemaRewrites := make(map[string]string)
+
+	for sourceDB, targetDB := range databaseRewrites {
+		targetToSourceSchemaRewrites[targetDB] = sourceDB
+	}
+
+	return targetToSourceSchemaRewrites
+}
+
+func targetToSourceTableRewrites(tableRewrites map[string]string) map[string]string {
+	targetToSourceTableRewrites := make(map[string]string)
+
+	for sourceTable, targetTable := range tableRewrites {
+		targetToSourceTableRewrites[targetTable] = sourceTable
+	}
+
+	return targetToSourceTableRewrites
 }
 
 // Helper to sort a given map of tables with a second list giving a priority.

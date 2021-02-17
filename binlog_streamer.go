@@ -29,6 +29,9 @@ type BinlogStreamer struct {
 	binlogSyncer   *replication.BinlogSyncer
 	binlogStreamer *replication.BinlogStreamer
 
+	DatabaseRewrites map[string]string
+	TableRewrites    map[string]string
+
 	lastStreamedBinlogPosition  mysql.Position
 	lastResumableBinlogPosition mysql.Position
 	stopAtBinlogPosition        mysql.Position
@@ -350,12 +353,22 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 		Pos:  ev.Header.LogPos,
 	}
 
-	table := s.TableSchema.Get(string(rowsEvent.Table.Schema), string(rowsEvent.Table.Table))
-	if table == nil {
+	db := string(rowsEvent.Table.Schema)
+	if rewrittenDBName, exists := s.DatabaseRewrites[db]; exists {
+		db = rewrittenDBName
+	}
+
+	table := string(rowsEvent.Table.Table)
+	if rewrittenTableName, exists := s.TableRewrites[table]; exists {
+		table = rewrittenTableName
+	}
+
+	tableFromSchemaCache := s.TableSchema.Get(db, table)
+	if tableFromSchemaCache == nil {
 		return nil
 	}
 
-	dmlEvs, err := NewBinlogDMLEvents(table, ev, pos, s.lastResumableBinlogPosition, query)
+	dmlEvs, err := NewBinlogDMLEvents(tableFromSchemaCache, ev, pos, s.lastResumableBinlogPosition, query)
 	if err != nil {
 		return err
 	}
