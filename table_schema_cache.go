@@ -3,8 +3,9 @@ package ghostferry
 import (
 	sqlorig "database/sql"
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"strings"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/siddontang/go-mysql/schema"
@@ -300,6 +301,32 @@ func (c TableSchemaCache) AllTableNames() (tableNames []string) {
 
 func (c TableSchemaCache) Get(database, table string) *TableSchema {
 	return c[fullTableName(database, table)]
+}
+
+// TargetTableSchemaCache returns the table schema of the source database after applying
+// all of the applicable rewrites to the schema and tables for the target database
+func (c TableSchemaCache) TargetTableSchemaCache(databaseRewrites, tableRewrites map[string]string) TableSchemaCache {
+	targetTableSchema := make(TableSchemaCache)
+	for fullTableName, schema := range c {
+		splitSchema := strings.Split(fullTableName, ".")
+		sourceSchema, sourceTable := splitSchema[0], splitSchema[1]
+
+		targetSchema, targetTable := sourceSchema, sourceTable
+		if newSchemaName, exists := databaseRewrites[sourceSchema]; exists {
+			targetSchema = newSchemaName
+			schema.Schema = newSchemaName
+		}
+
+		if newTableName, exists := tableRewrites[sourceTable]; exists {
+			targetTable = newTableName
+			schema.Name = newTableName
+		}
+
+		fullTargetName := fmt.Sprintf("%s.%s", targetSchema, targetTable)
+		targetTableSchema[fullTargetName] = schema
+	}
+
+	return targetTableSchema
 }
 
 // Helper to sort a given map of tables with a second list giving a priority.

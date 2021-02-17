@@ -126,7 +126,16 @@ func (f *Ferry) NewDataIteratorWithoutStateTracker() *DataIterator {
 	return dataIterator
 }
 
-func (f *Ferry) NewBinlogStreamer(db *sql.DB, dbConf *DatabaseConfig) *BinlogStreamer {
+func (f *Ferry) NewSourceBinlogStreamer(db *sql.DB, dbConf *DatabaseConfig) *BinlogStreamer {
+	return f.newBinlogStreamer(db, dbConf, f.Tables, "source_binlog_streamer")
+}
+
+func (f *Ferry) NewTargetBinlogStreamer(db *sql.DB, dbConf *DatabaseConfig) *BinlogStreamer {
+	tableSchemaCache := f.Tables.TargetTableSchemaCache(f.Config.DatabaseRewrites, f.Config.TableRewrites)
+	return f.newBinlogStreamer(db, dbConf, tableSchemaCache, "target_binlog_streamer")
+}
+
+func (f *Ferry) newBinlogStreamer(db *sql.DB, dbConf *DatabaseConfig, tableSchemaCache TableSchemaCache, logTag string) *BinlogStreamer {
 	f.ensureInitialized()
 
 	return &BinlogStreamer{
@@ -135,7 +144,8 @@ func (f *Ferry) NewBinlogStreamer(db *sql.DB, dbConf *DatabaseConfig) *BinlogStr
 		MyServerId:   f.Config.MyServerId,
 		ErrorHandler: f.ErrorHandler,
 		Filter:       f.CopyFilter,
-		TableSchema:  f.Tables,
+		TableSchema:  tableSchemaCache,
+		LogTag:       logTag,
 	}
 }
 
@@ -452,11 +462,10 @@ func (f *Ferry) Initialize() (err error) {
 
 	// The iterative verifier needs the binlog streamer so this has to be first.
 	// Eventually this can be moved below the verifier initialization.
-	f.BinlogStreamer = f.NewBinlogStreamer(f.SourceDB, f.Config.Source)
+	f.BinlogStreamer = f.NewSourceBinlogStreamer(f.SourceDB, f.Config.Source)
 
 	if !f.Config.SkipTargetVerification {
-		targetBinlogStreamer := f.NewBinlogStreamer(f.TargetDB, f.Config.Target)
-		targetBinlogStreamer.LogTag = "tgt_binlog_streamer"
+		targetBinlogStreamer := f.NewTargetBinlogStreamer(f.TargetDB, f.Config.Target)
 		targetVerifier, err := NewTargetVerifier(f.TargetDB, f.StateTracker, targetBinlogStreamer)
 		if err != nil {
 			return err

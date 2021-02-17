@@ -426,6 +426,29 @@ func (this *TableSchemaCacheTestSuite) TestGetTableListWithPriorityIgnoreUnknown
 	this.Require().Equal(len(creationOrder), 3)
 	this.Require().ElementsMatch(creationOrder, tables.AllTableNames())
 	this.Require().Equal(creationOrder[0], "schema.table2")
+
+}
+
+func (this *TableSchemaCacheTestSuite) TestTargetTableSchema() {
+	tables := getMultiTableMap()
+
+	databaseRewrites := make(map[string]string)
+	databaseRewrites["schema"] = "target_schema"
+
+	tableRewrites := make(map[string]string)
+	tableRewrites["table1"] = "target_table1"
+
+	targetTableSchemaCache := tables.TargetTableSchemaCache(databaseRewrites, tableRewrites)
+
+	targetSchema := &ghostferry.TableSchema{
+		Table: &sqlSchema.Table{
+			Schema: "target_schema",
+			Name:   "target_table1",
+		},
+	}
+
+	this.Require().Equal("target_schema.target_table1", targetTableSchemaCache.Get("target_schema", "target_table1").String())
+	this.Require().Equal(targetSchema, targetTableSchemaCache.Get("target_schema", "target_table1"))
 }
 
 func TestTableSchemaCache(t *testing.T) {
