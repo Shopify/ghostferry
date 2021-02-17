@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	sqlorig "database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -303,24 +304,30 @@ func (c TableSchemaCache) Get(database, table string) *TableSchema {
 	return c[fullTableName(database, table)]
 }
 
-func targetToSourceSchemaRewrites(databaseRewrites map[string]string) map[string]string {
+func targetToSourceSchemaRewrites(databaseRewrites map[string]string) (map[string]string, error) {
 	targetToSourceSchemaRewrites := make(map[string]string)
 
 	for sourceDB, targetDB := range databaseRewrites {
+		if _, exists := targetToSourceSchemaRewrites[targetDB]; exists {
+			return nil, errors.New("duplicate target to source schema rewrite detected")
+		}
 		targetToSourceSchemaRewrites[targetDB] = sourceDB
 	}
 
-	return targetToSourceSchemaRewrites
+	return targetToSourceSchemaRewrites, nil
 }
 
-func targetToSourceTableRewrites(tableRewrites map[string]string) map[string]string {
+func targetToSourceTableRewrites(tableRewrites map[string]string) (map[string]string, error) {
 	targetToSourceTableRewrites := make(map[string]string)
 
 	for sourceTable, targetTable := range tableRewrites {
+		if _, exists := targetToSourceTableRewrites[targetTable]; exists {
+			return nil, errors.New("duplicate target to source table rewrite detected")
+		}
 		targetToSourceTableRewrites[targetTable] = sourceTable
 	}
 
-	return targetToSourceTableRewrites
+	return targetToSourceTableRewrites, nil
 }
 
 // Helper to sort a given map of tables with a second list giving a priority.
