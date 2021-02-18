@@ -405,8 +405,7 @@ func getMultiTableMap() *ghostferry.TableSchemaCache {
 
 func (this *TableSchemaCacheTestSuite) TestGetTableListWithPriorityNil() {
 	tables := getMultiTableMap()
-	// make sure we are not losing any elements, even if the priority does not
-	// mater
+	// make sure we are not losing any elements, even if the priority doesn't matter
 	creationOrder := tables.GetTableListWithPriority(nil)
 	this.Require().Equal(len(creationOrder), 3)
 	this.Require().ElementsMatch(creationOrder, tables.AllTableNames())
@@ -426,6 +425,23 @@ func (this *TableSchemaCacheTestSuite) TestGetTableListWithPriorityIgnoreUnknown
 	this.Require().Equal(len(creationOrder), 3)
 	this.Require().ElementsMatch(creationOrder, tables.AllTableNames())
 	this.Require().Equal(creationOrder[0], "schema.table2")
+}
+
+func (this *TableSchemaCacheTestSuite) TestTargetVerifierErrorsOnDuplicateRewriteValue() {
+	rewrites := make(map[string]string)
+	rewrites["source"] = "target"
+
+	reversed, err := ghostferry.TargetToSourceRewrites(rewrites)
+	this.Require().Nil(err)
+	this.Require().Equal(len(reversed), 1)
+	this.Require().Equal(reversed["target"], "source")
+
+	dupRewrites := make(map[string]string)
+	dupRewrites["source1"] = "target"
+	dupRewrites["source2"] = "target"
+
+	_, err = ghostferry.TargetToSourceRewrites(dupRewrites)
+	this.Require().Equal(err.Error(), "duplicate target to source rewrite detected")
 }
 
 func TestTableSchemaCache(t *testing.T) {

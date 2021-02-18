@@ -2,9 +2,10 @@ package testhelpers
 
 import (
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math/rand"
 	"sync"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	sq "github.com/Masterminds/squirrel"
 )
@@ -65,7 +66,7 @@ func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows int) {
 	_, err = db.Exec(query)
 	PanicIfError(err)
 
-	query = "CREATE TABLE %s.%s (id bigint(20) not null auto_increment, data TEXT, primary key(id))"
+	query = "CREATE TABLE IF NOT EXISTS %s.%s (id bigint(20) not null auto_increment, data TEXT, primary key(id))"
 	query = fmt.Sprintf(query, dbname, tablename)
 
 	_, err = db.Exec(query)

@@ -131,12 +131,12 @@ func (f *Ferry) NewSourceBinlogStreamer() *BinlogStreamer {
 }
 
 func (f *Ferry) NewTargetBinlogStreamer() (*BinlogStreamer, error) {
-	schemaRewrites, err := targetToSourceSchemaRewrites(f.Config.DatabaseRewrites)
+	schemaRewrites, err := TargetToSourceRewrites(f.Config.DatabaseRewrites)
 	if err != nil {
 		return nil, err
 	}
 
-	tableRewrites, err := targetToSourceTableRewrites(f.Config.TableRewrites)
+	tableRewrites, err := TargetToSourceRewrites(f.Config.TableRewrites)
 	if err != nil {
 		return nil, err
 	}

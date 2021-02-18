@@ -118,6 +118,51 @@ func (this *BinlogStreamerTestSuite) TestBinlogStreamerSetsBinlogPositionOnDMLEv
 	this.Require().True(eventAsserted)
 }
 
+func (this *BinlogStreamerTestSuite) TestBinlogStreamerSetsBinlogPositionOnDMLEventWithRewrites() {
+	testSchemaRewrite := "gftest_target"
+	testTableRewrite := "target_test_table_1"
+
+	testhelpers.SeedInitialData(this.sourceDB, testSchemaRewrite, testTableRewrite, 0)
+
+	databaseRewrites := make(map[string]string)
+	databaseRewrites[testSchemaRewrite] = "gftest"
+	this.binlogStreamer.DatabaseRewrites = databaseRewrites
+
+	tableRewrites := make(map[string]string)
+	tableRewrites[testTableRewrite] = "test_table_1"
+	this.binlogStreamer.TableRewrites = tableRewrites
+
+	_, err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
+	this.Require().Nil(err)
+
+	eventAsserted := false
+
+	this.binlogStreamer.AddEventListener(func(evs []ghostferry.DMLEvent) error {
+		eventAsserted = true
+		this.Require().Equal(1, len(evs))
+		this.Require().True(strings.HasPrefix(evs[0].BinlogPosition().Name, "mysql-bin."))
+		this.Require().True(evs[0].BinlogPosition().Pos > 0)
+		this.binlogStreamer.FlushAndStop()
+		return nil
+	})
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		this.binlogStreamer.Run()
+	}()
+
+	_, err = this.sourceDB.Exec(fmt.Sprintf("INSERT INTO %s.%s VALUES (null, 'testdata')", testSchemaRewrite, testTableRewrite))
+	this.Require().Nil(err)
+
+	wg.Wait()
+	this.Require().True(eventAsserted)
+
+	_, err = this.Ferry.SourceDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", testSchemaRewrite))
+	this.Require().Nil(err)
+}
+
 func (this *BinlogStreamerTestSuite) TestBinlogStreamerSetsQueryEventOnRowsEvent() {
 	_, err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
 	this.Require().Nil(err)

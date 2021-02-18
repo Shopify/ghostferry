@@ -304,30 +304,17 @@ func (c TableSchemaCache) Get(database, table string) *TableSchema {
 	return c[fullTableName(database, table)]
 }
 
-func targetToSourceSchemaRewrites(databaseRewrites map[string]string) (map[string]string, error) {
-	targetToSourceSchemaRewrites := make(map[string]string)
+func TargetToSourceRewrites(databaseRewrites map[string]string) (map[string]string, error) {
+	targetToSourceRewrites := make(map[string]string)
 
-	for sourceDB, targetDB := range databaseRewrites {
-		if _, exists := targetToSourceSchemaRewrites[targetDB]; exists {
-			return nil, errors.New("duplicate target to source schema rewrite detected")
+	for sourceVal, targetVal := range databaseRewrites {
+		if _, exists := targetToSourceRewrites[targetVal]; exists {
+			return nil, errors.New("duplicate target to source rewrite detected")
 		}
-		targetToSourceSchemaRewrites[targetDB] = sourceDB
+		targetToSourceRewrites[targetVal] = sourceVal
 	}
 
-	return targetToSourceSchemaRewrites, nil
-}
-
-func targetToSourceTableRewrites(tableRewrites map[string]string) (map[string]string, error) {
-	targetToSourceTableRewrites := make(map[string]string)
-
-	for sourceTable, targetTable := range tableRewrites {
-		if _, exists := targetToSourceTableRewrites[targetTable]; exists {
-			return nil, errors.New("duplicate target to source table rewrite detected")
-		}
-		targetToSourceTableRewrites[targetTable] = sourceTable
-	}
-
-	return targetToSourceTableRewrites, nil
+	return targetToSourceRewrites, nil
 }
 
 // Helper to sort a given map of tables with a second list giving a priority.
