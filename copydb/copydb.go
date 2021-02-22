@@ -109,7 +109,10 @@ func (this *CopydbFerry) Run() {
 	// should be identical.
 	copyWG.Wait()
 
-	this.Ferry.StopTargetVerifier()
+	err := this.Ferry.StopTargetVerifier()
+	if err != nil {
+		this.Ferry.ErrorHandler.Fatal("target_verifier", err)
+	}
 
 	// This is where you cutover from using the source database to
 	// using the target database.
