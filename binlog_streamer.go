@@ -146,23 +146,14 @@ func (s *BinlogStreamer) Run() {
 		currentFilename = nextFilename
 		var ev *replication.BinlogEvent
 		var timedOut bool
+		var err error
 
-		err := WithRetries(5, 0, s.logger, "get binlog event", func() (er error) {
-			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-			defer cancel()
-			ev, er = s.binlogStreamer.GetEvent(ctx)
-
-			if er == context.DeadlineExceeded {
-				timedOut = true
-				return nil
-			} else if er != nil {
-				s.logger.WithError(er).Warn("failed to call binlogStreamer.GetEvent")
-			}
-
-			return er
-		})
-
-		if err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer cancel()
+		ev, err = s.binlogStreamer.GetEvent(ctx)
+		if err == context.DeadlineExceeded {
+			timedOut = true
+		} else if err != nil {
 			s.ErrorHandler.Fatal("binlog_streamer", err)
 		}
 
