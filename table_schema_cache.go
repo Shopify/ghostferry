@@ -2,9 +2,11 @@ package ghostferry
 
 import (
 	sqlorig "database/sql"
+	"errors"
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"strings"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/siddontang/go-mysql/schema"
@@ -300,6 +302,19 @@ func (c TableSchemaCache) AllTableNames() (tableNames []string) {
 
 func (c TableSchemaCache) Get(database, table string) *TableSchema {
 	return c[fullTableName(database, table)]
+}
+
+func TargetToSourceRewrites(databaseRewrites map[string]string) (map[string]string, error) {
+	targetToSourceRewrites := make(map[string]string)
+
+	for sourceVal, targetVal := range databaseRewrites {
+		if _, exists := targetToSourceRewrites[targetVal]; exists {
+			return nil, errors.New("duplicate target to source rewrite detected")
+		}
+		targetToSourceRewrites[targetVal] = sourceVal
+	}
+
+	return targetToSourceRewrites, nil
 }
 
 // Helper to sort a given map of tables with a second list giving a priority.

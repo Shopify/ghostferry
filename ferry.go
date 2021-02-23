@@ -126,16 +126,37 @@ func (f *Ferry) NewDataIteratorWithoutStateTracker() *DataIterator {
 	return dataIterator
 }
 
-func (f *Ferry) NewBinlogStreamer(db *sql.DB, dbConf *DatabaseConfig) *BinlogStreamer {
+func (f *Ferry) NewSourceBinlogStreamer() *BinlogStreamer {
+	return f.newBinlogStreamer(f.SourceDB, f.Config.Source, nil, nil, "source_binlog_streamer")
+}
+
+func (f *Ferry) NewTargetBinlogStreamer() (*BinlogStreamer, error) {
+	schemaRewrites, err := TargetToSourceRewrites(f.Config.DatabaseRewrites)
+	if err != nil {
+		return nil, err
+	}
+
+	tableRewrites, err := TargetToSourceRewrites(f.Config.TableRewrites)
+	if err != nil {
+		return nil, err
+	}
+
+	return f.newBinlogStreamer(f.TargetDB, f.Config.Target, schemaRewrites, tableRewrites, "target_binlog_streamer"), nil
+}
+
+func (f *Ferry) newBinlogStreamer(db *sql.DB, dbConf *DatabaseConfig, schemaRewrites, tableRewrites map[string]string, logTag string) *BinlogStreamer {
 	f.ensureInitialized()
 
 	return &BinlogStreamer{
-		DB:           db,
-		DBConfig:     dbConf,
-		MyServerId:   f.Config.MyServerId,
-		ErrorHandler: f.ErrorHandler,
-		Filter:       f.CopyFilter,
-		TableSchema:  f.Tables,
+		DB:               db,
+		DBConfig:         dbConf,
+		MyServerId:       f.Config.MyServerId,
+		ErrorHandler:     f.ErrorHandler,
+		Filter:           f.CopyFilter,
+		TableSchema:      f.Tables,
+		LogTag:           logTag,
+		DatabaseRewrites: schemaRewrites,
+		TableRewrites:    tableRewrites,
 	}
 }
 
@@ -452,11 +473,14 @@ func (f *Ferry) Initialize() (err error) {
 
 	// The iterative verifier needs the binlog streamer so this has to be first.
 	// Eventually this can be moved below the verifier initialization.
-	f.BinlogStreamer = f.NewBinlogStreamer(f.SourceDB, f.Config.Source)
+	f.BinlogStreamer = f.NewSourceBinlogStreamer()
 
 	if !f.Config.SkipTargetVerification {
-		targetBinlogStreamer := f.NewBinlogStreamer(f.TargetDB, f.Config.Target)
-		targetBinlogStreamer.LogTag = "tgt_binlog_streamer"
+		targetBinlogStreamer, err := f.NewTargetBinlogStreamer()
+		if err != nil {
+			return err
+		}
+
 		targetVerifier, err := NewTargetVerifier(f.TargetDB, f.StateTracker, targetBinlogStreamer)
 		if err != nil {
 			return err
