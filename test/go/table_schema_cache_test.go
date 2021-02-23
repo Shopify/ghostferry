@@ -427,7 +427,7 @@ func (this *TableSchemaCacheTestSuite) TestGetTableListWithPriorityIgnoreUnknown
 	this.Require().Equal(creationOrder[0], "schema.table2")
 }
 
-func (this *TableSchemaCacheTestSuite) TestTargetVerifierErrorsOnDuplicateRewriteValue() {
+func (this *TableSchemaCacheTestSuite) TestTargetToSourceRewritesErrorsOnDuplicateRewriteValue() {
 	rewrites := make(map[string]string)
 	rewrites["source"] = "target"
 

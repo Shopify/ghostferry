@@ -29,6 +29,11 @@ type BinlogStreamer struct {
 	binlogSyncer   *replication.BinlogSyncer
 	binlogStreamer *replication.BinlogStreamer
 
+	// These rewrite structures are used specifically for the Target
+	// Verifier as it needs to map events streamed from the Target back
+	// to the TableSchemaCache of the Source
+	//
+	// See https://github.com/Shopify/ghostferry/pull/258 for details
 	DatabaseRewrites map[string]string
 	TableRewrites    map[string]string
 
