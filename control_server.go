@@ -189,9 +189,10 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 
 	status.StartTime = this.F.StartTime
 	status.CurrentTime = time.Now()
-	status.TimeTaken = time.Duration(status.TimeTaken)
 
-	status.BinlogStreamerLag = time.Duration(status.BinlogStreamerLag)
+	status.TimeTaken = time.Duration(status.Progress.TimeTaken * float64(time.Second))
+	status.BinlogStreamerLag = time.Duration(status.Progress.BinlogStreamerLag * float64(time.Second))
+	status.ETA = time.Duration(status.Progress.ETA * float64(time.Second))
 
 	status.AutomaticCutover = this.F.Config.AutomaticCutover
 	status.BinlogStreamerStopRequested = this.F.BinlogStreamer.stopRequested
@@ -254,11 +255,6 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 		append(tablesGroupByStatus[TableActionCompleted], tablesGroupByStatus[TableActionCopying]...),
 		tablesGroupByStatus[TableActionWaiting]...,
 	)
-
-	// ETA estimation
-	// We do it here rather than in DataIteratorState to give the lock back
-	// ASAP. It's not supposed to be that accurate anyway.
-	status.ETA = time.Duration(status.ETA)
 
 	// Verifier display
 	if this.Verifier != nil {
