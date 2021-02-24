@@ -241,6 +241,7 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 	status.AllTableNames = make([]string, 0, len(status.Tables))
 
 	dbSet := make(map[string]bool)
+
 	for name, tableProgress := range status.Tables {
 		status.AllTableNames = append(status.AllTableNames, name)
 		dbSet[this.F.Tables[name].Schema] = true
@@ -280,7 +281,7 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 		controlStatus := &ControlServerTableStatus{
 			TableName:                   name,
 			PaginationKeyName:           this.F.Tables[name].GetPaginationColumn().Name,
-			Status:                      tableStatus,
+			Status:                      tableProgress.CurrentAction,
 			LastSuccessfulPaginationKey: lastSuccessfulPaginationKey,
 			TargetPaginationKey:         tableProgress.TargetPaginationKey,
 		}
