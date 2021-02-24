@@ -204,14 +204,6 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 
 	dbSet := make(map[string]bool)
 	for name, tableProgress := range status.Tables {
-		status.TableStatuses = append(status.TableStatuses, &ControlServerTableStatus{
-			TableName:                   name,
-			PaginationKeyName:           this.F.Tables[name].GetPaginationColumn().Name,
-			Status:                      tableProgress.CurrentAction,
-			LastSuccessfulPaginationKey: tableProgress.LastSuccessfulPaginationKey,
-			TargetPaginationKey:         tableProgress.LastSuccessfulPaginationKey,
-		})
-
 		status.AllTableNames = append(status.AllTableNames, name)
 		dbSet[this.F.Tables[name].Schema] = true
 
@@ -227,6 +219,41 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 
 	sort.Strings(status.AllDatabaseNames)
 	sort.Strings(status.AllTableNames)
+
+	// Group the Tables by their status and then their TableName
+	tablesGroupByStatus := make(map[string][]*ControlServerTableStatus)
+
+	completedTables := make([]*ControlServerTableStatus, 0, len(status.Tables))
+	copyingTables := make([]*ControlServerTableStatus, 0, len(status.Tables))
+	waitingTables := make([]*ControlServerTableStatus, 0, len(status.Tables))
+
+	tablesGroupByStatus[TableActionCompleted] = completedTables
+	tablesGroupByStatus[TableActionCopying] = copyingTables
+	tablesGroupByStatus[TableActionWaiting] = waitingTables
+
+	for _, name := range status.AllTableNames {
+		tableProgress := status.Tables[name]
+		tableStatus := tableProgress.CurrentAction
+
+		lastSuccessfulPaginationKey := tableProgress.LastSuccessfulPaginationKey
+		if tableProgress.CurrentAction == TableActionWaiting {
+			lastSuccessfulPaginationKey = 0
+		}
+		controlStatus := &ControlServerTableStatus{
+			TableName:                   name,
+			PaginationKeyName:           this.F.Tables[name].GetPaginationColumn().Name,
+			Status:                      tableStatus,
+			LastSuccessfulPaginationKey: lastSuccessfulPaginationKey,
+			TargetPaginationKey:         tableProgress.TargetPaginationKey,
+		}
+
+		tablesGroupByStatus[tableStatus] = append(tablesGroupByStatus[tableStatus], controlStatus)
+	}
+
+	status.TableStatuses = append(
+		append(tablesGroupByStatus[TableActionCompleted], tablesGroupByStatus[TableActionCopying]...),
+		tablesGroupByStatus[TableActionWaiting]...,
+	)
 
 	// ETA estimation
 	// We do it here rather than in DataIteratorState to give the lock back
