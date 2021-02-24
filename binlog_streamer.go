@@ -178,7 +178,6 @@ func (s *BinlogStreamer) Run() {
 		s.logger.WithFields(logrus.Fields{
 			"position":                   evPosition.Pos,
 			"file":                       evPosition.Name,
-			"evTimestamp":                ev.Header.Timestamp,
 			"type":                       fmt.Sprintf("%T", ev.Event),
 			"lastStreamedBinlogPosition": s.lastStreamedBinlogPosition,
 		}).Debug("reached position")
@@ -322,6 +321,7 @@ func (s *BinlogStreamer) updateLastStreamedPosAndTime(evTimestamp uint32, evPos 
 	// and FormatDescriptionEvent) have a zero timestamp..  Ignore those for
 	// timing updates
 	if evTimestamp == 0 {
+		s.logger.WithField("pos", evPos).Info("skipping event with zero timestamp")
 		return
 	}
 
@@ -331,6 +331,13 @@ func (s *BinlogStreamer) updateLastStreamedPosAndTime(evTimestamp uint32, evPos 
 	if time.Since(s.lastLagMetricEmittedTime) >= time.Second {
 		lag := time.Since(eventTime)
 		metrics.Gauge("BinlogStreamer.Lag", lag.Seconds(), nil, 1.0)
+
+		s.logger.WithFields(logrus.Fields{
+			"eventTime":              eventTime,
+			"lastProcessedEventTime": s.lastProcessedEventTime,
+			"BinlogStreamerLag":      time.Now().Sub(s.lastProcessedEventTime),
+		}).Info("updateLastStreamedPosAndTime")
+
 		s.lastLagMetricEmittedTime = time.Now()
 	}
 }
