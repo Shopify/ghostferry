@@ -178,6 +178,7 @@ func (s *BinlogStreamer) Run() {
 		s.logger.WithFields(logrus.Fields{
 			"position":                   evPosition.Pos,
 			"file":                       evPosition.Name,
+			"evTimestamp":                ev.Header.Timestamp,
 			"type":                       fmt.Sprintf("%T", ev.Event),
 			"lastStreamedBinlogPosition": s.lastStreamedBinlogPosition,
 		}).Debug("reached position")
