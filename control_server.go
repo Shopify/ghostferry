@@ -189,9 +189,10 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 
 	status.StartTime = this.F.StartTime
 	status.CurrentTime = time.Now()
-	status.TimeTaken = time.Duration(status.TimeTaken)
 
-	status.BinlogStreamerLag = time.Duration(status.BinlogStreamerLag)
+	status.TimeTaken = time.Duration(status.Progress.TimeTaken * float64(time.Second))
+	status.BinlogStreamerLag = time.Duration(status.Progress.BinlogStreamerLag * float64(time.Second))
+	status.ETA = time.Duration(status.Progress.ETA * float64(time.Second))
 
 	status.AutomaticCutover = this.F.Config.AutomaticCutover
 	status.BinlogStreamerStopRequested = this.F.BinlogStreamer.stopRequested
@@ -204,14 +205,6 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 
 	dbSet := make(map[string]bool)
 	for name, tableProgress := range status.Tables {
-		status.TableStatuses = append(status.TableStatuses, &ControlServerTableStatus{
-			TableName:                   name,
-			PaginationKeyName:           this.F.Tables[name].GetPaginationColumn().Name,
-			Status:                      tableProgress.CurrentAction,
-			LastSuccessfulPaginationKey: tableProgress.LastSuccessfulPaginationKey,
-			TargetPaginationKey:         tableProgress.LastSuccessfulPaginationKey,
-		})
-
 		status.AllTableNames = append(status.AllTableNames, name)
 		dbSet[this.F.Tables[name].Schema] = true
 
@@ -228,10 +221,40 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 	sort.Strings(status.AllDatabaseNames)
 	sort.Strings(status.AllTableNames)
 
-	// ETA estimation
-	// We do it here rather than in DataIteratorState to give the lock back
-	// ASAP. It's not supposed to be that accurate anyway.
-	status.ETA = time.Duration(status.ETA)
+	// Group the Tables by their status and then their TableName
+	tablesGroupByStatus := make(map[string][]*ControlServerTableStatus)
+
+	completedTables := make([]*ControlServerTableStatus, 0, len(status.Tables))
+	copyingTables := make([]*ControlServerTableStatus, 0, len(status.Tables))
+	waitingTables := make([]*ControlServerTableStatus, 0, len(status.Tables))
+
+	tablesGroupByStatus[TableActionCompleted] = completedTables
+	tablesGroupByStatus[TableActionCopying] = copyingTables
+	tablesGroupByStatus[TableActionWaiting] = waitingTables
+
+	for _, name := range status.AllTableNames {
+		tableProgress := status.Tables[name]
+		tableStatus := tableProgress.CurrentAction
+
+		lastSuccessfulPaginationKey := tableProgress.LastSuccessfulPaginationKey
+		if tableProgress.CurrentAction == TableActionWaiting {
+			lastSuccessfulPaginationKey = 0
+		}
+		controlStatus := &ControlServerTableStatus{
+			TableName:                   name,
+			PaginationKeyName:           this.F.Tables[name].GetPaginationColumn().Name,
+			Status:                      tableStatus,
+			LastSuccessfulPaginationKey: lastSuccessfulPaginationKey,
+			TargetPaginationKey:         tableProgress.TargetPaginationKey,
+		}
+
+		tablesGroupByStatus[tableStatus] = append(tablesGroupByStatus[tableStatus], controlStatus)
+	}
+
+	status.TableStatuses = append(
+		append(tablesGroupByStatus[TableActionCompleted], tablesGroupByStatus[TableActionCopying]...),
+		tablesGroupByStatus[TableActionWaiting]...,
+	)
 
 	// Verifier display
 	if this.Verifier != nil {
