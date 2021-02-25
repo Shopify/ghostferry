@@ -700,6 +700,18 @@ type Config struct {
 	//
 	// Required: defaults to false
 	SkipTargetVerification bool
+	//
+	// During initialization, Ghostferry will raise an error if any
+	// foreign key constraints are detected in the source database.
+	//
+	// This check can be bypassed by setting this value to true.
+	//
+	// WARNING:
+	// Using Ghostferry with foreign keys is highly discouraged and
+	// disabling this check makes no guarantees of the success of the run.
+	//
+	// Required: defaults to false
+	SkipForeignKeyConstraintsCheck bool
 }
 
 func (c *Config) ValidateConfig() error {

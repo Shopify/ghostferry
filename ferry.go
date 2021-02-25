@@ -464,6 +464,15 @@ func (f *Ferry) Initialize() (err error) {
 		f.Tables = f.StateToResumeFrom.LastKnownTableSchemaCache
 	}
 
+	if !f.Config.SkipForeignKeyConstraintsCheck {
+		err = f.checkSourceForeignKeyConstraints()
+
+		if err != nil {
+			f.logger.WithError(err).Error("foreign key constraints detected on the source database. Enable SkipForeignKeyConstraintsCheck to ignore this check and allow foreign keys")
+			return err
+		}
+	}
+
 	if f.Config.DataIterationBatchSizePerTableOverride != nil {
 		err = f.Config.DataIterationBatchSizePerTableOverride.UpdateBatchSizes(f.SourceDB, f.Tables)
 		if err != nil {
@@ -1057,6 +1066,42 @@ func (f *Ferry) checkConnectionForBinlogFormat(db *sql.DB) error {
 		}
 		if strings.ToUpper(value) != "ON" {
 			return fmt.Errorf("binlog_rows_query_log_events must be ON, not %s", value)
+		}
+	}
+
+	return nil
+}
+
+func (f *Ferry) checkSourceForeignKeyConstraints() error {
+	for _, table := range f.Tables {
+		query := fmt.Sprintf(`
+		SELECT COUNT(*), constraint_name
+		FROM information_schema.table_constraints
+		WHERE constraint_type = 'FOREIGN KEY'
+		AND table_schema='%s'
+		AND table_name='%s'
+		GROUP BY constraint_name
+		`,
+			table.Schema,
+			table.Name,
+		)
+
+		rows, err := f.SourceDB.Query(query)
+		defer rows.Close()
+
+		var count int
+		var name string
+
+		for rows.Next() {
+			err = rows.Scan(&count, &name)
+
+			if err != nil {
+				return err
+			}
+
+			if count > 0 {
+				return fmt.Errorf("found at least 1 foreign key constraint on source DB. table: %s.%s, constraint: %s", table.Schema, table.Name, name)
+			}
 		}
 	}
 
