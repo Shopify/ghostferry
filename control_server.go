@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -95,12 +96,13 @@ func (this *ControlServer) Initialize() (err error) {
 
 	this.router = mux.NewRouter()
 	this.router.HandleFunc("/", this.HandleIndex).Methods("GET")
-	this.router.HandleFunc("/api/actions/pause", this.HandlePause).Methods("POST")
-	this.router.HandleFunc("/api/actions/unpause", this.HandleUnpause).Methods("POST")
-	this.router.HandleFunc("/api/actions/cutover", this.HandleCutover).Queries("type", "{type:automatic|manual}").Methods("POST")
-	this.router.HandleFunc("/api/actions/stop", this.HandleStop).Methods("POST")
-	this.router.HandleFunc("/api/actions/verify", this.HandleVerify).Methods("POST")
-	this.router.HandleFunc("/api/actions/script", this.HandleScript).Methods("POST")
+	this.router.HandleFunc("/api/status", this.HandleStatus).Headers("Content-Type", "application/json").Methods("GET")
+	this.router.HandleFunc("/api/pause", this.HandlePause).Methods("POST")
+	this.router.HandleFunc("/api/unpause", this.HandleUnpause).Methods("POST")
+	this.router.HandleFunc("/api/cutover", this.HandleCutover).Methods("POST")
+	this.router.HandleFunc("/api/stop", this.HandleStop).Methods("POST")
+	this.router.HandleFunc("/api/verify", this.HandleVerify).Methods("POST")
+	this.router.HandleFunc("/api/script", this.HandleScript).Methods("POST")
 
 	if WebUiBasedir != "" {
 		this.Basedir = WebUiBasedir
@@ -161,28 +163,32 @@ func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
 func (this *ControlServer) HandlePause(w http.ResponseWriter, r *http.Request) {
 	this.F.Throttler.SetPaused(true)
 
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	returnSuccess(w, r)
 }
 
 func (this *ControlServer) HandleUnpause(w http.ResponseWriter, r *http.Request) {
 	this.F.Throttler.SetPaused(false)
 
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	returnSuccess(w, r)
 }
 
 func (this *ControlServer) HandleCutover(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
+	cutover, err := cutoverType(r)
 
-	if vars["type"] == "automatic" {
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	if cutover == "automatic" {
 		this.F.AutomaticCutover = true
-	} else if vars["type"] == "manual" {
+	} else if cutover == "manual" {
 		this.F.AutomaticCutover = false
 	} else {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	returnSuccess(w, r)
 }
 
 func (this *ControlServer) HandleStop(w http.ResponseWriter, r *http.Request) {
@@ -201,7 +207,16 @@ func (this *ControlServer) HandleVerify(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	returnSuccess(w, r)
+}
+
+func (this *ControlServer) HandleStatus(w http.ResponseWriter, r *http.Request) {
+	status := this.fetchStatus()
+	w.Header().Set("Content-Type", "application/json")
+	err := json.NewEncoder(w).Encode(status)
+	if err != nil {
+		this.logger.WithError(err).Error("failed to send progress")
+	}
 }
 
 func (this *ControlServer) fetchStatus() *ControlServerStatus {
@@ -331,20 +346,81 @@ func (this *ControlServer) HandleScript(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	err := r.ParseForm()
+	name, err := scriptName(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	scriptName := r.Form.Get("script")
-	scriptCmd, found := this.CustomScripts[scriptName]
+	cmd, found := this.CustomScripts[name]
 	if !found {
 		http.NotFound(w, r)
 		return
 	}
 
-	this.startScriptInBackground(scriptName, scriptCmd)
+	this.startScriptInBackground(name, cmd)
+	returnSuccess(w, r)
+}
+
+func cutoverType(r *http.Request) (string, error) {
+	if requestType(r) == "json" {
+		type data struct {
+			CutoverType string `json:"type"`
+		}
+		var d data
+		err := json.NewDecoder(r.Body).Decode(&d)
+		if err != nil {
+			return "", err
+		}
+
+		return d.CutoverType, nil
+	}
+
+	err := r.ParseForm()
+	if err != nil {
+		return "", err
+	}
+
+	return r.Form.Get("type"), nil
+}
+
+func requestType(r *http.Request) string {
+	contentType := r.Header.Get("Content-type")
+	switch contentType {
+	case "application/json":
+		return "json"
+	default:
+		return "text"
+	}
+}
+
+func scriptName(r *http.Request) (string, error) {
+	if requestType(r) == "json" {
+		type data struct {
+			ScriptName string `json:"script-name"`
+		}
+
+		var d data
+		err := json.NewDecoder(r.Body).Decode(&d)
+		if err != nil {
+			return "", err
+		}
+
+		return d.ScriptName, nil
+	}
+	err := r.ParseForm()
+	if err != nil {
+		return "", err
+	}
+
+	return r.Form.Get("script"), nil
+}
+
+func returnSuccess(w http.ResponseWriter, r *http.Request) {
+	if requestType(r) == "json" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -354,7 +430,7 @@ func (this *ControlServer) startScriptInBackground(scriptName string, scriptCmd 
 	this.customScriptsLock.Lock()
 	defer this.customScriptsLock.Unlock()
 
-	running, _ := this.customScriptsRunning[scriptName]
+	running := this.customScriptsRunning[scriptName]
 	if running {
 		logger.Warn("script already running, ignoring start request")
 		return
