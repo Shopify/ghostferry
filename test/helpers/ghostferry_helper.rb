@@ -14,7 +14,7 @@ module GhostferryHelper
     FileUtils.remove_entry(GHOSTFERRY_TEMPDIR) if Dir.exist?(GHOSTFERRY_TEMPDIR)
   end
 
-  class GhostferryExitFailure < StandardError; end
+  class GhostferryExitFailure < StandardError
   end
 
   class Ghostferry
