@@ -132,31 +132,33 @@
       <div class="twelve columns">
         <!-- NOTE: there are not CSRF protection against these routes -->
         {{if .VerifierAvailable}}
-          <form action="/api/actions/verify" method="POST">
+          <form action="/api/verify" method="POST">
             <input type="submit" class="button-primary" value="Run Verification" />
           </form>
         {{end}}
 
         {{if not (eq .OverallState "done")}}
-          <form action="/api/actions/pause" method="POST">
+          <form action="/api/pause" method="POST">
             <input type="submit" value="Pause" />
           </form>
-          <form action="/api/actions/unpause" method="POST">
+          <form action="/api/unpause" method="POST">
             <input type="submit" value="Unpause" />
           </form>
 
           {{if .AutomaticCutover}}
-          <form action="/api/actions/cutover?type=manual" method="POST">
+          <form action="/api/cutover" method="POST">
+            <input type="hidden" name="type" value="manual" />
             <input type="submit" value="Disallow Automatic Cutover" />
           </form>
           {{else}}
-          <form action="/api/actions/cutover?type=automatic" method="POST">
+          <form action="/api/cutover" method="POST">
+            <input type="hidden" name="type" value="automatic" />
             <input type="submit" class="button-destroy" value="Allow Automatic Cutover" />
           </form>
           {{end}}
 
           <!--
-          <form action="/api/actions/stop" method="POST">
+          <form action="/api/stop" method="POST">
             <input type="submit" class="button-destroy" value="Emergency Stop" />
           </form>
           -->
@@ -182,7 +184,7 @@
             <tr>
               <td>{{ $name }}</td>
               <td>
-                <form action="/api/actions/script" method="POST">
+                <form action="/api/script" method="POST">
                   <input type="hidden" name="script" value="{{$name}}" />
                   <input type="submit" value="Run" />
                 </form>
