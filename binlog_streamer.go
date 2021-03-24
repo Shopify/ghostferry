@@ -156,14 +156,18 @@ func (s *BinlogStreamer) Run() {
 		var timedOut bool
 		var err error
 
-		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-		defer cancel()
-		ev, err = s.binlogStreamer.GetEvent(ctx)
-		if err == context.DeadlineExceeded {
-			timedOut = true
-		} else if err != nil {
-			s.ErrorHandler.Fatal("binlog_streamer", err)
-		}
+		// We wrap this code in an anonymous function so the context can be
+		// properly cancelled and not cause a memory leak.
+		func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+			defer cancel()
+			ev, err = s.binlogStreamer.GetEvent(ctx)
+			if err == context.DeadlineExceeded {
+				timedOut = true
+			} else if err != nil {
+				s.ErrorHandler.Fatal("binlog_streamer", err)
+			}
+		}()
 
 		if timedOut {
 			s.lastProcessedEventTime = time.Now()
