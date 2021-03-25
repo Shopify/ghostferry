@@ -116,9 +116,9 @@ func (e *DMLEventBase) Annotation() (string, error) {
 		return "", errors.New("could not get query from DML event")
 	}
 
-	captured := annotationRegex.FindStringSubmatch(string(e.query))
+	captured := annotationRegex.FindSubmatch(e.query)
 	if len(captured) > 1 {
-		return captured[1], nil
+		return string(captured[1]), nil
 	}
 
 	return "", nil
