@@ -22,7 +22,7 @@ func InitializeMetrics(prefix string, config *Config) error {
 		return err
 	}
 
-	metricsChan := make(chan interface{}, 1024)
+	metricsChan := make(chan interface{}, 4096)  // TODO: make this queue size configurable
 	SetGlobalMetrics(prefix, metricsChan)
 
 	metrics.DefaultTags = []ghostferry.MetricTag{
