@@ -164,7 +164,7 @@
       </div>
     </div>
 
-    {{if .CustomScriptsNames}}
+    {{if .CustomScriptStatuses}}
     <div class="row">
       <div class="twelve columns">
         <h4>Custom Scripts</h4>
@@ -174,11 +174,12 @@
               <th>Name</th>
               <th>Action</th>
               <th>Status</th>
+              <th>ExitCode</th>
               <th>Logs</th>
             </tr>
           </thead>
           <tbody>
-            {{range $name := .CustomScriptsNames}}
+            {{range $name, $CustomScriptStatus := .CustomScriptStatuses}}
             <tr>
               <td>{{ $name }}</td>
               <td>
@@ -187,8 +188,9 @@
                   <input type="submit" value="Run" />
                 </form>
               </td>
-              <td>{{index $.CustomScriptsStatus $name}}</td>
-              <td><details><pre>{{index $.CustomScriptsLogs $name}}</pre></details></td>
+              <td>{{.Status}}</td>
+              <td>{{.ExitCode}}</td>
+              <td><details><pre>{{.Logs}}</pre></details></td>
             </tr>
             {{end}}
           </tbody>

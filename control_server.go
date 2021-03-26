@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -20,6 +21,14 @@ type ControlServerTableStatus struct {
 	Status                      string
 	LastSuccessfulPaginationKey uint64
 	TargetPaginationKey         uint64
+}
+
+type CustomScriptStatus struct {
+	Name     string
+	Status   string
+	Logs     string
+	ExitCode int
+	Running  bool
 }
 
 type ControlServerStatus struct {
@@ -53,9 +62,7 @@ type ControlServerStatus struct {
 	VerificationErr     error
 
 	// TODO: this is populated by the control server. Clearly this all needs a refactor.
-	CustomScriptsNames  []string
-	CustomScriptsStatus map[string]string
-	CustomScriptsLogs   map[string]string
+	CustomScriptStatuses map[string]CustomScriptStatus
 }
 
 type ControlServer struct {
@@ -70,10 +77,11 @@ type ControlServer struct {
 	router    *mux.Router
 	templates *template.Template
 
-	customScriptsLock    sync.RWMutex
-	customScriptsRunning map[string]bool
-	customScriptsLogs    map[string]string
-	customScriptsStatus  map[string]string
+	customScriptsLock     sync.RWMutex
+	customScriptsRunning  map[string]bool
+	customScriptsLogs     map[string]string
+	customScriptsStatus   map[string]string
+	customScriptsExitCode map[string]int
 }
 
 func (this *ControlServer) Initialize() (err error) {
@@ -83,6 +91,7 @@ func (this *ControlServer) Initialize() (err error) {
 	this.customScriptsRunning = make(map[string]bool)
 	this.customScriptsLogs = make(map[string]string)
 	this.customScriptsStatus = make(map[string]string)
+	this.customScriptsExitCode = make(map[string]int)
 
 	this.router = mux.NewRouter()
 	this.router.HandleFunc("/", this.HandleIndex).Methods("GET")
@@ -311,6 +320,27 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 		status.VerifierAvailable = false
 	}
 
+	if this.CustomScripts != nil {
+		status.CustomScriptStatuses = map[string]CustomScriptStatus{}
+
+		this.customScriptsLock.RLock()
+		for name := range this.CustomScripts {
+			scriptStatus := this.customScriptsStatus[name]
+			if scriptStatus == "" {
+				scriptStatus = "not started yet"
+			}
+			status.CustomScriptStatuses[name] = CustomScriptStatus{
+				Name:     name,
+				Logs:     this.customScriptsLogs[name],
+				Status:   scriptStatus,
+				Running:  this.customScriptsRunning[name],
+				ExitCode: this.customScriptsExitCode[name],
+			}
+		}
+
+		this.customScriptsLock.RUnlock()
+	}
+
 	return status
 }
 
@@ -366,9 +396,27 @@ func (this *ControlServer) startScriptInBackground(scriptName string, scriptCmd 
 		this.customScriptsLock.Lock()
 		if err != nil {
 			this.customScriptsStatus[scriptName] = fmt.Sprintf("exitted with error: %v", err)
-			logger.WithError(err).Error("custom script ran with errors")
+
+			var exitError *exec.ExitError
+			defaultExitCode := 1
+			if errors.As(err, &exitError) {
+				this.customScriptsExitCode[scriptName] = exitError.ExitCode()
+				logrus.WithFields(logrus.Fields{
+					"scriptName": scriptName,
+					"error":      err.Error(),
+					"exitCode":   exitError.ExitCode(),
+				}).Error("custom script ran with errors")
+			} else {
+				this.customScriptsExitCode[scriptName] = defaultExitCode
+				logrus.WithFields(logrus.Fields{
+					"scriptName": scriptName,
+					"error":      err.Error(),
+					"exitCode":   exitError.ExitCode(),
+				}).Error("custom script ran with errors but could not determine the exit code")
+			}
 		} else {
 			this.customScriptsStatus[scriptName] = "success"
+			this.customScriptsExitCode[scriptName] = 0
 			logger.Info("custom script ran successfully")
 		}
 		this.customScriptsLogs[scriptName] = string(stdoutStderr)
