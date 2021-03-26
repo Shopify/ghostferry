@@ -151,24 +151,6 @@ func (this *ControlServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
 	status := this.fetchStatus()
-	if this.CustomScripts != nil {
-		status.CustomScriptsNames = make([]string, 0, len(this.CustomScripts))
-		status.CustomScriptsLogs = make(map[string]string)
-		status.CustomScriptsStatus = make(map[string]string)
-
-		this.customScriptsLock.RLock()
-		for name := range this.CustomScripts {
-			status.CustomScriptsNames = append(status.CustomScriptsNames, name)
-			status.CustomScriptsStatus[name] = this.customScriptsStatus[name]
-			if status.CustomScriptsStatus[name] == "" {
-				status.CustomScriptsStatus[name] = "not started yet"
-			}
-			status.CustomScriptsLogs[name] = this.customScriptsLogs[name]
-		}
-
-		sort.Strings(status.CustomScriptsNames)
-		this.customScriptsLock.RUnlock()
-	}
 
 	err := this.templates.ExecuteTemplate(w, "index.html", status)
 	if err != nil {
