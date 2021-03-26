@@ -1,9 +1,11 @@
 package ghostferry
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -50,31 +52,48 @@ type ControlServerStatus struct {
 	VerificationDone    bool
 	VerificationResult  VerificationResult
 	VerificationErr     error
+
+	// TODO: this is populated by the control server. Clearly this all needs a refactor.
+	CustomScriptsNames  []string
+	CustomScriptsStatus map[string]string
+	CustomScriptsLogs   map[string]string
 }
 
 type ControlServer struct {
-	F        *Ferry
-	Verifier Verifier
-	Addr     string
-	Basedir  string
+	F             *Ferry
+	Verifier      Verifier
+	Addr          string
+	Basedir       string
+	CustomScripts map[string][]string
 
 	server    *http.Server
 	logger    *logrus.Entry
 	router    *mux.Router
 	templates *template.Template
+
+	customScriptsLock    sync.RWMutex
+	customScriptsRunning map[string]bool
+	customScriptsLogs    map[string]string
+	customScriptsStatus  map[string]string
 }
 
 func (this *ControlServer) Initialize() (err error) {
 	this.logger = logrus.WithField("tag", "control_server")
 	this.logger.Info("initializing")
 
+	this.customScriptsRunning = make(map[string]bool)
+	this.customScriptsLogs = make(map[string]string)
+	this.customScriptsStatus = make(map[string]string)
+
 	this.router = mux.NewRouter()
 	this.router.HandleFunc("/", this.HandleIndex).Methods("GET")
-	this.router.HandleFunc("/api/actions/pause", this.HandlePause).Methods("POST")
-	this.router.HandleFunc("/api/actions/unpause", this.HandleUnpause).Methods("POST")
-	this.router.HandleFunc("/api/actions/cutover", this.HandleCutover).Queries("type", "{type:automatic|manual}").Methods("POST")
-	this.router.HandleFunc("/api/actions/stop", this.HandleStop).Methods("POST")
-	this.router.HandleFunc("/api/actions/verify", this.HandleVerify).Methods("POST")
+	this.router.HandleFunc("/api/status", this.HandleStatus).Headers("Content-Type", "application/json").Methods("GET")
+	this.router.HandleFunc("/api/pause", this.HandlePause).Methods("POST")
+	this.router.HandleFunc("/api/unpause", this.HandleUnpause).Methods("POST")
+	this.router.HandleFunc("/api/cutover", this.HandleCutover).Methods("POST")
+	this.router.HandleFunc("/api/stop", this.HandleStop).Methods("POST")
+	this.router.HandleFunc("/api/verify", this.HandleVerify).Methods("POST")
+	this.router.HandleFunc("/api/script", this.HandleScript).Methods("POST")
 
 	if WebUiBasedir != "" {
 		this.Basedir = WebUiBasedir
@@ -124,7 +143,9 @@ func (this *ControlServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
-	err := this.templates.ExecuteTemplate(w, "index.html", this.fetchStatus())
+	status := this.fetchStatus()
+
+	err := this.templates.ExecuteTemplate(w, "index.html", status)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -133,28 +154,32 @@ func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
 func (this *ControlServer) HandlePause(w http.ResponseWriter, r *http.Request) {
 	this.F.Throttler.SetPaused(true)
 
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	returnSuccess(w, r)
 }
 
 func (this *ControlServer) HandleUnpause(w http.ResponseWriter, r *http.Request) {
 	this.F.Throttler.SetPaused(false)
 
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	returnSuccess(w, r)
 }
 
 func (this *ControlServer) HandleCutover(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
+	cutover, err := cutoverType(r)
 
-	if vars["type"] == "automatic" {
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	if cutover == "automatic" {
 		this.F.AutomaticCutover = true
-	} else if vars["type"] == "manual" {
+	} else if cutover == "manual" {
 		this.F.AutomaticCutover = false
 	} else {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	returnSuccess(w, r)
 }
 
 func (this *ControlServer) HandleStop(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +198,16 @@ func (this *ControlServer) HandleVerify(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	returnSuccess(w, r)
+}
+
+func (this *ControlServer) HandleStatus(w http.ResponseWriter, r *http.Request) {
+	status := this.fetchStatus()
+	w.Header().Set("Content-Type", "application/json")
+	err := json.NewEncoder(w).Encode(status)
+	if err != nil {
+		this.logger.WithError(err).Error("failed to send progress")
+	}
 }
 
 func (this *ControlServer) fetchStatus() *ControlServerStatus {
@@ -204,6 +238,7 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 	status.AllTableNames = make([]string, 0, len(status.Tables))
 
 	dbSet := make(map[string]bool)
+
 	for name, tableProgress := range status.Tables {
 		status.AllTableNames = append(status.AllTableNames, name)
 		dbSet[this.F.Tables[name].Schema] = true
@@ -243,7 +278,7 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 		controlStatus := &ControlServerTableStatus{
 			TableName:                   name,
 			PaginationKeyName:           this.F.Tables[name].GetPaginationColumn().Name,
-			Status:                      tableStatus,
+			Status:                      tableProgress.CurrentAction,
 			LastSuccessfulPaginationKey: lastSuccessfulPaginationKey,
 			TargetPaginationKey:         tableProgress.TargetPaginationKey,
 		}
@@ -273,5 +308,148 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 		status.VerifierAvailable = false
 	}
 
+	if this.CustomScripts != nil {
+		status.CustomScriptsNames = make([]string, 0, len(this.CustomScripts))
+		status.CustomScriptsLogs = make(map[string]string)
+		status.CustomScriptsStatus = make(map[string]string)
+
+		this.customScriptsLock.RLock()
+		for name := range this.CustomScripts {
+			status.CustomScriptsNames = append(status.CustomScriptsNames, name)
+			status.CustomScriptsStatus[name] = this.customScriptsStatus[name]
+			if status.CustomScriptsStatus[name] == "" {
+				status.CustomScriptsStatus[name] = "not started yet"
+			}
+			status.CustomScriptsLogs[name] = this.customScriptsLogs[name]
+		}
+
+		sort.Strings(status.CustomScriptsNames)
+		this.customScriptsLock.RUnlock()
+	}
+
 	return status
+}
+
+func (this *ControlServer) HandleScript(w http.ResponseWriter, r *http.Request) {
+	if this.CustomScripts == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	name, err := scriptName(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	cmd, found := this.CustomScripts[name]
+	if !found {
+		http.NotFound(w, r)
+		return
+	}
+
+	this.startScriptInBackground(name, cmd)
+	returnSuccess(w, r)
+}
+
+func cutoverType(r *http.Request) (string, error) {
+	if requestType(r) == "json" {
+		type data struct {
+			CutoverType string `json:"type"`
+		}
+		var d data
+		err := json.NewDecoder(r.Body).Decode(&d)
+		if err != nil {
+			return "", err
+		}
+
+		return d.CutoverType, nil
+	}
+
+	err := r.ParseForm()
+	if err != nil {
+		return "", err
+	}
+
+	return r.Form.Get("type"), nil
+}
+
+func requestType(r *http.Request) string {
+	contentType := r.Header.Get("Content-type")
+	switch contentType {
+	case "application/json":
+		return "json"
+	default:
+		return "text"
+	}
+}
+
+func scriptName(r *http.Request) (string, error) {
+	if requestType(r) == "json" {
+		type data struct {
+			ScriptName string `json:"script-name"`
+		}
+
+		var d data
+		err := json.NewDecoder(r.Body).Decode(&d)
+		if err != nil {
+			return "", err
+		}
+
+		return d.ScriptName, nil
+	}
+	err := r.ParseForm()
+	if err != nil {
+		return "", err
+	}
+
+	return r.Form.Get("script"), nil
+}
+
+func returnSuccess(w http.ResponseWriter, r *http.Request) {
+	if requestType(r) == "json" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (this *ControlServer) startScriptInBackground(scriptName string, scriptCmd []string) {
+	logger := this.logger.WithField("script", scriptName)
+
+	this.customScriptsLock.Lock()
+	defer this.customScriptsLock.Unlock()
+
+	running := this.customScriptsRunning[scriptName]
+	if running {
+		logger.Warn("script already running, ignoring start request")
+		return
+	}
+
+	logger.Infof("running custom script %v", scriptCmd)
+	this.customScriptsStatus[scriptName] = "starting"
+	this.customScriptsRunning[scriptName] = true
+	this.customScriptsLogs[scriptName] = ""
+
+	go func() {
+		cmd := exec.Command(scriptCmd[0], scriptCmd[1:]...)
+
+		this.customScriptsLock.Lock()
+		this.customScriptsStatus[scriptName] = "running"
+		this.customScriptsLock.Unlock()
+
+		stdoutStderr, err := cmd.CombinedOutput()
+
+		this.customScriptsLock.Lock()
+		if err != nil {
+			this.customScriptsStatus[scriptName] = fmt.Sprintf("exitted with error: %v", err)
+			logger.WithError(err).Error("custom script ran with errors")
+		} else {
+			this.customScriptsStatus[scriptName] = "success"
+			logger.Info("custom script ran successfully")
+		}
+		this.customScriptsLogs[scriptName] = string(stdoutStderr)
+		this.customScriptsRunning[scriptName] = false
+		this.customScriptsLock.Unlock()
+	}()
 }
