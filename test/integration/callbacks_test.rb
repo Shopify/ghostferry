@@ -4,7 +4,7 @@ class CallbacksTest < GhostferryTestCase
   def test_progress_callback
     seed_simple_database_with_single_table
 
-    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline"})
     progress = []
     ghostferry.on_callback("progress") do |progress_data|
       progress << progress_data
@@ -24,6 +24,9 @@ class CallbacksTest < GhostferryTestCase
     count = result.first["cnt"]
     assert count > 0, "There should be some rows on the target, not 0."
     assert_equal count, progress.last["Tables"]["gftest.test_table_1"]["RowsWritten"]
+
+    # data column is 32 characters so each row should be at least 32 bytes
+    assert count * 32 < progress.last["Tables"]["gftest.test_table_1"]["BytesWritten"], "Each row should have more than 32 bytes"
 
     assert_equal 0, progress.last["ActiveDataIterators"]
 

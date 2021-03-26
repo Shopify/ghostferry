@@ -40,6 +40,8 @@ type BatchWriter struct {
 
 	stmtCache *StmtCache
 	logger    *logrus.Entry
+
+	enableRowBatchSize bool
 }
 
 func (w *BatchWriter) Initialize() {
@@ -105,7 +107,7 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 			if w.EnforceInlineVerification {
 				// This code should only be active if the InlineVerifier background
 				// reverification is not occuring. An example of this would be when you
-				// run the BatchWriter as a part of copying the primary table or delta
+				// run the BatchWriter as a part of copying the primary table or the delta
 				// copying the joined table.
 				if len(mismatches) > 0 {
 					tx.Rollback()
@@ -123,7 +125,12 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 		// Note that the state tracker expects us the track based on the original
 		// database and table names as opposed to the target ones.
 		if w.StateTracker != nil {
-			w.StateTracker.UpdateLastSuccessfulPaginationKey(batch.TableSchema().String(), endPaginationKeypos, uint64(batch.Size()))
+			bytesWrittenForThisBatch := uint64(0)
+			if w.enableRowBatchSize {
+				bytesWrittenForThisBatch = batch.EstimateByteSize()
+			}
+			w.StateTracker.UpdateLastSuccessfulPaginationKey(batch.TableSchema().String(), endPaginationKeypos,
+				RowStats{NumBytes: bytesWrittenForThisBatch, NumRows: uint64(batch.Size())})
 		}
 
 		return nil
