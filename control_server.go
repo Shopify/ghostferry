@@ -232,7 +232,6 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 	status.AllTableNames = make([]string, 0, len(status.Tables))
 
 	dbSet := make(map[string]bool)
-
 	for name, tableProgress := range status.Tables {
 		status.AllTableNames = append(status.AllTableNames, name)
 		dbSet[this.F.Tables[name].Schema] = true
