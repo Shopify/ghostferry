@@ -77,6 +77,8 @@ type Config struct {
 	// This allows pre-existing tables on your target, schemas and data compatibility won't be validated.
 	// Use at your own risk.
 	AllowExistingTargetTable bool
+
+	ErrorCallback ghostferry.HTTPCallback
 }
 
 func (c *Config) InitializeAndValidateConfig() error {
