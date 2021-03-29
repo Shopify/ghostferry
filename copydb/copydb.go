@@ -21,12 +21,6 @@ func NewFerry(config *Config) *CopydbFerry {
 		Config: config.Config,
 	}
 
-	ferry.ErrorHandler = &ghostferry.PanicErrorHandler{
-		Ferry:             ferry,
-		ErrorCallback:     config.ErrorCallback,
-		DumpStateToStdout: false,
-	}
-
 	controlServer := &ghostferry.ControlServer{
 		F:       ferry,
 		Addr:    config.ServerBindAddr,

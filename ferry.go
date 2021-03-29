@@ -427,6 +427,7 @@ func (f *Ferry) Initialize() (err error) {
 		f.ErrorHandler = &PanicErrorHandler{
 			Ferry:             f,
 			DumpStateToStdout: true,
+			ErrorCallback:     f.Config.ErrorCallback,
 		}
 	}
 

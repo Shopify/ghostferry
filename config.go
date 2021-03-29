@@ -605,6 +605,10 @@ type Config struct {
 	StateCallback        HTTPCallback
 	StateReportFrequency int
 
+	// Report error via an HTTP callback. The Payload field will contain the ErrorType,
+	// ErrorMessage and the StateDump.
+	ErrorCallback HTTPCallback
+
 	// The state to resume from as dumped by the PanicErrorHandler.
 	// If this is null, a new Ghostferry run will be started. Otherwise, the
 	// reconciliation process will start and Ghostferry will resume after that.
@@ -722,8 +726,6 @@ type Config struct {
 	// in the Progress. This behaviour is perfectly okay and doesn't mean there are no rows being written
 	// to the target DB.
 	EnableRowBatchSize bool
-
-	ErrorCallback HTTPCallback
 }
 
 func (c *Config) ValidateConfig() error {
