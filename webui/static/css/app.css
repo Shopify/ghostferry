@@ -11,6 +11,9 @@ h4 {
   margin-bottom: 0.5rem;
 }
 
+pre {
+  white-space: pre-wrap;
+}
 
 form {
   display: inline;

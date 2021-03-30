@@ -1,9 +1,11 @@
 package ghostferry
 
 import (
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -19,6 +21,14 @@ type ControlServerTableStatus struct {
 	Status                      string
 	LastSuccessfulPaginationKey uint64
 	TargetPaginationKey         uint64
+}
+
+type CustomScriptStatus struct {
+	Name     string
+	Status   string
+	Logs     string
+	ExitCode int
+	Running  bool
 }
 
 type ControlServerStatus struct {
@@ -50,23 +60,38 @@ type ControlServerStatus struct {
 	VerificationDone    bool
 	VerificationResult  VerificationResult
 	VerificationErr     error
+
+	// TODO: this is populated by the control server. Clearly this all needs a refactor.
+	CustomScriptStatuses map[string]CustomScriptStatus
 }
 
 type ControlServer struct {
-	F        *Ferry
-	Verifier Verifier
-	Addr     string
-	Basedir  string
+	F             *Ferry
+	Verifier      Verifier
+	Addr          string
+	Basedir       string
+	CustomScripts map[string][]string
 
 	server    *http.Server
 	logger    *logrus.Entry
 	router    *mux.Router
 	templates *template.Template
+
+	customScriptsLock     sync.RWMutex
+	customScriptsRunning  map[string]bool
+	customScriptsLogs     map[string]string
+	customScriptsStatus   map[string]string
+	customScriptsExitCode map[string]int
 }
 
 func (this *ControlServer) Initialize() (err error) {
 	this.logger = logrus.WithField("tag", "control_server")
 	this.logger.Info("initializing")
+
+	this.customScriptsRunning = make(map[string]bool)
+	this.customScriptsLogs = make(map[string]string)
+	this.customScriptsStatus = make(map[string]string)
+	this.customScriptsExitCode = make(map[string]int)
 
 	this.router = mux.NewRouter()
 	this.router.HandleFunc("/", this.HandleIndex).Methods("GET")
@@ -75,6 +100,7 @@ func (this *ControlServer) Initialize() (err error) {
 	this.router.HandleFunc("/api/actions/cutover", this.HandleCutover).Queries("type", "{type:automatic|manual}").Methods("POST")
 	this.router.HandleFunc("/api/actions/stop", this.HandleStop).Methods("POST")
 	this.router.HandleFunc("/api/actions/verify", this.HandleVerify).Methods("POST")
+	this.router.HandleFunc("/api/actions/script", this.HandleScript).Methods("POST")
 
 	if WebUiBasedir != "" {
 		this.Basedir = WebUiBasedir
@@ -124,7 +150,9 @@ func (this *ControlServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (this *ControlServer) HandleIndex(w http.ResponseWriter, r *http.Request) {
-	err := this.templates.ExecuteTemplate(w, "index.html", this.fetchStatus())
+	status := this.fetchStatus()
+
+	err := this.templates.ExecuteTemplate(w, "index.html", status)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
@@ -243,7 +271,7 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 		controlStatus := &ControlServerTableStatus{
 			TableName:                   name,
 			PaginationKeyName:           this.F.Tables[name].GetPaginationColumn().Name,
-			Status:                      tableStatus,
+			Status:                      tableProgress.CurrentAction,
 			LastSuccessfulPaginationKey: lastSuccessfulPaginationKey,
 			TargetPaginationKey:         tableProgress.TargetPaginationKey,
 		}
@@ -273,5 +301,107 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 		status.VerifierAvailable = false
 	}
 
+	if this.CustomScripts != nil {
+		status.CustomScriptStatuses = map[string]CustomScriptStatus{}
+
+		this.customScriptsLock.RLock()
+		for name := range this.CustomScripts {
+			scriptStatus := this.customScriptsStatus[name]
+			if scriptStatus == "" {
+				scriptStatus = "not started yet"
+			}
+			status.CustomScriptStatuses[name] = CustomScriptStatus{
+				Name:     name,
+				Logs:     this.customScriptsLogs[name],
+				Status:   scriptStatus,
+				Running:  this.customScriptsRunning[name],
+				ExitCode: this.customScriptsExitCode[name],
+			}
+		}
+
+		this.customScriptsLock.RUnlock()
+	}
+
 	return status
+}
+
+func (this *ControlServer) HandleScript(w http.ResponseWriter, r *http.Request) {
+	if this.CustomScripts == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	err := r.ParseForm()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	scriptName := r.Form.Get("script")
+	scriptCmd, found := this.CustomScripts[scriptName]
+	if !found {
+		http.NotFound(w, r)
+		return
+	}
+
+	this.startScriptInBackground(scriptName, scriptCmd)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (this *ControlServer) startScriptInBackground(scriptName string, scriptCmd []string) {
+	logger := this.logger.WithField("script", scriptName)
+
+	this.customScriptsLock.Lock()
+	defer this.customScriptsLock.Unlock()
+
+	running, _ := this.customScriptsRunning[scriptName]
+	if running {
+		logger.Warn("script already running, ignoring start request")
+		return
+	}
+
+	logger.Infof("running custom script %v", scriptCmd)
+	this.customScriptsStatus[scriptName] = "starting"
+	this.customScriptsRunning[scriptName] = true
+	this.customScriptsLogs[scriptName] = ""
+
+	go func() {
+		cmd := exec.Command(scriptCmd[0], scriptCmd[1:]...)
+
+		this.customScriptsLock.Lock()
+		this.customScriptsStatus[scriptName] = "running"
+		this.customScriptsLock.Unlock()
+
+		stdoutStderr, err := cmd.CombinedOutput()
+
+		this.customScriptsLock.Lock()
+		if err != nil {
+			this.customScriptsStatus[scriptName] = fmt.Sprintf("exitted with error: %v", err)
+
+			var exitError *exec.ExitError
+			defaultExitCode := 1
+			if errors.As(err, &exitError) {
+				this.customScriptsExitCode[scriptName] = exitError.ExitCode()
+				logrus.WithFields(logrus.Fields{
+					"scriptName": scriptName,
+					"error":      err.Error(),
+					"exitCode":   exitError.ExitCode(),
+				}).Error("custom script ran with errors")
+			} else {
+				this.customScriptsExitCode[scriptName] = defaultExitCode
+				logrus.WithFields(logrus.Fields{
+					"scriptName": scriptName,
+					"error":      err.Error(),
+					"exitCode":   exitError.ExitCode(),
+				}).Error("custom script ran with errors but could not determine the exit code")
+			}
+		} else {
+			this.customScriptsStatus[scriptName] = "success"
+			this.customScriptsExitCode[scriptName] = 0
+			logger.Info("custom script ran successfully")
+		}
+		this.customScriptsLogs[scriptName] = string(stdoutStderr)
+		this.customScriptsRunning[scriptName] = false
+		this.customScriptsLock.Unlock()
+	}()
 }
