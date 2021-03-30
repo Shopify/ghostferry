@@ -19,7 +19,6 @@ type Config struct {
 	StatsDAddress string
 	CutoverLock   ghostferry.HTTPCallback
 	CutoverUnlock ghostferry.HTTPCallback
-	ErrorCallback ghostferry.HTTPCallback
 
 	JoinedTables     map[string][]JoinTable
 	IgnoredTables    []string

@@ -2,9 +2,10 @@ package testhelpers
 
 import (
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"net/http"
 	"net/http/httptest"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/sharding"
@@ -159,10 +160,10 @@ func (t *ShardingUnitTestSuite) setupShardingFerry() {
 			URI:     fmt.Sprintf("%s/unlock", t.server.URL),
 			Payload: "test_unlock",
 		},
+	}
 
-		ErrorCallback: ghostferry.HTTPCallback{
-			URI: fmt.Sprintf("%s/error", t.server.URL),
-		},
+	t.Config.ErrorCallback = ghostferry.HTTPCallback{
+		URI: fmt.Sprintf("%s/error", t.server.URL),
 	}
 
 	var err error
