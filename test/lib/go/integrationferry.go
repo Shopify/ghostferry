@@ -202,9 +202,10 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 			TablesFunc: nil,
 		},
 
-		DumpStateOnSignal:      true,
-		SkipTargetVerification: (os.Getenv("GHOSTFERRY_SKIP_TARGET_VERIFICATION") == "true"),
-		EnableRowBatchSize:     true,
+		DumpStateOnSignal:        true,
+		SkipTargetVerification:   (os.Getenv("GHOSTFERRY_SKIP_TARGET_VERIFICATION") == "true"),
+		EnableRowBatchSize:       true,
+		DumpStateToStdoutOnError: true,
 	}
 
 	integrationPort := os.Getenv(portEnvName)
@@ -308,7 +309,6 @@ func main() {
 		ErrorCallback: ghostferry.HTTPCallback{
 			URI: fmt.Sprintf("http://localhost:%s/callbacks/error", integrationPort),
 		},
-		DumpStateToStdout: true,
 	}
 
 	err = f.Main()
