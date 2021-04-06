@@ -861,6 +861,39 @@ func (f *Ferry) StopTargetVerifier() {
 	}
 }
 
+func (f *Ferry) StartCutover() time.Time {
+	var (
+		err error
+		cutoverStart time.Time
+	)
+	err = WithRetries(f.Config.MaxCutoverRetries, time.Duration(f.Config.CutoverRetryWaitSeconds)*time.Second, f.logger, "get cutover lock", func() (err error) {
+		metrics.Measure("CutoverLock", nil, 1.0, func() {
+			cutoverStart = time.Now()
+			err = f.Config.CutoverLock.Post(&http.Client{})
+		})
+		return err
+	})
+
+	if err != nil {
+		f.logger.WithField("error", err).Errorf("locking failed, aborting run")
+		f.ErrorHandler.Fatal("cutover", err)
+	}
+	return cutoverStart
+}
+
+func (f *Ferry) EndCutover(cutoverStart time.Time) {
+	var err error
+	metrics.Measure("CutoverUnlock", nil, 1.0, func() {
+		err = f.Config.CutoverUnlock.Post(&http.Client{})
+	})
+	if err != nil {
+		f.logger.WithField("error", err).Errorf("unlocking failed, aborting run")
+		f.ErrorHandler.Fatal("cutover", err)
+	}
+
+	metrics.Timer("CutoverTime", time.Since(cutoverStart), nil, 1.0)
+}
+
 func (f *Ferry) SerializeStateToJSON() (string, error) {
 	if f.StateTracker == nil {
 		err := errors.New("no valid StateTracker")

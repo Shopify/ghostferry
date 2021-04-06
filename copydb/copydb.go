@@ -100,6 +100,7 @@ func (this *CopydbFerry) Run() {
 	// binlog streamer catching up.
 	this.Ferry.WaitUntilBinlogStreamerCatchesUp()
 
+	cutoverStart := this.Ferry.StartCutover()
 	// This is when the source database should be set as read only, whether it
 	// is done in application level or the database level.
 	// Must ensure that all transactions are flushed to the binlog before
@@ -112,6 +113,7 @@ func (this *CopydbFerry) Run() {
 
 	this.Ferry.StopTargetVerifier()
 
+	this.Ferry.EndCutover(cutoverStart)
 	// This is where you cutover from using the source database to
 	// using the target database.
 	logrus.Info("ghostferry main operations has terminated but the control server remains online")

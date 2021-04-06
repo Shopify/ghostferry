@@ -618,9 +618,22 @@ type Config struct {
 	StateCallback        HTTPCallback
 	StateReportFrequency int
 
+
 	// Report error via an HTTP callback. The Payload field will contain the ErrorType,
 	// ErrorMessage and the StateDump.
 	ErrorCallback HTTPCallback
+
+	// Report when ghostferry is entering cutover
+	CutoverLock   			HTTPCallback
+
+	// Report when ghostferry is finished cutover
+	CutoverUnlock 			HTTPCallback
+
+	// These two values configure the amount of times Ferry should attempt to
+	// retry acquiring the cutover lock, and for how long the Ferry should wait
+	// before attempting another lock acquisition
+	MaxCutoverRetries       int
+	CutoverRetryWaitSeconds int
 
 	// The state to resume from as dumped by the PanicErrorHandler.
 	// If this is null, a new Ghostferry run will be started. Otherwise, the
@@ -798,6 +811,14 @@ func (c *Config) ValidateConfig() error {
 
 	if c.WebBasedir == "" {
 		c.WebBasedir = "."
+	}
+
+	if c.MaxCutoverRetries == 0 {
+		c.MaxCutoverRetries = 1
+	}
+
+	if c.CutoverRetryWaitSeconds == 0 {
+		c.CutoverRetryWaitSeconds = 1
 	}
 
 	return nil
