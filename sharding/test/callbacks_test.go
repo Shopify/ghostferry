@@ -48,7 +48,7 @@ func (t *CallbacksTestSuite) TestFailsRunOnUnlockError() {
 }
 
 func (t *CallbacksTestSuite) TestRetriesOnLockError() {
-	t.Config.MaxCutoverRetries = 3
+	t.Ferry.Ferry.Config.MaxCutoverRetries = 3
 
 	callbacksReceived := 0
 	t.CutoverLock = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -58,14 +58,14 @@ func (t *CallbacksTestSuite) TestRetriesOnLockError() {
 
 	t.Ferry.Run()
 
-	t.Require().Equal(callbacksReceived, t.Config.MaxCutoverRetries)
+	t.Require().Equal(callbacksReceived, t.Ferry.Ferry.Config.MaxCutoverRetries)
 
 	t.Require().NotNil(t.errHandler.LastError)
 	t.Require().Equal("callback returned 500 Internal Server Error", t.errHandler.LastError.Error())
 }
 
 func (t *CallbacksTestSuite) TestSucceedsOnLockRetry() {
-	t.Config.MaxCutoverRetries = 3
+	t.Ferry.Ferry.Config.MaxCutoverRetries = 3
 
 	unlockReceived := false
 	t.CutoverUnlock = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

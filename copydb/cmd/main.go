@@ -48,26 +48,6 @@ func main() {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
-	var resumeState *ghostferry.SerializableState = nil
-
-	if stateFilePath != "" {
-		if _, err := os.Stat(stateFilePath); os.IsNotExist(err) {
-			errorAndExit(fmt.Sprintf("%s does not exist", stateFilePath))
-		}
-
-		f, err := os.Open(stateFilePath)
-		if err != nil {
-			errorAndExit(fmt.Sprintf("failed to open state file: %v", err))
-		}
-
-		resumeState = &ghostferry.SerializableState{}
-		parser := json.NewDecoder(f)
-		err = parser.Decode(&resumeState)
-		if err != nil {
-			errorAndExit(fmt.Sprintf("failed to parse state file: %v", err))
-		}
-	}
-
 	// Default values for configurations
 	config := &copydb.Config{
 		Config: &ghostferry.Config{
@@ -83,7 +63,6 @@ func main() {
 
 			MyServerId:        99399,
 			AutomaticCutover:  false,
-			StateToResumeFrom: resumeState,
 		},
 	}
 
@@ -97,6 +76,26 @@ func main() {
 	err = parser.Decode(&config)
 	if err != nil {
 		errorAndExit(fmt.Sprintf("failed to parse config file: %v", err))
+	}
+
+	if stateFilePath != "" {
+		if _, err := os.Stat(stateFilePath); os.IsNotExist(err) {
+			errorAndExit(fmt.Sprintf("%s does not exist", stateFilePath))
+		}
+
+		f, err := os.Open(stateFilePath)
+		if err != nil {
+			errorAndExit(fmt.Sprintf("failed to open state file: %v", err))
+		}
+
+		resumeState := &ghostferry.SerializableState{}
+		parser := json.NewDecoder(f)
+		err = parser.Decode(&resumeState)
+		if err != nil {
+			errorAndExit(fmt.Sprintf("failed to parse state file: %v", err))
+		}
+
+		config.StateToResumeFrom = resumeState
 	}
 
 	err = config.InitializeAndValidateConfig()
@@ -121,7 +120,7 @@ func main() {
 		return
 	}
 
-	if resumeState == nil {
+	if config.StateToResumeFrom == nil {
 		err = ferry.CreateDatabasesAndTables()
 		if err != nil {
 			errorAndExit(fmt.Sprintf("failed to create databases and tables: %v", err))

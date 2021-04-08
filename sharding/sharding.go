@@ -2,10 +2,8 @@ package sharding
 
 import (
 	"fmt"
-	"net/http"
 	"regexp"
 	"sync"
-	"time"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/sirupsen/logrus"
@@ -107,25 +105,12 @@ func (r *ShardingFerry) Run() {
 
 	r.AbortIfTargetDbNoLongerWriteable()
 
-	var (
-		err          error
-		client       http.Client
-		cutoverStart time.Time
-	)
 
 	// The callback must ensure that all in-flight transactions are complete and
 	// there will be no more writes to the database after it returns.
-	err = ghostferry.WithRetries(r.config.MaxCutoverRetries, time.Duration(r.config.CutoverRetryWaitSeconds)*time.Second, r.logger, "get cutover lock", func() (err error) {
-		metrics.Measure("CutoverLock", nil, 1.0, func() {
-			cutoverStart = time.Now()
-			err = r.config.CutoverLock.Post(&client)
-		})
-		return err
-	})
-	if err != nil {
-		r.logger.WithField("error", err).Errorf("locking failed, aborting run")
-		r.Ferry.ErrorHandler.Fatal("sharding", err)
-	}
+
+	var err error
+	cutoverStart := r.Ferry.StartCutover()
 
 	r.Ferry.Throttler.SetDisabled(true)
 
@@ -168,15 +153,7 @@ func (r *ShardingFerry) Run() {
 
 	r.Ferry.StopTargetVerifier()
 
-	metrics.Measure("CutoverUnlock", nil, 1.0, func() {
-		err = r.config.CutoverUnlock.Post(&client)
-	})
-	if err != nil {
-		r.logger.WithField("error", err).Errorf("unlocking failed, aborting run")
-		r.Ferry.ErrorHandler.Fatal("sharding", err)
-	}
-
-	metrics.Timer("CutoverTime", time.Since(cutoverStart), nil, 1.0)
+	r.Ferry.EndCutover(cutoverStart)
 }
 
 func (r *ShardingFerry) deltaCopyJoinedTables() error {
