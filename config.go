@@ -629,9 +629,11 @@ type Config struct {
 	// Report when ghostferry is finished cutover
 	CutoverUnlock 			HTTPCallback
 
-	// These two values configure the amount of times Ferry should attempt to
+	// If the callback returns a non OK status, these two values configure the number of times Ferry should attempt to
 	// retry acquiring the cutover lock, and for how long the Ferry should wait
 	// before attempting another lock acquisition
+	// MaxCutoverRetries default is 1 retry
+	// CutoverRetryWaitSeconds default is 1 second
 	MaxCutoverRetries       int
 	CutoverRetryWaitSeconds int
 

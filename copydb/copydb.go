@@ -100,7 +100,10 @@ func (this *CopydbFerry) Run() {
 	// binlog streamer catching up.
 	this.Ferry.WaitUntilBinlogStreamerCatchesUp()
 
+	// Optionally (configurable) POST to an HTTP endpoint telling that service that Ghostferry is ready for cutover.
+	// The external service can then perform steps needed immediately prior to cutover. For example, on receiving the callback, the service can set the database to be readonly.
 	cutoverStart := this.Ferry.StartCutover()
+
 	// This is when the source database should be set as read only, whether it
 	// is done in application level or the database level.
 	// Must ensure that all transactions are flushed to the binlog before
@@ -113,7 +116,10 @@ func (this *CopydbFerry) Run() {
 
 	this.Ferry.StopTargetVerifier()
 
+	// Optionally (configurable) POST to an HTTP endpoint telling that service Ghostferry has completed cutover and has stopped streaming the binlog.
+	// The external service can then perform steps needed after cutover. For example, on receiving the callback, the service can set the target database to allow writes.
 	this.Ferry.EndCutover(cutoverStart)
+
 	// This is where you cutover from using the source database to
 	// using the target database.
 	logrus.Info("ghostferry main operations has terminated but the control server remains online")
