@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	"fmt"
+	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
@@ -21,7 +22,9 @@ type BinlogWriter struct {
 	StateTracker *StateTracker
 
 	binlogEventBuffer chan DMLEvent
-	logger            *logrus.Entry
+	// Useful for debugging binlog writer lag, if diverged from binlog streamer lag
+	lastProcessedEventTime time.Time
+	logger                 *logrus.Entry
 }
 
 func (b *BinlogWriter) Run() {
@@ -113,6 +116,8 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 	if b.StateTracker != nil {
 		b.StateTracker.UpdateLastResumableSourceBinlogPosition(events[len(events)-1].ResumableBinlogPosition())
 	}
+
+	b.lastProcessedEventTime = events[len(events)-1].Timestamp()
 
 	return nil
 }

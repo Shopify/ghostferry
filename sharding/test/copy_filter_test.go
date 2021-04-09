@@ -3,6 +3,7 @@ package test
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/sharding"
@@ -146,6 +147,7 @@ func (t *CopyFilterTestSuite) TestShardingValueTypes() {
 		mysql.Position{},
 		mysql.Position{},
 		nil,
+		time.Unix(1618318965, 0),
 	)
 
 	for _, tenantId := range tenantIds {
@@ -162,6 +164,7 @@ func (t *CopyFilterTestSuite) TestInvalidShardingValueTypesErrors() {
 		mysql.Position{},
 		mysql.Position{},
 		nil,
+		time.Unix(1618318965, 0),
 	)
 
 	dmlEvents, err := ghostferry.NewBinlogInsertEvents(eventBase, t.newRowsEvent([]interface{}{1001, string("1"), "data"}))
