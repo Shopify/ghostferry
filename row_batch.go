@@ -1,8 +1,8 @@
 package ghostferry
 
 import (
-	"strings"
 	"encoding/json"
+	"strings"
 )
 
 type RowBatch struct {

@@ -18,7 +18,7 @@ type DataIterator struct {
 	ErrorHandler ErrorHandler
 	CursorConfig *CursorConfig
 	StateTracker *StateTracker
-	TableSorter DataIteratorSorter
+	TableSorter  DataIteratorSorter
 
 	targetPaginationKeys *sync.Map
 	batchListeners       []func(*RowBatch) error
