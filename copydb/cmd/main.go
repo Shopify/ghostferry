@@ -61,8 +61,7 @@ func main() {
 				User: "ghostferry",
 			},
 
-			MyServerId:        99399,
-			AutomaticCutover:  false,
+			AutomaticCutover: false,
 		},
 	}
 
