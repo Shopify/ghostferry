@@ -817,7 +817,8 @@ func (f *Ferry) WaitUntilRowCopyIsComplete() {
 }
 
 func (f *Ferry) WaitUntilBinlogStreamerCatchesUp() {
-	for !f.BinlogStreamer.IsAlmostCaughtUp() {
+	for !f.BinlogStreamer.IsAlmostCaughtUp() ||
+		(!f.Config.SkipTargetVerification && !f.TargetVerifier.BinlogStreamer.IsAlmostCaughtUp()) {
 		time.Sleep(500 * time.Millisecond)
 	}
 }
