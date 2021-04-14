@@ -863,7 +863,7 @@ func (f *Ferry) StopTargetVerifier() {
 
 func (f *Ferry) StartCutover() time.Time {
 	var (
-		err error
+		err          error
 		cutoverStart time.Time
 	)
 	err = WithRetries(f.Config.MaxCutoverRetries, time.Duration(f.Config.CutoverRetryWaitSeconds)*time.Second, f.logger, "get cutover lock", func() (err error) {
@@ -923,10 +923,17 @@ func (f *Ferry) Progress() *Progress {
 
 	s.Throttled = f.Throttler.Throttled()
 
+	now := time.Now()
+
 	// Binlog Progress
 	s.LastSuccessfulBinlogPos = f.BinlogStreamer.lastStreamedBinlogPosition
-	s.BinlogStreamerLag = time.Now().Sub(f.BinlogStreamer.lastProcessedEventTime).Seconds()
+	s.BinlogStreamerLag = now.Sub(f.BinlogStreamer.lastProcessedEventTime).Seconds()
+	s.BinlogWriterLag = now.Sub(f.BinlogWriter.lastProcessedEventTime).Seconds()
 	s.FinalBinlogPos = f.BinlogStreamer.stopAtBinlogPosition
+
+	if f.TargetVerifier != nil {
+		s.TargetBinlogStreamerLag = now.Sub(f.TargetVerifier.BinlogStreamer.lastProcessedEventTime).Seconds()
+	}
 
 	// Table Progress
 	serializedState := f.StateTracker.Serialize(nil, nil)

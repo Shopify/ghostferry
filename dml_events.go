@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 
@@ -79,6 +80,7 @@ type DMLEvent interface {
 	BinlogPosition() mysql.Position
 	ResumableBinlogPosition() mysql.Position
 	Annotation() (string, error)
+	Timestamp() time.Time
 }
 
 // The base of DMLEvent to provide the necessary methods.
@@ -87,6 +89,7 @@ type DMLEventBase struct {
 	pos          mysql.Position
 	resumablePos mysql.Position
 	query        []byte
+	timestamp    time.Time
 }
 
 func (e *DMLEventBase) Database() string {
@@ -124,12 +127,17 @@ func (e *DMLEventBase) Annotation() (string, error) {
 	return "", nil
 }
 
-func NewDMLEventBase(table *TableSchema, pos, resumablePos mysql.Position, query []byte) *DMLEventBase {
+func (e *DMLEventBase) Timestamp() time.Time {
+	return e.timestamp
+}
+
+func NewDMLEventBase(table *TableSchema, pos, resumablePos mysql.Position, query []byte, timestamp time.Time) *DMLEventBase {
 	return &DMLEventBase{
 		table:        table,
 		pos:          pos,
 		resumablePos: resumablePos,
 		query:        query,
+		timestamp:    timestamp,
 	}
 }
 
@@ -301,7 +309,8 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 		}
 	}
 
-	eventBase := NewDMLEventBase(table, pos, resumablePos, query)
+	timestamp := time.Unix(int64(ev.Header.Timestamp), 0)
+	eventBase := NewDMLEventBase(table, pos, resumablePos, query, timestamp)
 	switch ev.Header.EventType {
 	case replication.WRITE_ROWS_EVENTv1, replication.WRITE_ROWS_EVENTv2:
 		return NewBinlogInsertEvents(eventBase, rowsEvent)

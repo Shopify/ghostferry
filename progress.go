@@ -32,8 +32,12 @@ type Progress struct {
 
 	Tables                  map[string]TableProgress
 	LastSuccessfulBinlogPos mysql.Position
-	BinlogStreamerLag       float64 // seconds
+	BinlogStreamerLag       float64 // This is the amount of seconds the binlog streamer is lagging by (seconds)
+	BinlogWriterLag         float64 // This is the amount of seconds the binlog writer is lagging by (seconds)
 	Throttled               bool
+
+	// if the TargetVerifier is enabled, we emit this lag, otherwise this number will be 0
+	TargetBinlogStreamerLag float64
 
 	// The number of data iterators currently active.
 	ActiveDataIterators int

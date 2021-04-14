@@ -618,16 +618,15 @@ type Config struct {
 	StateCallback        HTTPCallback
 	StateReportFrequency int
 
-
 	// Report error via an HTTP callback. The Payload field will contain the ErrorType,
 	// ErrorMessage and the StateDump.
 	ErrorCallback HTTPCallback
 
 	// Report when ghostferry is entering cutover
-	CutoverLock   			HTTPCallback
+	CutoverLock HTTPCallback
 
 	// Report when ghostferry is finished cutover
-	CutoverUnlock 			HTTPCallback
+	CutoverUnlock HTTPCallback
 
 	// If the callback returns a non OK status, these two values configure the number of times Ferry should attempt to
 	// retry acquiring the cutover lock, and for how long the Ferry should wait

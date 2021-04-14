@@ -2,6 +2,7 @@ package test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/siddontang/go-mysql/mysql"
@@ -52,7 +53,7 @@ func (this *DMLEventsTestSuite) SetupTest() {
 		"test_schema.test_table": this.sourceTable,
 	}
 
-	this.eventBase = ghostferry.NewDMLEventBase(this.sourceTable, mysql.Position{}, mysql.Position{}, nil)
+	this.eventBase = ghostferry.NewDMLEventBase(this.sourceTable, mysql.Position{}, mysql.Position{}, nil, time.Unix(1618318965, 0))
 }
 
 func (this *DMLEventsTestSuite) TestBinlogInsertEventGeneratesInsertQuery() {
@@ -105,6 +106,7 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventMetadata() {
 	this.Require().Equal("test_table", dmlEvents[0].Table())
 	this.Require().Nil(dmlEvents[0].OldValues())
 	this.Require().Equal(ghostferry.RowData{1000}, dmlEvents[0].NewValues())
+	this.Require().Equal(time.Unix(1618318965, 0), dmlEvents[0].Timestamp())
 }
 
 func (this *DMLEventsTestSuite) TestBinlogUpdateEventGeneratesUpdateQuery() {
@@ -177,6 +179,7 @@ func (this *DMLEventsTestSuite) TestBinlogUpdateEventMetadata() {
 	this.Require().Equal("test_table", dmlEvents[0].Table())
 	this.Require().Equal(ghostferry.RowData{1000}, dmlEvents[0].OldValues())
 	this.Require().Equal(ghostferry.RowData{1001}, dmlEvents[0].NewValues())
+	this.Require().Equal(time.Unix(1618318965, 0), dmlEvents[0].Timestamp())
 }
 
 func (this *DMLEventsTestSuite) TestBinlogDeleteEventGeneratesDeleteQuery() {
@@ -246,6 +249,7 @@ func (this *DMLEventsTestSuite) TestBinlogDeleteEventMetadata() {
 	this.Require().Equal("test_table", dmlEvents[0].Table())
 	this.Require().Equal(ghostferry.RowData{1000}, dmlEvents[0].OldValues())
 	this.Require().Nil(dmlEvents[0].NewValues())
+	this.Require().Equal(time.Unix(1618318965, 0), dmlEvents[0].Timestamp())
 }
 
 func (this *DMLEventsTestSuite) TestAnnotations() {
@@ -261,6 +265,7 @@ func (this *DMLEventsTestSuite) TestAnnotations() {
 		mysql.Position{},
 		mysql.Position{},
 		[]byte("/*application:ghostferry*/ INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col2`) VALUES (1, val1)"),
+		time.Unix(1618318965, 0),
 	)
 
 	dmlEvents, err := ghostferry.NewBinlogInsertEvents(eventBase, rowsEvent)
@@ -286,6 +291,7 @@ func (this *DMLEventsTestSuite) TestNoAnnotations() {
 		mysql.Position{},
 		mysql.Position{},
 		[]byte("INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col2`) VALUES (1, val1)"),
+		time.Unix(1618318965, 0),
 	)
 
 	dmlEvents, err := ghostferry.NewBinlogInsertEvents(eventBase, rowsEvent)
@@ -310,6 +316,7 @@ func (this *DMLEventsTestSuite) TestMultipleAnnotations() {
 		mysql.Position{},
 		mysql.Position{},
 		[]byte("/*application:ghostferry*/ /*request_id:d8e8fca2dc0f896fd7cb4cb0031ba249*/ /*myannotation*/ INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col2`) VALUES (1, val1)"),
+		time.Unix(1618318965, 0),
 	)
 
 	dmlEvents, err := ghostferry.NewBinlogInsertEvents(eventBase, rowsEvent)
@@ -334,6 +341,7 @@ func (this *DMLEventsTestSuite) TestSeparatedAnnotations() {
 		mysql.Position{},
 		mysql.Position{},
 		[]byte("/*application:ghostferry*/ /*request_id:d8e8fca2dc0f896fd7cb4cb0031ba249;other:annotation*/ INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col2`) VALUES (1, val1)"),
+		time.Unix(1618318965, 0),
 	)
 
 	dmlEvents, err := ghostferry.NewBinlogInsertEvents(eventBase, rowsEvent)
@@ -358,6 +366,7 @@ func (this *DMLEventsTestSuite) TestNoRowsQueryEvent() {
 		mysql.Position{},
 		mysql.Position{},
 		nil,
+		time.Unix(1618318965, 0),
 	)
 
 	dmlEvents, err := ghostferry.NewBinlogInsertEvents(eventBase, rowsEvent)

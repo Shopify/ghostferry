@@ -12,7 +12,7 @@ type DataIteratorSorter interface {
 }
 
 // MaxPaginationKeySorter arranges table based on the MaxPaginationKey in DESC order
-type MaxPaginationKeySorter struct {}
+type MaxPaginationKeySorter struct{}
 
 func (s *MaxPaginationKeySorter) Sort(unorderedTables map[*TableSchema]uint64) ([]TableMaxPaginationKey, error) {
 	orderedTables := make([]TableMaxPaginationKey, len(unorderedTables))
@@ -29,6 +29,7 @@ func (s *MaxPaginationKeySorter) Sort(unorderedTables map[*TableSchema]uint64) (
 
 	return orderedTables, nil
 }
+
 // MaxTableSizeSorter uses `information_schema.tables` to estimate the size of the DB and sorts tables in DESC order
 type MaxTableSizeSorter struct {
 	DataIterator *DataIterator
