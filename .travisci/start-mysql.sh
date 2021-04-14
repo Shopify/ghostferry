@@ -2,6 +2,7 @@
 
 set -e
 
+echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
 docker-compose up -d mysql-1 mysql-2
 
 # We need a way to check if the mysql servers have booted or not before running
