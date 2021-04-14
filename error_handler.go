@@ -18,9 +18,10 @@ type ErrorHandler interface {
 }
 
 type PanicErrorHandler struct {
-	Ferry         *Ferry
-	ErrorCallback HTTPCallback
-	errorCount    int32
+	Ferry                    *Ferry
+	ErrorCallback            HTTPCallback
+	DumpStateToStdoutOnError bool
+	errorCount               int32
 }
 
 func (this *PanicErrorHandler) ReportError(from string, err error) {
@@ -30,7 +31,7 @@ func (this *PanicErrorHandler) ReportError(from string, err error) {
 	if jsonErr != nil {
 		logger.WithError(jsonErr).Error("failed to dump state to JSON...")
 	} else {
-		if this.Ferry.DumpStateToStdoutOnError {
+		if this.DumpStateToStdoutOnError {
 			fmt.Fprintln(os.Stdout, stateJSON)
 		}
 	}
@@ -58,7 +59,7 @@ func (this *PanicErrorHandler) ReportError(from string, err error) {
 	}
 
 	var errmsg string
-	if this.Ferry.DumpStateToStdoutOnError {
+	if this.DumpStateToStdoutOnError {
 		errmsg = "fatal error detected, state dump in stdout"
 	} else {
 		errmsg = "fatal error detected"
