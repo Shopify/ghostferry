@@ -325,6 +325,22 @@ func (f *Ferry) Initialize() (err error) {
 
 	f.logger.Infof("hello world from %s", VersionString)
 
+	// Kind of a hack for now. The ErrorHandler is originally intended to be
+	// passed in by the application. This here should only set a default value in
+	// case one is not passed in. However, ghostferry-sharding currently depend
+	// on ferry.ErrorHandler being not-nil, as the sanity checks performed at the
+	// beginning of this method will get its errors reported by the ErrorHandler.
+	// Since f88c58523988b9fc98f14c6a69c138279f257fe6 we no longer initialize the
+	// ErrorHandler outside of Ferry, meaning that we need to initialize this as
+	// early as possible.
+	if f.ErrorHandler == nil {
+		f.ErrorHandler = &PanicErrorHandler{
+			Ferry:                    f,
+			ErrorCallback:            f.Config.ErrorCallback,
+			DumpStateToStdoutOnError: f.Config.DumpStateToStdoutOnError,
+		}
+	}
+
 	// Suppress siddontang/go-mysql logging as we already log the equivalents.
 	// It also by defaults logs to stdout, which is different from Ghostferry
 	// logging, which all goes to stderr. stdout in Ghostferry is reserved for
@@ -423,12 +439,6 @@ func (f *Ferry) Initialize() (err error) {
 	}
 
 	// Initializing the necessary components of Ghostferry.
-	if f.ErrorHandler == nil {
-		f.ErrorHandler = &PanicErrorHandler{
-			Ferry:         f,
-			ErrorCallback: f.Config.ErrorCallback,
-		}
-	}
 
 	if f.Throttler == nil {
 		f.Throttler = &PauserThrottler{}
