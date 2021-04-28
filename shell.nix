@@ -13,7 +13,7 @@ in stdenv.mkDerivation {
   buildInputs = [
     env
     ruby
-    go_1_14
+    go_1_16
     mysql57
   ];
 }

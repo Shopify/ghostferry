@@ -42,7 +42,8 @@ Development Setup
 
 - Have Docker installed
 - Clone the repo
-- `docker-compose up -d mysql-1 mysql-2`
+- `docker-compose up -d`
+- `nix-shell`
 
 Testing
 ---------------
