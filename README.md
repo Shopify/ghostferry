@@ -61,7 +61,9 @@ Testing
 ### Ruby Integration Tests
 
 Kindly take note of following options:
-*   `DEBUG=1`: To see more detailed debug output by `Ghostferry`
+
+- `DEBUG=1`: To see more detailed debug output by `Ghostferry` live, as opposed
+  to only when the test fails. This is helpful for debugging hanging test.
 
 Example:
 

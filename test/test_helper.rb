@@ -14,20 +14,27 @@ class LogCapturer
   attr_reader :logger
 
   def initialize(level: Logger::DEBUG)
-    @logger_device = StringIO.new
-    @logger = Logger.new(@logger_device, level: level)
+    @capture = ENV["DEBUG"] != "1"
+    if @capture
+      @logger_device = StringIO.new
+      @logger = Logger.new(@logger_device, level: level)
+    else
+      @logger = Logger.new(STDOUT)
+    end
   end
 
   def reset
-    @logger_device.truncate(0)
+    @logger_device.truncate(0) if @capture
   end
 
   def print_output
-    puts "\n"
-    puts "--- Start of failed test output ---"
-    puts @logger_device.string
-    puts "--- End of failed test output ---"
-    puts "\n"
+    if @capture
+      puts "\n"
+      puts "--- Start of failed test output ---"
+      puts @logger_device.string
+      puts "--- End of failed test output ---"
+      puts "\n"
+    end
   end
 end
 
