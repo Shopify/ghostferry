@@ -1,0 +1,51 @@
+name: Ghostferry tests
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  go-test:
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.14.1
+
+      - name: Starting up MySQL
+        run: .github/workflows/start-mysql.sh
+
+      - name: Running Golang tests
+        run: make test-go
+  ruby-test:
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+      BUNDLE_WITHOUT: "development"
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Golang
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.14.1
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 2.5.1
+          bundler-cache: true
+
+      - name: Starting up MySQL
+        run: .github/workflows/start-mysql.sh
+
+      - name: Running Ruby tests
+        run: bundle exec rake test
+

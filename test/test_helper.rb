@@ -5,7 +5,8 @@ require "minitest/autorun"
 require "minitest/reporters"
 require "minitest/fail_fast"
 require "minitest/hooks/test"
-require "pry-byebug"
+
+require "pry-byebug" unless ENV["CI"]
 
 Minitest::Reporters.use! Minitest::Reporters::SpecReporter.new
 
