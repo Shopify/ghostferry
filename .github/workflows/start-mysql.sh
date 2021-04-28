@@ -31,3 +31,5 @@ wait_for_mysql() {
 
 wait_for_mysql 29291
 wait_for_mysql 29292
+
+docker-compose exec -T mysql-1 mysql -u root -e "select @@version"

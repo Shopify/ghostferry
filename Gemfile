@@ -1,12 +1,16 @@
 source "https://rubygems.org"
 
-gem "minitest"
-gem "minitest-hooks"
-gem "mysql2"
-gem "pry-byebug"
-gem "rake"
-gem "tqdm"
+group :test do
+  gem "minitest"
+  gem "mysql2"
+  gem "rake"
 
-gem "minitest-reporters", "~> 1.4"
+  gem "minitest-hooks"
+  gem "minitest-reporters", "~> 1.4"
+  gem "minitest-fail-fast", "~> 0.1.0"
+end
 
-gem "minitest-fail-fast", "~> 0.1.0"
+group :development do
+  gem "tqdm"
+  gem "pry-byebug"
+end
