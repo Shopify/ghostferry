@@ -48,6 +48,7 @@ type IntegrationFerry struct {
 // =========================================
 
 func (f *IntegrationFerry) SendStatusAndWaitUntilContinue(status string, data ...string) error {
+	logrus.Infof("sending status %s", status)
 	integrationPort := os.Getenv(portEnvName)
 	if integrationPort == "" {
 		return fmt.Errorf("environment variable %s must be specified", portEnvName)

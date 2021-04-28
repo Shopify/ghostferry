@@ -49,5 +49,5 @@ jobs:
         run: .github/workflows/start-mysql.sh
 
       - name: Running Ruby tests
-        run: bundle exec ruby test/main.rb
+        run: DEBUG=1 bundle exec ruby test/main.rb -v -n "InterruptResumeTest#test_interrupt_resume_idempotence_with_writes_to_source"
 

@@ -105,8 +105,8 @@ module GhostferryHelper
       start_server_watchdog
 
       @subprocess_thread.join
-      @server_watchdog_thread.join
       @server_thread.join
+      @server_watchdog_thread.join
     ensure
       kill
       raise @server_last_error unless @server_last_error.nil?
@@ -165,11 +165,10 @@ module GhostferryHelper
       )
 
       @server.mount_proc "/" do |req, resp|
+        @logger.info "hi /"
         begin
           unless req.body
-            @server_last_error = ArgumentError.new("Ghostferry is improperly implemented and did not send form data")
-            resp.status = 400
-            @server.shutdown
+            raise ArgumentError.new("Ghostferry is improperly implemented and did not send form data")
           end
 
           query = CGI::parse(req.body)
@@ -178,9 +177,7 @@ module GhostferryHelper
           data = query["data"]
 
           unless status
-            @server_last_error = ArgumentError.new("Ghostferry is improperly implemented and did not send a status")
-            resp.status = 400
-            @server.shutdown
+            raise ArgumentError.new("Ghostferry is improperly implemented and did not send a status")
           end
 
           status = status.first
@@ -190,12 +187,15 @@ module GhostferryHelper
         rescue StandardError => e
           # errors are not reported from WEBrick but the server should fail early
           # as this indicates there is likely a programming error.
+          @logger.warn("encountered error: #{e} in integration test server")
           @server_last_error = e
           @server.shutdown
         end
+        @logger.info "bye / #{@last_message_time}"
       end
 
       @server.mount_proc "/callbacks/progress" do |req, resp|
+        @logger.info "hi /callbacks/progress"
         begin
           unless req.body
             @server_last_error = ArgumentError.new("Ghostferry is improperly implemented and did not send data")
@@ -207,9 +207,11 @@ module GhostferryHelper
           @callback_handlers["progress"].each { |f| f.call(data) } unless @callback_handlers["progress"].nil?
         rescue StandardError
         end
+        @logger.info "bye /callbacks/progress"
       end
 
       @server.mount_proc "/callbacks/state" do |req, resp|
+        @logger.info "hi /callbacks/state"
         begin
           unless req.body
             @server_last_error = ArgumentError.new("Ghostferry is improperly implemented and did not send data")
@@ -220,11 +222,14 @@ module GhostferryHelper
           @callback_handlers["state"].each { |f| f.call(data) } unless @callback_handlers["state"].nil?
         rescue StandardError
         end
+        @logger.info "bye /callbacks/state"
       end
 
       @server.mount_proc "/callbacks/error" do |req, resp|
+        @logger.info "hi /callbacks/error"
         @error = JSON.parse(JSON.parse(req.body)["Payload"])
         @callback_handlers["error"].each { |f| f.call(@error) } unless @callback_handlers["error"].nil?
+        @logger.info "bye /callbacks/error"
       end
 
       @server_thread = Thread.new do
@@ -330,7 +335,7 @@ module GhostferryHelper
         while @subprocess_thread.alive? do
           if Time.now - @last_message_time > @message_timeout
             @server.shutdown
-            raise "ghostferry did not report to the integration test server for the last #{@message_timeout}s"
+            raise "ghostferry did not report to the integration test server for the last #{@message_timeout}s (#{@last_message_time})"
           end
 
           sleep 1

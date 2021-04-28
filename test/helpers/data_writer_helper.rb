@@ -99,7 +99,7 @@ module DataWriterHelper
         op = "DELETE"
       end
 
-      @logger.debug("writing data: #{op} #{id}")
+      # @logger.debug("writing data: #{op} #{id}")
       on_write.call(op, id) unless on_write.nil?
     end
 
