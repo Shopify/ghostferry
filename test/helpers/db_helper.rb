@@ -125,13 +125,13 @@ module DbHelper
     return if number_of_rows == 0
 
     transaction(connection) do
-      sqlargs = (["(?,?)"]*number_of_rows).join(", ")
-      sql = "INSERT INTO #{dbtable} (id, data) VALUES #{sqlargs}"
+      sqlargs = (["(?)"]*number_of_rows).join(", ")
+      sql = "INSERT INTO #{dbtable} (data) VALUES #{sqlargs}"
       insert_statement = connection.prepare(sql)
 
       rand_rows = []
       number_of_rows.times do
-        rand_rows += [nil, rand_data]
+        rand_rows += [rand_data]
       end
 
       insert_statement.execute(*rand_rows)
