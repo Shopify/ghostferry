@@ -62,7 +62,7 @@ Testing
 
 Kindly take note of following options:
 *   `DEBUG=1`: To see more detailed debug output by `Ghostferry`
-*   `TESTOPTS=...`: As detailed under https://docs.ruby-lang.org/en/2.1.0/Rake/TestTask.html
 
 Example:
-`bundle exec rake test DEBUG=1 TESTOPTS="-v --name=TrivialIntegrationTests#test_logged_query_omits_columns"`
+
+`DEBUG=1 ruby test/main.rb -v -n "TrivialIntegrationTests#test_logged_query_omits_columns"`

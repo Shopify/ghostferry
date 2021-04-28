@@ -7,6 +7,8 @@ let
     gemfile  = ./Gemfile;
     lockfile = ./Gemfile.lock;
     gemset   = ./gemset.nix;
+    # https://github.com/NixOS/nixpkgs/issues/83442#issuecomment-768669544
+    copyGemFiles = true;
   };
 in stdenv.mkDerivation {
   name = "ghostferry";

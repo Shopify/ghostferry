@@ -1,14 +1,7 @@
 require "stringio"
 require "logger"
-require "minitest"
-require "minitest/autorun"
-require "minitest/reporters"
-require "minitest/fail_fast"
-require "minitest/hooks/test"
 
 require "pry-byebug" unless ENV["CI"]
-
-Minitest::Reporters.use! Minitest::Reporters::SpecReporter.new
 
 GO_CODE_PATH = File.join(File.absolute_path(File.dirname(__FILE__)), "lib", "go")
 FIXTURE_PATH = File.join(File.absolute_path(File.dirname(__FILE__)), "fixtures")
@@ -16,10 +9,6 @@ FIXTURE_PATH = File.join(File.absolute_path(File.dirname(__FILE__)), "fixtures")
 require "db_helper"
 require "ghostferry_helper"
 require "data_writer_helper"
-
-Minitest.after_run do
-  GhostferryHelper.remove_all_binaries
-end
 
 class LogCapturer
   attr_reader :logger

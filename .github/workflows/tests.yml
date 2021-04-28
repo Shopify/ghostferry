@@ -9,6 +9,7 @@ on:
 jobs:
   go-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       CI: "true"
     steps:
@@ -26,6 +27,7 @@ jobs:
         run: make test-go
   ruby-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       CI: "true"
       BUNDLE_WITHOUT: "development"
@@ -47,5 +49,5 @@ jobs:
         run: .github/workflows/start-mysql.sh
 
       - name: Running Ruby tests
-        run: bundle exec rake test
+        run: bundle exec ruby test/main.rb
 
