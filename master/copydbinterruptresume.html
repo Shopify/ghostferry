@@ -106,14 +106,14 @@ state will be dumped to stdout with JSON. An example of this can be seen below:<
 </div>
 <p>To resume, you first need to save this JSON into a file. Alternatively, you
 could pipe the stdout of <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> directly into a file via:</p>
-<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>ghostferry-copydb -verbose conf.json &gt;state-dump.json <span class="m">2</span>&gt;ghostferry.log
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$</span> ghostferry-copydb -verbose conf.json &gt;state-dump.json <span class="m">2</span>&gt;ghostferry.log
 </pre></div>
 </div>
 <p>Theoretically, <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> should write only the state dump json into
 stdout and all logs in stderr. However, check the files to make sure this is
 true. If not, file a bug report.</p>
 <p>To resume, pass <code class="docutils literal notranslate"><span class="pre">state-dump.json</span></code> as a flag back to <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code>:</p>
-<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>ghostferry-copydb -verbose -resumestate state-dump.json conf.json
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$</span> ghostferry-copydb -verbose -resumestate state-dump.json conf.json
 </pre></div>
 </div>
 <p><strong>Note: if you interrupt Ghostferry for a period of time longer than your
