@@ -42,7 +42,8 @@ Development Setup
 
 - Have Docker installed
 - Clone the repo
-- `docker-compose up -d mysql-1 mysql-2`
+- `docker-compose up -d`
+- `nix-shell`
 
 Testing
 ---------------
@@ -60,8 +61,10 @@ Testing
 ### Ruby Integration Tests
 
 Kindly take note of following options:
-*   `DEBUG=1`: To see more detailed debug output by `Ghostferry`
-*   `TESTOPTS=...`: As detailed under https://docs.ruby-lang.org/en/2.1.0/Rake/TestTask.html
+
+- `DEBUG=1`: To see more detailed debug output by `Ghostferry` live, as opposed
+  to only when the test fails. This is helpful for debugging hanging test.
 
 Example:
-`bundle exec rake test DEBUG=1 TESTOPTS="-v --name=TrivialIntegrationTests#test_logged_query_omits_columns"`
+
+`DEBUG=1 ruby test/main.rb -v -n "TrivialIntegrationTests#test_logged_query_omits_columns"`

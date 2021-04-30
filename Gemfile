@@ -3,7 +3,6 @@ source "https://rubygems.org"
 group :test do
   gem "minitest"
   gem "mysql2"
-  gem "rake"
 
   gem "minitest-hooks"
   gem "minitest-reporters", "~> 1.4"

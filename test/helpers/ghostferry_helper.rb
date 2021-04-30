@@ -339,6 +339,8 @@ module GhostferryHelper
         @server.shutdown
         @logger.debug("server watchdog thread stopped")
       end
+
+      @server_watchdog_thread.abort_on_exception = true
     end
 
     ###################

@@ -1,14 +1,7 @@
 require "stringio"
 require "logger"
-require "minitest"
-require "minitest/autorun"
-require "minitest/reporters"
-require "minitest/fail_fast"
-require "minitest/hooks/test"
 
 require "pry-byebug" unless ENV["CI"]
-
-Minitest::Reporters.use! Minitest::Reporters::SpecReporter.new
 
 GO_CODE_PATH = File.join(File.absolute_path(File.dirname(__FILE__)), "lib", "go")
 FIXTURE_PATH = File.join(File.absolute_path(File.dirname(__FILE__)), "fixtures")
@@ -17,28 +10,31 @@ require "db_helper"
 require "ghostferry_helper"
 require "data_writer_helper"
 
-Minitest.after_run do
-  GhostferryHelper.remove_all_binaries
-end
-
 class LogCapturer
   attr_reader :logger
 
   def initialize(level: Logger::DEBUG)
-    @logger_device = StringIO.new
-    @logger = Logger.new(@logger_device, level: level)
+    @capture = ENV["DEBUG"] != "1"
+    if @capture
+      @logger_device = StringIO.new
+      @logger = Logger.new(@logger_device, level: level)
+    else
+      @logger = Logger.new(STDOUT)
+    end
   end
 
   def reset
-    @logger_device.truncate(0)
+    @logger_device.truncate(0) if @capture
   end
 
   def print_output
-    puts "\n"
-    puts "--- Start of failed test output ---"
-    puts @logger_device.string
-    puts "--- End of failed test output ---"
-    puts "\n"
+    if @capture
+      puts "\n"
+      puts "--- Start of failed test output ---"
+      puts @logger_device.string
+      puts "--- End of failed test output ---"
+      puts "\n"
+    end
   end
 end
 

@@ -20,8 +20,6 @@ github.com/gorilla/context
 github.com/gorilla/mux
 # github.com/jmoiron/sqlx v1.2.0
 ## explicit
-# github.com/konsorten/go-windows-terminal-sequences v1.0.1
-github.com/konsorten/go-windows-terminal-sequences
 # github.com/lann/builder v0.0.0-20180216234317-1b87b36280d0
 ## explicit
 github.com/lann/builder
@@ -60,7 +58,7 @@ github.com/siddontang/go-mysql/mysql
 github.com/siddontang/go-mysql/packet
 github.com/siddontang/go-mysql/replication
 github.com/siddontang/go-mysql/schema
-# github.com/sirupsen/logrus v1.4.1
+# github.com/sirupsen/logrus v1.8.1
 ## explicit
 github.com/sirupsen/logrus
 # github.com/stretchr/testify v1.4.0
@@ -68,9 +66,11 @@ github.com/sirupsen/logrus
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/require
 github.com/stretchr/testify/suite
-# golang.org/x/sys v0.0.0-20191120155948-bd437916bb0e
+# golang.org/x/sys v0.0.0-20210426230700-d19ff857e887
 ## explicit
+golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
+golang.org/x/sys/windows
 # google.golang.org/appengine v1.6.5
 ## explicit
 google.golang.org/appengine/cloudsql
