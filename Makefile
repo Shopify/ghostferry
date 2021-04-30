@@ -1,6 +1,6 @@
 # Variables to be built into the binary
 VERSION         := 1.1.0
-DATETIME        := $(shell date -u +%Y%m%d%H%M%S)
+DATETIME        ?= $(shell date -u +%Y%m%d%H%M%S) # This variable can be overwritten by the caller
 
 ifndef IGNORE_DIRTY_TREE
 DIRTY_TREE      := $(shell git diff-index --quiet HEAD -- || echo '+dirty')
