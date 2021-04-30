@@ -9,8 +9,9 @@ cd docs
 make html
 
 cd build
-git clone --depth 1 https://github.com/$TRAVIS_REPO_SLUG -b gh-pages ghostferry-pages
-cp -ar html/. ghostferry-pages/$TRAVIS_BRANCH
+git clone --depth 1 https://github.com/Shopify/ghostferry.git -b gh-pages ghostferry-pages
+current_branch=${GITHUB_REF#refs/heads/}
+cp -ar html/. ghostferry-pages/${current_branch}
 cd ghostferry-pages
 
 echo "<html>" > index.html
@@ -27,4 +28,8 @@ echo "    </ul>" >> index.html
 echo "  </body>" >> index.html
 echo "</html>" >> index.html
 
-rm -rf .git
+git status
+
+cd ../../..
+ls -la docs/build/ghostferry-pages
+rm .git -rf
