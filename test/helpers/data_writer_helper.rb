@@ -59,17 +59,22 @@ module DataWriterHelper
         @threads << Thread.new do
           @logger.info("starting data writer thread #{i}")
 
+          n = 0
           begin
             connection = Mysql2::Client.new(@db_config)
 
             until @stop_requested do
               write_data(connection, &on_write)
+              n += 1
+              # Kind of makes the following race condition a bit better...
+              # https://github.com/Shopify/ghostferry/issues/280
+              sleep(0.03)
             end
           ensure
             connection.close
           end
 
-          @logger.info("stopped data writer thread #{i}")
+          @logger.info("stopped data writer thread #{i} with a total of #{n} data writes")
         end
       end
     end
@@ -99,7 +104,6 @@ module DataWriterHelper
         op = "DELETE"
       end
 
-      @logger.debug("writing data: #{op} #{id}")
       on_write.call(op, id) unless on_write.nil?
     end
 
