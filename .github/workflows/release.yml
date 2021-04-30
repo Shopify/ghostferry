@@ -20,6 +20,6 @@ jobs:
         run: .github/workflows/build-deb.sh
 
       - name: Releasing Ghostferry to Github
-        run: gh release create --target ${GITHUB_REF#refs/heads/} -p release-${GITHUB_SHA::8} build/ghostferry*
+        run: gh release create --target ${GITHUB_REF#refs/heads/} -p release-${GITHUB_SHA::7} build/ghostferry*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
