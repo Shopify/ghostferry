@@ -40,7 +40,7 @@ GOTESTSUM_URL   := "https://github.com/gotestyourself/gotestsum/releases/downloa
 
 $(PROJECTS): $(GOBIN)
 	$(eval proj := $@)
-	go build -i -ldflags "$(LDFLAGS)" -o $(BIN_TARGET) $(PROJECT_PKG)
+	go build -ldflags "$(LDFLAGS)" -o $(BIN_TARGET) $(PROJECT_PKG)
 
 $(PROJECT_DEBS): LDFLAGS += -X github.com/Shopify/ghostferry.WebUiBasedir=/$(SHARE_DIR)
 $(PROJECT_DEBS): reset-deb-dir
