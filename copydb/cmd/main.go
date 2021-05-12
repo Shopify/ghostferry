@@ -106,6 +106,7 @@ func main() {
 
 	err = ferry.Initialize()
 	if err != nil {
+		ferry.Ferry.ErrorHandler.ReportError("ferry.initialize", err)
 		errorAndExit(fmt.Sprintf("failed to initialize ferry: %v", err))
 	}
 
