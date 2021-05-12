@@ -112,6 +112,7 @@ func main() {
 
 	err = ferry.Start()
 	if err != nil {
+		ferry.Ferry.ErrorHandler.ReportError("ferry.start", err)
 		errorAndExit(fmt.Sprintf("failed to start ferry: %v", err))
 	}
 
@@ -123,6 +124,7 @@ func main() {
 	if config.StateToResumeFrom == nil {
 		err = ferry.CreateDatabasesAndTables()
 		if err != nil {
+			ferry.Ferry.ErrorHandler.ReportError("ferry.createDatabasesAndTables", err)
 			errorAndExit(fmt.Sprintf("failed to create databases and tables: %v", err))
 		}
 	}
