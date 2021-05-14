@@ -106,11 +106,15 @@ func main() {
 
 	err = ferry.Initialize()
 	if err != nil {
+		// This is not a good idea to reach deep within ferry from copydb. The entire ErrorHandler needs
+		// refactoring which is defined in this issue - https://github.com/Shopify/ghostferry/issues/284
+		ferry.Ferry.ErrorHandler.ReportError("ferry.initialize", err)
 		errorAndExit(fmt.Sprintf("failed to initialize ferry: %v", err))
 	}
 
 	err = ferry.Start()
 	if err != nil {
+		ferry.Ferry.ErrorHandler.ReportError("ferry.start", err)
 		errorAndExit(fmt.Sprintf("failed to start ferry: %v", err))
 	}
 
@@ -122,6 +126,7 @@ func main() {
 	if config.StateToResumeFrom == nil {
 		err = ferry.CreateDatabasesAndTables()
 		if err != nil {
+			ferry.Ferry.ErrorHandler.ReportError("ferry.createDatabasesAndTables", err)
 			errorAndExit(fmt.Sprintf("failed to create databases and tables: %v", err))
 		}
 	}
