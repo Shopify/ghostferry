@@ -753,6 +753,17 @@ type Config struct {
 	// in the Progress. This behaviour is perfectly okay and doesn't mean there are no rows being written
 	// to the target DB.
 	EnableRowBatchSize bool
+
+	// If the target DB is set to read_only ghostferry will throw an error during the initialization step.
+	// AllowSuperUserOnReadOnly flag allows to run ghostferry even if the target DB is read_only. This is helpful in
+	// scenarios where target DB needs to be restricted from writes made by any other user then the ghostferry user.
+	//
+	// Optional: Defaults to false.
+	//
+	// NOTE:
+	// The ghostferry target user should have SUPER permissions to actually write to the target DB,
+	// if ghostferry is ran with AllowSuperUserOnReadOnly = true and the target DB is set to read_only.
+	AllowSuperUserOnReadOnly bool
 }
 
 func (c *Config) ValidateConfig() error {

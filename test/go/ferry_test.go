@@ -34,6 +34,20 @@ func (t *FerryTestSuite) TestReadOnlyDatabaseFailsInitialization() {
 	t.Require().Nil(err)
 }
 
+func (t *FerryTestSuite) TestReadOnlyDatabaseDoesNotFailInitializationWithAllowSuperUserOnReadOnlyFlag() {
+	_, err := t.Ferry.TargetDB.Exec("SET GLOBAL read_only = ON")
+	t.Require().Nil(err)
+
+	ferry := testhelpers.NewTestFerry().Ferry
+	ferry.Config.AllowSuperUserOnReadOnly = true
+
+	err = ferry.Initialize()
+	t.Require().Nil(err)
+
+	_, err = t.Ferry.TargetDB.Exec("SET GLOBAL read_only = OFF")
+	t.Require().Nil(err)
+}
+
 func (t *FerryTestSuite) TestSourceDatabaseWithForeignKeyConstraintFailsInitialization() {
 	createTableWithFkConstraint := `
 		CREATE TABLE gftest.test_fk (
