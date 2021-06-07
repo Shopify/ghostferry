@@ -4,8 +4,8 @@ set -e
 
 docker-compose up -d
 
-mysql -h 127.0.0.1 -u root -P 29291 -e 'DROP DATABASE `abc`'
-mysql -h 127.0.0.1 -u root -P 29292 -e 'DROP DATABASE `abc`'
+mysql -h 127.0.0.1 -u root -P 29291 -e 'DROP DATABASE IF EXISTS `abc`'
+mysql -h 127.0.0.1 -u root -P 29292 -e 'DROP DATABASE IF EXISTS `abc`'
 
 mysql -h 127.0.0.1 -u root -P 29291 -e 'CREATE DATABASE `abc`'
 mysql -h 127.0.0.1 -u root -P 29292 -e 'CREATE DATABASE `abc`'
