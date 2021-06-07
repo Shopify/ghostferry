@@ -244,3 +244,14 @@ func ConvertTableColumnsToStrings(columns []schema.TableColumn) []string {
 	}
 	return out
 }
+
+func QuoteFields(fields []string) (out []string) {
+	for _, field := range fields {
+		out = append(out, QuoteField(field))
+	}
+	return
+}
+
+func QuoteField(field string) string {
+	return fmt.Sprintf("`%s`", field)
+}

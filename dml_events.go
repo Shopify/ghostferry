@@ -326,7 +326,7 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 func quotedColumnNames(table *TableSchema) []string {
 	cols := make([]string, len(table.Columns))
 	for i, column := range table.Columns {
-		cols[i] = quoteField(column.Name)
+		cols[i] = QuoteField(column.Name)
 	}
 
 	return cols
@@ -369,7 +369,7 @@ func buildStringMapForWhere(columns []schema.TableColumn, values []interface{}) 
 			buffer = append(buffer, " AND "...)
 		}
 
-		buffer = append(buffer, quoteField(columns[i].Name)...)
+		buffer = append(buffer, QuoteField(columns[i].Name)...)
 
 		if isNilValue(value) {
 			// "WHERE value = NULL" will never match rows.
@@ -391,7 +391,7 @@ func buildStringMapForSet(columns []schema.TableColumn, values []interface{}) st
 			buffer = append(buffer, ',')
 		}
 
-		buffer = append(buffer, quoteField(columns[i].Name)...)
+		buffer = append(buffer, QuoteField(columns[i].Name)...)
 		buffer = append(buffer, '=')
 		buffer = appendEscapedValue(buffer, value, columns[i])
 	}

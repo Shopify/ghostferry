@@ -307,7 +307,7 @@ func ScanByteRow(rows *sqlorig.Rows, columnCount int) ([][]byte, error) {
 }
 
 func DefaultBuildSelect(columns []string, table *TableSchema, lastPaginationKey, batchSize uint64) squirrel.SelectBuilder {
-	quotedPaginationKey := quoteField(table.GetPaginationColumn().Name)
+	quotedPaginationKey := QuoteField(table.GetPaginationColumn().Name)
 
 	return squirrel.Select(columns...).
 		From(QuotedTableName(table)).

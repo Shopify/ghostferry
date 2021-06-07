@@ -69,7 +69,7 @@ func (e *RowBatch) AsSQLQuery(schemaName, tableName string) (string, []interface
 
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(schemaName, tableName) +
-		" (" + strings.Join(quoteFields(e.columns), ",") + ") VALUES " + valuesStr
+		" (" + strings.Join(QuoteFields(e.columns), ",") + ") VALUES " + valuesStr
 
 	return query, e.flattenRowData(), nil
 }

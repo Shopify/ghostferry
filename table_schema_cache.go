@@ -62,11 +62,11 @@ func (t *TableSchema) FingerprintQuery(schemaName, tableName string, numRows int
 	var forceIndex string
 
 	columnsToSelect := make([]string, 2+len(t.CompressedColumnsForVerification))
-	columnsToSelect[0] = quoteField(t.GetPaginationColumn().Name)
+	columnsToSelect[0] = QuoteField(t.GetPaginationColumn().Name)
 	columnsToSelect[1] = t.RowMd5Query()
 	i := 2
 	for columnName, _ := range t.CompressedColumnsForVerification {
-		columnsToSelect[i] = quoteField(columnName)
+		columnsToSelect[i] = QuoteField(columnName)
 		i += 1
 	}
 
@@ -369,7 +369,7 @@ func showDatabases(c *sql.DB) ([]string, error) {
 }
 
 func showTablesFrom(c *sql.DB, dbname string) ([]string, error) {
-	rows, err := c.Query(fmt.Sprintf("show tables from %s", quoteField(dbname)))
+	rows, err := c.Query(fmt.Sprintf("show tables from %s", QuoteField(dbname)))
 	if err != nil {
 		return []string{}, err
 	}
@@ -391,7 +391,7 @@ func showTablesFrom(c *sql.DB, dbname string) ([]string, error) {
 
 func maxPaginationKey(db *sql.DB, table *TableSchema) (uint64, bool, error) {
 	primaryKeyColumn := table.GetPaginationColumn()
-	paginationKeyName := quoteField(primaryKeyColumn.Name)
+	paginationKeyName := QuoteField(primaryKeyColumn.Name)
 	query, args, err := sq.
 		Select(paginationKeyName).
 		From(QuotedTableName(table)).

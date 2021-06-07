@@ -672,7 +672,7 @@ func compareHashes(source, target map[uint64][]byte) []uint64 {
 }
 
 func GetMd5HashesSql(schema, table, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []uint64) (string, []interface{}, error) {
-	quotedPaginationKey := quoteField(paginationKeyColumn)
+	quotedPaginationKey := QuoteField(paginationKeyColumn)
 	return rowMd5Selector(columns, paginationKeyColumn).
 		From(QuotedTableNameFromString(schema, table)).
 		Where(sq.Eq{quotedPaginationKey: paginationKeys}).
@@ -681,7 +681,7 @@ func GetMd5HashesSql(schema, table, paginationKeyColumn string, columns []schema
 }
 
 func rowMd5Selector(columns []schema.TableColumn, paginationKeyColumn string) sq.SelectBuilder {
-	quotedPaginationKey := quoteField(paginationKeyColumn)
+	quotedPaginationKey := QuoteField(paginationKeyColumn)
 
 	hashStrs := make([]string, len(columns))
 	for idx, column := range columns {
@@ -697,7 +697,7 @@ func rowMd5Selector(columns []schema.TableColumn, paginationKeyColumn string) sq
 }
 
 func normalizeAndQuoteColumn(column schema.TableColumn) (quoted string) {
-	quoted = quoteField(column.Name)
+	quoted = QuoteField(column.Name)
 	if column.Type == schema.TYPE_FLOAT {
 		quoted = fmt.Sprintf("(if (%s = '-0', 0, %s))", quoted, quoted)
 	}

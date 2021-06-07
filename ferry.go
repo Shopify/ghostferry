@@ -38,17 +38,6 @@ const (
 	StateDone                = "done"
 )
 
-func quoteFields(fields []string) (out []string) {
-	for _, field := range fields {
-		out = append(out, quoteField(field))
-	}
-	return
-}
-
-func quoteField(field string) string {
-	return fmt.Sprintf("`%s`", field)
-}
-
 func MaskedDSN(c *mysql.Config) string {
 	oldPass := c.Passwd
 	c.Passwd = "<masked>"
