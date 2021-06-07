@@ -130,6 +130,7 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 							paginationKeyIndex: batch.PaginationKeyIndex(),
 							table:              table,
 							fingerprints:       fingerprints,
+							columns:            batch.columns,
 						}
 					}
 

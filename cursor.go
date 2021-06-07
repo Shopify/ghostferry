@@ -261,10 +261,24 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos uint64
 		values:             batchData,
 		paginationKeyIndex: paginationKeyIndex,
 		table:              c.Table,
+		columns:            filterByTableColumns(columns, c.Table.Columns),
 	}
 
 	logger.Debugf("found %d rows", batch.Size())
 
+	return
+}
+
+func filterByTableColumns(columnsToFilter []string, tableColumns []schema.TableColumn) (out []string) {
+	exists := make(map[string]struct{}, len(tableColumns))
+	for _, c := range tableColumns {
+		exists[c.Name] = struct{}{}
+	}
+	for _, c := range columnsToFilter {
+		if _, ok := exists[c]; ok {
+			out = append(out, c)
+		}
+	}
 	return
 }
 

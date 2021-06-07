@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/siddontang/go-mysql/mysql"
+	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -234,4 +235,12 @@ func CheckDbIsAReplica(db *sql.DB) (bool, error) {
 	var isReadOnly bool
 	err := row.Scan(&isReadOnly)
 	return isReadOnly, err
+}
+
+func ConvertTableColumnsToStrings(columns []schema.TableColumn) []string {
+	out := make([]string, 0, len(columns))
+	for _, column := range columns {
+		out = append(out, column.Name)
+	}
+	return out
 }
