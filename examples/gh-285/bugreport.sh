@@ -16,7 +16,7 @@ mysql -h 127.0.0.1 -u root -P 29292 -e 'CREATE TABLE `abc`.`t` (`tenant_id` bigi
 mysql -h 127.0.0.1 -u root -P 29291 -e 'INSERT INTO `abc`.`t` VALUES (1, '\''z'\'', NULL, NOW())'
 mysql -h 127.0.0.1 -u root -P 29291 -e 'INSERT INTO `abc`.`t` VALUES (1, '\''a'\'', NULL, NOW())'
 
-ghostferry-sharding -config-path "$(cd -P "$(dirname "$0")" && pwd)/config.json"
+go run sharding/cmd/main.go -config-path "$(cd -P "$(dirname "$0")" && pwd)/config.json"
 
 SOURCE=$(mysql -u root -h 127.0.0.1 -P 29291 -e 'SELECT * FROM `abc`.`t`')
 TARGET=$(mysql -u root -h 127.0.0.1 -P 29292 -e 'SELECT * FROM `abc`.`t`')
