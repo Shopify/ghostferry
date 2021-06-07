@@ -7,6 +7,24 @@ on:
   pull_request:
 
 jobs:
+  gh-285:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.16
+
+      - name: Starting up MySQL
+        run: .github/workflows/start-mysql.sh
+
+      - name: Running GH-285 test
+        run: ./examples/gh-285/bugreport.sh
   go-test:
     runs-on: ubuntu-latest
     timeout-minutes: 15

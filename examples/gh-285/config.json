@@ -12,12 +12,10 @@
     }
   },
   "SourceDB": "abc",
-
   "DumpStateOnSignal": true,
   "DoNotIncludeSchemaCacheInStateDump": true,
   "StateToResumeFrom": null,
   "SkipTargetVerification": false,
-
   "Target": {
     "Host": "127.0.0.1",
     "Port": 29292,
@@ -29,7 +27,6 @@
     }
   },
   "TargetDB": "abc",
-
   "CascadingPaginationColumnConfig": {
     "FallbackColumn": "id"
   },
@@ -42,30 +39,8 @@
   "InlineVerifierConfig": {
     "MaxExpectedDowntime": "60.000000000s"
   },
-
   "MaxCutoverRetries": 1,
   "CutoverRetryWaitSeconds": 0,
-
-  "CutoverLock": {
-    "URI": "http://127.0.0.1:8002/callbacks/progress",
-    "Payload": "\"ok\""
-  },
-  "CutoverUnlock": {
-    "URI": "http://127.0.0.1:8002/callbacks/progress",
-    "Payload": "\"ok\""
-  },
-  "ErrorCallback": {
-    "URI": "http/error"
-  },
-
-  "ProgressCallback": {
-    "URI": "http://127.0.0.1:8002/callbacks/progress"
-  },
-  "ProgressReportFrequency": 5000,
-  "StateCallback": {
-    "URI": "http://127.0.0.1:8002/callbacks/state"
-  },
-
   "StateReportFrequency": 15000,
   "DataIterationConcurrency": 16,
   "DataIterationBatchSizePerTableOverride": {
