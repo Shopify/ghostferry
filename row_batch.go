@@ -10,6 +10,7 @@ type RowBatch struct {
 	paginationKeyIndex int
 	table              *TableSchema
 	fingerprints       map[uint64][]byte
+	columns            []string
 }
 
 func NewRowBatch(table *TableSchema, values []RowData, paginationKeyIndex int) *RowBatch {
@@ -17,6 +18,7 @@ func NewRowBatch(table *TableSchema, values []RowData, paginationKeyIndex int) *
 		values:             values,
 		paginationKeyIndex: paginationKeyIndex,
 		table:              table,
+		columns:            ConvertTableColumnsToStrings(table.Columns),
 	}
 }
 
@@ -62,14 +64,12 @@ func (e *RowBatch) AsSQLQuery(schemaName, tableName string) (string, []interface
 		return "", nil, err
 	}
 
-	columns := quotedColumnNames(e.table)
-
-	valuesStr := "(" + strings.Repeat("?,", len(columns)-1) + "?)"
+	valuesStr := "(" + strings.Repeat("?,", len(e.columns)-1) + "?)"
 	valuesStr = strings.Repeat(valuesStr+",", len(e.values)-1) + valuesStr
 
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(schemaName, tableName) +
-		" (" + strings.Join(columns, ",") + ") VALUES " + valuesStr
+		" (" + strings.Join(QuoteFields(e.columns), ",") + ") VALUES " + valuesStr
 
 	return query, e.flattenRowData(), nil
 }

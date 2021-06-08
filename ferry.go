@@ -38,10 +38,6 @@ const (
 	StateDone                = "done"
 )
 
-func quoteField(field string) string {
-	return fmt.Sprintf("`%s`", field)
-}
-
 func MaskedDSN(c *mysql.Config) string {
 	oldPass := c.Passwd
 	c.Passwd = "<masked>"

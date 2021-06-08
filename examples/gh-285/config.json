@@ -1,0 +1,54 @@
+{
+  "ShardingKey": "tenant_id",
+  "ShardingValue": 1,
+  "Source": {
+    "Host": "127.0.0.1",
+    "Port": 29291,
+    "User": "root",
+    "Pass": "",
+    "Collation": "utf8mb4_unicode_ci",
+    "Params": {
+      "charset": "utf8mb4"
+    }
+  },
+  "SourceDB": "abc",
+  "DumpStateOnSignal": true,
+  "DoNotIncludeSchemaCacheInStateDump": true,
+  "StateToResumeFrom": null,
+  "SkipTargetVerification": false,
+  "Target": {
+    "Host": "127.0.0.1",
+    "Port": 29292,
+    "User": "root",
+    "Pass": "",
+    "Collation": "utf8mb4_unicode_ci",
+    "Params": {
+      "charset": "utf8mb4"
+    }
+  },
+  "TargetDB": "abc",
+  "CascadingPaginationColumnConfig": {
+    "FallbackColumn": "id"
+  },
+  "IgnoredTables": [
+    "^_(.*)_new$",
+    "^_(.*)_old$",
+    "^lhm._(.*)",
+    "^_(.*)_gho$"
+  ],
+  "InlineVerifierConfig": {
+    "MaxExpectedDowntime": "60.000000000s"
+  },
+  "MaxCutoverRetries": 1,
+  "CutoverRetryWaitSeconds": 0,
+  "StateReportFrequency": 15000,
+  "DataIterationConcurrency": 16,
+  "DataIterationBatchSizePerTableOverride": {
+    "MinRowSize": 1000,
+    "MaxRowSize": 10000,
+    "ControlPoints": {
+      "1000": 1000,
+      "10000": 200
+    }
+  }
+}

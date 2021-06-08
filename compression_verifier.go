@@ -209,7 +209,7 @@ func NewCompressionVerifier(tableColumnCompressions TableColumnCompressionConfig
 }
 
 func getRows(db *sql.DB, schema, table, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []uint64) (*sqlorig.Rows, error) {
-	quotedPaginationKey := quoteField(paginationKeyColumn)
+	quotedPaginationKey := QuoteField(paginationKeyColumn)
 	sql, args, err := rowSelector(columns, paginationKeyColumn).
 		From(QuotedTableNameFromString(schema, table)).
 		Where(sq.Eq{quotedPaginationKey: paginationKeys}).
@@ -243,5 +243,5 @@ func rowSelector(columns []schema.TableColumn, paginationKeyColumn string) sq.Se
 		columnStrs[idx] = column.Name
 	}
 
-	return sq.Select(fmt.Sprintf("%s, %s", quoteField(paginationKeyColumn), strings.Join(columnStrs, ",")))
+	return sq.Select(fmt.Sprintf("%s, %s", QuoteField(paginationKeyColumn), strings.Join(columnStrs, ",")))
 }
