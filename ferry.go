@@ -375,13 +375,15 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
-	isReplica, err := CheckDbIsAReplica(f.TargetDB)
-	if err != nil {
-		f.logger.WithError(err).Error("cannot check if target db is writable")
-		return err
-	}
-	if isReplica {
-		return fmt.Errorf("@@read_only must be OFF on target db")
+	if !f.Config.AllowSuperUserOnReadOnly {
+		isReplica, err := CheckDbIsAReplica(f.TargetDB)
+		if err != nil {
+			f.logger.WithError(err).Error("cannot check if target db is writable")
+			return err
+		}
+		if isReplica {
+			return fmt.Errorf("@@read_only must be OFF on target db")
+		}
 	}
 
 	// Check if we're running from a replica or not and sanity check
