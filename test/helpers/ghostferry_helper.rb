@@ -267,7 +267,7 @@ module GhostferryHelper
         end
 
         if @config[:skip_foreign_key_constraints_check]
-          environment["SkipForeignKeyConstraintsCheck"] = @config[:skip_foreign_key_constraints_check]
+          environment["SkipForeignKeyConstraintsCheck"] = "true"
         end
 
         if @config[:marginalia]

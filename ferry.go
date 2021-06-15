@@ -424,7 +424,7 @@ func (f *Ferry) Initialize() (err error) {
 			f.logger.WithError(err).Error("source master is a read replica")
 			return err
 		}
-	} else {
+	} else if !f.Config.SkipForeignKeyConstraintsCheck {
 		isReplica, err := CheckDbIsAReplica(f.SourceDB)
 		if err != nil {
 			f.logger.WithError(err).Error("cannot check if source is a replica")
@@ -480,6 +480,18 @@ func (f *Ferry) Initialize() (err error) {
 
 		if err != nil {
 			f.logger.WithError(err).Error("foreign key constraints detected on the source database. Enable SkipForeignKeyConstraintsCheck to ignore this check and allow foreign keys")
+			return err
+		}
+	}
+
+	if f.Config.SkipForeignKeyConstraintsCheck {
+		isReadOnly, err := CheckDbIsAReplica(f.SourceDB)
+		if err != nil {
+			return err
+		}
+		if !isReadOnly {
+			err = errors.New("Source DB must be read_only")
+			f.logger.WithError(err).Error("Source DB should be read_only to migrate tables with foreign key constraints")
 			return err
 		}
 	}
