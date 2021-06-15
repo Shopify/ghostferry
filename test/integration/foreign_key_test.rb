@@ -5,10 +5,12 @@ class ForeignKeyTest < GhostferryTestCase
   def setup
     seed_simple_database_with_fk_constraints
     disable_foreign_key_constraints
+    disable_writes_on_source
   end
 
   def teardown
     enable_foreign_key_constraints
+    enable_writes_on_source
   end
 
   def test_foreign_key_copy_data_without_writes_to_source
@@ -67,16 +69,18 @@ class ForeignKeyTest < GhostferryTestCase
     # id2 on test_fk_table2 will be automatically changed in source db, but not being written to the binlogs
     # As a result the even after resuming ghostferry from the dumped state the column with id2 = min_id + 1000000
     # won't be present on test_fk_table2 in target db.
+    enable_writes_on_source
     choosen_id = min_ids.min
     random_value = 1000000
     source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAMES_WITH_FK_CONSTRAINTS.first} SET id1 = #{choosen_id + random_value} WHERE id1 = #{choosen_id}")
+    disable_writes_on_source
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { skip_foreign_key_constraints_check: true, verifier_type: "Inline" })
     ghostferry.run(dumped_state)
 
-    source_result = source_db.query("SELECT MAX(id2) FROM #{DEFAULT_FULL_TABLE_NAMES_WITH_FK_CONSTRAINTS[1]}")
-    target_result = target_db.query("SELECT MAX(id2) FROM #{DEFAULT_FULL_TABLE_NAMES_WITH_FK_CONSTRAINTS[1]}")
-    refute_equal source_result.first["MAX(id2)"], target_result.first["MAX(id2)"]
+    source_result = source_db.query("CHECKSUM TABLE #{DEFAULT_FULL_TABLE_NAMES_WITH_FK_CONSTRAINTS[1]}")
+    target_result = target_db.query("CHECKSUM TABLE #{DEFAULT_FULL_TABLE_NAMES_WITH_FK_CONSTRAINTS[1]}")
+    refute_equal source_result.first["Checksum"], target_result.first["Checksum"]
   end
 
   # Consider a scenario where rows in parent table on source db are changed during interrupt, and due to CASCADES 
@@ -108,9 +112,11 @@ class ForeignKeyTest < GhostferryTestCase
       min_ids << result.first["MIN(id#{i})"]
     end
 
+    enable_writes_on_source
     choosen_id = min_ids.min
     random_value = 1000000
     source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAMES_WITH_FK_CONSTRAINTS.first} SET id1 = #{choosen_id + random_value} WHERE id1 = #{choosen_id}")
+    disable_writes_on_source
 
     verification_ran = false
     incorrect_tables = []

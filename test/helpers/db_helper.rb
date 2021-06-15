@@ -143,6 +143,14 @@ module DbHelper
     end
   end
 
+  def disable_writes_on_source
+    source_db.query("SET GLOBAL read_only = ON")
+  end
+
+  def enable_writes_on_source
+    source_db.query("SET GLOBAL read_only = OFF")
+  end
+
   def disable_foreign_key_constraints
     target_db.query("SET GLOBAL FOREIGN_KEY_CHECKS=0")
   end
