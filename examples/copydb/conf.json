@@ -6,8 +6,7 @@
     "Pass": "",
     "Collation": "utf8mb4_unicode_ci",
     "Params": {
-      "charset": "utf8mb4",
-      "foreign_key_checks": "0"
+      "charset": "utf8mb4"
     }
   },
 
@@ -18,8 +17,7 @@
     "Pass": "",
     "Collation": "utf8mb4_unicode_ci",
     "Params": {
-      "charset": "utf8mb4",
-      "foreign_key_checks": "0"
+      "charset": "utf8mb4"
     }
   },
 
@@ -31,6 +29,12 @@
     "Blacklist": ["schema_migrations"]
   },
 
+  "ForceIndexForVerification": {
+    "abc": {
+      "table1": "forced_index_name"
+    }
+  },
+
   "DumpStateOnSignal": true,
 
   "VerifierType": "ChecksumTable",
@@ -40,7 +44,5 @@
     "Custom Script 2": ["examples/copydb/s2"]
   },
 
-  "DumpStateToStdoutOnError": true,
-
-  "SkipForeignKeyConstraintsCheck": true
+  "DumpStateToStdoutOnError": true
 }
