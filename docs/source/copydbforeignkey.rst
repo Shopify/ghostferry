@@ -4,7 +4,7 @@
 Running ``ghostferry-copydb`` in production for tables with Foreign Key Constraints
 ===================================================================================
 
-Migrating tables with foreign keys constraints is an experimental feature in copydb and should be used at your own risk in production.
+Migrating tables with foreign keys constraints is an experimental feature in copydb and should be used at your own risk in production. 
  
 
 Prerequisites
@@ -32,7 +32,7 @@ Before migrating tables with foreign key constraints via copydb there are a coup
 Limitations
 -------------
 
-- While migrating tables with foreign key constraints the source db should be read_only as there are some fundamental issues when migrating tables with foreign key constraints at the same time when writes are occurring to the source database. This issue descibes briefly why the source database should be read_only during the migration - https://github.com/Shopify/katesql-migration-backend/issues/194.
+- Currently migrating tables with foreign key constraints is only possible if the source database is in read_only mode. Since tables with foreign key constraints can have referential actions for a foreign key such as ``ON DELETE CASCADE``, ``ON UPDATE CASCADE``. Cascading deletes and updates in child tablees caused by foreign key constraints don't show up in binlogs because these referential actions are dealt internally by InnoDB. This issue descibes briefly why the source database should be read_only during the migration - https://github.com/Shopify/ghostferry/issues/289.
 
 - ``Interrupt-Resume`` functionality can be used as long as source database is read_only also during the interrupt period
 
