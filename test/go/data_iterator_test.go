@@ -163,7 +163,7 @@ func (this *DataIteratorTestSuite) TestDoneListenerGetsNotifiedWhenDone() {
 }
 
 func (this *DataIteratorTestSuite) completedTables() map[string]bool {
-	return this.di.StateTracker.Serialize(nil, nil).CompletedTables
+	return this.di.StateTracker.Serialize(nil, nil, nil).CompletedTables
 }
 
 func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverride() {

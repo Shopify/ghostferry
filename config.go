@@ -219,7 +219,7 @@ func (c *InlineVerifierConfig) Validate() error {
 	}
 
 	if c.VerifyBinlogEventsInterval == "" {
-		c.VerifyBinlogEventsInterval = "1s"
+		c.VerifyBinlogEventsInterval = "50ms"
 	}
 
 	c.verifyBinlogEventsInterval, err = time.ParseDuration(c.VerifyBinlogEventsInterval)

@@ -225,23 +225,31 @@ func (f *Ferry) NewInlineVerifier() *InlineVerifier {
 		binlogVerifyStore = NewBinlogVerifyStore()
 	}
 
+	schemaFingerPrint := map[string]string{}
+	if f.StateToResumeFrom != nil && f.StateToResumeFrom.SchemaFingerPrint != nil {
+		schemaFingerPrint = f.StateToResumeFrom.SchemaFingerPrint
+		f.logger.Info("SCHEMA FINGERPRINT FOUND")
+	}
+
 	return &InlineVerifier{
-		SourceDB:                   f.SourceDB,
-		TargetDB:                   f.TargetDB,
-		DatabaseRewrites:           f.Config.DatabaseRewrites,
-		TableRewrites:              f.Config.TableRewrites,
-		TableSchemaCache:           f.Tables,
-		BatchSize:                  f.Config.BinlogEventBatchSize,
-		VerifyBinlogEventsInterval: f.Config.InlineVerifierConfig.verifyBinlogEventsInterval,
-		MaxExpectedDowntime:        f.Config.InlineVerifierConfig.maxExpectedDowntime,
+		SourceDB:                         f.SourceDB,
+		TargetDB:                         f.TargetDB,
+		DatabaseRewrites:                 f.Config.DatabaseRewrites,
+		TableRewrites:                    f.Config.TableRewrites,
+		TableSchemaCache:                 f.Tables,
+		BatchSize:                        f.Config.BinlogEventBatchSize,
+		VerifyBinlogEventsInterval:       f.Config.InlineVerifierConfig.verifyBinlogEventsInterval,
+		VerifiySchemaFingerPrintInterval: f.Config.InlineVerifierConfig.verifyBinlogEventsInterval,
+		MaxExpectedDowntime:              f.Config.InlineVerifierConfig.maxExpectedDowntime,
 
 		StateTracker: f.StateTracker,
 		ErrorHandler: f.ErrorHandler,
 
-		reverifyStore:   binlogVerifyStore,
-		sourceStmtCache: NewStmtCache(),
-		targetStmtCache: NewStmtCache(),
-		logger:          logrus.WithField("tag", "inline-verifier"),
+		schemaFingerPrints: schemaFingerPrint,
+		reverifyStore:      binlogVerifyStore,
+		sourceStmtCache:    NewStmtCache(),
+		targetStmtCache:    NewStmtCache(),
+		logger:             logrus.WithField("tag", "inline-verifier"),
 	}
 }
 
@@ -908,12 +916,16 @@ func (f *Ferry) SerializeStateToJSON() (string, error) {
 		err := errors.New("no valid StateTracker")
 		return "", err
 	}
-	var binlogVerifyStore *BinlogVerifyStore = nil
+	var (
+		binlogVerifyStore *BinlogVerifyStore = nil
+		schemaFingerPrint map[string]string  = nil
+	)
 	if f.inlineVerifier != nil {
 		binlogVerifyStore = f.inlineVerifier.reverifyStore
+		schemaFingerPrint = f.inlineVerifier.schemaFingerPrints
 	}
 
-	serializedState := f.StateTracker.Serialize(f.Tables, binlogVerifyStore)
+	serializedState := f.StateTracker.Serialize(f.Tables, binlogVerifyStore, schemaFingerPrint)
 
 	if f.Config.DoNotIncludeSchemaCacheInStateDump {
 		serializedState.LastKnownTableSchemaCache = nil
@@ -945,7 +957,7 @@ func (f *Ferry) Progress() *Progress {
 	}
 
 	// Table Progress
-	serializedState := f.StateTracker.Serialize(nil, nil)
+	serializedState := f.StateTracker.Serialize(nil, nil, nil)
 	// Note the below will not necessarily be synchronized with serializedState.
 	// This is fine as we don't need to be super precise with performance data.
 	rowStatsWrittenPerTable := f.StateTracker.RowStatsWrittenPerTable()
