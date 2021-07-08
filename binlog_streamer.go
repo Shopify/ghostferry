@@ -17,14 +17,14 @@ import (
 const caughtUpThreshold = 10 * time.Second
 
 type BinlogStreamer struct {
-	DB           *sql.DB
-	DBConfig     *DatabaseConfig
+	DB		   *sql.DB
+	DBConfig	 *DatabaseConfig
 	MyServerId   uint32
 	ErrorHandler ErrorHandler
-	Filter       CopyFilter
+	Filter	   CopyFilter
 
 	TableSchema TableSchemaCache
-	LogTag      string
+	LogTag	  string
 
 	binlogSyncer   *replication.BinlogSyncer
 	binlogStreamer *replication.BinlogStreamer
@@ -35,18 +35,18 @@ type BinlogStreamer struct {
 	//
 	// See https://github.com/Shopify/ghostferry/pull/258 for details
 	DatabaseRewrites map[string]string
-	TableRewrites    map[string]string
+	TableRewrites	map[string]string
 
 	lastStreamedBinlogPosition  mysql.Position
 	lastResumableBinlogPosition mysql.Position
-	stopAtBinlogPosition        mysql.Position
+	stopAtBinlogPosition		mysql.Position
 
 	lastProcessedEventTime   time.Time
 	lastLagMetricEmittedTime time.Time
 
 	stopRequested bool
 
-	logger         *logrus.Entry
+	logger		 *logrus.Entry
 	eventListeners []func([]DMLEvent) error
 }
 
@@ -80,13 +80,13 @@ func (s *BinlogStreamer) createBinlogSyncer() error {
 	}
 
 	syncerConfig := replication.BinlogSyncerConfig{
-		ServerID:                s.MyServerId,
-		Host:                    s.DBConfig.Host,
-		Port:                    s.DBConfig.Port,
-		User:                    s.DBConfig.User,
-		Password:                s.DBConfig.Pass,
-		TLSConfig:               tlsConfig,
-		UseDecimal:              true,
+		ServerID:				s.MyServerId,
+		Host:					s.DBConfig.Host,
+		Port:					s.DBConfig.Port,
+		User:					s.DBConfig.User,
+		Password:				s.DBConfig.Pass,
+		TLSConfig:			   tlsConfig,
+		UseDecimal:			  true,
 		TimestampStringLocation: time.UTC,
 	}
 
@@ -118,10 +118,10 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFrom(startFromBinlogPositio
 	s.lastResumableBinlogPosition = startFromBinlogPosition
 
 	s.logger.WithFields(logrus.Fields{
-		"file":     s.lastStreamedBinlogPosition.Name,
+		"file":	 s.lastStreamedBinlogPosition.Name,
 		"position": s.lastStreamedBinlogPosition.Pos,
-		"host":     s.DBConfig.Host,
-		"port":     s.DBConfig.Port,
+		"host":	 s.DBConfig.Host,
+		"port":	 s.DBConfig.Port,
 	}).Info("starting binlog streaming")
 
 	s.binlogStreamer, err = s.binlogSyncer.StartSync(s.lastStreamedBinlogPosition)
@@ -138,7 +138,7 @@ func (s *BinlogStreamer) Run() {
 
 	defer func() {
 		s.logger.WithFields(logrus.Fields{
-			"stopAtBinlogPosition":       s.stopAtBinlogPosition,
+			"stopAtBinlogPosition":	   s.stopAtBinlogPosition,
 			"lastStreamedBinlogPosition": s.lastStreamedBinlogPosition,
 		}).Info("exiting binlog streamer")
 		s.binlogSyncer.Close()
@@ -180,9 +180,9 @@ func (s *BinlogStreamer) Run() {
 		}
 
 		s.logger.WithFields(logrus.Fields{
-			"position":                   evPosition.Pos,
-			"file":                       evPosition.Name,
-			"type":                       fmt.Sprintf("%T", ev.Event),
+			"position":				   evPosition.Pos,
+			"file":					   evPosition.Name,
+			"type":					   fmt.Sprintf("%T", ev.Event),
 			"lastStreamedBinlogPosition": s.lastStreamedBinlogPosition,
 		}).Debug("reached position")
 
@@ -455,25 +455,24 @@ func idsOnServer(db *sql.DB) ([]uint32, error) {
 	for rows.Next() {
 		var server_id uint32
 		var host, port, master_id, slave_uuid sqlorig.NullString
-        var columns []string
+		var columns []string
 
-        columns, err = rows.Columns()
+		columns, err = rows.Columns()
 
-        if err != nil {
-            return nil, fmt.Errorf("could not get columns from slave hosts: %s", err)
-        }
 
-        // SHOW SLAVE HOSTS has a different return value for different implementations
-        // i.e MySQL/Percona have 5 columns as it includes slave_uuid for MariaDB slave_uuid is omitted
-        // since all other values are not used check for the amount of columns and gather only what is possible
-
-        else if len(columns) == 5 {
-            err = rows.Scan(&server_id, &host, &port, &master_id, &slave_uuid)
-        } else if len(columns) == 4 {
-		    err = rows.Scan(&server_id, &host, &port, &master_id)
-        } else {
-            return nil, fmt.Errorf("could not scan SHOW SLAVE HOSTS row, err: unknown result set with %s columns", len(columns))
-        }
+		// SHOW SLAVE HOSTS has a different return value for different implementations
+		// i.e MySQL/Percona have 5 columns as it includes slave_uuid for MariaDB slave_uuid is omitted
+		// since all other values are not used check for the amount of columns and gather only what is possible
+		if err != nil {
+			return nil, fmt.Errorf("could not get columns from slave hosts: %s", err)
+		}
+		else if len(columns) == 5 {
+			err = rows.Scan(&server_id, &host, &port, &master_id, &slave_uuid)
+		} else if len(columns) == 4 {
+			err = rows.Scan(&server_id, &host, &port, &master_id)
+		} else {
+			return nil, fmt.Errorf("could not scan SHOW SLAVE HOSTS row, err: unknown result set with %s columns", len(columns))
+		}
 		if err != nil {
 			return nil, fmt.Errorf("could not scan SHOW SLAVE HOSTS row, err: %s", err.Error())
 		}
