@@ -470,7 +470,7 @@ func idsOnServer(db *sql.DB) ([]uint32, error) {
 		} else if len(columns) == 4 {
 			err = rows.Scan(&server_id, &host, &port, &master_id)
 		} else {
-			return nil, fmt.Errorf("could not scan SHOW SLAVE HOSTS row, err: unknown result set with %s columns", len(columns))
+			return nil, fmt.Errorf("could not scan SHOW SLAVE HOSTS row, err: unknown result set with %d columns: %v", len(columns), columns)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("could not scan SHOW SLAVE HOSTS row, err: %s", err.Error())
