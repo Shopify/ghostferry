@@ -219,7 +219,7 @@ func (c *InlineVerifierConfig) Validate() error {
 	}
 
 	if c.VerifyBinlogEventsInterval == "" {
-		c.VerifyBinlogEventsInterval = "50ms"
+		c.VerifyBinlogEventsInterval = "1s"
 	}
 
 	c.verifyBinlogEventsInterval, err = time.ParseDuration(c.VerifyBinlogEventsInterval)
@@ -763,7 +763,8 @@ type Config struct {
 	// NOTE:
 	// The ghostferry target user should have SUPER permissions to actually write to the target DB,
 	// if ghostferry is ran with AllowSuperUserOnReadOnly = true and the target DB is set to read_only.
-	AllowSuperUserOnReadOnly bool
+	AllowSuperUserOnReadOnly                    bool
+	PeriodicallyVerifySchemaFingerPrintInterval string
 }
 
 func (c *Config) ValidateConfig() error {
@@ -831,6 +832,10 @@ func (c *Config) ValidateConfig() error {
 
 	if c.CutoverRetryWaitSeconds == 0 {
 		c.CutoverRetryWaitSeconds = 1
+	}
+
+	if len(c.PeriodicallyVerifySchemaFingerPrintInterval) == 0 {
+		c.PeriodicallyVerifySchemaFingerPrintInterval = "60s"
 	}
 
 	return nil

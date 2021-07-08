@@ -63,6 +63,8 @@ type Ferry struct {
 	DataIterator *DataIterator
 	BatchWriter  *BatchWriter
 
+	SchemaFingerPrintVerifier *SchemaFingerPrintVerifier
+
 	StateTracker                       *StateTracker
 	ErrorHandler                       ErrorHandler
 	Throttler                          Throttler
@@ -225,32 +227,45 @@ func (f *Ferry) NewInlineVerifier() *InlineVerifier {
 		binlogVerifyStore = NewBinlogVerifyStore()
 	}
 
-	schemaFingerPrint := map[string]string{}
-	if f.StateToResumeFrom != nil && f.StateToResumeFrom.SchemaFingerPrint != nil {
-		schemaFingerPrint = f.StateToResumeFrom.SchemaFingerPrint
-		f.logger.Info("SCHEMA FINGERPRINT FOUND")
-	}
-
 	return &InlineVerifier{
-		SourceDB:                         f.SourceDB,
-		TargetDB:                         f.TargetDB,
-		DatabaseRewrites:                 f.Config.DatabaseRewrites,
-		TableRewrites:                    f.Config.TableRewrites,
-		TableSchemaCache:                 f.Tables,
-		BatchSize:                        f.Config.BinlogEventBatchSize,
-		VerifyBinlogEventsInterval:       f.Config.InlineVerifierConfig.verifyBinlogEventsInterval,
-		VerifiySchemaFingerPrintInterval: f.Config.InlineVerifierConfig.verifyBinlogEventsInterval,
-		MaxExpectedDowntime:              f.Config.InlineVerifierConfig.maxExpectedDowntime,
+		SourceDB:                   f.SourceDB,
+		TargetDB:                   f.TargetDB,
+		DatabaseRewrites:           f.Config.DatabaseRewrites,
+		TableRewrites:              f.Config.TableRewrites,
+		TableSchemaCache:           f.Tables,
+		BatchSize:                  f.Config.BinlogEventBatchSize,
+		VerifyBinlogEventsInterval: f.Config.InlineVerifierConfig.verifyBinlogEventsInterval,
+		MaxExpectedDowntime:        f.Config.InlineVerifierConfig.maxExpectedDowntime,
 
 		StateTracker: f.StateTracker,
 		ErrorHandler: f.ErrorHandler,
 
-		schemaFingerPrints: schemaFingerPrint,
-		reverifyStore:      binlogVerifyStore,
-		sourceStmtCache:    NewStmtCache(),
-		targetStmtCache:    NewStmtCache(),
-		logger:             logrus.WithField("tag", "inline-verifier"),
+		reverifyStore:   binlogVerifyStore,
+		sourceStmtCache: NewStmtCache(),
+		targetStmtCache: NewStmtCache(),
+		logger:          logrus.WithField("tag", "inline-verifier"),
 	}
+}
+
+func (f *Ferry) NewSchemaFingerPrintVerifier() *SchemaFingerPrintVerifier {
+	fingerPrint := map[string]string{}
+	if f.StateToResumeFrom != nil && f.StateToResumeFrom.SchemaFingerPrint != nil {
+		fingerPrint = f.StateToResumeFrom.SchemaFingerPrint
+	}
+	periodicallyVerifyInterval, _ := time.ParseDuration(f.Config.PeriodicallyVerifySchemaFingerPrintInterval)
+
+	schemaFingerPrintVerifier := &SchemaFingerPrintVerifier{
+		SourceDB:                   f.SourceDB,
+		TableRewrites:              f.Config.TableRewrites,
+		TableSchemaCache:           f.Tables,
+		ErrorHandler:               f.ErrorHandler,
+		PeriodicallyVerifyInterval: periodicallyVerifyInterval,
+
+		FingerPrints: fingerPrint,
+	}
+	schemaFingerPrintVerifier.Initialize()
+
+	return schemaFingerPrintVerifier
 }
 
 func (f *Ferry) NewInlineVerifierWithoutStateTracker() *InlineVerifier {
@@ -497,6 +512,8 @@ func (f *Ferry) Initialize() (err error) {
 		}
 	}
 
+	f.SchemaFingerPrintVerifier = f.NewSchemaFingerPrintVerifier()
+
 	// The iterative verifier needs the binlog streamer so this has to be first.
 	// Eventually this can be moved below the verifier initialization.
 	f.BinlogStreamer = f.NewSourceBinlogStreamer()
@@ -694,6 +711,13 @@ func (f *Ferry) Run() {
 		}()
 	}
 
+	schemaFingerVerifierPrintWg := &sync.WaitGroup{}
+	schemaFingerVerifierPrintWg.Add(1)
+	go func() {
+		defer schemaFingerVerifierPrintWg.Done()
+		f.SchemaFingerPrintVerifier.PeriodicallyVerifySchemaFingerprints(ctx)
+	}()
+
 	inlineVerifierWg := &sync.WaitGroup{}
 	inlineVerifierContext, stopInlineVerifier := context.WithCancel(ctx)
 	if f.inlineVerifier != nil {
@@ -795,6 +819,8 @@ func (f *Ferry) Run() {
 	f.DoneTime = time.Now()
 
 	shutdown()
+
+	schemaFingerVerifierPrintWg.Wait()
 	supportingServicesWg.Wait()
 
 	if f.Config.ProgressCallback.URI != "" {
@@ -918,14 +944,12 @@ func (f *Ferry) SerializeStateToJSON() (string, error) {
 	}
 	var (
 		binlogVerifyStore *BinlogVerifyStore = nil
-		schemaFingerPrint map[string]string  = nil
 	)
 	if f.inlineVerifier != nil {
 		binlogVerifyStore = f.inlineVerifier.reverifyStore
-		schemaFingerPrint = f.inlineVerifier.schemaFingerPrints
 	}
 
-	serializedState := f.StateTracker.Serialize(f.Tables, binlogVerifyStore, schemaFingerPrint)
+	serializedState := f.StateTracker.Serialize(f.Tables, binlogVerifyStore, f.SchemaFingerPrintVerifier.FingerPrints)
 
 	if f.Config.DoNotIncludeSchemaCacheInStateDump {
 		serializedState.LastKnownTableSchemaCache = nil

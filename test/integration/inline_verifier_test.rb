@@ -1,5 +1,4 @@
 require "test_helper"
-require "pry"
 
 class InlineVerifierTest < GhostferryTestCase
   INSERT_TRIGGER_NAME = "corrupting_insert_trigger"
@@ -553,7 +552,7 @@ class InlineVerifierTest < GhostferryTestCase
 
     error_occured = false
     ghostferry.on_callback("error") do |err|
-      error_occured = true
+      raise "ghostferry error ocurred - #{err}"
     end
 
     ghostferry.run

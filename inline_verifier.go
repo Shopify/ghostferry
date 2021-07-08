@@ -3,16 +3,12 @@ package ghostferry
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"crypto/md5"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
@@ -253,8 +249,6 @@ type InlineVerifier struct {
 	reverifyStore              *BinlogVerifyStore
 	verifyDuringCutoverStarted AtomicBoolean
 
-	schemaFingerPrints map[string]string
-
 	sourceStmtCache *StmtCache
 	targetStmtCache *StmtCache
 	logger          *logrus.Entry
@@ -375,9 +369,7 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, target
 func (v *InlineVerifier) PeriodicallyVerifyBinlogEvents(ctx context.Context) {
 	v.logger.Info("starting periodic reverifier")
 	ticker := time.NewTicker(v.VerifyBinlogEventsInterval)
-	ticker1 := time.NewTicker(v.VerifiySchemaFingerPrintInterval)
 
-	defer ticker1.Stop()
 	defer ticker.Stop()
 
 	for {
@@ -393,11 +385,6 @@ func (v *InlineVerifier) PeriodicallyVerifyBinlogEvents(ctx context.Context) {
 			v.logger.WithFields(logrus.Fields{
 				"remainingRowCount": v.reverifyStore.currentRowCount,
 			}).Debug("reverified")
-		case <-ticker1.C:
-			err := v.verifySchemaFingerPrint()
-			if err != nil {
-				v.ErrorHandler.Fatal("inline_verifier", err)
-			}
 		case <-ctx.Done():
 			v.logger.Info("shutdown periodic reverifier")
 			return
@@ -437,22 +424,11 @@ func (v *InlineVerifier) VerifyBeforeCutover() error {
 		return fmt.Errorf("cutover stage verification will not complete within max downtime duration (took %s)", timeToVerify)
 	}
 
-	err := v.verifySchemaFingerPrint()
-	if err != nil {
-		v.ErrorHandler.Fatal("inline_verifier", err)
-	}
-
 	return nil
 }
 
 func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	v.verifyDuringCutoverStarted.Set(true)
-
-	err := v.verifySchemaFingerPrint()
-	if err != nil {
-		v.logger.WithError(err).Error("failed to VerifyDuringCutover")
-		return VerificationResult{}, err
-	}
 
 	mismatchFound, mismatches, err := v.verifyAllEventsInStore()
 	if err != nil {
@@ -787,70 +763,4 @@ func (v *InlineVerifier) verifyBinlogBatch(batch BinlogVerifyBatch) ([]uint64, e
 	}
 
 	return v.compareHashesAndData(sourceFingerprints, targetFingerprints, sourceDecompressedData, targetDecompressedData), nil
-}
-
-func (v *InlineVerifier) verifySchemaFingerPrint() error {
-	newSchemaFingerPrint, err := v.getSchemaFingerPrint()
-	if err != nil {
-		return err
-	}
-
-	oldSchemaFingerPrint := v.schemaFingerPrints
-	if len(oldSchemaFingerPrint) == 0 {
-		v.schemaFingerPrints = newSchemaFingerPrint
-		return nil
-	}
-
-	for _, table := range v.TableSchemaCache {
-		if newSchemaFingerPrint[table.Schema] != oldSchemaFingerPrint[table.Schema] {
-			return fmt.Errorf("failed to verifiy schema fingerprint for %s", table.Schema)
-		}
-	}
-
-	v.schemaFingerPrints = newSchemaFingerPrint
-	return nil
-}
-
-func (v *InlineVerifier) getSchemaFingerPrint() (map[string]string, error) {
-	schemaFingerPrints := map[string]string{}
-	dbSet := map[string]struct{}{}
-
-	for _, table := range v.TableSchemaCache {
-		if _, found := dbSet[table.Schema]; found {
-			continue
-		}
-		dbSet[table.Schema] = struct{}{}
-
-		query := fmt.Sprintf("SELECT * FROM information_schema.columns WHERE table_schema = '%s' ORDER BY table_name, column_name", table.Schema)
-		rows, err := v.SourceDB.Query(query)
-		if err != nil {
-			fmt.Println(err)
-			return schemaFingerPrints, err
-		}
-
-		schemaData := [][]interface{}{}
-		for rows.Next() {
-			rowData, err := ScanGenericRow(rows, 21)
-			if err != nil {
-				return schemaFingerPrints, err
-			}
-
-			_, isIgnored := table.IgnoredColumnsForVerification[string(rowData[3].([]byte))]
-			_, isBlacklisted := v.TableRewrites[string(rowData[2].([]byte))]
-
-			if !isIgnored && !isBlacklisted {
-				schemaData = append(schemaData, rowData)
-			}
-		}
-
-		schemaDataInBytes, err := json.Marshal(schemaData)
-		if err != nil {
-			return schemaFingerPrints, err
-		}
-
-		hash := md5.Sum([]byte(schemaDataInBytes))
-		schemaFingerPrints[table.Schema] = hex.EncodeToString(hash[:])
-	}
-
-	return schemaFingerPrints, nil
 }

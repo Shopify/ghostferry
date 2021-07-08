@@ -206,6 +206,8 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 		SkipTargetVerification:   (os.Getenv("GHOSTFERRY_SKIP_TARGET_VERIFICATION") == "true"),
 		EnableRowBatchSize:       true,
 		DumpStateToStdoutOnError: true,
+
+		PeriodicallyVerifySchemaFingerPrintInterval: "1s",
 	}
 
 	integrationPort := os.Getenv(portEnvName)
