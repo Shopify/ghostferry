@@ -839,6 +839,11 @@ func (c *Config) ValidateConfig() error {
 
 	if len(c.PeriodicallyVerifySchemaFingerPrintInterval) == 0 {
 		c.PeriodicallyVerifySchemaFingerPrintInterval = "60s"
+	} else {
+		_, err := time.ParseDuration(c.PeriodicallyVerifySchemaFingerPrintInterval)
+		if err != nil {
+			return fmt.Errorf("PeriodicallyVerifySchemaFingerPrintInterval invalid")
+		}
 	}
 
 	return nil

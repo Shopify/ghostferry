@@ -24,10 +24,6 @@ type SchemaFingerPrintVerifier struct {
 	logger *logrus.Entry
 }
 
-func (sf *SchemaFingerPrintVerifier) Initialize() {
-	sf.logger = logrus.WithField("tag", "schema_fingerprint")
-}
-
 func (sf *SchemaFingerPrintVerifier) PeriodicallyVerifySchemaFingerprints(ctx context.Context) {
 	sf.logger.Info("starting periodic schema fingerprint verification")
 	ticker := time.NewTicker(sf.PeriodicallyVerifyInterval)
@@ -39,10 +35,10 @@ func (sf *SchemaFingerPrintVerifier) PeriodicallyVerifySchemaFingerprints(ctx co
 		case <-ticker.C:
 			err := sf.VerifySchemaFingerPrint()
 			if err != nil {
-				sf.ErrorHandler.Fatal("schema_fingerprint", err)
+				sf.ErrorHandler.Fatal("schema_fingerprint_verifier", err)
 			}
 		case <-ctx.Done():
-			sf.logger.Info("shutdown periodic schema_fingerprint verification")
+			sf.logger.Info("shutdown schema_fingerprint_verifier")
 			return
 		}
 	}

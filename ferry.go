@@ -247,14 +247,17 @@ func (f *Ferry) NewInlineVerifier() *InlineVerifier {
 	}
 }
 
-func (f *Ferry) NewSchemaFingerPrintVerifier() *SchemaFingerPrintVerifier {
+func (f *Ferry) NewSchemaFingerPrintVerifier() (*SchemaFingerPrintVerifier, error) {
 	fingerPrint := map[string]string{}
 	if f.StateToResumeFrom != nil && f.StateToResumeFrom.SchemaFingerPrint != nil {
 		fingerPrint = f.StateToResumeFrom.SchemaFingerPrint
 	}
-	periodicallyVerifyInterval, _ := time.ParseDuration(f.Config.PeriodicallyVerifySchemaFingerPrintInterval)
+	periodicallyVerifyInterval, err := time.ParseDuration(f.Config.PeriodicallyVerifySchemaFingerPrintInterval)
+	if err != nil {
+		return nil, fmt.Errorf("invalid MaxExpectedDowntime: %v. this error should have been caught via .Validate()", err)
+	}
 
-	schemaFingerPrintVerifier := &SchemaFingerPrintVerifier{
+	return &SchemaFingerPrintVerifier{
 		SourceDB:                   f.SourceDB,
 		TableRewrites:              f.Config.TableRewrites,
 		TableSchemaCache:           f.Tables,
@@ -262,10 +265,9 @@ func (f *Ferry) NewSchemaFingerPrintVerifier() *SchemaFingerPrintVerifier {
 		PeriodicallyVerifyInterval: periodicallyVerifyInterval,
 
 		FingerPrints: fingerPrint,
-	}
-	schemaFingerPrintVerifier.Initialize()
 
-	return schemaFingerPrintVerifier
+		logger: logrus.WithField("tag", "schema_fingerprint_verifier"),
+	}, nil
 }
 
 func (f *Ferry) NewInlineVerifierWithoutStateTracker() *InlineVerifier {
@@ -512,7 +514,10 @@ func (f *Ferry) Initialize() (err error) {
 		}
 	}
 
-	f.SchemaFingerPrintVerifier = f.NewSchemaFingerPrintVerifier()
+	f.SchemaFingerPrintVerifier, err = f.NewSchemaFingerPrintVerifier()
+	if err != nil {
+		return err
+	}
 
 	// The iterative verifier needs the binlog streamer so this has to be first.
 	// Eventually this can be moved below the verifier initialization.

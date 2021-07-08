@@ -44,8 +44,6 @@ func (this *SchemaFingerPrintVerifierTestSuite) SetupTest() {
 		PeriodicallyVerifyInterval: periodicallyVerifyInterval,
 		FingerPrints:               map[string]string{},
 	}
-
-	this.sf.Initialize()
 }
 
 func (this *SchemaFingerPrintVerifierTestSuite) TestVerifySchemaFingerprint() {
