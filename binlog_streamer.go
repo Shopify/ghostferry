@@ -464,7 +464,7 @@ func idsOnServer(db *sql.DB) ([]uint32, error) {
 		// i.e MySQL/Percona have 5 columns as it includes slave_uuid for MariaDB slave_uuid is omitted
 		// since all other values are not used check for the amount of columns and gather only what is possible
 		if err != nil {
-			return nil, fmt.Errorf("could not get columns from slave hosts: %s", err)
+			return nil, fmt.Errorf("could not get columns from slave hosts: %v", err)
 		} else if len(columns) == 5 {
 			err = rows.Scan(&server_id, &host, &port, &master_id, &slave_uuid)
 		} else if len(columns) == 4 {
