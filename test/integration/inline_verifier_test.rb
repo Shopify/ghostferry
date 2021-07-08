@@ -536,28 +536,6 @@ class InlineVerifierTest < GhostferryTestCase
     assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: 1 ] ", ghostferry.error_lines.last["msg"]
   end
 
-  def test_inline_verifier_fails_if_database_schema_is_changed_during_data_copy
-    seed_simple_database_with_single_table
-
-    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
-
-    verification_ran = false
-    batches_written = 0
-    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
-      batches_written += 1
-      if batches_written == 1
-        source_db.query("ALTER TABLE #{DEFAULT_FULL_TABLE_NAME} ADD COLUMN extracolumn VARCHAR(15);")
-      end
-    end
-
-    error_occured = false
-    ghostferry.on_callback("error") do |err|
-      raise "ghostferry error ocurred - #{err}"
-    end
-
-    ghostferry.run
-  end
-
   ###################
   # Collation Tests #
   ###################
