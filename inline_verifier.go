@@ -233,15 +233,14 @@ func (s *BinlogVerifyStore) Serialize() BinlogVerifySerializedStore {
 }
 
 type InlineVerifier struct {
-	SourceDB                         *sql.DB
-	TargetDB                         *sql.DB
-	DatabaseRewrites                 map[string]string
-	TableRewrites                    map[string]string
-	TableSchemaCache                 TableSchemaCache
-	BatchSize                        int
-	VerifyBinlogEventsInterval       time.Duration
-	VerifiySchemaFingerPrintInterval time.Duration
-	MaxExpectedDowntime              time.Duration
+	SourceDB                   *sql.DB
+	TargetDB                   *sql.DB
+	DatabaseRewrites           map[string]string
+	TableRewrites              map[string]string
+	TableSchemaCache           TableSchemaCache
+	BatchSize                  int
+	VerifyBinlogEventsInterval time.Duration
+	MaxExpectedDowntime        time.Duration
 
 	StateTracker *StateTracker
 	ErrorHandler ErrorHandler
@@ -369,7 +368,6 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, target
 func (v *InlineVerifier) PeriodicallyVerifyBinlogEvents(ctx context.Context) {
 	v.logger.Info("starting periodic reverifier")
 	ticker := time.NewTicker(v.VerifyBinlogEventsInterval)
-
 	defer ticker.Stop()
 
 	for {
@@ -390,6 +388,7 @@ func (v *InlineVerifier) PeriodicallyVerifyBinlogEvents(ctx context.Context) {
 			return
 		}
 	}
+
 }
 
 func (v *InlineVerifier) VerifyBeforeCutover() error {

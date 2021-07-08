@@ -22,11 +22,17 @@
   },
 
   "Databases": {
-    "Whitelist": ["benchmark"]
+    "Whitelist": ["abc"]
   },
 
   "Tables": {
     "Blacklist": ["schema_migrations"]
+  },
+
+  "ForceIndexForVerification": {
+    "abc": {
+      "table1": "forced_index_name"
+    }
   },
 
   "DumpStateOnSignal": true,
@@ -38,7 +44,5 @@
     "Custom Script 2": ["examples/copydb/s2"]
   },
 
-  "DumpStateToStdoutOnError": true,
-
-  "PeriodicallyVerifySchemaFingerPrintInterval": "1s"
+  "DumpStateToStdoutOnError": true
 }

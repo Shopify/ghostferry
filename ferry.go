@@ -254,7 +254,7 @@ func (f *Ferry) NewSchemaFingerPrintVerifier() (*SchemaFingerPrintVerifier, erro
 	}
 	periodicallyVerifyInterval, err := time.ParseDuration(f.Config.PeriodicallyVerifySchemaFingerPrintInterval)
 	if err != nil {
-		return nil, fmt.Errorf("invalid MaxExpectedDowntime: %v. this error should have been caught via .Validate()", err)
+		return nil, fmt.Errorf("invalid PeriodicallyVerifySchemaFingerPrintInterval: %v. this error should have been caught via .Validate()", err)
 	}
 
 	return &SchemaFingerPrintVerifier{
