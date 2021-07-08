@@ -455,8 +455,25 @@ func idsOnServer(db *sql.DB) ([]uint32, error) {
 	for rows.Next() {
 		var server_id uint32
 		var host, port, master_id, slave_uuid sqlorig.NullString
+        var columns []string
 
-		err = rows.Scan(&server_id, &host, &port, &master_id, &slave_uuid)
+        columns, err = rows.Columns()
+
+        if err != nil {
+            return nil, fmt.Errorf("could not get columns from slave hosts: %s", err)
+        }
+
+        // SHOW SLAVE HOSTS has a different return value for different implementations
+        // i.e MySQL/Percona have 5 columns as it includes slave_uuid for MariaDB slave_uuid is omitted
+        // since all other values are not used check for the amount of columns and gather only what is possible
+
+        else if len(columns) == 5 {
+            err = rows.Scan(&server_id, &host, &port, &master_id, &slave_uuid)
+        } else if len(columns) == 4 {
+		    err = rows.Scan(&server_id, &host, &port, &master_id)
+        } else {
+            return nil, fmt.Errorf("could not scan SHOW SLAVE HOSTS row, err: unknown result set with %s columns", len(columns))
+        }
 		if err != nil {
 			return nil, fmt.Errorf("could not scan SHOW SLAVE HOSTS row, err: %s", err.Error())
 		}
