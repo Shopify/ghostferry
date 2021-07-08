@@ -763,7 +763,10 @@ type Config struct {
 	// NOTE:
 	// The ghostferry target user should have SUPER permissions to actually write to the target DB,
 	// if ghostferry is ran with AllowSuperUserOnReadOnly = true and the target DB is set to read_only.
-	AllowSuperUserOnReadOnly                    bool
+	AllowSuperUserOnReadOnly bool
+
+	// The interval at which the periodic schema fingerprint verification occurs, in the
+	// format of time.ParseDuration. Default: 60s.
 	PeriodicallyVerifySchemaFingerPrintInterval string
 }
 
