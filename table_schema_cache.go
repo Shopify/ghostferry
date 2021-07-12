@@ -268,7 +268,7 @@ func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *Casca
 		err = NonExistingPaginationKeyError(t.Schema, t.Name)
 	}
 
-	if paginationKeyColumn != nil && paginationKeyColumn.Type != schema.TYPE_NUMBER {
+	if paginationKeyColumn != nil && paginationKeyColumn.Type != schema.TYPE_NUMBER && paginationKeyColumn.Type != schema.TYPE_MEDIUM_INT {
 		return nil, -1, NonNumericPaginationKeyError(t.Schema, t.Name, paginationKeyColumn.Name)
 	}
 

@@ -97,6 +97,19 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutNumericP
 	this.Require().EqualError(err, ghostferry.NonNumericPaginationKeyError(testhelpers.TestSchemaName, table, paginationColumn).Error())
 	this.Require().Contains(err.Error(), table)
 }
+func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutNumericPKWithMediumInt() {
+	table := "pagination_by_column_medium_int_pk"
+	paginationColumn := "id"
+	query := fmt.Sprintf("CREATE TABLE %s.%s (%s mediumint(8) not null, data TEXT, primary key(%s))", testhelpers.TestSchemaName, table, paginationColumn, paginationColumn)
+	_, err := this.Ferry.SourceDB.Exec(query)
+	this.Require().Nil(err)
+
+	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
+
+	this.Require().Nil(err)
+	this.Require().Contains(tableSchemaCache, testhelpers.TestSchemaName + "." + table)
+	this.Require().Equal(1, len(tableSchemaCache[testhelpers.TestSchemaName + "." + table].PKColumns))
+}
 
 func (this *TableSchemaCacheTestSuite) TestLoadTablesCascadingPaginationColumnConfigRightScenario1() {
 	table := "pagination_by_column_config_right_scenario_1"
