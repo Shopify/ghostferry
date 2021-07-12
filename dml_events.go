@@ -306,8 +306,10 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 					row[i] = uint(v)
 				}
 			} else if col.IsUnsigned && col.Type == schema.TYPE_MEDIUM_INT {
-				val := row[i].(int32)
-				row[i] = NewUint24(val).Uint32()
+				if row[i] != nil {
+					val := row[i].(int32)
+					row[i] = NewUint24(val).Uint32()
+				}
 			}
 		}
 	}
