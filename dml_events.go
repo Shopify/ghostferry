@@ -292,7 +292,7 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 			)
 		}
 		for i, col := range table.Columns {
-			if col.IsUnsigned {
+			if col.IsUnsigned && col.Type != schema.TYPE_MEDIUM_INT {
 				switch v := row[i].(type) {
 				case int64:
 					row[i] = uint64(v)
@@ -305,6 +305,9 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 				case int:
 					row[i] = uint(v)
 				}
+			} else if col.IsUnsigned && col.Type == schema.TYPE_MEDIUM_INT {
+				val := row[i].(int32)
+				row[i] = NewUint24(val).Uint32()
 			}
 		}
 	}
