@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Shopify/ghostferry"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"github.com/Shopify/ghostferry/testhelpers"
 	"github.com/stretchr/testify/suite"
 )
@@ -16,9 +17,14 @@ type SchemaFingerPrintVerifierTestSuite struct {
 	sf        *ghostferry.SchemaFingerPrintVerifier
 }
 
-func alterTestTableSchema(this *SchemaFingerPrintVerifierTestSuite) {
+func alterTestTableSchema(db *sql.DB, this *SchemaFingerPrintVerifierTestSuite) {
 	query := fmt.Sprintf("ALTER TABLE IF EXISTS %s.%s ADD COLUMN extracol VARCHAR(15)", testhelpers.TestSchemaName, this.tablename)
 	this.Ferry.SourceDB.Query(query)
+}
+
+func resetTestTableSchema(db *sql.DB, this *SchemaFingerPrintVerifierTestSuite) {
+	query := fmt.Sprintf("ALTER TABLE IF EXISTS %s.%s DROP COLUMN extracol", testhelpers.TestSchemaName, this.tablename)
+	db.Query(query)
 }
 
 func (this *SchemaFingerPrintVerifierTestSuite) SetupTest() {
@@ -38,21 +44,28 @@ func (this *SchemaFingerPrintVerifierTestSuite) SetupTest() {
 
 	this.sf = &ghostferry.SchemaFingerPrintVerifier{
 		SourceDB:                   this.Ferry.SourceDB,
+		TargetDB:                   this.Ferry.TargetDB,
 		ErrorHandler:               this.Ferry.ErrorHandler,
-		TableRewrites:              map[string]string{},
+		DatabaseRewrites:           map[string]string{},
 		TableSchemaCache:           tableSchema,
 		PeriodicallyVerifyInterval: periodicallyVerifyInterval,
-		FingerPrints:               map[string]string{},
 	}
 }
 
 func (this *SchemaFingerPrintVerifierTestSuite) TestVerifySchemaFingerprint() {
-	err := this.sf.VerifySchemaFingerPrint()
+	err := this.sf.VerifySchemaFingerprint()
 	this.Require().Nil(err)
 
-	alterTestTableSchema(this)
-	err = this.sf.VerifySchemaFingerPrint()
-	this.Require().Error(fmt.Errorf("failed to verifiy schema fingerprint for %s.%s", testhelpers.TestSchemaName, this.tablename))
+	alterTestTableSchema(this.sf.SourceDB, this)
+	err = this.sf.VerifySchemaFingerprint()
+	this.Require().Error(fmt.Errorf("failed to verifiy schema fingerprint on source"))
+
+	resetTestTableSchema(this.sf.SourceDB, this)
+	this.Require().Nil(err)
+
+	alterTestTableSchema(this.sf.TargetDB, this)
+	err = this.sf.VerifySchemaFingerprint()
+	this.Require().Error(fmt.Errorf("failed to verifiy schema fingerprint on target"))
 }
 
 func TestSchemaFingerPrintVerifier(t *testing.T) {

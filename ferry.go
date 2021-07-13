@@ -248,9 +248,15 @@ func (f *Ferry) NewInlineVerifier() *InlineVerifier {
 }
 
 func (f *Ferry) NewSchemaFingerPrintVerifier() (*SchemaFingerPrintVerifier, error) {
-	fingerPrint := map[string]string{}
-	if f.StateToResumeFrom != nil && f.StateToResumeFrom.SchemaFingerPrint != nil {
-		fingerPrint = f.StateToResumeFrom.SchemaFingerPrint
+	var sourceSchemaFingerPrint, targetSchemaFingerPrint string
+
+	if f.StateToResumeFrom != nil {
+		if len(f.StateToResumeFrom.SourceSchemaFingerPrint) != 0 {
+			sourceSchemaFingerPrint = f.StateToResumeFrom.SourceSchemaFingerPrint
+		}
+		if len(f.StateToResumeFrom.TargetSchemaFingerPrint) != 0 {
+			targetSchemaFingerPrint = f.StateToResumeFrom.TargetSchemaFingerPrint
+		}
 	}
 	periodicallyVerifyInterval, err := time.ParseDuration(f.Config.PeriodicallyVerifySchemaFingerPrintInterval)
 	if err != nil {
@@ -259,12 +265,14 @@ func (f *Ferry) NewSchemaFingerPrintVerifier() (*SchemaFingerPrintVerifier, erro
 
 	return &SchemaFingerPrintVerifier{
 		SourceDB:                   f.SourceDB,
-		TableRewrites:              f.Config.TableRewrites,
+		TargetDB:                   f.TargetDB,
+		DatabaseRewrites:           f.Config.DatabaseRewrites,
 		TableSchemaCache:           f.Tables,
 		ErrorHandler:               f.ErrorHandler,
 		PeriodicallyVerifyInterval: periodicallyVerifyInterval,
 
-		FingerPrints: fingerPrint,
+		SourceSchemaFingerprint: sourceSchemaFingerPrint,
+		TargetSchemaFingerprint: targetSchemaFingerPrint,
 
 		logger: logrus.WithField("tag", "schema_fingerprint_verifier"),
 	}, nil
@@ -716,10 +724,9 @@ func (f *Ferry) Run() {
 		}()
 	}
 
-	schemaFingerVerifierPrintWg := &sync.WaitGroup{}
-	schemaFingerVerifierPrintWg.Add(1)
+	supportingServicesWg.Add(1)
 	go func() {
-		defer schemaFingerVerifierPrintWg.Done()
+		defer supportingServicesWg.Done()
 		f.SchemaFingerPrintVerifier.PeriodicallyVerifySchemaFingerprints(ctx)
 	}()
 
@@ -825,7 +832,6 @@ func (f *Ferry) Run() {
 
 	shutdown()
 
-	schemaFingerVerifierPrintWg.Wait()
 	supportingServicesWg.Wait()
 
 	if f.Config.ProgressCallback.URI != "" {
@@ -947,14 +953,12 @@ func (f *Ferry) SerializeStateToJSON() (string, error) {
 		err := errors.New("no valid StateTracker")
 		return "", err
 	}
-	var (
-		binlogVerifyStore *BinlogVerifyStore = nil
-	)
+	var binlogVerifyStore *BinlogVerifyStore = nil
 	if f.inlineVerifier != nil {
 		binlogVerifyStore = f.inlineVerifier.reverifyStore
 	}
 
-	serializedState := f.StateTracker.Serialize(f.Tables, binlogVerifyStore, f.SchemaFingerPrintVerifier.FingerPrints)
+	serializedState := f.StateTracker.Serialize(f.Tables, binlogVerifyStore, f.SchemaFingerPrintVerifier.SourceSchemaFingerprint, f.SchemaFingerPrintVerifier.TargetSchemaFingerprint)
 
 	if f.Config.DoNotIncludeSchemaCacheInStateDump {
 		serializedState.LastKnownTableSchemaCache = nil
@@ -986,7 +990,7 @@ func (f *Ferry) Progress() *Progress {
 	}
 
 	// Table Progress
-	serializedState := f.StateTracker.Serialize(nil, nil, nil)
+	serializedState := f.StateTracker.Serialize(nil, nil, f.SchemaFingerPrintVerifier.SourceSchemaFingerprint, f.SchemaFingerPrintVerifier.TargetSchemaFingerprint)
 	// Note the below will not necessarily be synchronized with serializedState.
 	// This is fine as we don't need to be super precise with performance data.
 	rowStatsWrittenPerTable := f.StateTracker.RowStatsWrittenPerTable()
