@@ -61,7 +61,7 @@ func (sf *SchemaFingerPrintVerifier) VerifySchemaFingerprint() error {
 }
 
 func (sf *SchemaFingerPrintVerifier) verifySourceSchemaFingerprint() error {
-	newSchemaSourceFingerPrint, err := sf.GetSchemaFingerPrint(sf.SourceDB, false)
+	newSchemaSourceFingerPrint, err := sf.getSchemaFingerPrint(sf.SourceDB, false)
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func (sf *SchemaFingerPrintVerifier) verifySourceSchemaFingerprint() error {
 }
 
 func (sf *SchemaFingerPrintVerifier) verifyTargetSchemaFingerprint() error {
-	newSchemaTargetFingerPrint, err := sf.GetSchemaFingerPrint(sf.TargetDB, true)
+	newSchemaTargetFingerPrint, err := sf.getSchemaFingerPrint(sf.TargetDB, true)
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func (sf *SchemaFingerPrintVerifier) verifyTargetSchemaFingerprint() error {
 	return nil
 }
 
-func (sf *SchemaFingerPrintVerifier) GetSchemaFingerPrint(db *sql.DB, isTargetDB bool) (string, error) {
+func (sf *SchemaFingerPrintVerifier) getSchemaFingerPrint(db *sql.DB, isTargetDB bool) (string, error) {
 	dbSet := map[string]struct{}{}
 	schemaData := [][]interface{}{}
 

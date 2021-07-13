@@ -255,7 +255,7 @@ func (s *StateTracker) updateSpeedLog(deltaPaginationKey uint64) {
 	}
 }
 
-func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, binlogVerifyStore *BinlogVerifyStore, schemaFingerPrint string, targetSchemaFingerPrint string) *SerializableState {
+func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, binlogVerifyStore *BinlogVerifyStore, sourceSchemaFingerPrint string, targetSchemaFingerPrint string) *SerializableState {
 	s.BinlogRWMutex.RLock()
 	defer s.BinlogRWMutex.RUnlock()
 
@@ -276,12 +276,12 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, bin
 		state.BinlogVerifyStore = binlogVerifyStore.Serialize()
 	}
 
-	if len(schemaFingerPrint) > 0 {
-		state.SourceSchemaFingerPrint = schemaFingerPrint
+	if len(sourceSchemaFingerPrint) > 0 {
+		state.SourceSchemaFingerPrint = sourceSchemaFingerPrint
 	}
 
 	if len(targetSchemaFingerPrint) > 0 {
-		state.TargetSchemaFingerPrint = schemaFingerPrint
+		state.TargetSchemaFingerPrint = targetSchemaFingerPrint
 	}
 
 	// Need a copy because lastSuccessfulPaginationKeys may change after Serialize
