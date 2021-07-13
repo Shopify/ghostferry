@@ -136,23 +136,25 @@ class GhostferryTestCase < Minitest::Test
   # Assertion Helpers #
   #####################
 
-  def assert_test_table_is_identical
-    source, target = source_and_target_table_metrics
+  def assert_test_table_is_identical(tables: [DEFAULT_FULL_TABLE_NAME])
+    source, target = source_and_target_table_metrics(tables: tables)
 
-    assert source[DEFAULT_FULL_TABLE_NAME][:row_count] > 0
-    assert target[DEFAULT_FULL_TABLE_NAME][:row_count] > 0
+    tables.each do |table|
+      assert source[table][:row_count] > 0
+      assert target[table][:row_count] > 0
 
-    assert_equal(
-      source[DEFAULT_FULL_TABLE_NAME][:row_count],
-      target[DEFAULT_FULL_TABLE_NAME][:row_count],
-      "source and target row count don't match",
-    )
-
-    assert_equal(
-      source[DEFAULT_FULL_TABLE_NAME][:checksum],
-      target[DEFAULT_FULL_TABLE_NAME][:checksum],
-      "source and target checksum don't match",
-    )
+      assert_equal(
+        source[table][:row_count],
+        target[table][:row_count],
+        "source and target row count don't match",
+      )
+  
+      assert_equal(
+        source[table][:checksum],
+        target[table][:checksum],
+        "source and target checksum don't match",
+      )
+    end
   end
 
   # Use this method to assert the validity of the structure of the dumped

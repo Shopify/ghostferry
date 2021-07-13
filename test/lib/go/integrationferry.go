@@ -254,6 +254,11 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 		}
 	}
 
+	skipForeignKeyConstraintsCheck := os.Getenv("SkipForeignKeyConstraintsCheck")
+	if skipForeignKeyConstraintsCheck == "true" {
+		config.SkipForeignKeyConstraintsCheck = true
+	}
+
 	return config, config.ValidateConfig()
 }
 

@@ -35,7 +35,8 @@ to consider about this are:
 
 - There are no foreign key constraints in your tables.
 
-  - You should remove these constraints before running Ghostferry.
+  - You should remove these constraints before running Ghostferry or run Ghostferry with SkipForeignKeyConstraintsCheck = true and ensure
+    source database is read_only.
 
 - ``ghostferry-copydb`` can only copy a whole table at a time.
 
