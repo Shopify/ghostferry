@@ -68,7 +68,7 @@ class InlineVerifierTest < GhostferryTestCase
 
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
-    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: 1 ] ", ghostferry.error_lines.last["msg"]
+    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: 1 ] ", ghostferry.error_lines.first["msg"]
   end
 
   def test_same_decompressed_data_different_compressed_test_passes_inline_verification
@@ -430,7 +430,7 @@ class InlineVerifierTest < GhostferryTestCase
 
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
-    assert_equal "cutover verification failed for: #{DEFAULT_DB}.#{DEFAULT_TABLE} [paginationKeys: 1 ] ", ghostferry.error_lines.last["msg"]
+    assert_equal "cutover verification failed for: #{DEFAULT_DB}.#{DEFAULT_TABLE} [paginationKeys: 1 ] ", ghostferry.error_lines.first["msg"]
 
     # Now we run the real test case.
     target_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = -0.0 WHERE id = 1")
@@ -484,7 +484,7 @@ class InlineVerifierTest < GhostferryTestCase
 
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
-    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: 1 ] ", ghostferry.error_lines.last["msg"]
+    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: 1 ] ", ghostferry.error_lines.first["msg"]
   end
 
   def test_null_vs_null_string
@@ -507,7 +507,7 @@ class InlineVerifierTest < GhostferryTestCase
 
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
-    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: 1 ] ", ghostferry.error_lines.last["msg"]
+    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: 1 ] ", ghostferry.error_lines.first["msg"]
   end
 
   def test_null_in_different_order
@@ -533,7 +533,19 @@ class InlineVerifierTest < GhostferryTestCase
 
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
-    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: 1 ] ", ghostferry.error_lines.last["msg"]
+    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: 1 ] ", ghostferry.error_lines.first["msg"]
+  end
+
+  def test_no_events_verified_on_target_will_log_error
+    seed_random_data(source_db, number_of_rows: 0)
+    seed_random_data(target_db, number_of_rows: 0)
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+
+    ghostferry.run
+
+    assert_equal "target verifier did not check any events", ghostferry.error_lines.last["msg"]
+    assert_equal "no events checked", ghostferry.error_lines.last["error"]
   end
 
   ###################

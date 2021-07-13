@@ -12,6 +12,7 @@ type TargetVerifier struct {
 	DB             *sql.DB
 	BinlogStreamer *BinlogStreamer
 	StateTracker   *StateTracker
+	EventsChecked  int
 }
 
 func NewTargetVerifier(targetDB *sql.DB, stateTracker *StateTracker, binlogStreamer *BinlogStreamer) (*TargetVerifier, error) {
@@ -36,7 +37,8 @@ func (t *TargetVerifier) BinlogEventListener(evs []DMLEvent) error {
 			return err
 		}
 
-		// Ghostferry's annotation will alwaays be the first, if available
+		t.EventsChecked += 1
+		// Ghostferry's annotation will always be the first, if available
 		if annotation == "" || annotation != t.DB.Marginalia {
 			paginationKey, err := ev.PaginationKey()
 			if err != nil {
