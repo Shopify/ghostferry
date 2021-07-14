@@ -518,6 +518,19 @@ class InterruptResumeTest < GhostferryTestCase
     assert_ghostferry_completed(ghostferry, times: 1)
   end
 
+  def test_interrupt_resume_failure_with_database_schema_changed_during_interrupt
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+
+    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      ghostferry.term_and_wait_for_exit
+    end
+
+    dumped_state = ghostferry.run_expecting_interrupt
+    source_db.query("ALTER TABLE #{DEFAULT_FULL_TABLE_NAME} ADD COLUMN extracolumn VARCHAR(15);")
+
+    ghostferry.run_expecting_failure(dumped_state)
+  end
+
   def test_resume_from_failure_with_state_callback
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
 

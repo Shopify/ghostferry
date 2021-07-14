@@ -63,6 +63,8 @@ type Ferry struct {
 	DataIterator *DataIterator
 	BatchWriter  *BatchWriter
 
+	SchemaFingerPrintVerifier *SchemaFingerPrintVerifier
+
 	StateTracker                       *StateTracker
 	ErrorHandler                       ErrorHandler
 	Throttler                          Throttler
@@ -243,6 +245,37 @@ func (f *Ferry) NewInlineVerifier() *InlineVerifier {
 		targetStmtCache: NewStmtCache(),
 		logger:          logrus.WithField("tag", "inline-verifier"),
 	}
+}
+
+func (f *Ferry) NewSchemaFingerPrintVerifier() (*SchemaFingerPrintVerifier, error) {
+	var sourceSchemaFingerPrint, targetSchemaFingerPrint string
+
+	if f.StateToResumeFrom != nil {
+		if len(f.StateToResumeFrom.SourceSchemaFingerPrint) != 0 {
+			sourceSchemaFingerPrint = f.StateToResumeFrom.SourceSchemaFingerPrint
+		}
+		if len(f.StateToResumeFrom.TargetSchemaFingerPrint) != 0 {
+			targetSchemaFingerPrint = f.StateToResumeFrom.TargetSchemaFingerPrint
+		}
+	}
+	periodicallyVerifyInterval, err := time.ParseDuration(f.Config.PeriodicallyVerifySchemaFingerPrintInterval)
+	if err != nil {
+		return nil, fmt.Errorf("invalid PeriodicallyVerifySchemaFingerPrintInterval: %v. this error should have been caught via .Validate()", err)
+	}
+
+	return &SchemaFingerPrintVerifier{
+		SourceDB:                   f.SourceDB,
+		TargetDB:                   f.TargetDB,
+		DatabaseRewrites:           f.Config.DatabaseRewrites,
+		TableSchemaCache:           f.Tables,
+		ErrorHandler:               f.ErrorHandler,
+		PeriodicallyVerifyInterval: periodicallyVerifyInterval,
+
+		SourceSchemaFingerprint: sourceSchemaFingerPrint,
+		TargetSchemaFingerprint: targetSchemaFingerPrint,
+
+		logger: logrus.WithField("tag", "schema_fingerprint_verifier"),
+	}, nil
 }
 
 func (f *Ferry) NewInlineVerifierWithoutStateTracker() *InlineVerifier {
@@ -489,6 +522,11 @@ func (f *Ferry) Initialize() (err error) {
 		}
 	}
 
+	f.SchemaFingerPrintVerifier, err = f.NewSchemaFingerPrintVerifier()
+	if err != nil {
+		return err
+	}
+
 	// The iterative verifier needs the binlog streamer so this has to be first.
 	// Eventually this can be moved below the verifier initialization.
 	f.BinlogStreamer = f.NewSourceBinlogStreamer()
@@ -686,6 +724,12 @@ func (f *Ferry) Run() {
 		}()
 	}
 
+	supportingServicesWg.Add(1)
+	go func() {
+		defer supportingServicesWg.Done()
+		f.SchemaFingerPrintVerifier.PeriodicallyVerifySchemaFingerprints(ctx)
+	}()
+
 	inlineVerifierWg := &sync.WaitGroup{}
 	inlineVerifierContext, stopInlineVerifier := context.WithCancel(ctx)
 	if f.inlineVerifier != nil {
@@ -787,6 +831,7 @@ func (f *Ferry) Run() {
 	f.DoneTime = time.Now()
 
 	shutdown()
+
 	supportingServicesWg.Wait()
 
 	if f.Config.ProgressCallback.URI != "" {
@@ -913,7 +958,7 @@ func (f *Ferry) SerializeStateToJSON() (string, error) {
 		binlogVerifyStore = f.inlineVerifier.reverifyStore
 	}
 
-	serializedState := f.StateTracker.Serialize(f.Tables, binlogVerifyStore)
+	serializedState := f.StateTracker.Serialize(f.Tables, binlogVerifyStore, f.SchemaFingerPrintVerifier.SourceSchemaFingerprint, f.SchemaFingerPrintVerifier.TargetSchemaFingerprint)
 
 	if f.Config.DoNotIncludeSchemaCacheInStateDump {
 		serializedState.LastKnownTableSchemaCache = nil
@@ -945,7 +990,7 @@ func (f *Ferry) Progress() *Progress {
 	}
 
 	// Table Progress
-	serializedState := f.StateTracker.Serialize(nil, nil)
+	serializedState := f.StateTracker.Serialize(nil, nil, f.SchemaFingerPrintVerifier.SourceSchemaFingerprint, f.SchemaFingerPrintVerifier.TargetSchemaFingerprint)
 	// Note the below will not necessarily be synchronized with serializedState.
 	// This is fine as we don't need to be super precise with performance data.
 	rowStatsWrittenPerTable := f.StateTracker.RowStatsWrittenPerTable()

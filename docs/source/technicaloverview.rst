@@ -102,6 +102,10 @@ Limitations
   - For tables with foreign key constraints, the constraints should be removed
     before performing the data migration.
 
+- Ghostferry does not support schema changes during the migration or when the migration is
+   interrupted. Currently, Ghostferry checks in the background the schema of the
+   databases being migrated every 1 minute.
+
 Algorithm Correctness
 ---------------------
 

@@ -40,6 +40,8 @@ type SerializableState struct {
 	BinlogVerifyStore                         BinlogVerifySerializedStore
 	LastStoredBinlogPositionForInlineVerifier mysql.Position
 	LastStoredBinlogPositionForTargetVerifier mysql.Position
+	SourceSchemaFingerPrint                   string
+	TargetSchemaFingerPrint                   string
 }
 
 func (s *SerializableState) MinSourceBinlogPosition() mysql.Position {
@@ -253,7 +255,7 @@ func (s *StateTracker) updateSpeedLog(deltaPaginationKey uint64) {
 	}
 }
 
-func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, binlogVerifyStore *BinlogVerifyStore) *SerializableState {
+func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, binlogVerifyStore *BinlogVerifyStore, sourceSchemaFingerPrint string, targetSchemaFingerPrint string) *SerializableState {
 	s.BinlogRWMutex.RLock()
 	defer s.BinlogRWMutex.RUnlock()
 
@@ -272,6 +274,14 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, bin
 
 	if binlogVerifyStore != nil {
 		state.BinlogVerifyStore = binlogVerifyStore.Serialize()
+	}
+
+	if len(sourceSchemaFingerPrint) > 0 {
+		state.SourceSchemaFingerPrint = sourceSchemaFingerPrint
+	}
+
+	if len(targetSchemaFingerPrint) > 0 {
+		state.TargetSchemaFingerPrint = targetSchemaFingerPrint
 	}
 
 	// Need a copy because lastSuccessfulPaginationKeys may change after Serialize

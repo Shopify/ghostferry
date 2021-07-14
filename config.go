@@ -764,6 +764,10 @@ type Config struct {
 	// The ghostferry target user should have SUPER permissions to actually write to the target DB,
 	// if ghostferry is ran with AllowSuperUserOnReadOnly = true and the target DB is set to read_only.
 	AllowSuperUserOnReadOnly bool
+
+	// The interval at which the periodic schema fingerprint verification occurs, in the
+	// format of time.ParseDuration. Default: 60s.
+	PeriodicallyVerifySchemaFingerPrintInterval string
 }
 
 func (c *Config) ValidateConfig() error {
@@ -831,6 +835,15 @@ func (c *Config) ValidateConfig() error {
 
 	if c.CutoverRetryWaitSeconds == 0 {
 		c.CutoverRetryWaitSeconds = 1
+	}
+
+	if len(c.PeriodicallyVerifySchemaFingerPrintInterval) == 0 {
+		c.PeriodicallyVerifySchemaFingerPrintInterval = "60s"
+	} else {
+		_, err := time.ParseDuration(c.PeriodicallyVerifySchemaFingerPrintInterval)
+		if err != nil {
+			return fmt.Errorf("PeriodicallyVerifySchemaFingerPrintInterval invalid")
+		}
 	}
 
 	return nil
