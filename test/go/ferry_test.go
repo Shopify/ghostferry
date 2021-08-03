@@ -70,9 +70,12 @@ func (t *FerryTestSuite) TestSourceDatabaseWithForeignKeyConstraintFailsInitiali
 	ferry = testhelpers.NewTestFerry().Ferry
 	ferry.Config.SkipForeignKeyConstraintsCheck = true
 
-	err = ferry.Initialize()
+	_, err = t.Ferry.SourceDB.Exec("SET GLOBAL read_only = ON")
 
+	err = ferry.Initialize()
 	t.Require().Nil(err)
+
+	_, err = t.Ferry.SourceDB.Exec("SET GLOBAL read_only = OFF")
 }
 
 func TestFerryTestSuite(t *testing.T) {

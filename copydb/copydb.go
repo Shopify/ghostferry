@@ -58,15 +58,33 @@ func (this *CopydbFerry) Start() error {
 }
 
 func (this *CopydbFerry) CreateDatabasesAndTables() error {
+	logger := logrus.WithField("tag", "create_databases_and_tables")
+
 	// We need to create the same table/schemas on the target database
 	// as the ones we are copying.
-	logrus.Info("creating databases and tables on target")
-	for _, tableName := range this.Ferry.Tables.GetTableListWithPriority(this.config.TablesToBeCreatedFirst) {
+	logger.Info("creating databases and tables on target")
+	var prioritzedTableNames []string
+	if len(this.config.TablesToBeCreatedFirst) > 0 {
+		// if specified, use what the config tells us
+		logger.Debug("config contains table creation order")
+		prioritzedTableNames = this.Ferry.Tables.GetTableListWithPriority(this.config.TablesToBeCreatedFirst)
+	} else {
+		// otherwise infer the right order ourselves
+		logger.Debug("inferring table creation order from source database")
+		var err error
+		prioritzedTableNames, err = this.Ferry.Tables.GetTableCreationOrder(this.Ferry.SourceDB)
+		if err != nil {
+			return err
+		}
+	}
+
+	for _, tableName := range prioritzedTableNames {
+		logger.Debugf("creating database table %s", tableName)
 		t := strings.Split(tableName, ".")
 
 		err := this.createDatabaseIfExistsOnTarget(t[0])
 		if err != nil {
-			logrus.WithError(err).WithField("database", t[0]).Error("cannot create database, this may leave the target database in an insane state")
+			logger.WithField("database", t[0]).Error("cannot create database, this may leave the target database in an insane state")
 			return err
 		}
 
