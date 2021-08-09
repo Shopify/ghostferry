@@ -1,9 +1,10 @@
 package test
 
 import (
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math/rand"
 	"testing"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry/sharding"
 	"github.com/Shopify/ghostferry/testhelpers"
@@ -22,6 +23,11 @@ func selectiveFerry(tenantId interface{}) *testhelpers.TestFerry {
 	ferry := testhelpers.NewTestFerry()
 
 	ferry.Config.CopyFilter = &sharding.ShardedCopyFilter{
+		ShardingKey:   "tenant_id",
+		ShardingValue: tenantId,
+	}
+
+	ferry.Config.StreamFilter = &sharding.ShardedStreamFilter{
 		ShardingKey:   "tenant_id",
 		ShardingValue: tenantId,
 	}

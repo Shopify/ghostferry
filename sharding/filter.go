@@ -160,7 +160,13 @@ func (f *ShardedCopyFilter) shardingKeyIndexName(table *ghostferry.TableSchema) 
 	return indexName
 }
 
-func (f *ShardedCopyFilter) shardingValueMatches(value interface{}) bool {
+type ShardedStreamFilter struct {
+	ShardingKey      string
+	ShardingValue    interface{}
+	PrimaryKeyTables map[string]struct{}
+}
+
+func (f *ShardedStreamFilter) shardingValueMatches(value interface{}) bool {
 	switch v := f.ShardingValue.(type) {
 	case int64:
 		return v == value
@@ -176,7 +182,7 @@ func (f *ShardedCopyFilter) shardingValueMatches(value interface{}) bool {
 	return false
 }
 
-func (f *ShardedCopyFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, error) {
+func (f *ShardedStreamFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, error) {
 	shardingKey := f.ShardingKey
 	if _, exists := f.PrimaryKeyTables[event.Table()]; exists {
 		shardingKey = event.TableSchema().GetPaginationColumn().Name

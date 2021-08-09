@@ -528,6 +528,8 @@ type Config struct {
 	// Optional: defaults to nil/no filter.
 	CopyFilter CopyFilter
 
+	StreamFilter StreamFilter
+
 	// The server id used by Ghostferry to connect to MySQL as a replication
 	// slave. This id must be unique on the MySQL server. If 0 is specified,
 	// a random id will be generated upon connecting to the MySQL server.

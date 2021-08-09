@@ -21,7 +21,7 @@ type BinlogStreamer struct {
 	DBConfig     *DatabaseConfig
 	MyServerId   uint32
 	ErrorHandler ErrorHandler
-	Filter       CopyFilter
+	Filter       StreamFilter
 
 	TableSchema TableSchemaCache
 	LogTag      string

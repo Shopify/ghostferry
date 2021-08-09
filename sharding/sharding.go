@@ -40,6 +40,12 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 		IgnoredTables: ignored,
 	}
 
+	config.StreamFilter = &ShardedStreamFilter{
+		ShardingKey:   config.ShardingKey,
+		ShardingValue: config.ShardingValue,
+		// JoinedTables:  config.JoinedTables,
+	}
+
 	if err := config.ValidateConfig(); err != nil {
 		return nil, fmt.Errorf("failed to validate config: %v", err)
 	}
@@ -185,6 +191,7 @@ func (r *ShardingFerry) copyPrimaryKeyTables() error {
 
 	r.config.TableFilter.(*ShardedTableFilter).PrimaryKeyTables = primaryKeyTables
 	r.config.CopyFilter.(*ShardedCopyFilter).PrimaryKeyTables = primaryKeyTables
+	r.config.StreamFilter.(*ShardedStreamFilter).PrimaryKeyTables = primaryKeyTables
 
 	sourceDbTables, err := ghostferry.LoadTables(r.Ferry.SourceDB, r.config.TableFilter, r.config.CompressedColumnsForVerification, r.config.IgnoredColumnsForVerification, r.config.ForceIndexForVerification, r.config.CascadingPaginationColumnConfig)
 	if err != nil {

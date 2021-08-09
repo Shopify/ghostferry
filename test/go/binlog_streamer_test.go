@@ -55,7 +55,7 @@ func (this *BinlogStreamerTestSuite) SetupTest() {
 		DBConfig:     testFerry.Config.Source,
 		MyServerId:   testFerry.Config.MyServerId,
 		ErrorHandler: testFerry.ErrorHandler,
-		Filter:       testFerry.CopyFilter,
+		Filter:       testFerry.StreamFilter,
 		TableSchema:  tableSchemaCache,
 	}
 }

@@ -147,12 +147,16 @@ func (f *Ferry) NewTargetBinlogStreamer() (*BinlogStreamer, error) {
 func (f *Ferry) newBinlogStreamer(db *sql.DB, dbConf *DatabaseConfig, schemaRewrites, tableRewrites map[string]string, logTag string) *BinlogStreamer {
 	f.ensureInitialized()
 
+	// if f.StreamFilter == nil {
+	// 	panic("f.StreamFilter cant be nil")
+	// }
+
 	return &BinlogStreamer{
 		DB:               db,
 		DBConfig:         dbConf,
 		MyServerId:       f.Config.MyServerId,
 		ErrorHandler:     f.ErrorHandler,
-		Filter:           f.CopyFilter,
+		Filter:           f.StreamFilter,
 		TableSchema:      f.Tables,
 		LogTag:           logTag,
 		DatabaseRewrites: schemaRewrites,
