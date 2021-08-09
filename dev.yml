@@ -1,8 +1,8 @@
 name: ghostferry
 
 up:
-  - homebrew:
-    - mysql
+  # - homebrew:
+  #   - mysql
   - ruby: "2.7.3"
   - bundler
   - go:
