@@ -8,7 +8,7 @@ type Config struct {
 	*ghostferry.Config
 
 	ShardingKey   string
-	ShardingValue int64
+	ShardingValue []int64
 	SourceDB      string
 	TargetDB      string
 
