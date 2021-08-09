@@ -25,6 +25,17 @@ type ShardedCopyFilter struct {
 	missingShardingKeyIndexLogged sync.Map
 }
 
+func (f *ShardedCopyFilter) getShardingValueForSQL() interface{} {
+	switch v := f.ShardingValue.(type) {
+	case int64:
+		return v
+	case []int64:
+		return v[0] // omglol
+	default:
+		panic("unknown type!")
+	}
+}
+
 func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.TableSchema, lastPaginationKey, batchSize uint64) (sq.SelectBuilder, error) {
 	quotedPaginationKey := "`" + table.GetPaginationColumn().Name + "`"
 	quotedShardingKey := "`" + f.ShardingKey + "`"
@@ -40,7 +51,7 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 		// No LIMIT clause is necessary since at most one row is present.
 		return sq.Select(columns...).
 			From(quotedTable + " USE INDEX (PRIMARY)").
-			Where(sq.Eq{quotedPaginationKey: f.ShardingValue}).
+			Where(sq.Eq{quotedPaginationKey: f.getShardingValueForSQL()}).
 			Where(sq.Gt{quotedPaginationKey: lastPaginationKey}), nil
 	}
 
@@ -67,7 +78,7 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 
 		return sq.Select(columns...).
 			From(quotedTable).
-			Join("("+selectPaginationKeys+") AS `batch` USING("+quotedPaginationKey+")", f.ShardingValue, lastPaginationKey), nil
+			Join("("+selectPaginationKeys+") AS `batch` USING("+quotedPaginationKey+")", f.getShardingValueForSQL(), lastPaginationKey), nil
 	}
 
 	// This is a "joined table". It is the only supported type of table that
@@ -103,7 +114,7 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 		pattern := "SELECT `%s` AS sharding_join_alias FROM `%s`.`%s` WHERE `%s` = ? AND `%s` > ?"
 		sql := fmt.Sprintf(pattern, joinTable.JoinColumn, table.Schema, joinTable.TableName, f.ShardingKey, joinTable.JoinColumn)
 		clauses = append(clauses, sql)
-		args = append(args, f.ShardingValue, lastPaginationKey)
+		args = append(args, f.getShardingValueForSQL(), lastPaginationKey)
 	}
 
 	subquery := strings.Join(clauses, " UNION DISTINCT ")
@@ -149,6 +160,22 @@ func (f *ShardedCopyFilter) shardingKeyIndexName(table *ghostferry.TableSchema) 
 	return indexName
 }
 
+func (f *ShardedCopyFilter) shardingValueMatches(value interface{}) bool {
+	switch v := f.ShardingValue.(type) {
+	case int64:
+		return v == value
+	case []int64:
+		for _, s := range v {
+			if s == value {
+				return true
+			}
+		}
+	default:
+		panic("unknown type!")
+	}
+	return false
+}
+
 func (f *ShardedCopyFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, error) {
 	shardingKey := f.ShardingKey
 	if _, exists := f.PrimaryKeyTables[event.Table()]; exists {
@@ -170,8 +197,8 @@ func (f *ShardedCopyFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, er
 				return false, fmt.Errorf("parsing new sharding key: %s", err)
 			}
 
-			oldEqual := oldExists && oldShardingValue == f.ShardingValue
-			newEqual := newExists && newShardingValue == f.ShardingValue
+			oldEqual := oldExists && f.shardingValueMatches(oldShardingValue)
+			newEqual := newExists && f.shardingValueMatches(newShardingValue)
 
 			if oldEqual != newEqual && oldExists && newExists {
 				// The value of the sharding key for a row was changed - this is unsafe.
