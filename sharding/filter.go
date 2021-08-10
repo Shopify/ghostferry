@@ -79,7 +79,7 @@ func (f *ShardedCopyFilter) BuildSelectForTenant(tenant int64) func([]string, *g
 
 			return sq.Select(columns...).
 				From(quotedTable).
-				Join("("+selectPaginationKeys+") AS `batch` USING("+quotedPaginationKey+")", f.getShardingValueForSQL(), lastPaginationKey), nil
+				Join("("+selectPaginationKeys+") AS `batch` USING("+quotedPaginationKey+")", tenant, lastPaginationKey), nil
 		}
 
 		// This is a "joined table". It is the only supported type of table that
