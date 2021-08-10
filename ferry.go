@@ -67,7 +67,7 @@ type Ferry struct {
 
 	DataIterator *DataIterator
 	DataIterators map[int64]*DataIterator
-	ShardingValues []int64
+
 	BatchWriter  *BatchWriter
 
 	StateTracker                       *StateTracker
