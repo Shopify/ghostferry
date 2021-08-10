@@ -66,6 +66,8 @@ type Ferry struct {
 	TargetVerifier   *TargetVerifier
 
 	DataIterator *DataIterator
+	DataIterators []*DataIterator
+	ShardingValues []int64
 	BatchWriter  *BatchWriter
 
 	StateTracker                       *StateTracker
@@ -786,6 +788,18 @@ func (f *Ferry) Run() {
 	}()
 
 	dataIteratorWg.Wait()
+
+	dataIteratorsWg := &sync.WaitGroup{}
+	for _, iterator := range f.DataIterators {
+		dataIteratorsWg.Add(1)
+
+		go func(iterator *DataIterator) {
+			defer dataIteratorsWg.Done()
+			iterator.Run(f.Tables.AsSlice())
+		}(iterator)
+	}
+
+	dataIteratorsWg.Wait()
 
 	f.logger.Info("data copy is complete, waiting for cutover")
 	f.OverallState.Store(StateWaitingForCutover)
