@@ -810,13 +810,15 @@ func (f *Ferry) Run() {
 	})
 
 	dataIteratorsWg := &sync.WaitGroup{}
-	for _, iterator := range f.DataIterators {
+	for tenantId, iterator := range f.DataIterators {
 		dataIteratorsWg.Add(1)
 
-		go func(iterator *DataIterator) {
+		go func(tenantId int64, iterator *DataIterator) {
 			defer dataIteratorsWg.Done()
-			iterator.Run(f.Tables.AsSlice())
-		}(iterator)
+			tables := f.Tables.AsSlice()
+			f.logger.WithField("tenant_id", tenantId).WithField("tables", tables).Info("Running iterator for tenant ID")
+			iterator.Run(tables)
+		}(tenantId, iterator)
 	}
 
 	// dataIteratorWg.Wait()
