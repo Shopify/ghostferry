@@ -66,6 +66,8 @@ type Ferry struct {
 	TargetVerifier   *TargetVerifier
 
 	DataIterator *DataIterator
+
+	TenantIds     []int64
 	DataIterators map[int64]*DataIterator
 
 	BatchWriter  *BatchWriter
@@ -455,9 +457,9 @@ func (f *Ferry) Initialize() (err error) {
 		}
 
 		if isReplica {
-			err = errors.New("source is a read replica. running Ghostferry with a source replica is unsafe unless WaitUntilReplicaIsCaughtUpToMaster is used")
-			f.logger.WithError(err).Error("source is a read replica")
-			return err
+			// err = errors.New("source is a read replica. running Ghostferry with a source replica is unsafe unless WaitUntilReplicaIsCaughtUpToMaster is used")
+			// f.logger.WithError(err).Error("source is a read replica")
+			// return err
 		}
 	}
 
@@ -810,8 +812,12 @@ func (f *Ferry) Run() {
 	})
 
 	dataIteratorsWg := &sync.WaitGroup{}
-	for tenantId, iterator := range f.DataIterators {
+	for _, tenantId := range f.TenantIds {
 		dataIteratorsWg.Add(1)
+
+		iterator := f.NewDataIterator()
+		iterator.CursorConfig.BuildSelect = f.CopyFilter.BuildSelectForTenant(tenantId)
+		f.DataIterators[tenantId] = iterator
 
 		go func(tenantId int64, iterator *DataIterator) {
 			defer dataIteratorsWg.Done()

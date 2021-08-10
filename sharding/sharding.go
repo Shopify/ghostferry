@@ -62,29 +62,31 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 		Throttler: throttler,
 	}
 
-	ferry.DataIterators = make(map[int64]*ghostferry.DataIterator)
+	ferry.TenantIds = config.ShardingValues
 
-	for _, tenantId := range config.ShardingValues {
-		iterator := &ghostferry.DataIterator{
-			DB:                ferry.SourceDB,
-			Concurrency:       ferry.Config.DataIterationConcurrency,
-			SelectFingerprint: ferry.Config.VerifierType == ghostferry.VerifierTypeInline,
+	// ferry.DataIterators = make(map[int64]*ghostferry.DataIterator)
 
-			ErrorHandler: ferry.ErrorHandler,
-			CursorConfig: &ghostferry.CursorConfig{
-				DB:        ferry.SourceDB,
-				Throttler: ferry.Throttler,
+	// for _, tenantId := range config.ShardingValues {
+	// 	iterator := &ghostferry.DataIterator{
+	// 		DB:                ferry.SourceDB,
+	// 		Concurrency:       ferry.Config.DataIterationConcurrency,
+	// 		SelectFingerprint: ferry.Config.VerifierType == ghostferry.VerifierTypeInline,
 
-				BatchSize:                 ferry.Config.DataIterationBatchSize,
-				BatchSizePerTableOverride: ferry.Config.DataIterationBatchSizePerTableOverride,
-				ReadRetries:               ferry.Config.DBReadRetries,
-				},
-			StateTracker: ferry.StateTracker,
-		}
-		iterator.CursorConfig.BuildSelect = config.CopyFilter.BuildSelectForTenant(tenantId)
+	// 		ErrorHandler: ferry.ErrorHandler,
+	// 		CursorConfig: &ghostferry.CursorConfig{
+	// 			DB:        ferry.SourceDB,
+	// 			Throttler: ferry.Throttler,
 
-		ferry.DataIterators[tenantId] = iterator
-	}
+	// 			BatchSize:                 ferry.Config.DataIterationBatchSize,
+	// 			BatchSizePerTableOverride: ferry.Config.DataIterationBatchSizePerTableOverride,
+	// 			ReadRetries:               ferry.Config.DBReadRetries,
+	// 			},
+	// 		StateTracker: ferry.StateTracker,
+	// 	}
+	// 	iterator.CursorConfig.BuildSelect = config.CopyFilter.BuildSelectForTenant(tenantId)
+
+	// 	ferry.DataIterators[tenantId] = iterator
+	// }
 
 	logger := logrus.WithField("tag", "sharding")
 
