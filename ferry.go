@@ -793,7 +793,7 @@ func (f *Ferry) Run() {
 	// }()
 
 	f.ManagementEndpointState.AddChangeListener(func (p ManagementRequestPayload) error {
-		tenantId := p.ShardingValue.Value.(int64)
+		tenantId := int64(p.ShardingValue.Value.(float64))
 		switch p.ShardingValue.Operation {
 		case "add":
 			iterator := f.NewDataIterator()
