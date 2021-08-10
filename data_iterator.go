@@ -42,7 +42,7 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 		d.StateTracker = NewStateTracker(0)
 	}
 
-	d.logger.WithField("tablesCount", len(tables)).Info("starting data iterator run")
+	d.logger.WithField("tablesCount", len(tables)).WithField("db", d.DB).Info("starting data iterator run")
 	tablesWithData, emptyTables, err := MaxPaginationKeys(d.DB, tables, d.logger)
 	if err != nil {
 		d.ErrorHandler.Fatal("data_iterator", err)
