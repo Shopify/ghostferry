@@ -23,6 +23,8 @@ type Config struct {
 	PrimaryKeyTables []string
 
 	Throttle *ghostferry.LagThrottlerConfig
+
+	StreamForever bool
 }
 
 func (c *Config) ValidateConfig() error {
