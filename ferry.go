@@ -97,14 +97,14 @@ type Ferry struct {
 }
 
 type ManagementEndpointState struct {
-	changeListeners []func(interface{}) error
+	changeListeners []func(ManagementRequestPayload) error
 }
 
-func (m *ManagementEndpointState) AddChangeListener(listener func(interface{}) error) {
+func (m *ManagementEndpointState) AddChangeListener(listener func(ManagementRequestPayload) error) {
 	m.changeListeners = append(m.changeListeners, listener)
 }
 
-func (m *ManagementEndpointState) Notify(payload interface{}) {
+func (m *ManagementEndpointState) Notify(payload ManagementRequestPayload) {
 	for _, l := range m.changeListeners {
 		l(payload)
 	}
@@ -628,6 +628,15 @@ func (f *Ferry) Start() error {
 	return nil
 }
 
+type ShardingValueOperation struct {
+	Operation string
+	Value     interface{}
+}
+
+type ManagementRequestPayload struct {
+	ShardingValue ShardingValueOperation
+}
+
 // Spawns the background tasks that actually perform the run.
 // Wait for the background tasks to finish.
 func (f *Ferry) Run() {
@@ -652,13 +661,14 @@ func (f *Ferry) Run() {
 
 	if f.Config.ManagementEndpoint != "" {
 		supportingServicesWg.Add(1)
+		// curl -v http://localhost:8081/ --data '{"ShardingValue": {"Operation": "add", "Value": 1}}'
 		go func() {
 			defer supportingServicesWg.Done()
 
 			s := &http.Server{
 				Addr: f.Config.ManagementEndpoint,
 				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					var input interface{}
+					var input ManagementRequestPayload
 					err := json.NewDecoder(r.Body).Decode(&input)
 					if err != nil {
 						http.Error(w, err.Error(), http.StatusBadRequest)

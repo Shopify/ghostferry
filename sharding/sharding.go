@@ -62,24 +62,20 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 		Throttler: throttler,
 	}
 
-	// svch := make(chan shardingValuesConfigUpdate)
-
 	shardingValues := make(map[int64]bool)
 	for _, v := range config.ShardingValue {
 		shardingValues[v] = true
 	}
 
-	ferry.ManagementEndpointState.AddChangeListener(func(v interface{}) error {
-		vf := v.(map[string]interface{})
-		rawIds := vf["newsharding_values"].([]interface{})
-
-		ids := make(map[int64]bool)
-		for _, k := range rawIds {
-			ids[int64(k.(float64))] = true
+	ferry.ManagementEndpointState.AddChangeListener(func(p ghostferry.ManagementRequestPayload) error {
+		switch p.ShardingValue.Operation {
+		case "add":
+			shardingValues[int64(p.ShardingValue.Value.(float64))] = true
+		case "delete":
+			delete(shardingValues, p.ShardingValue.Value.(int64))
+		default:
+			panic("unknown operation!")
 		}
-
-		shardingValues = ids
-		fmt.Printf("newShardingValue=%v\n", ids)
 		return nil
 	})
 
