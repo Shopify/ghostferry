@@ -64,7 +64,7 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 
 	var dataIterators []*ghostferry.DataIterator
 
-	for range config.ShardingValue {
+	for _, tenantId := range config.ShardingValues {
 		iterator := &ghostferry.DataIterator{
 			DB:                ferry.SourceDB,
 			Concurrency:       ferry.Config.DataIterationConcurrency,
@@ -81,7 +81,8 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 				},
 			StateTracker: ferry.StateTracker,
 		}
-		iterator.CursorConfig.BuildSelect = config.CopyFilter.BuildSelect
+		iterator.CursorConfig.BuildSelect = config.CopyFilter.BuildSelectForTenant(tenantId)
+
 		dataIterators = append(dataIterators, iterator)
 	}
 
@@ -90,7 +91,7 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 	logger := logrus.WithField("tag", "sharding")
 
 	shardingValues := make(map[int64]bool)
-	for _, v := range config.ShardingValue {
+	for _, v := range config.ShardingValues {
 		shardingValues[v] = true
 	}
 

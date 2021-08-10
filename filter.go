@@ -25,6 +25,7 @@ type CopyFilter interface {
 	// from the previous batch, and the batch size. Call DefaultBuildSelect to
 	// generate the default query, which may be used as a starting point.
 	BuildSelect([]string, *TableSchema, uint64, uint64) (sq.SelectBuilder, error)
+	BuildSelectForTenant(int64) func([]string, *TableSchema, uint64, uint64) (sq.SelectBuilder, error)
 }
 
 type TableFilter interface {

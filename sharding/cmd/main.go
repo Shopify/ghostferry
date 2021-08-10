@@ -74,7 +74,7 @@ func errorAndExit(msg string) {
 func parseConfig() *sharding.Config {
 	config := &sharding.Config{
 		Config:        &ghostferry.Config{AutomaticCutover: true},
-		ShardingValue: []int64{-1},
+		ShardingValue: int64(-1),
 	}
 
 	var data []byte
@@ -113,7 +113,7 @@ func parseConfig() *sharding.Config {
 		errorAndExit("missing ShardingKey config")
 	}
 
-	if config.ShardingValue[0] == -1 {
+	if config.ShardingValue == -1 {
 		errorAndExit("missing ShardingValue config")
 	}
 

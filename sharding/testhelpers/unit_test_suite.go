@@ -26,7 +26,7 @@ const (
 )
 
 var (
-	shardingValue = []int64{2}
+	shardingValue = int64(2)
 )
 
 type ShardingUnitTestSuite struct {
@@ -129,7 +129,7 @@ func (t *ShardingUnitTestSuite) AssertTenantCopied() {
 	testhelpers.AssertTwoQueriesHaveEqualResult(
 		t.T(),
 		t.Ferry.Ferry,
-		fmt.Sprintf("SELECT * FROM %s.%s WHERE %s = %d", sourceDbName, testTable, shardingKey, shardingValue[0]),
+		fmt.Sprintf("SELECT * FROM %s.%s WHERE %s = %d", sourceDbName, testTable, shardingKey, shardingValue),
 		fmt.Sprintf("SELECT * FROM %s.%s", targetDbName, testTable),
 	)
 }
