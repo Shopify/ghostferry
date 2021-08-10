@@ -62,6 +62,8 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 		Throttler: throttler,
 	}
 
+	ferry.DataIterators = make(map[int64]*ghostferry.DataIterator)
+
 	for _, tenantId := range config.ShardingValues {
 		iterator := &ghostferry.DataIterator{
 			DB:                ferry.SourceDB,

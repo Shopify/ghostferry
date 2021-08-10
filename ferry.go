@@ -534,7 +534,9 @@ func (f *Ferry) Initialize() (err error) {
 
 	f.BinlogWriter = f.NewBinlogWriter()
 	f.DataIterator = f.NewDataIterator()
-	f.DataIterators = make(map[int64]*DataIterator)
+	if f.DataIterators == nil {
+		f.DataIterators = make(map[int64]*DataIterator)
+	}
 	f.BatchWriter = f.NewBatchWriter()
 
 	if f.Config.VerifierType != "" {
