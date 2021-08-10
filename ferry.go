@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"net/http"
 	"os"
@@ -91,6 +92,22 @@ type Ferry struct {
 	logger *logrus.Entry
 
 	rowCopyCompleteCh chan struct{}
+
+	ManagementEndpointState ManagementEndpointState
+}
+
+type ManagementEndpointState struct {
+	changeListeners []func(interface{}) error
+}
+
+func (m *ManagementEndpointState) AddChangeListener(listener func(interface{}) error) {
+	m.changeListeners = append(m.changeListeners, listener)
+}
+
+func (m *ManagementEndpointState) Notify(payload interface{}) {
+	for _, l := range m.changeListeners {
+		l(payload)
+	}
 }
 
 func (f *Ferry) NewDataIterator() *DataIterator {
@@ -632,6 +649,32 @@ func (f *Ferry) Run() {
 		defer supportingServicesWg.Done()
 		handleError("throttler", f.Throttler.Run(ctx))
 	}()
+
+	if f.Config.ManagementEndpoint != "" {
+		supportingServicesWg.Add(1)
+		go func() {
+			defer supportingServicesWg.Done()
+
+			s := &http.Server{
+				Addr: f.Config.ManagementEndpoint, // TODO f.Config.ManagementEndpoint
+				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var input interface{}
+					err := json.NewDecoder(r.Body).Decode(&input)
+					if err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+					f.ManagementEndpointState.Notify(input)
+					log.Printf("ManagementEndpoint hit, payload: %v\n", input)
+				}),
+				ReadTimeout:  10 * time.Second,
+				WriteTimeout: 10 * time.Second,
+				// MaxHeaderBytes: 1 << 20,
+			}
+			f.logger.WithField("address", f.Config.ManagementEndpoint).Info("starting management server")
+			log.Fatal(s.ListenAndServe())
+		}()
+	}
 
 	if f.Config.ProgressCallback.URI != "" {
 		supportingServicesWg.Add(1)

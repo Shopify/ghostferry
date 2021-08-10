@@ -161,13 +161,21 @@ func (f *ShardedCopyFilter) shardingKeyIndexName(table *ghostferry.TableSchema) 
 }
 
 type ShardedStreamFilter struct {
-	ShardingKey      string
-	ShardingValue    interface{}
-	PrimaryKeyTables map[string]struct{}
+	ShardingKey       string
+	ShardingValue     interface{}
+	PrimaryKeyTables  map[string]struct{}
+	ShardingValueFunc func() interface{}
 }
 
 func (f *ShardedStreamFilter) shardingValueMatches(value interface{}) bool {
-	switch v := f.ShardingValue.(type) {
+	var shardingValue interface{}
+	if f.ShardingValueFunc != nil {
+		shardingValue = f.ShardingValueFunc()
+	} else {
+		shardingValue = f.ShardingValue
+	}
+
+	switch v := shardingValue.(type) {
 	case int64:
 		return v == value
 	case []int64:

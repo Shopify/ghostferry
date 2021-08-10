@@ -614,6 +614,8 @@ type Config struct {
 	ProgressCallback        HTTPCallback
 	ProgressReportFrequency int
 
+	ManagementEndpoint string
+
 	// Report state via an HTTP callback. The SerializedState struct will be
 	// sent as the Payload parameter. The unit of StateReportFrequency is
 	// in milliseconds.

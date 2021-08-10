@@ -1,20 +1,21 @@
 {
   "ShardingKey": "shop_id",
-  "ShardingValue": 1,
-  "SourceDB": "shopify_test_shard_0",
-  "TargetDB": "shopify_test_shard_1",
+  "ShardingValue": [1],
+  "SourceDB": "gftest1",
+  "TargetDB": "gftest2",
   "IgnoredTables": [],
+  "ManagementEndpoint": "localhost:8081",
 
   "Source": {
-    "Host": "shopify.railgun",
-    "Port": 20015,
+    "Host": "127.0.0.1",
+    "Port": 29291,
     "User": "root",
     "Pass": ""
   },
 
   "Target": {
-    "Host": "shopify.railgun",
-    "Port": 20017,
+    "Host": "127.0.0.1",
+    "Port": 29292,
     "User": "root",
     "Pass": ""
   }

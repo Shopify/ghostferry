@@ -15,6 +15,10 @@ type ShardingFerry struct {
 	logger *logrus.Entry
 }
 
+type shardingValuesConfigUpdate struct {
+	ShardingValues []int64
+}
+
 func NewFerry(config *Config) (*ShardingFerry, error) {
 	var err error
 
@@ -40,12 +44,6 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 		IgnoredTables: ignored,
 	}
 
-	config.StreamFilter = &ShardedStreamFilter{
-		ShardingKey:   config.ShardingKey,
-		ShardingValue: config.ShardingValue,
-		// JoinedTables:  config.JoinedTables,
-	}
-
 	if err := config.ValidateConfig(); err != nil {
 		return nil, fmt.Errorf("failed to validate config: %v", err)
 	}
@@ -62,6 +60,34 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 	ferry := &ghostferry.Ferry{
 		Config:    config.Config,
 		Throttler: throttler,
+	}
+
+	// svch := make(chan shardingValuesConfigUpdate)
+
+	var shardingValues []int64
+	shardingValues = config.ShardingValue
+
+	ferry.ManagementEndpointState.AddChangeListener(func(v interface{}) error {
+		vf := v.(map[string]interface{})
+		rawIds := vf["newsharding_values"].([]interface{})
+
+		ids := make([]int64, 0)
+		for _, k := range rawIds {
+			ids = append(ids, int64(k.(float64)))
+		}
+
+		shardingValues = ids
+		fmt.Printf("newShardingValue=%v\n", ids)
+		// svch <- shardingValuesConfigUpdate{ShardingValues: ids}
+		return nil
+	})
+
+	config.StreamFilter = &ShardedStreamFilter{
+		ShardingKey:   config.ShardingKey,
+		ShardingValue: config.ShardingValue,
+		ShardingValueFunc: func() interface{} {
+			return shardingValues
+		},
 	}
 
 	logger := logrus.WithField("tag", "sharding")
@@ -103,63 +129,64 @@ func (r *ShardingFerry) Run() {
 		r.Ferry.Run()
 	}()
 
-	r.Ferry.WaitUntilRowCopyIsComplete()
+	select {}
 
-	ghostferry.WaitForThrottle(r.Ferry.Throttler)
+	// r.Ferry.WaitUntilRowCopyIsComplete()
 
-	r.Ferry.WaitUntilBinlogStreamerCatchesUp()
+	// ghostferry.WaitForThrottle(r.Ferry.Throttler)
 
-	r.AbortIfTargetDbNoLongerWriteable()
+	// r.Ferry.WaitUntilBinlogStreamerCatchesUp()
 
+	// r.AbortIfTargetDbNoLongerWriteable()
 
-	// The callback must ensure that all in-flight transactions are complete and
-	// there will be no more writes to the database after it returns.
+	// // The callback must ensure that all in-flight transactions are complete and
+	// // there will be no more writes to the database after it returns.
 
-	var err error
-	cutoverStart := r.Ferry.StartCutover()
+	// var err error
+	// cutoverStart := r.Ferry.StartCutover()
 
-	r.Ferry.Throttler.SetDisabled(true)
+	// r.Ferry.Throttler.SetDisabled(true)
 
-	r.Ferry.FlushBinlogAndStopStreaming()
-	copyWG.Wait()
+	// r.Ferry.FlushBinlogAndStopStreaming()
+	// copyWG.Wait()
 
-	// Joined tables cannot be easily monitored for changes in the binlog stream
-	// so we copy and verify them for a second time during the cutover phase to
-	// pick up any new changes since DataIterator copied the tables
-	metrics.Measure("deltaCopyJoinedTables", nil, 1.0, func() {
-		err = r.deltaCopyJoinedTables()
-	})
-	if err != nil {
-		r.logger.WithField("error", err).Errorf("failed to delta-copy joined tables after locking")
-		r.Ferry.ErrorHandler.Fatal("sharding.delta_copy", err)
-	}
+	// // Joined tables cannot be easily monitored for changes in the binlog stream
+	// // so we copy and verify them for a second time during the cutover phase to
+	// // pick up any new changes since DataIterator copied the tables
+	// metrics.Measure("deltaCopyJoinedTables", nil, 1.0, func() {
+	// 	err = r.deltaCopyJoinedTables()
+	// })
+	// if err != nil {
+	// 	r.logger.WithField("error", err).Errorf("failed to delta-copy joined tables after locking")
+	// 	r.Ferry.ErrorHandler.Fatal("sharding.delta_copy", err)
+	// }
 
-	var verificationResult ghostferry.VerificationResult
-	metrics.Measure("VerifyCutover", nil, 1.0, func() {
-		verificationResult, err = r.Ferry.Verifier.VerifyDuringCutover()
-	})
-	if err != nil {
-		r.logger.WithField("error", err).Errorf("verification encountered an error, aborting run")
-		r.Ferry.ErrorHandler.Fatal("inline_verifier", err)
-	} else if !verificationResult.DataCorrect {
-		err = fmt.Errorf("verifier detected data discrepancy: %s", verificationResult.Message)
-		r.logger.WithField("error", err).Errorf("verification failed, aborting run")
-		r.Ferry.ErrorHandler.Fatal("inline_verifier", err)
-	}
+	// var verificationResult ghostferry.VerificationResult
+	// metrics.Measure("VerifyCutover", nil, 1.0, func() {
+	// 	verificationResult, err = r.Ferry.Verifier.VerifyDuringCutover()
+	// })
+	// if err != nil {
+	// 	r.logger.WithField("error", err).Errorf("verification encountered an error, aborting run")
+	// 	r.Ferry.ErrorHandler.Fatal("inline_verifier", err)
+	// } else if !verificationResult.DataCorrect {
+	// 	err = fmt.Errorf("verifier detected data discrepancy: %s", verificationResult.Message)
+	// 	r.logger.WithField("error", err).Errorf("verification failed, aborting run")
+	// 	r.Ferry.ErrorHandler.Fatal("inline_verifier", err)
+	// }
 
-	metrics.Measure("CopyPrimaryKeyTables", nil, 1.0, func() {
-		err = r.copyPrimaryKeyTables()
-	})
-	if err != nil {
-		r.logger.WithField("error", err).Errorf("copying primary key table failed")
-		r.Ferry.ErrorHandler.Fatal("sharding", err)
-	}
+	// metrics.Measure("CopyPrimaryKeyTables", nil, 1.0, func() {
+	// 	err = r.copyPrimaryKeyTables()
+	// })
+	// if err != nil {
+	// 	r.logger.WithField("error", err).Errorf("copying primary key table failed")
+	// 	r.Ferry.ErrorHandler.Fatal("sharding", err)
+	// }
 
-	r.Ferry.Throttler.SetDisabled(false)
+	// r.Ferry.Throttler.SetDisabled(false)
 
-	r.Ferry.StopTargetVerifier()
+	// r.Ferry.StopTargetVerifier()
 
-	r.Ferry.EndCutover(cutoverStart)
+	// r.Ferry.EndCutover(cutoverStart)
 }
 
 func (r *ShardingFerry) deltaCopyJoinedTables() error {
