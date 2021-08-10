@@ -64,29 +64,31 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 
 	// svch := make(chan shardingValuesConfigUpdate)
 
-	var shardingValues []int64
-	shardingValues = config.ShardingValue
+	shardingValues := make(map[int64]bool)
+	for _, v := range config.ShardingValue {
+		shardingValues[v] = true
+	}
 
 	ferry.ManagementEndpointState.AddChangeListener(func(v interface{}) error {
 		vf := v.(map[string]interface{})
 		rawIds := vf["newsharding_values"].([]interface{})
 
-		ids := make([]int64, 0)
+		ids := make(map[int64]bool)
 		for _, k := range rawIds {
-			ids = append(ids, int64(k.(float64)))
+			ids[int64(k.(float64))] = true
 		}
 
 		shardingValues = ids
 		fmt.Printf("newShardingValue=%v\n", ids)
-		// svch <- shardingValuesConfigUpdate{ShardingValues: ids}
 		return nil
 	})
 
 	config.StreamFilter = &ShardedStreamFilter{
 		ShardingKey:   config.ShardingKey,
 		ShardingValue: config.ShardingValue,
-		ShardingValueFunc: func() interface{} {
-			return shardingValues
+		ShardingValueMatchFunc: func(value interface{}) bool {
+			_, found := shardingValues[value.(int64)]
+			return found
 		},
 	}
 

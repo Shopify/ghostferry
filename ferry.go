@@ -656,7 +656,7 @@ func (f *Ferry) Run() {
 			defer supportingServicesWg.Done()
 
 			s := &http.Server{
-				Addr: f.Config.ManagementEndpoint, // TODO f.Config.ManagementEndpoint
+				Addr: f.Config.ManagementEndpoint,
 				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					var input interface{}
 					err := json.NewDecoder(r.Body).Decode(&input)
@@ -669,7 +669,6 @@ func (f *Ferry) Run() {
 				}),
 				ReadTimeout:  10 * time.Second,
 				WriteTimeout: 10 * time.Second,
-				// MaxHeaderBytes: 1 << 20,
 			}
 			f.logger.WithField("address", f.Config.ManagementEndpoint).Info("starting management server")
 			log.Fatal(s.ListenAndServe())
