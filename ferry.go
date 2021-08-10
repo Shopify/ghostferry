@@ -783,26 +783,12 @@ func (f *Ferry) Run() {
 		}()
 	}
 
-	dataIteratorWg := &sync.WaitGroup{}
-	dataIteratorWg.Add(1)
-	go func() {
-		defer dataIteratorWg.Done()
-		f.DataIterator.Run(f.Tables.AsSlice())
-	}()
-
-	dataIteratorWg.Wait()
-
-	dataIteratorsWg := &sync.WaitGroup{}
-	for _, iterator := range f.DataIterators {
-		dataIteratorsWg.Add(1)
-
-		go func(iterator *DataIterator) {
-			defer dataIteratorsWg.Done()
-			iterator.Run(f.Tables.AsSlice())
-		}(iterator)
-	}
-
-	dataIteratorsWg.Wait()
+	// dataIteratorWg := &sync.WaitGroup{}
+	// dataIteratorWg.Add(1)
+	// go func() {
+	// 	defer dataIteratorWg.Done()
+	// 	f.DataIterator.Run(f.Tables.AsSlice())
+	// }()
 
 	f.ManagementEndpointState.AddChangeListener(func (p ManagementRequestPayload) error {
 		tenantId := p.ShardingValue.Value.(int64)
@@ -823,7 +809,24 @@ func (f *Ferry) Run() {
 		return nil
 	})
 
+	dataIteratorsWg := &sync.WaitGroup{}
+	for _, iterator := range f.DataIterators {
+		dataIteratorsWg.Add(1)
+
+		go func(iterator *DataIterator) {
+			defer dataIteratorsWg.Done()
+			iterator.Run(f.Tables.AsSlice())
+		}(iterator)
+	}
+
+	// dataIteratorWg.Wait()
+
+	dataIteratorsWg.Wait()
+
 	f.logger.Info("data copy is complete, waiting for cutover")
+
+	select {}
+
 	f.OverallState.Store(StateWaitingForCutover)
 	f.waitUntilAutomaticCutoverIsTrue()
 
