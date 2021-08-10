@@ -57,6 +57,7 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 		if d.StateTracker.IsTableComplete(tableName) {
 			// In a previous run, the table may have been completed.
 			// We don't need to reiterate those tables as it has already been done.
+			d.logger.WithField("table", tableName).Info("Table is complete. Removing from list of tables.")
 			delete(tablesWithData, table)
 		} else {
 			d.targetPaginationKeys.Store(tableName, maxPaginationKey)
@@ -78,6 +79,8 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 				}
 
 				logger := d.logger.WithField("table", table.String())
+
+				logger.Info("Processing table")
 
 				targetPaginationKeyInterface, found := d.targetPaginationKeys.Load(table.String())
 				if !found {
