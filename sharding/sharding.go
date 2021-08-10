@@ -62,8 +62,6 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 		Throttler: throttler,
 	}
 
-	var dataIterators []*ghostferry.DataIterator
-
 	for _, tenantId := range config.ShardingValues {
 		iterator := &ghostferry.DataIterator{
 			DB:                ferry.SourceDB,
@@ -83,10 +81,8 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 		}
 		iterator.CursorConfig.BuildSelect = config.CopyFilter.BuildSelectForTenant(tenantId)
 
-		dataIterators = append(dataIterators, iterator)
+		ferry.DataIterators[tenantId] = iterator
 	}
-
-	ferry.DataIterators = dataIterators
 
 	logger := logrus.WithField("tag", "sharding")
 

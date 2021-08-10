@@ -66,7 +66,7 @@ type Ferry struct {
 	TargetVerifier   *TargetVerifier
 
 	DataIterator *DataIterator
-	DataIterators []*DataIterator
+	DataIterators map[int64]*DataIterator
 	ShardingValues []int64
 	BatchWriter  *BatchWriter
 
@@ -534,6 +534,7 @@ func (f *Ferry) Initialize() (err error) {
 
 	f.BinlogWriter = f.NewBinlogWriter()
 	f.DataIterator = f.NewDataIterator()
+	f.DataIterators = make(map[int64]*DataIterator)
 	f.BatchWriter = f.NewBatchWriter()
 
 	if f.Config.VerifierType != "" {
@@ -800,6 +801,25 @@ func (f *Ferry) Run() {
 	}
 
 	dataIteratorsWg.Wait()
+
+	f.ManagementEndpointState.AddChangeListener(func (p ManagementRequestPayload) error {
+		tenantId := p.ShardingValue.Value.(int64)
+		switch p.ShardingValue.Operation {
+		case "add":
+			iterator := f.NewDataIterator()
+			iterator.CursorConfig.BuildSelect = f.CopyFilter.BuildSelectForTenant(tenantId)
+			f.DataIterators[tenantId] = iterator
+			iterator.Run(f.Tables.AsSlice())
+		case "delete":
+			delete(f.DataIterators, tenantId)
+		default:
+			panic("unknown operation!")
+		}
+
+		f.logger.WithField("new_value", f.DataIterators).Info("Updated DataIterators")
+
+		return nil
+	})
 
 	f.logger.Info("data copy is complete, waiting for cutover")
 	f.OverallState.Store(StateWaitingForCutover)
