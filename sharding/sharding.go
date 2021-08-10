@@ -62,10 +62,14 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 		Throttler: throttler,
 	}
 
+	logger := logrus.WithField("tag", "sharding")
+
 	shardingValues := make(map[int64]bool)
 	for _, v := range config.ShardingValue {
 		shardingValues[v] = true
 	}
+
+	logger.WithField("value", shardingValues).Info("ShardingValue for streaming")
 
 	ferry.ManagementEndpointState.AddChangeListener(func(p ghostferry.ManagementRequestPayload) error {
 		switch p.ShardingValue.Operation {
@@ -76,6 +80,9 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 		default:
 			panic("unknown operation!")
 		}
+
+		logger.WithField("new_value", shardingValues).Info("Updated ShardingValue")
+
 		return nil
 	})
 
@@ -87,8 +94,6 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 			return found
 		},
 	}
-
-	logger := logrus.WithField("tag", "sharding")
 
 	return &ShardingFerry{
 		Ferry:  ferry,
