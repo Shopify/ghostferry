@@ -792,14 +792,23 @@ func (f *Ferry) Run() {
 	// 	f.DataIterator.Run(f.Tables.AsSlice())
 	// }()
 
+	dataIteratorsWg := &sync.WaitGroup{}
+	dataIteratorsWg.Add(1) // So that it waits forever
+
 	f.ManagementEndpointState.AddChangeListener(func (p ManagementRequestPayload) error {
 		tenantId := int64(p.ShardingValue.Value.(float64))
 		switch p.ShardingValue.Operation {
 		case "add":
+			dataIteratorsWg.Add(1)
 			iterator := f.NewDataIterator()
 			iterator.CursorConfig.BuildSelect = f.CopyFilter.BuildSelectForTenant(tenantId)
 			f.DataIterators[tenantId] = iterator
-			iterator.Run(f.Tables.AsSlice())
+			go func(iterator *DataIterator) {
+				defer dataIteratorsWg.Done()
+				tables := f.Tables.AsSlice()
+				f.logger.WithField("tenant_id", tenantId).WithField("tables", tables).Info("Running iterator for tenant ID")
+				iterator.Run(tables)
+			}(iterator)
 		case "delete":
 			delete(f.DataIterators, tenantId)
 		default:
@@ -811,7 +820,6 @@ func (f *Ferry) Run() {
 		return nil
 	})
 
-	dataIteratorsWg := &sync.WaitGroup{}
 	for _, tenantId := range f.TenantIds {
 		dataIteratorsWg.Add(1)
 
@@ -833,7 +841,7 @@ func (f *Ferry) Run() {
 
 	f.logger.Info("data copy is complete, waiting for cutover")
 
-	select {}
+	// select {}
 
 	f.OverallState.Store(StateWaitingForCutover)
 	f.waitUntilAutomaticCutoverIsTrue()
