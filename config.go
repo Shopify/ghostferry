@@ -167,6 +167,21 @@ func (c *DatabaseConfig) Validate() error {
 	return nil
 }
 
+func (c *DatabaseConfig) SqlDBWithName(dbname string, logger *logrus.Entry) (*sql.DB, error) {
+	dbCfg, err := c.MySQLConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build database config: %s", err)
+	}
+
+	dbCfg.DBName = dbname
+
+	if logger != nil {
+		logger.WithField("dsn", MaskedDSN(dbCfg)).Info("connecting to database")
+	}
+
+	return sql.Open("mysql", dbCfg.FormatDSN(), c.Marginalia)
+}
+
 func (c *DatabaseConfig) SqlDB(logger *logrus.Entry) (*sql.DB, error) {
 	dbCfg, err := c.MySQLConfig()
 	if err != nil {

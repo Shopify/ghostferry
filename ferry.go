@@ -144,7 +144,13 @@ func (f *Ferry) NewDataIteratorWithoutStateTracker() *DataIterator {
 }
 
 func (f *Ferry) NewSourceBinlogStreamer() *BinlogStreamer {
-	return f.newBinlogStreamer(f.SourceDB, f.Config.Source, nil, nil, "source_binlog_streamer")
+	abc := f.newBinlogStreamer(f.SourceDB, f.Config.Source, nil, nil, "source_binlog_streamer")
+
+	abc.LoadTableFunc = func() (TableSchemaCache, error) {
+		return LoadTables(f.SourceDB, f.TableFilter, f.CompressedColumnsForVerification, f.IgnoredColumnsForVerification, f.ForceIndexForVerification, f.CascadingPaginationColumnConfig)
+	}
+
+	return abc
 }
 
 func (f *Ferry) NewTargetBinlogStreamer() (*BinlogStreamer, error) {

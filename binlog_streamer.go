@@ -48,6 +48,10 @@ type BinlogStreamer struct {
 
 	logger         *logrus.Entry
 	eventListeners []func([]DMLEvent) error
+
+	queryListeners []func(string) error
+
+	LoadTableFunc func() (TableSchemaCache, error)
 }
 
 func (s *BinlogStreamer) ensureLogger() {
@@ -190,6 +194,9 @@ func (s *BinlogStreamer) Run() {
 		isEventPositionValid := true
 
 		switch e := ev.Event.(type) {
+		case *replication.QueryEvent:
+			query = e.Query
+
 		case *replication.RotateEvent:
 			// This event is used to keep the "current binlog filename" of the binlog streamer in sync.
 			nextFilename = string(e.NextLogName)
@@ -266,6 +273,28 @@ func (s *BinlogStreamer) Run() {
 			// Here we also reset the query event as we are either at the beginning
 			// or the end of the current/next transaction. As such, the query will be
 			// reset following the next RowsQueryEvent before the corresponding RowsEvent(s)
+
+			if query != nil {
+				sql := string(query)
+				s.logger.WithField("sql", sql).Info("Query event; detected schema change")
+
+				if s.LoadTableFunc != nil {
+					s.TableSchema, err = s.LoadTableFunc()
+					if err != nil {
+						s.logger.WithError(err).Warn("failed to refresh schema!")
+					}
+				} else {
+					s.logger.Warn("missing LoadTableFunc")
+				}
+
+				for _, listener := range s.queryListeners {
+					err := listener(sql)
+					if err != nil {
+						panic(err)
+					}
+				}
+			}
+
 			query = nil
 		}
 
@@ -275,6 +304,10 @@ func (s *BinlogStreamer) Run() {
 			s.updateLastStreamedPosAndTime(evTimestamp, evPosition, evType, isEventPositionResumable)
 		}
 	}
+}
+
+func (s *BinlogStreamer) AddQueryListener(listener func(string) error) {
+	s.queryListeners = append(s.queryListeners, listener)
 }
 
 func (s *BinlogStreamer) AddEventListener(listener func([]DMLEvent) error) {
@@ -341,6 +374,8 @@ func (s *BinlogStreamer) updateLastStreamedPosAndTime(evTimestamp uint32, evPos 
 func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []byte) error {
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
+	s.logger.WithField("events", rowsEvent).Info("events!")
+
 	if ev.Header.LogPos == 0 {
 		// This shouldn't happen, as rows events always have a logpos.
 		s.logger.Panicf("logpos: %d %d %T", ev.Header.LogPos, ev.Header.Timestamp, ev.Event)
@@ -363,8 +398,10 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 		table = rewrittenTableName
 	}
 
+	// the problem: it doesn't know about new table like lhmn_products
 	tableFromSchemaCache := s.TableSchema.Get(db, table)
 	if tableFromSchemaCache == nil {
+		s.logger.Warnf("tableFromSchemaCache == nil for %s", table)
 		return nil
 	}
 
@@ -376,12 +413,18 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 	events := make([]DMLEvent, 0)
 
 	for _, dmlEv := range dmlEvs {
+		s.logger.WithField("dmlEv", dmlEv).Info("dmlEv")
+
 		if s.Filter != nil {
 			applicable, err := s.Filter.ApplicableEvent(dmlEv)
 			if err != nil {
 				s.logger.WithError(err).Error("failed to apply filter for event")
 				return err
 			}
+			s.logger.WithFields(logrus.Fields{
+				"applicable": applicable,
+				"table":      dmlEv.Table(),
+			}).Info("event applicable?")
 			if !applicable {
 				continue
 			}

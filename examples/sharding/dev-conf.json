@@ -3,8 +3,12 @@
   "ShardingValue": [1],
   "SourceDB": "gftest1",
   "TargetDB": "gftest2",
-  "IgnoredTables": [],
+  "StreamForever": true,
+  "IgnoredTables": [
+    "^lhma"
+  ],
   "ManagementEndpoint": "localhost:8081",
+  "SkipTargetVerification": true,
 
   "Source": {
     "Host": "127.0.0.1",

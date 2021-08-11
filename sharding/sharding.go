@@ -117,6 +117,21 @@ func (r *ShardingFerry) Initialize() error {
 		return err
 	}
 
+	targetDbWithName, err := r.Ferry.Target.SqlDBWithName(r.config.TargetDB, r.logger.WithField("dbname", "target"))
+	if err != nil {
+		return err
+	}
+
+	r.Ferry.BinlogStreamer.AddQueryListener(func(sql string) error {
+		_, err := targetDbWithName.Exec(sql)
+		if err != nil {
+			r.logger.WithError(err).Warn("Failed to apply query on target")
+		} else {
+			r.logger.WithField("sql", sql).Info("Applied DDL query on target")
+		}
+		return nil
+	})
+
 	return nil
 }
 
