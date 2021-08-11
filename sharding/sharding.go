@@ -64,30 +64,6 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 
 	ferry.TenantIds = config.ShardingValues
 
-	// ferry.DataIterators = make(map[int64]*ghostferry.DataIterator)
-
-	// for _, tenantId := range config.ShardingValues {
-	// 	iterator := &ghostferry.DataIterator{
-	// 		DB:                ferry.SourceDB,
-	// 		Concurrency:       ferry.Config.DataIterationConcurrency,
-	// 		SelectFingerprint: ferry.Config.VerifierType == ghostferry.VerifierTypeInline,
-
-	// 		ErrorHandler: ferry.ErrorHandler,
-	// 		CursorConfig: &ghostferry.CursorConfig{
-	// 			DB:        ferry.SourceDB,
-	// 			Throttler: ferry.Throttler,
-
-	// 			BatchSize:                 ferry.Config.DataIterationBatchSize,
-	// 			BatchSizePerTableOverride: ferry.Config.DataIterationBatchSizePerTableOverride,
-	// 			ReadRetries:               ferry.Config.DBReadRetries,
-	// 			},
-	// 		StateTracker: ferry.StateTracker,
-	// 	}
-	// 	iterator.CursorConfig.BuildSelect = config.CopyFilter.BuildSelectForTenant(tenantId)
-
-	// 	ferry.DataIterators[tenantId] = iterator
-	// }
-
 	logger := logrus.WithField("tag", "sharding")
 
 	shardingValues := make(map[int64]bool)
