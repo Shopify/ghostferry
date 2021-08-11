@@ -97,6 +97,8 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 			return fmt.Errorf("during exec query near paginationKey %v -> %v (%s): %v", startPaginationKeypos, endPaginationKeypos, query, err)
 		}
 
+		w.logger.WithField("len(values)", len(values)).Info("Inserted no. of. values")
+
 		if w.InlineVerifier != nil {
 			mismatches, err := w.InlineVerifier.CheckFingerprintInline(tx, db, table, batch, w.EnforceInlineVerification)
 			if err != nil {

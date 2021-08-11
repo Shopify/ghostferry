@@ -192,6 +192,8 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos uint64
 		"args": args,
 	})
 
+	logger.Info("Prepared query")
+
 	// This query must be a prepared query. If it is not, querying will use
 	// MySQL's plain text interface, which will scan all values into []uint8
 	// if we give it []interface{}.
@@ -263,7 +265,7 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos uint64
 		table:              c.Table,
 	}
 
-	logger.Debugf("found %d rows", batch.Size())
+	logger.Info("found %d rows", batch.Size())
 
 	return
 }
