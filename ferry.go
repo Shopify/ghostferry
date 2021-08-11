@@ -802,6 +802,7 @@ func (f *Ferry) Run() {
 			dataIteratorsWg.Add(1)
 			iterator := f.NewDataIterator()
 			iterator.CursorConfig.BuildSelect = f.CopyFilter.BuildSelectForTenant(tenantId)
+			iterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
 			f.DataIterators[tenantId] = iterator
 			go func(iterator *DataIterator) {
 				defer dataIteratorsWg.Done()
@@ -825,6 +826,7 @@ func (f *Ferry) Run() {
 
 		iterator := f.NewDataIterator()
 		iterator.CursorConfig.BuildSelect = f.CopyFilter.BuildSelectForTenant(tenantId)
+		iterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
 		f.DataIterators[tenantId] = iterator
 
 		go func(tenantId int64, iterator *DataIterator) {
