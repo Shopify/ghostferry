@@ -800,7 +800,7 @@ func (f *Ferry) Run() {
 		switch p.ShardingValue.Operation {
 		case "add":
 			dataIteratorsWg.Add(1)
-			iterator := f.NewDataIterator()
+			iterator := f.NewDataIteratorWithoutStateTracker()
 			iterator.CursorConfig.BuildSelect = f.CopyFilter.BuildSelectForTenant(tenantId)
 			iterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
 			f.DataIterators[tenantId] = iterator
@@ -824,7 +824,7 @@ func (f *Ferry) Run() {
 	for _, tenantId := range f.TenantIds {
 		dataIteratorsWg.Add(1)
 
-		iterator := f.NewDataIterator()
+		iterator := f.NewDataIteratorWithoutStateTracker()
 		iterator.CursorConfig.BuildSelect = f.CopyFilter.BuildSelectForTenant(tenantId)
 		iterator.AddBatchListener(f.BatchWriter.WriteRowBatch)
 		f.DataIterators[tenantId] = iterator
