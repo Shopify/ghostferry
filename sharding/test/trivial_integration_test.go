@@ -29,7 +29,7 @@ func selectiveFerry(tenantId interface{}) *testhelpers.TestFerry {
 
 	ferry.Config.StreamFilter = &sharding.ShardedStreamFilter{
 		ShardingKey:   "tenant_id",
-		ShardingValue: tenantId,
+		ShardingValues: []int64{tenantId.(int64)},
 	}
 
 	ferry.Config.TableFilter = &sharding.ShardedTableFilter{

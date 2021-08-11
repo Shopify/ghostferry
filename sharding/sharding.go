@@ -90,7 +90,7 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 
 	config.StreamFilter = &ShardedStreamFilter{
 		ShardingKey:   config.ShardingKey,
-		ShardingValue: config.ShardingValue,
+		ShardingValues: config.ShardingValues,
 		ShardingValueMatchFunc: func(value interface{}) bool {
 			_, found := shardingValues[value.(int64)]
 			return found
