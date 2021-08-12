@@ -1,11 +1,4 @@
-require 'bundler/inline'
-
-gemfile do
-  source 'https://rubygems.org'
-  gem 'lhm'
-  gem 'activerecord'
-  gem 'mysql2'
-end
+require 'bundler/setup'
 
 require 'lhm'
 require 'active_record'

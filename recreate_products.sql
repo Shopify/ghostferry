@@ -9,11 +9,3 @@ CREATE TABLE IF NOT EXISTS `products` (
 
 CREATE INDEX index_products_on_shop_id ON products (shop_id);
 
-
-insert into products (shop_id, handle) values (3, 'foobar');
-
-insert into products (shop_id, handle) values (1, 'foobar');
-insert into products (shop_id, handle) values (1, 'foobar');
-insert into products (shop_id, handle) values (1, 'foobar');
-
-insert into products (shop_id, handle) values (5, 'foobar');

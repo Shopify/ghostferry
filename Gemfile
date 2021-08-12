@@ -13,3 +13,7 @@ group :development do
   gem "tqdm"
   gem "pry-byebug"
 end
+
+gem 'lhm'
+gem 'activerecord'
+gem 'mysql2'

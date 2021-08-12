@@ -178,11 +178,13 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 			return tableSchemaCache, err
 		}
 
+		dbLog.WithField("show tables", tableNames).Info("SHOW TABLES RUN")
+
 		var tableSchemas []*TableSchema
 
 		for _, table := range tableNames {
 			tableLog := dbLog.WithField("table", table)
-			tableLog.Debug("fetching table schema")
+			tableLog.Info("fetching table schema")
 			tableSchema, err := schema.NewTableFromSqlDB(db.DB, dbname, table)
 			if err != nil {
 				tableLog.WithError(err).Error("cannot fetch table schema from source db")

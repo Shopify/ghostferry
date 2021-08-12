@@ -1,0 +1,7 @@
+#/bin/bash
+set -ex
+
+mysql -h 127.0.0.1 -P 29291 -u root gftest1 < recreate_products.sql
+mysql -h 127.0.0.1 -P 29291 -u root gftest1 < insert_prod.sql
+
+mysql -h 127.0.0.1 -P 29292 -u root gftest2 < recreate_products.sql
