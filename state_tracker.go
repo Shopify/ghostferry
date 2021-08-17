@@ -40,8 +40,6 @@ type SerializableState struct {
 	BinlogVerifyStore                         BinlogVerifySerializedStore
 	LastStoredBinlogPositionForInlineVerifier mysql.Position
 	LastStoredBinlogPositionForTargetVerifier mysql.Position
-	TotalRowsPerTable                         map[string]uint64 `json:",omitempty"`
-	TotalBytesPerTable                        map[string]uint64 `json:",omitempty"`
 }
 
 func (s *SerializableState) MinSourceBinlogPosition() mysql.Position {
@@ -101,8 +99,6 @@ type StateTracker struct {
 	// as it confuses the focus of this struct.
 	iterationSpeedLog       *ring.Ring
 	rowStatsWrittenPerTable map[string]RowStats
-	totalRowsPerTable       map[string]uint64
-	totalBytesPerTable      map[string]uint64
 }
 
 func NewStateTracker(speedLogCount int) *StateTracker {
@@ -114,8 +110,6 @@ func NewStateTracker(speedLogCount int) *StateTracker {
 		completedTables:              make(map[string]bool),
 		iterationSpeedLog:            newSpeedLogRing(speedLogCount),
 		rowStatsWrittenPerTable:      make(map[string]RowStats),
-		totalRowsPerTable:            make(map[string]uint64),
-		totalBytesPerTable:           make(map[string]uint64),
 	}
 }
 
@@ -128,26 +122,7 @@ func NewStateTrackerFromSerializedState(speedLogCount int, serializedState *Seri
 	s.lastWrittenBinlogPosition = serializedState.LastWrittenBinlogPosition
 	s.lastStoredBinlogPositionForInlineVerifier = serializedState.LastStoredBinlogPositionForInlineVerifier
 	s.lastStoredBinlogPositionForTargetVerifier = serializedState.LastStoredBinlogPositionForTargetVerifier
-
-	// TODO: talk with shuhao on serialized states
-	s.totalBytesPerTable = serializedState.TotalBytesPerTable
-	s.totalRowsPerTable = serializedState.TotalRowsPerTable
 	return s
-}
-
-func (s *StateTracker) UpdateTotalRowsPerTable(table string, totalRows uint64) {
-	s.CopyRWMutex.RLock()
-	defer s.CopyRWMutex.RUnlock()
-
-	s.totalRowsPerTable[table] = totalRows
-
-}
-
-func (s *StateTracker) UpdateTotalBytesPerTable(table string, totalBytes uint64) {
-	s.CopyRWMutex.RLock()
-	defer s.CopyRWMutex.RUnlock()
-
-	s.totalBytesPerTable[table] = totalBytes
 }
 
 func (s *StateTracker) UpdateLastResumableSourceBinlogPosition(pos mysql.Position) {
@@ -185,14 +160,6 @@ func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginatio
 	s.updateRowStatsForTable(table, rowStats)
 
 	s.updateSpeedLog(deltaPaginationKey)
-}
-
-func (s StateTracker) TotalRowsPerTable(table string) uint64 {
-	return s.totalRowsPerTable[table]
-}
-
-func (s StateTracker) TotalBytesPerTable(table string) uint64 {
-	return s.totalBytesPerTable[table]
 }
 
 func (s *StateTracker) RowStatsWrittenPerTable() map[string]RowStats {
@@ -301,8 +268,6 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, bin
 		LastWrittenBinlogPosition:                 s.lastWrittenBinlogPosition,
 		LastStoredBinlogPositionForInlineVerifier: s.lastStoredBinlogPositionForInlineVerifier,
 		LastStoredBinlogPositionForTargetVerifier: s.lastStoredBinlogPositionForTargetVerifier,
-		TotalRowsPerTable:                         s.totalRowsPerTable,
-		TotalBytesPerTable:                        s.totalBytesPerTable,
 	}
 
 	if binlogVerifyStore != nil {

@@ -482,8 +482,6 @@ func (f *Ferry) Initialize() (err error) {
 		}
 	}
 
-	f.initializeTotalRowsAndBytes()
-
 	if f.Config.DataIterationBatchSizePerTableOverride != nil {
 		err = f.Config.DataIterationBatchSizePerTableOverride.UpdateBatchSizes(f.SourceDB, f.Tables)
 		if err != nil {
@@ -965,6 +963,7 @@ func (f *Ferry) Progress() *Progress {
 	}
 
 	tables := f.Tables.AsSlice()
+	totalRowsPerTable, totalBytesPerTable := f.GetTotalRowsAndBytesMap()
 
 	for _, table := range tables {
 		var currentAction string
@@ -989,8 +988,8 @@ func (f *Ferry) Progress() *Progress {
 			BatchSize:                   f.DataIterator.CursorConfig.GetBatchSize(table.Schema, table.Name),
 			RowsWritten:                 rowWrittenStats.NumRows,
 			BytesWritten:                rowWrittenStats.NumBytes,
-			TotalBytes:                  f.StateTracker.TotalBytesPerTable(tableName),
-			TotalRows:                   f.StateTracker.TotalRowsPerTable(tableName),
+			TotalBytes:                  totalBytesPerTable[tableName],
+			TotalRows:                   totalRowsPerTable[tableName],
 		}
 	}
 
@@ -1163,7 +1162,10 @@ func (f *Ferry) checkSourceForeignKeyConstraints() error {
 	return nil
 }
 
-func (f *Ferry) initializeTotalRowsAndBytes() {
+func (f *Ferry) GetTotalRowsAndBytesMap() (totalRowsPerTable map[string]uint64, totalBytesPerTable map[string]uint64) {
+	totalRowsPerTable = make(map[string]uint64)
+	totalBytesPerTable = make(map[string]uint64)
+
 	for _, table := range f.Tables {
 		query := fmt.Sprintf(`
 		SELECT table_rows, data_length
@@ -1185,14 +1187,13 @@ func (f *Ferry) initializeTotalRowsAndBytes() {
 			err = rows.Scan(&totalRows, &totalBytes)
 
 			if err != nil {
-				f.StateTracker.UpdateTotalBytesPerTable(table.Name, 0)
-				f.StateTracker.UpdateTotalRowsPerTable(table.Name, 0)
+				totalRowsPerTable[table.String()] = 0
+				totalBytesPerTable[table.String()] = 0
 			} else {
-				f.StateTracker.UpdateTotalBytesPerTable(table.String(), uint64(totalBytes))
-				f.StateTracker.UpdateTotalRowsPerTable(table.String(), uint64(totalRows))
+				totalRowsPerTable[table.String()] = uint64(totalRows)
+				totalBytesPerTable[table.String()] = uint64(totalBytes)
 			}
-
 		}
 	}
-
+	return totalRowsPerTable, totalBytesPerTable
 }
