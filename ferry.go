@@ -482,6 +482,8 @@ func (f *Ferry) Initialize() (err error) {
 		}
 	}
 
+	f.initializeTotalRowsAndBytes()
+
 	if f.Config.DataIterationBatchSizePerTableOverride != nil {
 		err = f.Config.DataIterationBatchSizePerTableOverride.UpdateBatchSizes(f.SourceDB, f.Tables)
 		if err != nil {
@@ -987,6 +989,8 @@ func (f *Ferry) Progress() *Progress {
 			BatchSize:                   f.DataIterator.CursorConfig.GetBatchSize(table.Schema, table.Name),
 			RowsWritten:                 rowWrittenStats.NumRows,
 			BytesWritten:                rowWrittenStats.NumBytes,
+			TotalBytes:                  f.StateTracker.TotalBytesPerTable(tableName),
+			TotalRows:                   f.StateTracker.TotalRowsPerTable(tableName),
 		}
 	}
 
@@ -1157,4 +1161,38 @@ func (f *Ferry) checkSourceForeignKeyConstraints() error {
 	}
 
 	return nil
+}
+
+func (f *Ferry) initializeTotalRowsAndBytes() {
+	for _, table := range f.Tables {
+		query := fmt.Sprintf(`
+		SELECT table_rows, data_length
+		FROM information_schema.tables
+		WHERE table_schema='%s'
+		AND table_name='%s'
+		`,
+			table.Schema,
+			table.Name,
+		)
+
+		rows, err := f.SourceDB.Query(query)
+		defer rows.Close()
+
+		var totalRows int
+		var totalBytes int
+
+		for rows.Next() {
+			err = rows.Scan(&totalRows, &totalBytes)
+
+			if err != nil {
+				f.StateTracker.UpdateTotalBytesPerTable(table.Name, 0)
+				f.StateTracker.UpdateTotalRowsPerTable(table.Name, 0)
+			} else {
+				f.StateTracker.UpdateTotalBytesPerTable(table.Name, uint64(totalBytes))
+				f.StateTracker.UpdateTotalRowsPerTable(table.Name, uint64(totalRows))
+			}
+
+		}
+	}
+
 }
