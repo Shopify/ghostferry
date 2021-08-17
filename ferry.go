@@ -1188,8 +1188,8 @@ func (f *Ferry) initializeTotalRowsAndBytes() {
 				f.StateTracker.UpdateTotalBytesPerTable(table.Name, 0)
 				f.StateTracker.UpdateTotalRowsPerTable(table.Name, 0)
 			} else {
-				f.StateTracker.UpdateTotalBytesPerTable(table.Name, uint64(totalBytes))
-				f.StateTracker.UpdateTotalRowsPerTable(table.Name, uint64(totalRows))
+				f.StateTracker.UpdateTotalBytesPerTable(table.String(), uint64(totalBytes))
+				f.StateTracker.UpdateTotalRowsPerTable(table.String(), uint64(totalRows))
 			}
 
 		}
