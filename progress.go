@@ -17,6 +17,8 @@ type TableProgress struct {
 	RowsWritten                 uint64
 	BatchSize                   uint64
 	BytesWritten                uint64
+	TotalBytes                  uint64
+	TotalRows                   uint64
 }
 
 type Progress struct {

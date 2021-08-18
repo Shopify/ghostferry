@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	"context"
+	sqlorig "database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -963,6 +964,11 @@ func (f *Ferry) Progress() *Progress {
 	}
 
 	tables := f.Tables.AsSlice()
+	totalRowsPerTable, totalBytesPerTable, err := f.GetTotalRowsAndBytesMap()
+
+	if err != nil {
+		f.logger.Error(err)
+	}
 
 	for _, table := range tables {
 		var currentAction string
@@ -987,6 +993,8 @@ func (f *Ferry) Progress() *Progress {
 			BatchSize:                   f.DataIterator.CursorConfig.GetBatchSize(table.Schema, table.Name),
 			RowsWritten:                 rowWrittenStats.NumRows,
 			BytesWritten:                rowWrittenStats.NumBytes,
+			TotalBytes:                  totalBytesPerTable[tableName],
+			TotalRows:                   totalRowsPerTable[tableName],
 		}
 	}
 
@@ -1157,4 +1165,44 @@ func (f *Ferry) checkSourceForeignKeyConstraints() error {
 	}
 
 	return nil
+}
+
+func (f *Ferry) GetTotalRowsAndBytesMap() (totalRowsPerTable map[string]uint64, totalBytesPerTable map[string]uint64, err error) {
+	totalRowsPerTable = make(map[string]uint64)
+	totalBytesPerTable = make(map[string]uint64)
+
+	for _, table := range f.Tables {
+		query := fmt.Sprintf(`
+		SELECT table_rows, data_length
+		FROM information_schema.tables
+		WHERE table_schema='%s'
+		AND table_name='%s'
+		`,
+			table.Schema,
+			table.Name,
+		)
+
+		rows, err := f.SourceDB.Query(query)
+		if err != nil {
+			return totalRowsPerTable, totalBytesPerTable, err
+		}
+		defer rows.Close()
+
+		var totalRows sqlorig.NullInt64
+		var totalBytes sqlorig.NullInt64
+
+		for rows.Next() {
+			if err = rows.Scan(&totalRows, &totalBytes); err != nil {
+				return totalRowsPerTable, totalBytesPerTable, err
+			}
+			if totalRows.Valid {
+				totalRowsPerTable[table.String()] = uint64(totalRows.Int64)
+			}
+
+			if totalBytes.Valid {
+				totalBytesPerTable[table.String()] = uint64(totalBytes.Int64)
+			}
+		}
+	}
+	return totalRowsPerTable, totalBytesPerTable, nil
 }
