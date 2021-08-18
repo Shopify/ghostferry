@@ -964,7 +964,11 @@ func (f *Ferry) Progress() *Progress {
 	}
 
 	tables := f.Tables.AsSlice()
-	totalRowsPerTable, totalBytesPerTable := f.GetTotalRowsAndBytesMap()
+	totalRowsPerTable, totalBytesPerTable, err := f.GetTotalRowsAndBytesMap()
+
+	if err != nil {
+		f.logger.Error(err)
+	}
 
 	for _, table := range tables {
 		var currentAction string
@@ -1163,7 +1167,7 @@ func (f *Ferry) checkSourceForeignKeyConstraints() error {
 	return nil
 }
 
-func (f *Ferry) GetTotalRowsAndBytesMap() (totalRowsPerTable map[string]uint64, totalBytesPerTable map[string]uint64) {
+func (f *Ferry) GetTotalRowsAndBytesMap() (totalRowsPerTable map[string]uint64, totalBytesPerTable map[string]uint64, err error) {
 	totalRowsPerTable = make(map[string]uint64)
 	totalBytesPerTable = make(map[string]uint64)
 
@@ -1180,7 +1184,7 @@ func (f *Ferry) GetTotalRowsAndBytesMap() (totalRowsPerTable map[string]uint64, 
 
 		rows, err := f.SourceDB.Query(query)
 		if err != nil {
-			return
+			return totalRowsPerTable, totalBytesPerTable, err
 		}
 		defer rows.Close()
 
@@ -1189,22 +1193,16 @@ func (f *Ferry) GetTotalRowsAndBytesMap() (totalRowsPerTable map[string]uint64, 
 
 		for rows.Next() {
 			if err = rows.Scan(&totalRows, &totalBytes); err != nil {
-				totalRowsPerTable[table.String()] = 0
-				totalBytesPerTable[table.String()] = 0
-				continue
+				return totalRowsPerTable, totalBytesPerTable, err
 			}
 			if totalRows.Valid {
 				totalRowsPerTable[table.String()] = uint64(totalRows.Int64)
-			} else {
-				totalRowsPerTable[table.String()] = 0
 			}
 
 			if totalBytes.Valid {
 				totalBytesPerTable[table.String()] = uint64(totalBytes.Int64)
-			} else {
-				totalBytesPerTable[table.String()] = 0
 			}
 		}
 	}
-	return totalRowsPerTable, totalBytesPerTable
+	return totalRowsPerTable, totalBytesPerTable, nil
 }

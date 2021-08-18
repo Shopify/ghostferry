@@ -24,6 +24,8 @@ class CallbacksTest < GhostferryTestCase
     count = result.first["cnt"]
     assert count > 0, "There should be some rows on the target, not 0."
     assert_equal count, progress.last["Tables"]["gftest.test_table_1"]["RowsWritten"]
+    assert progress.last["Tables"]["gftest.test_table_1"]["TotalRows"] > 0
+    assert progress.last["Tables"]["gftest.test_table_1"]["TotalBytes"] > 0
 
     # data column is 32 characters so each row should be at least 32 bytes
     assert count * 32 < progress.last["Tables"]["gftest.test_table_1"]["BytesWritten"], "Each row should have more than 32 bytes"
@@ -72,6 +74,8 @@ class CallbacksTest < GhostferryTestCase
     assert_equal 1111, progress.last["Tables"]["gftest.test_table_1"]["LastSuccessfulPaginationKey"]
     assert_equal 1111, progress.last["Tables"]["gftest.test_table_1"]["TargetPaginationKey"]
     assert_equal "completed", progress.last["Tables"]["gftest.test_table_1"]["CurrentAction"]
+    assert progress.last["Tables"]["gftest.test_table_1"]["TotalRows"] > 0
+    assert progress.last["Tables"]["gftest.test_table_1"]["TotalBytes"] > 0
 
     result = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
     count = result.first["cnt"]
