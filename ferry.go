@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	"context"
+	sqlorig "database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1178,20 +1179,30 @@ func (f *Ferry) GetTotalRowsAndBytesMap() (totalRowsPerTable map[string]uint64, 
 		)
 
 		rows, err := f.SourceDB.Query(query)
+		if err != nil {
+			return
+		}
 		defer rows.Close()
 
-		var totalRows int
-		var totalBytes int
+		var totalRows sqlorig.NullInt64
+		var totalBytes sqlorig.NullInt64
 
 		for rows.Next() {
-			err = rows.Scan(&totalRows, &totalBytes)
-
-			if err != nil {
+			if err = rows.Scan(&totalRows, &totalBytes); err != nil {
 				totalRowsPerTable[table.String()] = 0
 				totalBytesPerTable[table.String()] = 0
+				continue
+			}
+			if totalRows.Valid {
+				totalRowsPerTable[table.String()] = uint64(totalRows.Int64)
 			} else {
-				totalRowsPerTable[table.String()] = uint64(totalRows)
-				totalBytesPerTable[table.String()] = uint64(totalBytes)
+				totalRowsPerTable[table.String()] = 0
+			}
+
+			if totalBytes.Valid {
+				totalBytesPerTable[table.String()] = uint64(totalBytes.Int64)
+			} else {
+				totalBytesPerTable[table.String()] = 0
 			}
 		}
 	}
