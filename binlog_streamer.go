@@ -230,6 +230,8 @@ func (s *BinlogStreamer) Run() {
 			// the full query that was executed on the master (with annotations)
 			// that is otherwise not possible to reconstruct
 			query = ev.Event.(*replication.RowsQueryEvent).Query
+		// case *replication.TableMapEvent:
+		// 	e.Dump(os.Stdout)
 		case *replication.RowsEvent:
 			err = s.handleRowsEvent(ev, query)
 			if err != nil {

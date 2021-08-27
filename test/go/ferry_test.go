@@ -1,6 +1,7 @@
 package test
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/Shopify/ghostferry"
@@ -16,6 +17,38 @@ type FerryTestSuite struct {
 
 func (t *FerryTestSuite) SetupTest() {
 	t.GhostferryUnitTestSuite.SetupTest()
+}
+
+func (t *FerryTestSuite) TestSourceTargetDiffSchema() {
+	t.SeedSourceDB(1)
+	t.SeedTargetDB(0)
+
+	ferry := testhelpers.NewTestFerry().Ferry // make new ferry that re-uses the same targetDB as t.Ferry
+
+	err := ferry.Initialize()
+	t.Require().Nil(err)
+
+	_, err = ferry.TargetDB.Exec("ALTER TABLE gftest.test_table_1 ADD omglol varchar(255)")
+	t.Require().Nil(err)
+
+	err = ferry.Initialize()
+	t.Require().Nil(err)
+
+	ferry.Start()
+
+	ferry.AutomaticCutover = true
+
+	copyWG := &sync.WaitGroup{}
+	copyWG.Add(1)
+	go func() {
+		defer copyWG.Done()
+		ferry.Run()
+	}()
+
+	ferry.WaitUntilRowCopyIsComplete()
+	ferry.FlushBinlogAndStopStreaming()
+
+	copyWG.Wait()
 }
 
 func (t *FerryTestSuite) TestReadOnlyDatabaseFailsInitialization() {
