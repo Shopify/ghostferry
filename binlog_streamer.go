@@ -244,21 +244,19 @@ func (s *BinlogStreamer) Run() {
 				panic(errStr)
 			}
 
-			tableId := e.TableID
-			tableName := string(e.Table)
+			tableIdFromCache, found := s.TableIdCache[table]
+			if found && e.TableID != tableIdFromCache {
+				s.logger.Infof("Table id: %d, for table: %v", e.TableID, table)
 
-			tableIdFromCache, found := s.TableIdCache[tableName]
-			if !found || (tableId != tableIdFromCache) {
-				s.logger.Infof("Table id: %d, for table: %v", tableId, tableName)
-
-				tableSchema, err := s.TableSchemaLoader.LoadTable(s.DB.DB, db, tableName)
+				tableSchema, err := s.TableSchemaLoader.LoadTable(s.DB.DB, db, table)
 				if err != nil {
 					panic(err)
 				}
 
-				s.TableSchema[tableName] = tableSchema
-				s.logger.WithField("table", tableName).Info("Reloaded table schema")
+				s.TableSchema[table] = tableSchema
+				s.logger.WithField("table", table).Info("Reloaded table schema")
 			}
+			s.TableIdCache[table] = e.TableID
 
 			e.Dump(os.Stdout)
 		case *replication.RowsQueryEvent:
