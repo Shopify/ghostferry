@@ -1,0 +1,51 @@
+{
+  "ShardingKey": "tenant_id",
+  "ShardingValue": 1,
+  "ShardingValues": [1],
+  "StreamForever": true,
+
+  "SourceDB": "source",
+  "TargetDB": "target",
+
+  "Source": {
+    "Host": "127.0.0.1",
+    "Port": 29291,
+    "User": "root",
+    "Pass": ""
+  },
+
+  "Target": {
+    "Host": "127.0.0.1",
+    "Port": 29292,
+    "User": "root",
+    "Pass": ""
+  },
+
+  "CascadingPaginationColumnConfig": {
+    "FallbackColumn": "id"
+  },
+
+  "ProgressCallback": {
+    "URI": "",
+    "Payload": ""
+  },
+  "ProgressReportFrequency": 3000,
+
+  "VerifierType": "NoVerification",
+  "SkipTargetVerification": true,
+  "DataIterationConcurrency": 16,
+  "DataIterationBatchSizePerTableOverride": {
+    "MinRowSize": 1000,
+    "MaxRowSize": 10000,
+    "ControlPoints": {
+      "1000": 1000,
+      "10000": 200
+    }
+  },
+
+  "DumpStateOnSignal": true,
+
+  "DumpStateToStdoutOnError": true,
+
+  "IgnoredTables": []
+}

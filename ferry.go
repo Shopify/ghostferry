@@ -519,6 +519,7 @@ func (f *Ferry) Initialize() (err error) {
 	// The iterative verifier needs the binlog streamer so this has to be first.
 	// Eventually this can be moved below the verifier initialization.
 	f.BinlogStreamer = f.NewSourceBinlogStreamer()
+	f.BinlogStreamer.ReloadTableFunc = f.ReloadTableFunc
 
 	if !f.Config.SkipTargetVerification {
 		targetBinlogStreamer, err := f.NewTargetBinlogStreamer()
@@ -1158,6 +1159,10 @@ func (f *Ferry) ReportState() {
 	if err != nil {
 		f.logger.Panicf("failed to post state to callback: %s with err: %s", callback, err)
 	}
+}
+
+func (f *Ferry) ReloadTableFunc() (TableSchemaCache, error){
+	return LoadTables(f.SourceDB, f.TableFilter, f.CompressedColumnsForVerification, f.IgnoredColumnsForVerification, f.ForceIndexForVerification, f.CascadingPaginationColumnConfig)
 }
 
 func (f *Ferry) waitUntilAutomaticCutoverIsTrue() {

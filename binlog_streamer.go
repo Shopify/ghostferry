@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	sqlorig "database/sql"
 	"fmt"
+	"os"
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -22,7 +23,8 @@ type BinlogStreamer struct {
 	MyServerId   uint32
 	ErrorHandler ErrorHandler
 	Filter       StreamFilter
-
+	ReloadTableFunc func() (TableSchemaCache, error)
+	TableIntersects TableSchemaCache
 	TableSchema TableSchemaCache
 	LogTag      string
 
@@ -224,6 +226,37 @@ func (s *BinlogStreamer) Run() {
 			// the mysql source. See:
 			// https://github.com/percona/percona-server/blob/93165de1451548ff11dd32c3d3e5df0ff28cfcfa/sql/rpl_binlog_sender.cc#L1020-L1026
 			isEventPositionValid = ev.Header.LogPos != 0
+		case *replication.TableMapEvent:
+			tableMapEvent := ev.Event.(*replication.TableMapEvent)
+			db := string(tableMapEvent.Schema)
+			if rewrittenDBName, exists := s.DatabaseRewrites[db]; exists {
+				db = rewrittenDBName
+			}
+
+			table := string(tableMapEvent.Table)
+			if rewrittenTableName, exists := s.TableRewrites[table]; exists {
+				table = rewrittenTableName
+			}
+
+			tableFromSchemaCache := s.TableSchema.Get(db, table)
+			if tableFromSchemaCache == nil {
+				errStr := fmt.Sprintf("Table %s not found in cache", tableFromSchemaCache)
+				panic(errStr)
+			}
+
+			columnCount := e.ColumnCount
+			if int(columnCount) != len(tableFromSchemaCache.Columns) {
+				s.logger.Infof("Columns differ in table %s", table)
+				s.logger.Infof("New columns: %d", columnCount)
+				s.logger.Infof("Cached columns: %d", len(tableFromSchemaCache.Columns))
+				newTableSchemaCache, err := s.ReloadTableFunc()
+				if err != nil {
+					panic("Error reloading tables")
+				}
+				s.TableSchema = newTableSchemaCache
+				s.logger.Info("Reloaded table schema")
+			}
+			e.Dump(os.Stdout)
 		case *replication.RowsQueryEvent:
 			// A RowsQueryEvent will always precede the corresponding RowsEvent
 			// if binlog_rows_query_log_events is enabled, and is used to get
@@ -383,6 +416,7 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 				return err
 			}
 			if !applicable {
+				s.logger.Info("Inapplicable event")
 				continue
 			}
 		}
