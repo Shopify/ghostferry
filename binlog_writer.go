@@ -21,6 +21,8 @@ type BinlogWriter struct {
 	ErrorHandler ErrorHandler
 	StateTracker *StateTracker
 
+	TableSchemaLoader TableSchemaLoader
+
 	binlogEventBuffer chan DMLEvent
 	// Useful for debugging binlog writer lag, if diverged from binlog streamer lag
 	lastProcessedEventTime time.Time
@@ -95,23 +97,21 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 			eventTableName = targetTableName
 		}
 
-		// tableName => lastTableSchemaSeed
+		dbTableKey := fmt.Sprintf("%s.%s", eventDatabaseName, eventTableName)
 
-		// lastTableSchemaSeed != e.schema
-		//   reload target??
-
-		// target = (id, shop_id, blah)
-		// source = (id, shop_id, blah)
-
-		table, found := b.lastSeenSchemaByTable[fmt.Sprintf("%s.%s", eventDatabaseName, eventTableName)]
-		if found {
-			if table != ev.TableSchema() {
-				// reload and compare again
-				// return fmt.Errorf("incompatible!")
+		table, found := b.lastSeenSchemaByTable[dbTableKey]
+		if found && table != ev.TableSchema() {
+			tableSchema, err := b.TableSchemaLoader.LoadTable(b.DB.DB, eventDatabaseName, eventTableName)
+			if err != nil {
+				return err
 			}
-		} else {
-			b.lastSeenSchemaByTable[fmt.Sprintf("%s.%s", eventDatabaseName, eventTableName)] = e.table
+
+			if tableSchema != ev.TableSchema() {
+				return fmt.Errorf("source schema does not match target schema")
+			}
 		}
+
+		b.lastSeenSchemaByTable[dbTableKey] = ev.TableSchema()
 
 		sqlStmt, err := ev.AsSQLString(eventDatabaseName, eventTableName)
 		if err != nil {

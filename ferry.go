@@ -538,6 +538,9 @@ func (f *Ferry) Initialize() (err error) {
 	}
 
 	f.BinlogWriter = f.NewBinlogWriter()
+	f.BinlogWriter.TableSchemaLoader = TableSchemaLoader{
+		f.CompressedColumnsForVerification, f.IgnoredColumnsForVerification, f.ForceIndexForVerification,
+	}
 	f.DataIterator = f.NewDataIterator()
 	if f.DataIterators == nil {
 		f.DataIterators = make(map[int64]*DataIterator)
