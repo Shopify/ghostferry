@@ -18,15 +18,15 @@ import (
 const caughtUpThreshold = 10 * time.Second
 
 type BinlogStreamer struct {
-	DB           *sql.DB
-	DBConfig     *DatabaseConfig
-	MyServerId   uint32
-	ErrorHandler ErrorHandler
-	Filter       StreamFilter
-	ReloadTableFunc func() (TableSchemaCache, error)
-	TableIdCache map[string]uint64
-	TableSchema TableSchemaCache
-	LogTag      string
+	DB                *sql.DB
+	DBConfig          *DatabaseConfig
+	MyServerId        uint32
+	ErrorHandler      ErrorHandler
+	Filter            StreamFilter
+	TableSchemaLoader TableSchemaLoader
+	TableIdCache      map[string]uint64
+	TableSchema       TableSchemaCache
+	LogTag            string
 
 	binlogSyncer   *replication.BinlogSyncer
 	binlogStreamer *replication.BinlogStreamer
@@ -250,12 +250,14 @@ func (s *BinlogStreamer) Run() {
 			tableIdFromCache, found := s.TableIdCache[tableName]
 			if !found || (tableId != tableIdFromCache) {
 				s.logger.Infof("Table id: %d, for table: %v", tableId, tableName)
-				newTableSchemaCache, err := s.ReloadTableFunc()
+
+				tableSchema, err := s.TableSchemaLoader.LoadTable(s.DB.DB, db, tableName)
 				if err != nil {
-					panic("Error reloading tables")
+					panic(err)
 				}
-				s.TableSchema = newTableSchemaCache
-				s.logger.Info("Reloaded table schema")
+
+				s.TableSchema[tableName] = tableSchema
+				s.logger.WithField("table", tableName).Info("Reloaded table schema")
 			}
 
 			e.Dump(os.Stdout)

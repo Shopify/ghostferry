@@ -46,6 +46,30 @@ type TableSchema struct {
 	rowMd5Query string
 }
 
+type TableSchemaLoader struct {
+	// tableFilter                     TableFilter
+	columnCompressionConfig ColumnCompressionConfig
+	columnIgnoreConfig      ColumnIgnoreConfig
+	forceIndexConfig        ForceIndexConfig
+	// cascadingPaginationColumnConfig *CascadingPaginationColumnConfig
+}
+
+func (l *TableSchemaLoader) LoadTable(conn *sqlorig.DB, dbname string, table string) (*TableSchema, error) {
+	tableSchema, err := schema.NewTableFromSqlDB(conn, dbname, table)
+	if err != nil {
+		// tableLog.WithError(err).Error("cannot fetch table schema from source db")
+		return &TableSchema{}, err
+	}
+
+	return &TableSchema{
+		Table:                            tableSchema,
+		CompressedColumnsForVerification: l.columnCompressionConfig.CompressedColumnsFor(dbname, table),
+		IgnoredColumnsForVerification:    l.columnIgnoreConfig.IgnoredColumnsFor(dbname, table),
+		ForcedIndexForVerification:       l.forceIndexConfig.IndexFor(dbname, table),
+	}, nil
+
+}
+
 // This query returns the MD5 hash for a row on this table. This query is valid
 // for both the source and the target shard.
 //
@@ -152,6 +176,11 @@ func MaxPaginationKeys(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) 
 }
 
 func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig ColumnCompressionConfig, columnIgnoreConfig ColumnIgnoreConfig, forceIndexConfig ForceIndexConfig, cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (TableSchemaCache, error) {
+
+	loader := TableSchemaLoader{
+		columnCompressionConfig, columnIgnoreConfig, forceIndexConfig,
+	}
+
 	logger := logrus.WithField("tag", "table_schema_cache")
 
 	tableSchemaCache := make(TableSchemaCache)
@@ -183,18 +212,14 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 		for _, table := range tableNames {
 			tableLog := dbLog.WithField("table", table)
 			tableLog.Debug("fetching table schema")
-			tableSchema, err := schema.NewTableFromSqlDB(db.DB, dbname, table)
+
+			t, err := loader.LoadTable(db.DB, dbname, table)
 			if err != nil {
 				tableLog.WithError(err).Error("cannot fetch table schema from source db")
 				return tableSchemaCache, err
 			}
 
-			tableSchemas = append(tableSchemas, &TableSchema{
-				Table:                            tableSchema,
-				CompressedColumnsForVerification: columnCompressionConfig.CompressedColumnsFor(dbname, table),
-				IgnoredColumnsForVerification:    columnIgnoreConfig.IgnoredColumnsFor(dbname, table),
-				ForcedIndexForVerification:       forceIndexConfig.IndexFor(dbname, table),
-			})
+			tableSchemas = append(tableSchemas, t)
 		}
 
 		tableSchemas, err = tableFilter.ApplicableTables(tableSchemas)
