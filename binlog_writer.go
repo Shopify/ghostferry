@@ -25,6 +25,7 @@ type BinlogWriter struct {
 	// Useful for debugging binlog writer lag, if diverged from binlog streamer lag
 	lastProcessedEventTime time.Time
 	logger                 *logrus.Entry
+	lastSeenSchemaByTable  TableSchemaCache
 }
 
 func (b *BinlogWriter) Run() {
@@ -92,6 +93,24 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 		eventTableName := ev.Table()
 		if targetTableName, exists := b.TableRewrites[eventTableName]; exists {
 			eventTableName = targetTableName
+		}
+
+		// tableName => lastTableSchemaSeed
+
+		// lastTableSchemaSeed != e.schema
+		//   reload target??
+
+		// target = (id, shop_id, blah)
+		// source = (id, shop_id, blah)
+
+		table, found := b.lastSeenSchemaByTable[fmt.Sprintf("%s.%s", eventDatabaseName, eventTableName)]
+		if found {
+			if table != ev.TableSchema() {
+				// reload and compare again
+				// return fmt.Errorf("incompatible!")
+			}
+		} else {
+			b.lastSeenSchemaByTable[fmt.Sprintf("%s.%s", eventDatabaseName, eventTableName)] = e.table
 		}
 
 		sqlStmt, err := ev.AsSQLString(eventDatabaseName, eventTableName)
