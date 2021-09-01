@@ -24,7 +24,7 @@ type BinlogStreamer struct {
 	ErrorHandler ErrorHandler
 	Filter       StreamFilter
 	ReloadTableFunc func() (TableSchemaCache, error)
-	TableIntersects TableSchemaCache
+	TableIdCache map[string]uint64
 	TableSchema TableSchemaCache
 	LogTag      string
 
@@ -244,11 +244,12 @@ func (s *BinlogStreamer) Run() {
 				panic(errStr)
 			}
 
-			columnCount := e.ColumnCount
-			if int(columnCount) != len(tableFromSchemaCache.Columns) {
-				s.logger.Infof("Columns differ in table %s", table)
-				s.logger.Infof("New columns: %d", columnCount)
-				s.logger.Infof("Cached columns: %d", len(tableFromSchemaCache.Columns))
+			tableId := e.TableID
+			tableName := string(e.Table)
+
+			tableIdFromCache, found := s.TableIdCache[tableName]
+			if !found || (tableId != tableIdFromCache) {
+				s.logger.Infof("Table id: %d, for table: %v", tableId, tableName)
 				newTableSchemaCache, err := s.ReloadTableFunc()
 				if err != nil {
 					panic("Error reloading tables")
@@ -256,6 +257,7 @@ func (s *BinlogStreamer) Run() {
 				s.TableSchema = newTableSchemaCache
 				s.logger.Info("Reloaded table schema")
 			}
+
 			e.Dump(os.Stdout)
 		case *replication.RowsQueryEvent:
 			// A RowsQueryEvent will always precede the corresponding RowsEvent
