@@ -5,7 +5,8 @@ import (
 	"crypto/tls"
 	sqlorig "database/sql"
 	"fmt"
-	"os"
+
+	// "os"
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -255,12 +256,21 @@ func (s *BinlogStreamer) Run() {
 					panic(err)
 				}
 
+				pagKeyCol, pagKeyIndex, err := tableSchema.paginationKeyColumn(s.TableSchemaLoader.cascadingPaginationColumnConfig)
+
+				if err != nil {
+					panic(err)
+				}
+
+				tableSchema.PaginationKeyColumn = pagKeyCol
+				tableSchema.PaginationKeyIndex = pagKeyIndex
+
 				s.TableSchema[dbKey] = tableSchema
 				s.logger.WithField("table", table).Info("Reloaded table schema")
 			}
 			s.TableIdCache[dbKey] = e.TableID
 
-			e.Dump(os.Stdout)
+			// e.Dump(os.Stdout)
 		case *replication.RowsQueryEvent:
 			// A RowsQueryEvent will always precede the corresponding RowsEvent
 			// if binlog_rows_query_log_events is enabled, and is used to get

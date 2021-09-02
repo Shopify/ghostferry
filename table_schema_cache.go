@@ -52,7 +52,7 @@ type TableSchemaLoader struct {
 	columnCompressionConfig ColumnCompressionConfig
 	columnIgnoreConfig      ColumnIgnoreConfig
 	forceIndexConfig        ForceIndexConfig
-	// cascadingPaginationColumnConfig *CascadingPaginationColumnConfig
+	cascadingPaginationColumnConfig *CascadingPaginationColumnConfig
 }
 
 func (l *TableSchemaLoader) LoadTable(conn *sqlorig.DB, dbname string, table string) (*TableSchema, error) {
@@ -62,13 +62,14 @@ func (l *TableSchemaLoader) LoadTable(conn *sqlorig.DB, dbname string, table str
 		return &TableSchema{}, err
 	}
 
-	return &TableSchema{
+	ts := &TableSchema{
 		Table:                            tableSchema,
 		CompressedColumnsForVerification: l.columnCompressionConfig.CompressedColumnsFor(dbname, table),
 		IgnoredColumnsForVerification:    l.columnIgnoreConfig.IgnoredColumnsFor(dbname, table),
 		ForcedIndexForVerification:       l.forceIndexConfig.IndexFor(dbname, table),
-	}, nil
+	}
 
+	return ts, nil
 }
 
 // This query returns the MD5 hash for a row on this table. This query is valid
@@ -87,6 +88,7 @@ func (t *TableSchema) FingerprintQuery(schemaName, tableName string, numRows int
 	var forceIndex string
 
 	columnsToSelect := make([]string, 2+len(t.CompressedColumnsForVerification))
+	fmt.Println(t)
 	columnsToSelect[0] = quoteField(t.GetPaginationColumn().Name)
 	columnsToSelect[1] = t.RowMd5Query()
 	i := 2
@@ -184,7 +186,7 @@ func MaxPaginationKeys(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) 
 func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig ColumnCompressionConfig, columnIgnoreConfig ColumnIgnoreConfig, forceIndexConfig ForceIndexConfig, cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (TableSchemaCache, error) {
 
 	loader := TableSchemaLoader{
-		columnCompressionConfig, columnIgnoreConfig, forceIndexConfig,
+		columnCompressionConfig, columnIgnoreConfig, forceIndexConfig, cascadingPaginationColumnConfig,
 	}
 
 	logger := logrus.WithField("tag", "table_schema_cache")

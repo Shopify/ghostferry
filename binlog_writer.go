@@ -106,6 +106,16 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 				return err
 			}
 
+			pagKeyCol, pagKeyIndex, err := tableSchema.paginationKeyColumn(b.TableSchemaLoader.cascadingPaginationColumnConfig)
+
+			if err != nil {
+				return err
+			}
+
+			tableSchema.PaginationKeyColumn = pagKeyCol
+			tableSchema.PaginationKeyIndex = pagKeyIndex
+
+
 			if tableSchema != ev.TableSchema() {
 				return fmt.Errorf("source schema does not match target schema")
 			}

@@ -521,7 +521,7 @@ func (f *Ferry) Initialize() (err error) {
 	// Eventually this can be moved below the verifier initialization.
 	f.BinlogStreamer = f.NewSourceBinlogStreamer()
 	f.BinlogStreamer.TableSchemaLoader = TableSchemaLoader{
-		f.CompressedColumnsForVerification, f.IgnoredColumnsForVerification, f.ForceIndexForVerification,
+		f.CompressedColumnsForVerification, f.IgnoredColumnsForVerification, f.ForceIndexForVerification, f.CascadingPaginationColumnConfig,
 	}
 	f.BinlogStreamer.TableIdCache = make(map[string]uint64)
 
@@ -541,7 +541,7 @@ func (f *Ferry) Initialize() (err error) {
 
 	f.BinlogWriter = f.NewBinlogWriter()
 	f.BinlogWriter.TableSchemaLoader = TableSchemaLoader{
-		f.CompressedColumnsForVerification, f.IgnoredColumnsForVerification, f.ForceIndexForVerification,
+		f.CompressedColumnsForVerification, f.IgnoredColumnsForVerification, f.ForceIndexForVerification, f.CascadingPaginationColumnConfig,
 	}
 	f.DataIterator = f.NewDataIterator()
 	if f.DataIterators == nil {
