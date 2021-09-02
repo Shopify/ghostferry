@@ -116,7 +116,7 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 			tableSchema.PaginationKeyIndex = pagKeyIndex
 
 
-			if tableSchema != ev.TableSchema() {
+			if !tableSchema.Equal(ev.TableSchema()) {
 				return fmt.Errorf("source schema does not match target schema")
 			}
 		}

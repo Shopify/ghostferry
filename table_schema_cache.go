@@ -88,7 +88,6 @@ func (t *TableSchema) FingerprintQuery(schemaName, tableName string, numRows int
 	var forceIndex string
 
 	columnsToSelect := make([]string, 2+len(t.CompressedColumnsForVerification))
-	fmt.Println(t)
 	columnsToSelect[0] = quoteField(t.GetPaginationColumn().Name)
 	columnsToSelect[1] = t.RowMd5Query()
 	i := 2
@@ -140,8 +139,7 @@ func (t *TableSchema) RowMd5Query() string {
 }
 
 func (t *TableSchema) Equal(comp *TableSchema) bool {
-	// TODO: This is bad, probably
-	return reflect.DeepEqual(t, comp)
+	return reflect.DeepEqual(t.Table.Columns, comp.Table.Columns)
 }
 
 type TableSchemaCache map[string]*TableSchema

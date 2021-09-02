@@ -447,22 +447,19 @@ func (this *TableSchemaCacheTestSuite) TestTargetToSourceRewritesErrorsOnDuplica
 func (this *TableSchemaCacheTestSuite) TestTableSchemaEquality() {
 	first := &ghostferry.TableSchema{
 		Table: &sqlSchema.Table{
-			Schema: "schema",
-			Name:   "table",
+			Columns: []sqlSchema.TableColumn{{Name: "id"}, {Name: "data"}},
 		},
 	}
 
 	second := &ghostferry.TableSchema{
 		Table: &sqlSchema.Table{
-			Schema: "schema",
-			Name:   "table",
+			Columns: []sqlSchema.TableColumn{{Name: "id"}, {Name: "data"}},
 		},
 	}
 
 	third := &ghostferry.TableSchema{
 		Table: &sqlSchema.Table{
-			Schema: "schema2",
-			Name:   "table2",
+			Columns: []sqlSchema.TableColumn{{Name: "id"}, {Name: "handle"}},
 		},
 	}
 
