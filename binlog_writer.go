@@ -100,7 +100,7 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 		dbTableKey := fmt.Sprintf("%s.%s", eventDatabaseName, eventTableName)
 
 		table, found := b.lastSeenSchemaByTable[dbTableKey]
-		if found && table != ev.TableSchema() {
+		if found && table.Equal(ev.TableSchema()) {
 			tableSchema, err := b.TableSchemaLoader.LoadTable(b.DB.DB, eventDatabaseName, eventTableName)
 			if err != nil {
 				return err

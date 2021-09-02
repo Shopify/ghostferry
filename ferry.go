@@ -199,6 +199,7 @@ func (f *Ferry) NewBinlogWriter() *BinlogWriter {
 
 		ErrorHandler: f.ErrorHandler,
 		StateTracker: f.StateTracker,
+		lastSeenSchemaByTable: make(TableSchemaCache),
 	}
 }
 
@@ -522,6 +523,7 @@ func (f *Ferry) Initialize() (err error) {
 	f.BinlogStreamer.TableSchemaLoader = TableSchemaLoader{
 		f.CompressedColumnsForVerification, f.IgnoredColumnsForVerification, f.ForceIndexForVerification,
 	}
+	f.BinlogStreamer.TableIdCache = make(map[string]uint64)
 
 	if !f.Config.SkipTargetVerification {
 		targetBinlogStreamer, err := f.NewTargetBinlogStreamer()

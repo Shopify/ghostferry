@@ -244,7 +244,9 @@ func (s *BinlogStreamer) Run() {
 				panic(errStr)
 			}
 
-			tableIdFromCache, found := s.TableIdCache[table]
+			dbKey := fullTableName(db, table)
+
+			tableIdFromCache, found := s.TableIdCache[dbKey]
 			if found && e.TableID != tableIdFromCache {
 				s.logger.Infof("Table id: %d, for table: %v", e.TableID, table)
 
@@ -253,10 +255,10 @@ func (s *BinlogStreamer) Run() {
 					panic(err)
 				}
 
-				s.TableSchema[table] = tableSchema
+				s.TableSchema[dbKey] = tableSchema
 				s.logger.WithField("table", table).Info("Reloaded table schema")
 			}
-			s.TableIdCache[table] = e.TableID
+			s.TableIdCache[dbKey] = e.TableID
 
 			e.Dump(os.Stdout)
 		case *replication.RowsQueryEvent:

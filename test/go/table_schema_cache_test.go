@@ -444,6 +444,34 @@ func (this *TableSchemaCacheTestSuite) TestTargetToSourceRewritesErrorsOnDuplica
 	this.Require().Equal(err.Error(), "duplicate target to source rewrite detected")
 }
 
+func (this *TableSchemaCacheTestSuite) TestTableSchemaEquality() {
+	first := &ghostferry.TableSchema{
+		Table: &sqlSchema.Table{
+			Schema: "schema",
+			Name:   "table",
+		},
+	}
+
+	second := &ghostferry.TableSchema{
+		Table: &sqlSchema.Table{
+			Schema: "schema",
+			Name:   "table",
+		},
+	}
+
+	third := &ghostferry.TableSchema{
+		Table: &sqlSchema.Table{
+			Schema: "schema2",
+			Name:   "table2",
+		},
+	}
+
+	this.Require().Equal(true, first.Equal(first), "Reflexivity")
+	this.Require().Equal(true, first.Equal(second), "A == B")
+	this.Require().Equal(true, second.Equal(first), "B == A")
+	this.Require().Equal(false, first.Equal(third), "Not equal")
+}
+
 func TestTableSchemaCache(t *testing.T) {
 	testhelpers.SetupTest()
 	suite.Run(t, &TableSchemaCacheTestSuite{GhostferryUnitTestSuite: &testhelpers.GhostferryUnitTestSuite{}})

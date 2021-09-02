@@ -4,6 +4,7 @@ import (
 	sqlorig "database/sql"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -134,6 +135,11 @@ func (t *TableSchema) RowMd5Query() string {
 
 	t.rowMd5Query = fmt.Sprintf("MD5(CONCAT(%s)) AS __ghostferry_row_md5", strings.Join(hashStrs, ","))
 	return t.rowMd5Query
+}
+
+func (t *TableSchema) Equal(comp *TableSchema) bool {
+	// TODO: This is bad, probably
+	return reflect.DeepEqual(t, comp)
 }
 
 type TableSchemaCache map[string]*TableSchema

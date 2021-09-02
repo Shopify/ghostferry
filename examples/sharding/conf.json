@@ -47,5 +47,5 @@
 
   "DumpStateToStdoutOnError": true,
 
-  "IgnoredTables": []
+  "IgnoredTables": ["^.*_new$", "^.*_old$"]
 }
