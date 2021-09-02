@@ -256,15 +256,6 @@ func (s *BinlogStreamer) Run() {
 					panic(err)
 				}
 
-				pagKeyCol, pagKeyIndex, err := tableSchema.paginationKeyColumn(s.TableSchemaLoader.cascadingPaginationColumnConfig)
-
-				if err != nil {
-					panic(err)
-				}
-
-				tableSchema.PaginationKeyColumn = pagKeyCol
-				tableSchema.PaginationKeyIndex = pagKeyIndex
-
 				s.TableSchema[dbKey] = tableSchema
 				s.logger.WithField("table", table).Info("Reloaded table schema")
 			}

@@ -56,20 +56,33 @@ type TableSchemaLoader struct {
 }
 
 func (l *TableSchemaLoader) LoadTable(conn *sqlorig.DB, dbname string, table string) (*TableSchema, error) {
+	ts, err := l.LoadTableWithoutPaginationKeyColumn(conn, dbname, table)
+
+	pagKeyCol, pagKeyIndex, err := ts.paginationKeyColumn(l.cascadingPaginationColumnConfig)
+
+	if err != nil {
+		panic(err)
+	}
+
+	ts.PaginationKeyColumn = pagKeyCol
+	ts.PaginationKeyIndex = pagKeyIndex
+
+	return ts, nil
+}
+
+func (l *TableSchemaLoader) LoadTableWithoutPaginationKeyColumn(conn *sqlorig.DB, dbname string, table string) (*TableSchema, error) {
 	tableSchema, err := schema.NewTableFromSqlDB(conn, dbname, table)
 	if err != nil {
 		// tableLog.WithError(err).Error("cannot fetch table schema from source db")
 		return &TableSchema{}, err
 	}
 
-	ts := &TableSchema{
+	return &TableSchema{
 		Table:                            tableSchema,
 		CompressedColumnsForVerification: l.columnCompressionConfig.CompressedColumnsFor(dbname, table),
 		IgnoredColumnsForVerification:    l.columnIgnoreConfig.IgnoredColumnsFor(dbname, table),
 		ForcedIndexForVerification:       l.forceIndexConfig.IndexFor(dbname, table),
-	}
-
-	return ts, nil
+	}, nil
 }
 
 // This query returns the MD5 hash for a row on this table. This query is valid
@@ -219,7 +232,7 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 			tableLog := dbLog.WithField("table", table)
 			tableLog.Debug("fetching table schema")
 
-			t, err := loader.LoadTable(db.DB, dbname, table)
+			t, err := loader.LoadTableWithoutPaginationKeyColumn(db.DB, dbname, table)
 			if err != nil {
 				tableLog.WithError(err).Error("cannot fetch table schema from source db")
 				return tableSchemaCache, err
