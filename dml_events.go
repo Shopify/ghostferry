@@ -282,15 +282,15 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
 	for _, row := range rowsEvent.Rows {
-		if len(row) != len(table.Columns) {
-			return nil, fmt.Errorf(
-				"table %s.%s has %d columns but event has %d columns instead",
-				table.Schema,
-				table.Name,
-				len(table.Columns),
-				len(row),
-			)
-		}
+		// if len(row) != len(table.Columns) {
+		// 	return nil, fmt.Errorf(
+		// 		"table %s.%s has %d columns but event has %d columns instead",
+		// 		table.Schema,
+		// 		table.Name,
+		// 		len(table.Columns),
+		// 		len(row),
+		// 	)
+		// }
 		for i, col := range table.Columns {
 			if col.IsUnsigned {
 				switch v := row[i].(type) {
