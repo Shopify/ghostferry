@@ -4,6 +4,7 @@ import (
 	sqlorig "database/sql"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -44,6 +45,44 @@ type TableSchema struct {
 	PaginationKeyIndex               int
 
 	rowMd5Query string
+}
+
+type TableSchemaLoader struct {
+	// tableFilter                     TableFilter
+	columnCompressionConfig ColumnCompressionConfig
+	columnIgnoreConfig      ColumnIgnoreConfig
+	forceIndexConfig        ForceIndexConfig
+	cascadingPaginationColumnConfig *CascadingPaginationColumnConfig
+}
+
+func (l *TableSchemaLoader) LoadTable(conn *sqlorig.DB, dbname string, table string) (*TableSchema, error) {
+	ts, err := l.LoadTableWithoutPaginationKeyColumn(conn, dbname, table)
+
+	pagKeyCol, pagKeyIndex, err := ts.paginationKeyColumn(l.cascadingPaginationColumnConfig)
+
+	if err != nil {
+		panic(err)
+	}
+
+	ts.PaginationKeyColumn = pagKeyCol
+	ts.PaginationKeyIndex = pagKeyIndex
+
+	return ts, nil
+}
+
+func (l *TableSchemaLoader) LoadTableWithoutPaginationKeyColumn(conn *sqlorig.DB, dbname string, table string) (*TableSchema, error) {
+	tableSchema, err := schema.NewTableFromSqlDB(conn, dbname, table)
+	if err != nil {
+		// tableLog.WithError(err).Error("cannot fetch table schema from source db")
+		return &TableSchema{}, err
+	}
+
+	return &TableSchema{
+		Table:                            tableSchema,
+		CompressedColumnsForVerification: l.columnCompressionConfig.CompressedColumnsFor(dbname, table),
+		IgnoredColumnsForVerification:    l.columnIgnoreConfig.IgnoredColumnsFor(dbname, table),
+		ForcedIndexForVerification:       l.forceIndexConfig.IndexFor(dbname, table),
+	}, nil
 }
 
 // This query returns the MD5 hash for a row on this table. This query is valid
@@ -112,6 +151,10 @@ func (t *TableSchema) RowMd5Query() string {
 	return t.rowMd5Query
 }
 
+func (t *TableSchema) Equal(comp *TableSchema) bool {
+	return reflect.DeepEqual(t.Table.Columns, comp.Table.Columns)
+}
+
 type TableSchemaCache map[string]*TableSchema
 
 func fullTableName(schemaName, tableName string) string {
@@ -152,6 +195,10 @@ func MaxPaginationKeys(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) 
 }
 
 func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig ColumnCompressionConfig, columnIgnoreConfig ColumnIgnoreConfig, forceIndexConfig ForceIndexConfig, cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (TableSchemaCache, error) {
+	loader := TableSchemaLoader{
+		columnCompressionConfig, columnIgnoreConfig, forceIndexConfig, cascadingPaginationColumnConfig,
+	}
+
 	logger := logrus.WithField("tag", "table_schema_cache")
 
 	tableSchemaCache := make(TableSchemaCache)
@@ -183,18 +230,13 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 		for _, table := range tableNames {
 			tableLog := dbLog.WithField("table", table)
 			tableLog.Debug("fetching table schema")
-			tableSchema, err := schema.NewTableFromSqlDB(db.DB, dbname, table)
+ 			t, err := loader.LoadTableWithoutPaginationKeyColumn(db.DB, dbname, table)
 			if err != nil {
 				tableLog.WithError(err).Error("cannot fetch table schema from source db")
 				return tableSchemaCache, err
 			}
 
-			tableSchemas = append(tableSchemas, &TableSchema{
-				Table:                            tableSchema,
-				CompressedColumnsForVerification: columnCompressionConfig.CompressedColumnsFor(dbname, table),
-				IgnoredColumnsForVerification:    columnIgnoreConfig.IgnoredColumnsFor(dbname, table),
-				ForcedIndexForVerification:       forceIndexConfig.IndexFor(dbname, table),
-			})
+			tableSchemas = append(tableSchemas, t)
 		}
 
 		tableSchemas, err = tableFilter.ApplicableTables(tableSchemas)

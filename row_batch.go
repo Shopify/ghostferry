@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -60,6 +61,7 @@ func (e *RowBatch) Fingerprints() map[uint64][]byte {
 }
 
 func (e *RowBatch) AsSQLQuery(schemaName, tableName string) (string, []interface{}, error) {
+	fmt.Printf("RowBatch Table: %v", e.table)
 	if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.values...); err != nil {
 		return "", nil, err
 	}

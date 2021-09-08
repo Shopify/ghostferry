@@ -168,9 +168,9 @@ func (e *BinlogInsertEvent) NewValues() RowData {
 }
 
 func (e *BinlogInsertEvent) AsSQLString(schemaName, tableName string) (string, error) {
-	if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.newValues); err != nil {
-		return "", err
-	}
+	// if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.newValues); err != nil {
+	// 	return "", err
+	// }
 
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(schemaName, tableName) +

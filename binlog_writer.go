@@ -110,7 +110,7 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 	query := string(queryBuffer)
 	_, err := b.DB.Exec(query)
 	if err != nil {
-		return fmt.Errorf("exec query at pos %v -> %v (%d bytes): %v", startEv.BinlogPosition(), endEv.BinlogPosition(), len(query), err)
+		return fmt.Errorf("exec query %v at pos %v -> %v (%d bytes): %v", startEv.BinlogPosition(), query, endEv.BinlogPosition(), len(query), err)
 	}
 
 	if b.StateTracker != nil {

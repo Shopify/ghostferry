@@ -1,6 +1,7 @@
 package test
 
 import (
+	"fmt"
 	"testing"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -53,6 +54,7 @@ func TestDroppingColumnOnSourceBeforeTargetWorks(t *testing.T) {
 				// this works because the data writer is started after the AfterStartBinlogStreaming callback is executed
 				// so we are assured that the source DB would not have this column by that point.
 				delete(colvals, "data")
+				fmt.Println("Inserting data...")
 			},
 		},
 		AfterStartBinlogStreaming: func(f *testhelpers.TestFerry, sourceDB *sql.DB, targetDB *sql.DB) {
@@ -65,6 +67,7 @@ func TestDroppingColumnOnSourceBeforeTargetWorks(t *testing.T) {
 
 			_, err = sourceDB.Exec("RENAME TABLE gftest.table1 TO gftest.table1_old, gftest.table1_new TO gftest.table1")
 			testhelpers.PanicIfError(err)
+			fmt.Println("Done migrating.")
 		},
 	}
 
