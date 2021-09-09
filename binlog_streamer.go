@@ -17,18 +17,18 @@ import (
 const caughtUpThreshold = 10 * time.Second
 
 type BinlogStreamer struct {
-	DB                *sql.DB
-	DBConfig          *DatabaseConfig
-	MyServerId        uint32
-	ErrorHandler      ErrorHandler
+	DB           *sql.DB
+	DBConfig     *DatabaseConfig
+	MyServerId   uint32
+	ErrorHandler ErrorHandler
 	// Filter            StreamFilter
-	TableSchemaLoader TableSchemaLoader
+	TableSchemaLoader *TableSchemaLoader
 	TableIdCache      map[string]uint64
 	TableSchema       TableSchemaCache
 	LogTag            string
- 	Filter            StreamFilter
-	binlogSyncer   *replication.BinlogSyncer
-	binlogStreamer *replication.BinlogStreamer
+	Filter            StreamFilter
+	binlogSyncer      *replication.BinlogSyncer
+	binlogStreamer    *replication.BinlogStreamer
 
 	// These rewrite structures are used specifically for the Target
 	// Verifier as it needs to map events streamed from the Target back
@@ -226,40 +226,41 @@ func (s *BinlogStreamer) Run() {
 			// https://github.com/percona/percona-server/blob/93165de1451548ff11dd32c3d3e5df0ff28cfcfa/sql/rpl_binlog_sender.cc#L1020-L1026
 			isEventPositionValid = ev.Header.LogPos != 0
 		case *replication.TableMapEvent:
-			tableMapEvent := ev.Event.(*replication.TableMapEvent)
-			db := string(tableMapEvent.Schema)
-			if rewrittenDBName, exists := s.DatabaseRewrites[db]; exists {
-				db = rewrittenDBName
-			}
-
-			table := string(tableMapEvent.Table)
-			if rewrittenTableName, exists := s.TableRewrites[table]; exists {
-				table = rewrittenTableName
-			}
-
-			tableFromSchemaCache := s.TableSchema.Get(db, table)
-			if tableFromSchemaCache == nil {
-				errStr := fmt.Sprintf("Table %s not found in cache", tableFromSchemaCache)
-				panic(errStr)
-			}
-
-			dbKey := fullTableName(db, table)
-
-			tableIdFromCache, found := s.TableIdCache[dbKey]
-			s.logger.WithField("found", found).WithField("new tid", e.TableID).WithField("cached tid", tableIdFromCache).WithField("dbKey", dbKey).WithField("tname", string(e.Table)).WithField("cache", s.TableIdCache).Infoln("Table ID comparison")
-			if e.TableID != tableIdFromCache {
-				s.logger.Infof("Table id: %d, for table: %v", e.TableID, table)
-
-				tableSchema, err := s.TableSchemaLoader.LoadTable(s.DB.DB, db, table)
-				if err != nil {
-					panic(err)
+			if s.TableSchemaLoader != nil {
+				tableMapEvent := ev.Event.(*replication.TableMapEvent)
+				db := string(tableMapEvent.Schema)
+				if rewrittenDBName, exists := s.DatabaseRewrites[db]; exists {
+					db = rewrittenDBName
 				}
 
-				s.TableSchema[dbKey] = tableSchema
-				s.logger.WithField("table", table).Info("Reloaded table schema")
-			}
-			s.TableIdCache[dbKey] = e.TableID
+				table := string(tableMapEvent.Table)
+				if rewrittenTableName, exists := s.TableRewrites[table]; exists {
+					table = rewrittenTableName
+				}
 
+				tableFromSchemaCache := s.TableSchema.Get(db, table)
+				if tableFromSchemaCache == nil {
+					errStr := fmt.Sprintf("Table %s not found in cache", tableFromSchemaCache)
+					panic(errStr)
+				}
+
+				dbKey := fullTableName(db, table)
+
+				tableIdFromCache, found := s.TableIdCache[dbKey]
+				s.logger.WithField("found", found).WithField("new tid", e.TableID).WithField("cached tid", tableIdFromCache).WithField("dbKey", dbKey).WithField("tname", string(e.Table)).WithField("cache", s.TableIdCache).Infoln("Table ID comparison")
+				if e.TableID != tableIdFromCache {
+					s.logger.Infof("Table id: %d, for table: %v", e.TableID, table)
+
+					tableSchema, err := s.TableSchemaLoader.LoadTable(s.DB.DB, db, table)
+					if err != nil {
+						panic(err)
+					}
+
+					s.TableSchema[dbKey] = tableSchema
+					s.logger.WithField("table", table).Info("Reloaded table schema")
+				}
+				s.TableIdCache[dbKey] = e.TableID
+			}
 			// e.Dump(os.Stdout)
 		case *replication.RowsQueryEvent:
 			// A RowsQueryEvent will always precede the corresponding RowsEvent
@@ -497,7 +498,6 @@ func idsOnServer(db *sql.DB) ([]uint32, error) {
 		var columns []string
 
 		columns, err = rows.Columns()
-
 
 		// SHOW SLAVE HOSTS has a different return value for different implementations
 		// i.e MySQL/Percona have 5 columns as it includes slave_uuid for MariaDB slave_uuid is omitted

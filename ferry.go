@@ -493,7 +493,7 @@ func (f *Ferry) Initialize() (err error) {
 	// The iterative verifier needs the binlog streamer so this has to be first.
 	// Eventually this can be moved below the verifier initialization.
 	f.BinlogStreamer = f.NewSourceBinlogStreamer()
-	f.BinlogStreamer.TableSchemaLoader = TableSchemaLoader{
+	f.BinlogStreamer.TableSchemaLoader = &TableSchemaLoader{
 		f.CompressedColumnsForVerification, f.IgnoredColumnsForVerification, f.ForceIndexForVerification, f.CascadingPaginationColumnConfig,
 	}
 	f.BinlogStreamer.TableIdCache = make(map[string]uint64)

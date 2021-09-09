@@ -195,12 +195,7 @@ func (this *MixedActionDataWriter) InsertData() error {
 		return err
 	}
 
-	fmt.Printf("SQL generated: %s, args: %v", sql, args)
-	fmt.Println()
 	_, err = this.Db.Exec(sql, args...)
-
-	fmt.Printf("Error: %v", err)
-	fmt.Println()
 
 	return err
 }

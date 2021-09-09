@@ -168,13 +168,15 @@ func (e *BinlogInsertEvent) NewValues() RowData {
 }
 
 func (e *BinlogInsertEvent) AsSQLString(schemaName, tableName string) (string, error) {
-	// if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.newValues); err != nil {
-	// 	return "", err
-	// }
+	cols := quotedColumnNames(e.table)
+
+	if err := verifyValuesHasTheSameLengthAsColumns(e.table, cols, e.newValues); err != nil {
+		return "", err
+	}
 
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(schemaName, tableName) +
-		" (" + strings.Join(quotedColumnNames(e.table), ",") + ")" +
+		" (" + strings.Join(cols, ",") + ")" +
 		" VALUES (" + buildStringListForValues(e.table.Columns, e.newValues) + ")"
 
 	return query, nil
@@ -222,7 +224,9 @@ func (e *BinlogUpdateEvent) NewValues() RowData {
 }
 
 func (e *BinlogUpdateEvent) AsSQLString(schemaName, tableName string) (string, error) {
-	if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.oldValues, e.newValues); err != nil {
+	cols := quotedColumnNames(e.table)
+
+	if err := verifyValuesHasTheSameLengthAsColumns(e.table, cols, e.oldValues, e.newValues); err != nil {
 		return "", err
 	}
 
@@ -264,7 +268,9 @@ func NewBinlogDeleteEvents(eventBase *DMLEventBase, rowsEvent *replication.RowsE
 }
 
 func (e *BinlogDeleteEvent) AsSQLString(schemaName, tableName string) (string, error) {
-	if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.oldValues); err != nil {
+	cols := quotedColumnNames(e.table)
+
+	if err := verifyValuesHasTheSameLengthAsColumns(e.table, cols, e.oldValues); err != nil {
 		return "", err
 	}
 
@@ -332,14 +338,14 @@ func quotedColumnNames(table *TableSchema) []string {
 	return cols
 }
 
-func verifyValuesHasTheSameLengthAsColumns(table *TableSchema, values ...RowData) error {
+func verifyValuesHasTheSameLengthAsColumns(table *TableSchema, cols []string, values ...RowData) error {
 	for _, v := range values {
-		if len(table.Columns) != len(v) {
+		if len(cols) != len(v) {
 			return fmt.Errorf(
 				"table %s.%s has %d columns but event has %d columns instead",
 				table.Schema,
 				table.Name,
-				len(table.Columns),
+				len(cols),
 				len(v),
 			)
 		}
@@ -529,7 +535,7 @@ func appendEscapedBuffer(buffer, value []byte, isJSON bool) []byte {
 }
 
 func paginationKeyFromEventData(table *TableSchema, rowData RowData) (uint64, error) {
-	if err := verifyValuesHasTheSameLengthAsColumns(table, rowData); err != nil {
+	if err := verifyValuesHasTheSameLengthAsColumns(table, quotedColumnNames(table) ,rowData); err != nil {
 		return 0, err
 	}
 
