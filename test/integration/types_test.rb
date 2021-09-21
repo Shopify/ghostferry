@@ -298,6 +298,23 @@ class TypesTest < GhostferryTestCase
     end
   end
 
+  def test_zero_pk_gets_copied
+    [source_db, target_db].each do |db|
+      db.query("CREATE DATABASE IF NOT EXISTS #{DEFAULT_DB}")
+      # Must be not auto_increment. If `id` is auto_increment, inserting a value
+      # of 0 automatically gets converted to 1 (or whatever the last auto
+      # incremented value is, although not negative).
+      db.query("CREATE TABLE IF NOT EXISTS #{DEFAULT_FULL_TABLE_NAME} (id bigint(20) NOT NULL, primary key(id))")
+    end
+
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id) VALUES (0)")
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+
+    ghostferry.run
+    assert_test_table_is_identical
+  end
+
   private
 
   def insert_json_on_source
