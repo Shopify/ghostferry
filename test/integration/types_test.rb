@@ -312,6 +312,20 @@ class TypesTest < GhostferryTestCase
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
 
     ghostferry.run
+
+    res = source_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME}")
+
+    puts "source"
+    res.each do |row|
+      puts row
+    end
+
+    puts "target"
+    res = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME}")
+    res.each do |row|
+      puts row
+    end
+
     assert_test_table_is_identical
   end
 

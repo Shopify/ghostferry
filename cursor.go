@@ -273,7 +273,7 @@ func ScanGenericRow(rows *sqlorig.Rows, columnCount int) (RowData, error) {
 	values := make(RowData, columnCount)
 	valuePtrs := make(RowData, columnCount)
 
-	for i, _ := range values {
+	for i := range values {
 		valuePtrs[i] = &values[i]
 	}
 
@@ -285,7 +285,7 @@ func ScanByteRow(rows *sqlorig.Rows, columnCount int) ([][]byte, error) {
 	values := make([][]byte, columnCount)
 	valuePtrs := make(RowData, columnCount)
 
-	for i, _ := range values {
+	for i := range values {
 		valuePtrs[i] = &values[i]
 	}
 
@@ -296,9 +296,13 @@ func ScanByteRow(rows *sqlorig.Rows, columnCount int) ([][]byte, error) {
 func DefaultBuildSelect(columns []string, table *TableSchema, lastPaginationKey, batchSize uint64) squirrel.SelectBuilder {
 	quotedPaginationKey := QuoteField(table.GetPaginationColumn().Name)
 
-	return squirrel.Select(columns...).
-		From(QuotedTableName(table)).
-		Where(squirrel.Gt{quotedPaginationKey: lastPaginationKey}).
-		Limit(batchSize).
-		OrderBy(quotedPaginationKey)
+	selectBuilder := squirrel.Select(columns...).From(QuotedTableName(table))
+
+	if lastPaginationKey == 0 {
+		selectBuilder = selectBuilder.Where(squirrel.GtOrEq{quotedPaginationKey: lastPaginationKey})
+	} else {
+		selectBuilder = selectBuilder.Where(squirrel.Gt{quotedPaginationKey: lastPaginationKey})
+	}
+
+	return selectBuilder.Limit(batchSize).OrderBy(quotedPaginationKey)
 }

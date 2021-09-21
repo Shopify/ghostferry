@@ -106,8 +106,8 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 
 				err := cursor.Each(func(batch *RowBatch) error {
 					metrics.Count("RowEvent", int64(batch.Size()), []MetricTag{
-						MetricTag{"table", table.Name},
-						MetricTag{"source", "table"},
+						{"table", table.Name},
+						{"source", "table"},
 					}, 1.0)
 
 					if d.SelectFingerprint {
