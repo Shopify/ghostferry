@@ -9,7 +9,7 @@ import (
 	"github.com/Shopify/ghostferry/testhelpers"
 	"github.com/stretchr/testify/suite"
 
-	sqlSchema "github.com/siddontang/go-mysql/schema"
+	sqlSchema "github.com/go-mysql-org/go-mysql/schema"
 )
 
 type FilterTestSuite struct {

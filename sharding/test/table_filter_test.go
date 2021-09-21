@@ -6,7 +6,7 @@ import (
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/sharding"
-	"github.com/siddontang/go-mysql/schema"
+	"github.com/go-mysql-org/go-mysql/schema"
 	"github.com/stretchr/testify/assert"
 )
 

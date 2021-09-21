@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/Shopify/ghostferry"
-	"github.com/siddontang/go-mysql/mysql"
+	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/stretchr/testify/suite"
 )
 

@@ -9,8 +9,8 @@ import (
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
-	"github.com/siddontang/go-mysql/mysql"
-	"github.com/siddontang/go-mysql/replication"
+	"github.com/go-mysql-org/go-mysql/mysql"
+	"github.com/go-mysql-org/go-mysql/replication"
 	"github.com/sirupsen/logrus"
 )
 
@@ -458,7 +458,6 @@ func idsOnServer(db *sql.DB) ([]uint32, error) {
 		var columns []string
 
 		columns, err = rows.Columns()
-
 
 		// SHOW SLAVE HOSTS has a different return value for different implementations
 		// i.e MySQL/Percona have 5 columns as it includes slave_uuid for MariaDB slave_uuid is omitted

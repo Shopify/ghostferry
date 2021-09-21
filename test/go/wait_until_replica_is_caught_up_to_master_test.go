@@ -1,12 +1,13 @@
 package test
 
 import (
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"testing"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
-	"github.com/siddontang/go-mysql/mysql"
+	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/stretchr/testify/suite"
 )
 
