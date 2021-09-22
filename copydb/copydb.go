@@ -160,12 +160,28 @@ func (this *CopydbFerry) initializeWaitUntilReplicaIsCaughtUpToMasterConnection(
 }
 
 func (this *CopydbFerry) createDatabaseIfExistsOnTarget(database string) error {
+	var originalDatabaseName, createDatabaseQuery string
+	r := this.Ferry.SourceDB.QueryRow(fmt.Sprintf("SHOW CREATE DATABASE `%s`", database))
+	err := r.Scan(&originalDatabaseName, &createDatabaseQuery)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"error":    err,
+			"database": database,
+		}).Error("unable to show create database on source")
+		return err
+	}
+
 	if targetDbName, exists := this.Ferry.DatabaseRewrites[database]; exists {
 		database = targetDbName
 	}
 
-	createDatabaseQuery := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`", database)
-	_, err := this.Ferry.TargetDB.Exec(createDatabaseQuery)
+	createDatabaseQuery = strings.Replace(
+		createDatabaseQuery,
+		fmt.Sprintf("CREATE DATABASE `%s`", originalDatabaseName),
+		fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`", database),
+		1,
+	)
+	_, err = this.Ferry.TargetDB.Exec(createDatabaseQuery)
 	return err
 }
 
