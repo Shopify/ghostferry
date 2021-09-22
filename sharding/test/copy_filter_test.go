@@ -8,9 +8,9 @@ import (
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/sharding"
 
-	"github.com/siddontang/go-mysql/mysql"
-	"github.com/siddontang/go-mysql/replication"
-	"github.com/siddontang/go-mysql/schema"
+	"github.com/go-mysql-org/go-mysql/mysql"
+	"github.com/go-mysql-org/go-mysql/replication"
+	"github.com/go-mysql-org/go-mysql/schema"
 	"github.com/stretchr/testify/suite"
 )
 

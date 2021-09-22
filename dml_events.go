@@ -10,9 +10,9 @@ import (
 
 	"github.com/shopspring/decimal"
 
-	"github.com/siddontang/go-mysql/mysql"
-	"github.com/siddontang/go-mysql/replication"
-	"github.com/siddontang/go-mysql/schema"
+	"github.com/go-mysql-org/go-mysql/mysql"
+	"github.com/go-mysql-org/go-mysql/replication"
+	"github.com/go-mysql-org/go-mysql/schema"
 )
 
 var annotationRegex = regexp.MustCompile(`^/\*(.*?)\*/`)
@@ -36,17 +36,17 @@ type RowData []interface{}
 //
 // At some point, this code was refactored into this function, such that the
 // BinlogStreamer also uses the same code to decode integers. The binlog data is
-// given to us by siddontang/go-mysql. The siddontang/go-mysql library should
+// given to us by go-mysql-org/go-mysql. The go-mysql-org/go-mysql library should
 // not be giving us awkward byte slices. Instead, it should properly gives us
 // uint64. This code thus panics when it encounters such case. See
 // https://github.com/Shopify/ghostferry/issues/165.
 //
 // In summary:
 // - This code receives values from both go-sql-driver/mysql and
-//   siddontang/go-mysql.
+//   go-mysql-org/go-mysql.
 // - go-sql-driver/mysql gives us int64 for signed integer, and uint64 in a byte
 //   slice for unsigned integer.
-// - siddontang/go-mysql gives us int64 for signed integer, and uint64 for
+// - go-mysql-org/go-mysql gives us int64 for signed integer, and uint64 for
 //   unsigned integer.
 // - We currently make this function deal with both cases. In the future we can
 //   investigate alternative solutions.

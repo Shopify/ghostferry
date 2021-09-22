@@ -6,13 +6,14 @@ import (
 	sqlorig "database/sql"
 	"encoding/binary"
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/siddontang/go-mysql/mysql"
-	"github.com/siddontang/go-mysql/schema"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
+
+	"github.com/go-mysql-org/go-mysql/mysql"
+	"github.com/go-mysql-org/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 

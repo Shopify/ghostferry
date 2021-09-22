@@ -2,11 +2,12 @@ package ghostferry
 
 import (
 	"errors"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math"
 	"time"
 
-	"github.com/siddontang/go-mysql/mysql"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
+
+	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/sirupsen/logrus"
 )
 

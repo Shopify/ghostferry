@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/siddontang/go-mysql/mysql"
+	"github.com/go-mysql-org/go-mysql/mysql"
 )
 
 // StateTracker design

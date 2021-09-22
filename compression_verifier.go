@@ -6,13 +6,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"strconv"
 	"strings"
 
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
+
 	sq "github.com/Masterminds/squirrel"
+	"github.com/go-mysql-org/go-mysql/schema"
 	"github.com/golang/snappy"
-	"github.com/siddontang/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
