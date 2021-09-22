@@ -345,6 +345,56 @@ class TypesTest < GhostferryTestCase
     )
   end
 
+  def test_decimal
+    # decimals are treated specially in binlog writing (they are inserted after
+    # conversion to string), so we add this test to make sure we don't corrupt
+    # data in the process of handling BINARY column (which requires a right pad
+    # for string data).
+    [source_db, target_db].each do |db|
+      db.query("CREATE DATABASE IF NOT EXISTS #{DEFAULT_DB}")
+      db.query("CREATE TABLE IF NOT EXISTS #{DEFAULT_FULL_TABLE_NAME} (id bigint(20) not null auto_increment, data decimal, primary key(id))")
+    end
+
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, 2)")
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+
+    row_copy_called = false
+    ghostferry.on_status(Ghostferry::Status::ROW_COPY_COMPLETED) do
+      # this hook follows the design in the helper method
+      # execute_copy_data_in_fixed_size_binary_column below. See detailed
+      # comments there
+      res = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME}")
+      assert_equal 1, res.count
+      res.each do |row|
+        assert_equal 1, row["id"]
+        assert_equal 2, row["data"]
+      end
+
+      source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (3, 4)")
+      source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 5 WHERE id = 1")
+
+      row_copy_called = true
+    end
+
+    ghostferry.run
+
+    assert row_copy_called
+    assert_test_table_is_identical
+    res = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME}")
+    assert_equal 2, res.count
+    res.each do |row|
+      if row["id"] == 1
+        assert_equal 5, row["data"]
+      else
+        assert_equal 3, row["id"]
+        assert_equal 4, row["data"]
+      end
+    end
+  end
+
+
+
   private
 
   def insert_json_on_source
