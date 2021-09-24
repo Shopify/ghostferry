@@ -1,9 +1,13 @@
+# github.com/DataDog/datadog-go v4.8.2+incompatible
+## explicit
+github.com/DataDog/datadog-go/statsd
 # github.com/Masterminds/squirrel v0.0.0-20180620232226-b127ed9be034
 ## explicit
 github.com/Masterminds/squirrel
-# github.com/Shopify/go-dogstatsd v0.0.0-20150311181532-76f9377ffde2
+# github.com/Microsoft/go-winio v0.5.0
 ## explicit
-github.com/Shopify/go-dogstatsd
+github.com/Microsoft/go-winio
+github.com/Microsoft/go-winio/pkg/guid
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
 # github.com/go-mysql-org/go-mysql v1.3.0
@@ -37,8 +41,6 @@ github.com/lann/ps
 # github.com/mattn/go-sqlite3 v2.0.3+incompatible
 ## explicit
 # github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e
-## explicit
-# github.com/ooyala/go-dogstatsd v0.0.0-20140922214459-23f2a1659b02
 ## explicit
 # github.com/pingcap/check v0.0.0-20200212061837-5e12011dc712
 ## explicit

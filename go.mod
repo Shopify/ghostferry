@@ -3,8 +3,9 @@ module github.com/Shopify/ghostferry
 go 1.14
 
 require (
+	github.com/DataDog/datadog-go v4.8.2+incompatible
 	github.com/Masterminds/squirrel v0.0.0-20180620232226-b127ed9be034
-	github.com/Shopify/go-dogstatsd v0.0.0-20150311181532-76f9377ffde2
+	github.com/Microsoft/go-winio v0.5.0 // indirect
 	github.com/go-mysql-org/go-mysql v1.3.0
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db
@@ -15,7 +16,6 @@ require (
 	github.com/lib/pq v1.3.0 // indirect
 	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
-	github.com/ooyala/go-dogstatsd v0.0.0-20140922214459-23f2a1659b02 // indirect
 	github.com/pingcap/check v0.0.0-20200212061837-5e12011dc712 // indirect
 	github.com/shopspring/decimal v0.0.0-20180709203117-cd690d0c9e24
 	github.com/siddontang/go-log v0.0.0-20180807004314-8d05993dda07
