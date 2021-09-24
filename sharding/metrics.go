@@ -3,8 +3,8 @@ package sharding
 import (
 	"fmt"
 
+	"github.com/DataDog/datadog-go/statsd"
 	"github.com/Shopify/ghostferry"
-	"github.com/Shopify/go-dogstatsd"
 )
 
 var (
@@ -17,12 +17,12 @@ var (
 func InitializeMetrics(prefix string, config *Config) error {
 	address := config.StatsDAddress
 
-	client, err := dogstatsd.New(address, &dogstatsd.Context{})
+	client, err := statsd.New(address)
 	if err != nil {
 		return err
 	}
 
-	metricsChan := make(chan interface{}, 4096)  // TODO: make this queue size configurable
+	metricsChan := make(chan interface{}, 4096) // TODO: make this queue size configurable
 	SetGlobalMetrics(prefix, metricsChan)
 
 	metrics.DefaultTags = []ghostferry.MetricTag{
@@ -44,7 +44,7 @@ func StopAndFlushMetrics() {
 	metrics.StopAndFlush()
 }
 
-func consumeMetrics(client *dogstatsd.Client, metricsChan chan interface{}) {
+func consumeMetrics(client *statsd.Client, metricsChan chan interface{}) {
 	defer metrics.DoneConsumer()
 	for {
 		switch metric := (<-metricsChan).(type) {
@@ -53,7 +53,7 @@ func consumeMetrics(client *dogstatsd.Client, metricsChan chan interface{}) {
 		case ghostferry.GaugeMetric:
 			handleErr(client.Gauge(metric.Key, metric.Value, tagsToStrings(metric.Tags), metric.SampleRate), metric)
 		case ghostferry.TimerMetric:
-			handleErr(client.Timer(metric.Key, metric.Value, tagsToStrings(metric.Tags), metric.SampleRate), metric)
+			handleErr(client.Timing(metric.Key, metric.Value, tagsToStrings(metric.Tags), metric.SampleRate), metric)
 		case nil:
 			return
 		}
