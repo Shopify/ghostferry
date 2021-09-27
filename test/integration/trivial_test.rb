@@ -39,4 +39,19 @@ class TrivialIntegrationTests < GhostferryTestCase
       end
     end
   end
+
+  def test_fails_if_database_schema_is_changed_during_data_copy
+    seed_simple_database_with_single_table
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+
+    batches_written = 0
+    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      batches_written += 1
+      if batches_written == 1
+        source_db.query("ALTER TABLE #{DEFAULT_FULL_TABLE_NAME} ADD COLUMN extracolumn VARCHAR(15);")
+      end
+    end
+
+    ghostferry.run_expecting_failure
+  end
 end
