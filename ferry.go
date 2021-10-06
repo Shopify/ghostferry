@@ -17,6 +17,8 @@ import (
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
+	_ "net/http/pprof"
+
 	siddontangmysql "github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-sql-driver/mysql"
 	siddontanglog "github.com/siddontang/go-log/log"
@@ -610,6 +612,15 @@ func (f *Ferry) Start() error {
 func (f *Ferry) Run() {
 	f.logger.Info("starting ferry run")
 	f.OverallState.Store(StateCopying)
+
+	if f.Config.EnablePProf {
+		go func() {
+			err := http.ListenAndServe("localhost:6060", nil)
+			if err != nil {
+				f.logger.WithError(err).Warn("pprof server finished")
+			}
+		}()
+	}
 
 	ctx, shutdown := context.WithCancel(context.Background())
 

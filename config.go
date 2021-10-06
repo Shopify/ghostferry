@@ -116,7 +116,7 @@ func (c *DatabaseConfig) MySQLConfig() (*mysql.Config, error) {
 			return nil, fmt.Errorf("failed to build TLS config: %v", err)
 		}
 
-		cfgName := fmt.Sprintf("%s@%s:%s", c.User, c.Host, c.Port)
+		cfgName := fmt.Sprintf("%s@%s:%d", c.User, c.Host, c.Port)
 
 		err = mysql.RegisterTLSConfig(cfgName, tlsConfig)
 		if err != nil {
@@ -764,6 +764,9 @@ type Config struct {
 	// The ghostferry target user should have SUPER permissions to actually write to the target DB,
 	// if ghostferry is ran with AllowSuperUserOnReadOnly = true and the target DB is set to read_only.
 	AllowSuperUserOnReadOnly bool
+
+	// If true, net/http/pprof will be enabled on port 6060.
+	EnablePProf bool
 }
 
 func (c *Config) ValidateConfig() error {
