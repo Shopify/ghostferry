@@ -28,9 +28,7 @@ const (
 
 type ShardingUnitTestSuite struct {
 	suite.Suite
-	server      *httptest.Server
-	metrics     *ghostferry.Metrics
-	metricsSink chan interface{}
+	server *httptest.Server
 
 	SourceDB *sql.DB
 	TargetDB *sql.DB
@@ -69,9 +67,6 @@ func (t *ShardingUnitTestSuite) TearDownSuite() {
 }
 
 func (t *ShardingUnitTestSuite) SetupTest() {
-	t.metricsSink = make(chan interface{}, 1024)
-	sharding.SetMetricSink(t.metricsSink)
-
 	var err error
 	ghostferryConfig := testhelpers.NewTestConfig()
 	t.SourceDB, err = ghostferryConfig.Source.SqlDB(nil)

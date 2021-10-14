@@ -56,10 +56,6 @@ func (this *IntegrationTestCase) Setup() {
 	this.TargetDB, err = this.Ferry.Target.SqlDB(nil)
 	PanicIfError(err)
 
-	ghostferry.SetGlobalMetrics(&ghostferry.Metrics{
-		Sink: make(chan interface{}, 1024),
-	})
-
 	this.callCustomAction(this.SetupAction)
 	PanicIfError(this.Ferry.Initialize())
 }
@@ -161,8 +157,6 @@ func (this *IntegrationTestCase) Teardown() {
 	if r != nil {
 		panic(r)
 	}
-
-	ghostferry.SetGlobalMetrics(nil)
 
 	this.SourceDB.Close()
 	this.TargetDB.Close()

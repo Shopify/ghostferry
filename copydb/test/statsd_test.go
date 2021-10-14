@@ -24,12 +24,22 @@ func (t *StatsdTestSuite) SetupTest() {
 	t.sink = make(chan interface{}, 50)
 
 	t.tags = []ghostferry.MetricTag{
-		ghostferry.MetricTag{"test", "true"},
-		ghostferry.MetricTag{"4", "2"},
+		ghostferry.MetricTag{
+			Name:  "test",
+			Value: "true",
+		},
+		ghostferry.MetricTag{
+			Name:  "4",
+			Value: "2",
+		},
 	}
 
 	t.config = testhelpers.NewTestConfig()
 	t.config.StatsdAddress = "127.0.0.1:8125"
+}
+
+func (t *StatsdTestSuite) TearDownTest() {
+	copydb.SetMetricSink(nil)
 }
 
 func (t *StatsdTestSuite) TestEmptyInitializeMetrics() {
