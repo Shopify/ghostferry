@@ -33,6 +33,7 @@ func (b *BinlogWriter) Run() {
 
 	batch := make([]DMLEvent, 0, b.BatchSize)
 	for {
+		waitOnBufferStart := time.Now()
 		firstEvent := <-b.binlogEventBuffer
 		if firstEvent == nil {
 			// Channel is closed, no more events to write
@@ -54,13 +55,16 @@ func (b *BinlogWriter) Run() {
 				wantMoreEvents = false
 			}
 		}
+		metrics.Timer("BinlogWriter.WaitOnBuffer", time.Since(waitOnBufferStart), nil, 1.0)
 
+		writeEventsStart := time.Now()
 		err := WithRetries(b.WriteRetries, 0, b.logger, "write events to target", func() error {
 			return b.writeEvents(batch)
 		})
 		if err != nil {
 			b.ErrorHandler.Fatal("binlog_writer", err)
 		}
+		metrics.Timer("BinlogWriter.WriteEvents", time.Since(writeEventsStart), nil, 1.0)
 
 		batch = make([]DMLEvent, 0, b.BatchSize)
 	}
@@ -114,7 +118,9 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 	}
 
 	if b.StateTracker != nil {
+		updateBinlogStart := time.Now()
 		b.StateTracker.UpdateLastResumableSourceBinlogPosition(events[len(events)-1].ResumableBinlogPosition())
+		metrics.Timer("BinlogWriter.UpdateLastResumableSourceBinlogPosition", time.Since(updateBinlogStart), nil, 1.0)
 	}
 
 	b.lastProcessedEventTime = events[len(events)-1].Timestamp()

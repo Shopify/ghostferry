@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	sqlorig "database/sql"
 	"fmt"
+	"strconv"
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -161,12 +162,18 @@ func (s *BinlogStreamer) Run() {
 		func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 			defer cancel()
+
+			getEventStart := time.Now()
 			ev, err = s.binlogStreamer.GetEvent(ctx)
 			if err == context.DeadlineExceeded {
 				timedOut = true
 			} else if err != nil {
 				s.ErrorHandler.Fatal("binlog_streamer", err)
 			}
+
+			metrics.Timer("BinlogStreamer.GetEvent", time.Since(getEventStart), []MetricTag{
+				MetricTag{"DeadlineExceeded", strconv.FormatBool(err == context.DeadlineExceeded)},
+			}, 1.0)
 		}()
 
 		if timedOut {
@@ -207,6 +214,10 @@ func (s *BinlogStreamer) Run() {
 				}
 			}
 
+			metrics.Count("BinlogStreamer.RotateEvent", 1, []MetricTag{
+				MetricTag{"FakeRotateEvent", strconv.FormatBool(isFakeRotateEvent)},
+			}, 1.0)
+
 			s.logger.WithFields(logrus.Fields{
 				"new_position":  evPosition.Pos,
 				"new_filename":  evPosition.Name,
@@ -224,6 +235,10 @@ func (s *BinlogStreamer) Run() {
 			// the mysql source. See:
 			// https://github.com/percona/percona-server/blob/93165de1451548ff11dd32c3d3e5df0ff28cfcfa/sql/rpl_binlog_sender.cc#L1020-L1026
 			isEventPositionValid = ev.Header.LogPos != 0
+
+			metrics.Count("BinlogStreamer.FormatDescriptionEvent", 1, []MetricTag{
+				MetricTag{"EventPositionValid", strconv.FormatBool(isEventPositionValid)},
+			}, 1.0)
 		case *replication.RowsQueryEvent:
 			// A RowsQueryEvent will always precede the corresponding RowsEvent
 			// if binlog_rows_query_log_events is enabled, and is used to get
@@ -231,11 +246,15 @@ func (s *BinlogStreamer) Run() {
 			// that is otherwise not possible to reconstruct
 			query = ev.Event.(*replication.RowsQueryEvent).Query
 		case *replication.RowsEvent:
+			rowsEventStart := time.Now()
+
 			err = s.handleRowsEvent(ev, query)
 			if err != nil {
 				s.logger.WithError(err).Error("failed to handle rows event")
 				s.ErrorHandler.Fatal("binlog_streamer", err)
 			}
+
+			metrics.Timer("BinlogStreamer.RowsEvent", time.Since(rowsEventStart), nil, 1.0)
 		case *replication.XIDEvent, *replication.GTIDEvent:
 			// With regards to DMLs, we see (at least) the following sequence
 			// of events in the binlog stream:
