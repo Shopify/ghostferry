@@ -41,7 +41,7 @@ func main() {
 	fmt.Printf("ghostferry-sharding built with ghostferry %s\n", ghostferry.VersionString)
 	fmt.Printf("will move tenant %s=%d\n", config.ShardingKey, config.ShardingValue)
 
-	err := sharding.InitializeMetrics("sharding", config)
+	err := sharding.InitializeMetrics(config)
 	if err != nil {
 		errorAndExit(fmt.Sprintf("failed to initialize metrics: %v", err))
 	}
@@ -105,28 +105,9 @@ func parseConfig() *sharding.Config {
 		errorAndExit(fmt.Sprintf("failed to parse config: %v", err))
 	}
 
-	if config.MyServerId != 0 {
-		errorAndExit("specifying MyServerId option manually is dangerous and disallowed")
-	}
-
-	if config.ShardingKey == "" {
-		errorAndExit("missing ShardingKey config")
-	}
-
-	if config.ShardingValue == -1 {
-		errorAndExit("missing ShardingValue config")
-	}
-
-	if config.SourceDB == "" {
-		errorAndExit("missing SourceDB config")
-	}
-
-	if config.TargetDB == "" {
-		errorAndExit("missing TargetDB config")
-	}
-
-	if config.StatsDAddress == "" {
-		config.StatsDAddress = "127.0.0.1:8125"
+	err = config.InitializeAndValidateConfig()
+	if err != nil {
+		errorAndExit(fmt.Sprintf("failed to validate config: %v", err))
 	}
 
 	return config

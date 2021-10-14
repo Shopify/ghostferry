@@ -29,8 +29,8 @@ const (
 type ShardingUnitTestSuite struct {
 	suite.Suite
 	server      *httptest.Server
-	metricsSink chan interface{}
 	metrics     *ghostferry.Metrics
+	metricsSink chan interface{}
 
 	SourceDB *sql.DB
 	TargetDB *sql.DB
@@ -64,12 +64,13 @@ func (t *ShardingUnitTestSuite) SetupSuite() {
 }
 
 func (t *ShardingUnitTestSuite) TearDownSuite() {
+	sharding.SetMetricSink(nil)
 	t.server.Close()
 }
 
 func (t *ShardingUnitTestSuite) SetupTest() {
 	t.metricsSink = make(chan interface{}, 1024)
-	sharding.SetGlobalMetrics("sharding_test", t.metricsSink)
+	sharding.SetMetricSink(t.metricsSink)
 
 	var err error
 	ghostferryConfig := testhelpers.NewTestConfig()
@@ -152,14 +153,13 @@ func (t *ShardingUnitTestSuite) setupShardingFerry() {
 		PrimaryKeyTables: []string{primaryKeyTable},
 	}
 
-
 	t.Config.CutoverLock = ghostferry.HTTPCallback{
-		URI: fmt.Sprintf("%s/lock", t.server.URL),
+		URI:     fmt.Sprintf("%s/lock", t.server.URL),
 		Payload: "test_lock",
 	}
 
 	t.Config.CutoverUnlock = ghostferry.HTTPCallback{
-		URI: fmt.Sprintf("%s/unlock", t.server.URL),
+		URI:     fmt.Sprintf("%s/unlock", t.server.URL),
 		Payload: "test_unlock",
 	}
 

@@ -1,6 +1,8 @@
 package sharding
 
 import (
+	"fmt"
+
 	"github.com/Shopify/ghostferry"
 )
 
@@ -16,7 +18,8 @@ type Config struct {
 	ReplicatedMasterPositionQuery string
 	RunFerryFromReplica           bool
 
-	StatsDAddress string
+	StatsdAddress   string
+	StatsdQueueSize int64
 
 	JoinedTables     map[string][]JoinTable
 	IgnoredTables    []string
@@ -33,4 +36,32 @@ func (c *Config) ValidateConfig() error {
 	}
 
 	return c.Config.ValidateConfig()
+}
+
+func (c *Config) InitializeAndValidateConfig() error {
+	if c.MyServerId != 0 {
+		return fmt.Errorf("specifying MyServerId option manually is dangerous and disallowed")
+	}
+
+	if c.ShardingKey == "" {
+		return fmt.Errorf("missing ShardingKey config")
+	}
+
+	if c.ShardingValue == -1 {
+		return fmt.Errorf("missing ShardingValue config")
+	}
+
+	if c.SourceDB == "" {
+		return fmt.Errorf("missing SourceDB config")
+	}
+
+	if c.TargetDB == "" {
+		return fmt.Errorf("missing TargetDB config")
+	}
+
+	if c.StatsdQueueSize == 0 {
+		c.StatsdQueueSize = 4096
+	}
+
+	return nil
 }

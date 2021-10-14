@@ -20,8 +20,10 @@ require (
 	github.com/shopspring/decimal v0.0.0-20180709203117-cd690d0c9e24
 	github.com/siddontang/go-log v0.0.0-20180807004314-8d05993dda07
 	github.com/sirupsen/logrus v1.8.1
-	github.com/stretchr/testify v1.4.0
+	github.com/stretchr/objx v0.3.0 // indirect
+	github.com/stretchr/testify v1.7.0
 	golang.org/x/sys v0.0.0-20210426230700-d19ff857e887 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 	gopkg.in/yaml.v2 v2.2.4 // indirect
+	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 )

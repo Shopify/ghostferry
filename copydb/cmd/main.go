@@ -102,6 +102,11 @@ func main() {
 		errorAndExit(fmt.Sprintf("failed to validate config: %v", err))
 	}
 
+	err = copydb.InitializeMetrics(config)
+	if err != nil {
+		errorAndExit(fmt.Sprintf("failed to initialize metrics: %v", err))
+	}
+
 	ferry := copydb.NewFerry(config)
 
 	err = ferry.Initialize()
@@ -132,4 +137,6 @@ func main() {
 	}
 
 	ferry.Run()
+
+	copydb.StopAndFlushMetrics()
 }

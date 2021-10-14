@@ -55,7 +55,12 @@ $(PROJECT_DEBS): reset-deb-dir
 $(GOBIN):
 	mkdir -p $(GOBIN)
 
-test-go:
+ensure-db-up:
+	@mysql -h 127.0.0.1 -u root -P 29291 -e 'SELECT 1' > /dev/null && \
+		mysql -h 127.0.0.1 -u root -P 29292 -e 'SELECT 1' > /dev/null || \
+		(echo "MySQL on port 29291 and 29292 does not seem to be up and running"; exit 1)
+
+test-go: ensure-db-up
 	@go version
 	@if [ ! -f ./bin/gotestsum ]; then \
 		mkdir ./bin; \
@@ -64,7 +69,7 @@ test-go:
 
 	ulimit -n 1024 && ./bin/gotestsum --format short-verbose ./test/go ./copydb/test ./sharding/test -count 1 -p 1 -failfast
 
-test-ruby:
+test-ruby: ensure-db-up
 	bundle install
 	ruby test/main.rb
 

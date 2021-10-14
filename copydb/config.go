@@ -77,6 +77,13 @@ type Config struct {
 	// This allows pre-existing tables on your target, schemas and data compatibility won't be validated.
 	// Use at your own risk.
 	AllowExistingTargetTable bool
+
+	// StatsD server address. Eg. 127.0.0.1:8125. Leave this unconfigured to disable metrics.
+	StatsdAddress string
+
+	// Configures maximum number of metrics to buffer in Ghostferry while transmitting to StatsD server.
+	// Overflowing this buffer will generate error messages and dropped metrics. Defaults to 4096.
+	StatsdQueueSize int64
 }
 
 func (c *Config) InitializeAndValidateConfig() error {
@@ -107,6 +114,10 @@ func (c *Config) InitializeAndValidateConfig() error {
 		if err := c.SourceReplicationMaster.Validate(); err != nil {
 			return err
 		}
+	}
+
+	if c.StatsdQueueSize == 0 {
+		c.StatsdQueueSize = 4096
 	}
 
 	if err := c.Config.ValidateConfig(); err != nil {

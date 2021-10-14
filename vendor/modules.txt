@@ -62,7 +62,9 @@ github.com/siddontang/go-log/loggers
 # github.com/sirupsen/logrus v1.8.1
 ## explicit
 github.com/sirupsen/logrus
-# github.com/stretchr/testify v1.4.0
+# github.com/stretchr/objx v0.3.0
+## explicit
+# github.com/stretchr/testify v1.7.0
 ## explicit
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/require
@@ -78,4 +80,6 @@ golang.org/x/sys/windows
 ## explicit
 # gopkg.in/yaml.v2 v2.2.4
 ## explicit
-gopkg.in/yaml.v2
+# gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
+## explicit
+gopkg.in/yaml.v3

@@ -34,11 +34,8 @@ type Metrics struct {
 	wg sync.WaitGroup
 }
 
-func SetGlobalMetrics(prefix string, sink chan interface{}) *Metrics {
-	metrics = &Metrics{
-		Prefix: prefix,
-		Sink:   sink,
-	}
+func SetGlobalMetrics(cmdMetrics *Metrics) *Metrics {
+	metrics = cmdMetrics
 	return metrics
 }
 
@@ -105,6 +102,10 @@ func (m *Metrics) DoneConsumer() {
 }
 
 func (m *Metrics) StopAndFlush() {
+	if m.Sink == nil {
+		return
+	}
+
 	close(m.Sink)
 	m.wg.Wait()
 }

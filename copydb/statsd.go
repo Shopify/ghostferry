@@ -1,53 +1,61 @@
-package sharding
+package copydb
 
 import (
 	"fmt"
 
 	"github.com/DataDog/datadog-go/statsd"
 	"github.com/Shopify/ghostferry"
+	"github.com/sirupsen/logrus"
 )
 
 var (
 	metrics = &ghostferry.Metrics{
-		Prefix: "ghostferry",
+		Prefix: "ghostferry.copydb",
 		Sink:   nil,
 	}
 )
 
-func InitializeMetrics(prefix string, config *Config) error {
-	address := config.StatsDAddress
+func InitializeMetrics(config *Config) error {
+	if config.StatsdAddress == "" {
+		logrus.Debug("statsd metrics not configured")
+		return nil
+	}
 
-	client, err := statsd.New(address)
+	client, err := statsd.New(config.StatsdAddress)
 	if err != nil {
 		return err
 	}
 
-	metricsChan := make(chan interface{}, 4096) // TODO: make this queue size configurable
-	SetGlobalMetrics(prefix, metricsChan)
-
+	metrics.Sink = make(chan interface{}, config.StatsdQueueSize)
 	metrics.DefaultTags = []ghostferry.MetricTag{
-		{Name: "SourceDB", Value: config.SourceDB},
-		{Name: "TargetDB", Value: config.TargetDB},
+		{Name: "SourceHost", Value: config.Source.Host},
+		{Name: "TargetHost", Value: config.Target.Host},
 	}
 
-	metrics.AddConsumer()
-	go consumeMetrics(client, metricsChan)
+	metrics = ghostferry.SetGlobalMetrics(metrics)
+
+	go consumeMetrics(client, metrics.Sink)
 
 	return nil
 }
 
-func SetGlobalMetrics(prefix string, metricsChan chan interface{}) {
-	metrics = ghostferry.SetGlobalMetrics(prefix, metricsChan)
+func Metrics() *ghostferry.Metrics {
+	return metrics
+}
+
+func SetMetricSink(sink chan interface{}) {
+	metrics.Sink = sink
 }
 
 func StopAndFlushMetrics() {
 	metrics.StopAndFlush()
 }
 
-func consumeMetrics(client *statsd.Client, metricsChan chan interface{}) {
+func consumeMetrics(client *statsd.Client, sink chan interface{}) {
 	defer metrics.DoneConsumer()
+	metrics.AddConsumer()
 	for {
-		switch metric := (<-metricsChan).(type) {
+		switch metric := (<-sink).(type) {
 		case ghostferry.CountMetric:
 			handleErr(client.Count(metric.Key, metric.Value, tagsToStrings(metric.Tags), metric.SampleRate), metric)
 		case ghostferry.GaugeMetric:
@@ -74,6 +82,9 @@ func tagsToStrings(tags []ghostferry.MetricTag) []string {
 
 func handleErr(err error, metric interface{}) {
 	if err != nil {
-		fmt.Println("ghostferry-sharding could not emit statsd metric ", metric)
+		logrus.WithFields(logrus.Fields{
+			"error":  err,
+			"metric": metric,
+		}).Warnln("could not emit statsd metric")
 	}
 }
