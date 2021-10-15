@@ -35,7 +35,7 @@ DEB_TARGET       = $(BUILD_DIR)/$(PROJECT_BIN)_$(VERSION_STR).deb
 PLATFORM        := $(shell uname -s | tr A-Z a-z)
 GOTESTSUM_URL   := "https://github.com/gotestyourself/gotestsum/releases/download/v0.5.1/gotestsum_0.5.1_$(PLATFORM)_amd64.tar.gz"
 
-.PHONY: test test-go test-ruby clean reset-deb-dir $(PROJECTS) $(PROJECT_DEBS)
+.PHONY: test test-go test-ruby clean reset-deb-dir ensure-db-up $(PROJECTS) $(PROJECT_DEBS)
 .DEFAULT_GOAL := test
 
 $(PROJECTS): $(GOBIN)
