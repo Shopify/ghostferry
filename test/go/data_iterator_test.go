@@ -2,10 +2,9 @@ package test
 
 import (
 	"fmt"
+	"github.com/stretchr/testify/suite"
 	"sync"
 	"testing"
-
-	"github.com/stretchr/testify/suite"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
@@ -52,7 +51,7 @@ func (this *DataIteratorTestSuite) SetupTest() {
 			Throttler: throttler,
 
 			BuildSelect:               nil,
-			BatchSize:                 config.DataIterationBatchSize,
+			BatchSize:                 &config.DataIterationBatchSize,
 			BatchSizePerTableOverride: config.DataIterationBatchSizePerTableOverride,
 			ReadRetries:               config.DBReadRetries,
 		},
@@ -231,6 +230,11 @@ func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverrideMax
 		// since 3276 > MaxRowSize  we default to use point ControlPoints[3000]
 		this.Require().Equal(uint64(4000), this.di.CursorConfig.GetBatchSize(table.Schema, table.Name))
 	}
+}
+
+func (this *DataIteratorTestSuite) TestBatchSizeUpdate() {
+	this.Ferry.Config.Update(ghostferry.UpdatableConfigs{DataIterationBatchSize: 1234})
+	this.Require().Equal(uint64(1234), this.di.CursorConfig.GetBatchSize(testhelpers.TestSchemaName, "any_table"))
 }
 
 func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverrideCalculateBatchSize() {

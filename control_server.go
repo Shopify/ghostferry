@@ -103,6 +103,7 @@ func (this *ControlServer) Initialize() (err error) {
 	this.router.HandleFunc("/api/stop", this.HandleStop).Methods("POST")
 	this.router.HandleFunc("/api/verify", this.HandleVerify).Methods("POST")
 	this.router.HandleFunc("/api/script", this.HandleScript).Methods("POST")
+	this.router.HandleFunc("/api/config", this.HandleConfig).Methods("POST")
 
 	if WebUiBasedir != "" {
 		this.Basedir = WebUiBasedir
@@ -125,9 +126,7 @@ func (this *ControlServer) Initialize() (err error) {
 	return nil
 }
 
-func (this *ControlServer) Run(wg *sync.WaitGroup) {
-	defer wg.Done()
-
+func (this *ControlServer) Run() {
 	this.logger.Infof("running on %s", this.Addr)
 	err := this.server.ListenAndServe()
 	if err != nil {
@@ -359,6 +358,23 @@ func (this *ControlServer) HandleScript(w http.ResponseWriter, r *http.Request) 
 	}
 
 	this.startScriptInBackground(name, cmd)
+	returnSuccess(w, r)
+}
+
+func (this *ControlServer) HandleConfig(w http.ResponseWriter, r *http.Request) {
+	var decoder = json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	var updatableConfig UpdatableConfigs
+	err := decoder.Decode(&updatableConfig)
+
+	if err != nil {
+		this.logger.WithError(err).Error("failed to parse json")
+		http.Error(w, "failed to parse json", http.StatusBadRequest)
+		return
+	}
+
+	this.F.Config.Update(updatableConfig)
 	returnSuccess(w, r)
 }
 

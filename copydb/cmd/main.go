@@ -61,7 +61,8 @@ func main() {
 				User: "ghostferry",
 			},
 
-			AutomaticCutover: false,
+			AutomaticCutover:       false,
+			EnableControlServer:    true,
 		},
 	}
 

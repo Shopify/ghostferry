@@ -56,6 +56,8 @@ type Ferry struct {
 	SourceDB *sql.DB
 	TargetDB *sql.DB
 
+	ControlServer *ControlServer
+
 	BinlogStreamer *BinlogStreamer
 	BinlogWriter   *BinlogWriter
 
@@ -104,7 +106,7 @@ func (f *Ferry) NewDataIterator() *DataIterator {
 			DB:        f.SourceDB,
 			Throttler: f.Throttler,
 
-			BatchSize:                 f.Config.DataIterationBatchSize,
+			BatchSize:                 &f.Config.DataIterationBatchSize,
 			BatchSizePerTableOverride: f.Config.DataIterationBatchSizePerTableOverride,
 			ReadRetries:               f.Config.DBReadRetries,
 		},
@@ -247,6 +249,24 @@ func (f *Ferry) NewInlineVerifier() *InlineVerifier {
 	}
 }
 
+func (f *Ferry) NewControlServer() (*ControlServer, error) {
+	f.ensureInitialized()
+
+	controlServer := &ControlServer{
+		F:             f,
+		Addr:          f.Config.ServerBindAddr,
+		Basedir:       f.Config.WebBasedir,
+		CustomScripts: f.Config.ControlServerCustomScripts,
+		Verifier:      f.Verifier,
+	}
+
+	err := controlServer.Initialize()
+	if err != nil {
+		return nil, err
+	}
+	return controlServer, nil
+}
+
 func (f *Ferry) NewInlineVerifierWithoutStateTracker() *InlineVerifier {
 	v := f.NewInlineVerifier()
 	v.StateTracker = nil
@@ -286,7 +306,7 @@ func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
 	v := &IterativeVerifier{
 		CursorConfig: &CursorConfig{
 			DB:                        f.SourceDB,
-			BatchSize:                 f.Config.DataIterationBatchSize,
+			BatchSize:                 &f.Config.DataIterationBatchSize,
 			BatchSizePerTableOverride: f.Config.DataIterationBatchSizePerTableOverride,
 			ReadRetries:               f.Config.DBReadRetries,
 		},
@@ -513,6 +533,13 @@ func (f *Ferry) Initialize() (err error) {
 	f.DataIterator = f.NewDataIterator()
 	f.BatchWriter = f.NewBatchWriter()
 
+	if f.Config.EnableControlServer {
+		f.ControlServer, err = f.NewControlServer()
+		if err != nil {
+			return err
+		}
+	}
+
 	if f.Config.VerifierType != "" {
 		if f.Verifier != nil {
 			return errors.New("VerifierType specified and Verifier is given. these are mutually exclusive options")
@@ -637,6 +664,15 @@ func (f *Ferry) Run() {
 		defer supportingServicesWg.Done()
 		handleError("throttler", f.Throttler.Run(ctx))
 	}()
+
+	if f.Config.EnableControlServer {
+		supportingServicesWg.Add(1)
+		go func() {
+			defer supportingServicesWg.Done()
+
+			f.ControlServer.Run()
+		}()
+	}
 
 	if f.Config.ProgressCallback.URI != "" {
 		supportingServicesWg.Add(1)
@@ -794,6 +830,10 @@ func (f *Ferry) Run() {
 	binlogWg.Wait()
 
 	f.logger.Info("ghostferry run is complete, shutting down auxiliary services")
+	if f.Config.EnableControlServer == true {
+		logrus.Info("ghostferry main operations has terminated but the control server remains online")
+		logrus.Info("press CTRL+C or send an interrupt to stop the control server and end this process")
+	}
 	f.OverallState.Store(StateDone)
 	f.DoneTime = time.Now()
 

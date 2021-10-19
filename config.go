@@ -486,6 +486,10 @@ func linearInterpolation(x, x0, y0, x1, y1 int) int {
 	return y0*(x1-x)/(x1-x0) + y1*(x-x0)/(x1-x0)
 }
 
+type UpdatableConfigs struct {
+	DataIterationBatchSize uint64
+}
+
 type Config struct {
 	// Source database connection configuration
 	//
@@ -594,6 +598,9 @@ type Config struct {
 	// and the stdout dumping. This may save a lot of space if you don't need
 	// to deal with schema migrations.
 	DoNotIncludeSchemaCacheInStateDump bool
+
+	// enable/disable http control server
+	EnableControlServer bool
 
 	// Config for the ControlServer
 	ServerBindAddr string
@@ -837,4 +844,11 @@ func (c *Config) ValidateConfig() error {
 	}
 
 	return nil
+}
+
+func (c *Config) Update(updatedConfig UpdatableConfigs) {
+	if updatedConfig.DataIterationBatchSize > 0 {
+		c.DataIterationBatchSize = updatedConfig.DataIterationBatchSize
+	}
+
 }

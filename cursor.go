@@ -3,9 +3,8 @@ package ghostferry
 import (
 	sqlorig "database/sql"
 	"fmt"
-	"strings"
-
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
+	"strings"
 
 	"github.com/Masterminds/squirrel"
 	"github.com/go-mysql-org/go-mysql/schema"
@@ -38,7 +37,7 @@ type CursorConfig struct {
 
 	ColumnsToSelect           []string
 	BuildSelect               func([]string, *TableSchema, uint64, uint64) (squirrel.SelectBuilder, error)
-	BatchSize                 uint64
+	BatchSize                 *uint64
 	BatchSizePerTableOverride *DataIterationBatchSizePerTableOverride
 	ReadRetries               int
 }
@@ -67,7 +66,7 @@ func (c CursorConfig) GetBatchSize(schemaName string, tableName string) uint64 {
 			return batchSize
 		}
 	}
-	return c.BatchSize
+	return *c.BatchSize
 }
 
 type Cursor struct {
