@@ -121,8 +121,8 @@ func (this *ConfigTestSuite) TestDefaultValues() {
 	this.Require().Equal(uint64(200), this.config.DataIterationBatchSize)
 	this.Require().Equal(4, this.config.DataIterationConcurrency)
 	this.Require().Equal(5, this.config.DBReadRetries)
-	this.Require().Equal("0.0.0.0:8000", this.config.ServerBindAddr)
-	this.Require().Equal(".", this.config.WebBasedir)
+	this.Require().Equal("0.0.0.0:8000", this.config.ControlServerConfig.ServerBindAddr)
+	this.Require().Equal(".", this.config.ControlServerConfig.WebBasedir)
 }
 
 func (this *ConfigTestSuite) TestCorruptCert() {

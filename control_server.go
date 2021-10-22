@@ -67,11 +67,9 @@ type ControlServerStatus struct {
 }
 
 type ControlServer struct {
+	ControlServerConfig *ControlServerConfig
 	F             *Ferry
 	Verifier      Verifier
-	Addr          string
-	Basedir       string
-	CustomScripts map[string][]string
 
 	server    *http.Server
 	logger    *logrus.Entry
@@ -106,20 +104,20 @@ func (this *ControlServer) Initialize() (err error) {
 	this.router.HandleFunc("/api/config", this.HandleConfig).Methods("POST")
 
 	if WebUiBasedir != "" {
-		this.Basedir = WebUiBasedir
+		this.ControlServerConfig.WebBasedir = WebUiBasedir
 	}
 
-	staticFiles := http.StripPrefix("/static/", http.FileServer(http.Dir(filepath.Join(this.Basedir, "webui", "static"))))
+	staticFiles := http.StripPrefix("/static/", http.FileServer(http.Dir(filepath.Join(this.ControlServerConfig.WebBasedir, "webui", "static"))))
 	this.router.PathPrefix("/static/").Handler(staticFiles)
 
-	this.templates, err = template.New("").ParseFiles(filepath.Join(this.Basedir, "webui", "index.html"))
+	this.templates, err = template.New("").ParseFiles(filepath.Join(this.ControlServerConfig.WebBasedir, "webui", "index.html"))
 
 	if err != nil {
 		return err
 	}
 
 	this.server = &http.Server{
-		Addr:    this.Addr,
+		Addr:    this.ControlServerConfig.ServerBindAddr,
 		Handler: this,
 	}
 
@@ -127,7 +125,7 @@ func (this *ControlServer) Initialize() (err error) {
 }
 
 func (this *ControlServer) Run() {
-	this.logger.Infof("running on %s", this.Addr)
+	this.logger.Infof("running on %s", this.ControlServerConfig.ServerBindAddr)
 	err := this.server.ListenAndServe()
 	if err != nil {
 		logrus.WithError(err).Error("error on ListenAndServe")
@@ -315,11 +313,11 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 		status.VerifierAvailable = false
 	}
 
-	if this.CustomScripts != nil {
+	if this.ControlServerConfig.ControlServerCustomScripts != nil {
 		status.CustomScriptStatuses = map[string]CustomScriptStatus{}
 
 		this.customScriptsLock.RLock()
-		for name := range this.CustomScripts {
+		for name := range this.ControlServerConfig.ControlServerCustomScripts {
 			scriptStatus := this.customScriptsStatus[name]
 			if scriptStatus == "" {
 				scriptStatus = "not started yet"
@@ -340,7 +338,7 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 }
 
 func (this *ControlServer) HandleScript(w http.ResponseWriter, r *http.Request) {
-	if this.CustomScripts == nil {
+	if this.ControlServerConfig.ControlServerCustomScripts == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -351,7 +349,7 @@ func (this *ControlServer) HandleScript(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	cmd, found := this.CustomScripts[name]
+	cmd, found := this.ControlServerConfig.ControlServerCustomScripts[name]
 	if !found {
 		http.NotFound(w, r)
 		return
@@ -370,7 +368,7 @@ func (this *ControlServer) HandleConfig(w http.ResponseWriter, r *http.Request) 
 
 	if err != nil {
 		this.logger.WithError(err).Error("failed to parse json")
-		http.Error(w, "failed to parse json", http.StatusBadRequest)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 

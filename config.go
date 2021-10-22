@@ -282,6 +282,36 @@ func (c *IterativeVerifierConfig) Validate() error {
 	return nil
 }
 
+type ControlServerConfig struct {
+	// enable/disable http control server
+	EnableControlServer bool
+
+	// Bind control server address
+	ServerBindAddr string
+
+	// Path to `web` base dir
+	WebBasedir     string
+
+	// TODO: refactor control server config out of the base ferry at some point
+	// This adds optional buttons in the web ui that runs a script located at the
+	// path specified.
+	// The format is "script name" => ["path to script", "arg1", "arg2"]. The script name
+	// will be displayed on the web ui.
+	ControlServerCustomScripts map[string][]string
+}
+
+func (c *ControlServerConfig) Validate() error {
+	if c.ServerBindAddr == "" {
+		c.ServerBindAddr = "0.0.0.0:8000"
+	}
+
+	if c.WebBasedir == "" {
+		c.WebBasedir = "."
+	}
+
+	return nil
+}
+
 // SchemaName => TableName => ColumnName => CompressionAlgorithm
 // Example: blog1 => articles => body => snappy
 //          (SELECT body FROM blog1.articles => returns compressed blob)
@@ -486,10 +516,6 @@ func linearInterpolation(x, x0, y0, x1, y1 int) int {
 	return y0*(x1-x)/(x1-x0) + y1*(x-x0)/(x1-x0)
 }
 
-type UpdatableConfigs struct {
-	DataIterationBatchSize uint64
-}
-
 type Config struct {
 	// Source database connection configuration
 	//
@@ -547,18 +573,6 @@ type Config struct {
 	// Optional: defaults to 100
 	BinlogEventBatchSize int
 
-	// The batch size used to iterate the data during data copy. This batch size
-	// is always used: if this is specified to be 100, 100 rows will be copied
-	// per iteration.
-	//
-	// With the current implementation of Ghostferry, we need to lock the rows
-	// we select. This means, the larger this number is, the longer we need to
-	// hold this lock. On the flip side, the smaller this number is, the slower
-	// the copy will likely be.
-	//
-	// Optional: defaults to 200
-	DataIterationBatchSize uint64
-
 	// This optional config uses different data points to calculate
 	// batch size per table using linear interpolation
 	DataIterationBatchSizePerTableOverride *DataIterationBatchSizePerTableOverride
@@ -599,19 +613,8 @@ type Config struct {
 	// to deal with schema migrations.
 	DoNotIncludeSchemaCacheInStateDump bool
 
-	// enable/disable http control server
-	EnableControlServer bool
-
 	// Config for the ControlServer
-	ServerBindAddr string
-	WebBasedir     string
-
-	// TODO: refactor control server config out of the base ferry at some point
-	// This adds optional buttons in the web ui that runs a script located at the
-	// path specified.
-	// The format is "script name" => ["path to script", "arg1", "arg2"]. The script name
-	// will be displayed on the web ui.
-	ControlServerCustomScripts map[string][]string
+	ControlServerConfig *ControlServerConfig
 
 	// Report progress via an HTTP callback. The Payload field of the callback
 	// will be sent to the server as the CustomPayload field in the Progress
@@ -774,6 +777,27 @@ type Config struct {
 
 	// If true, net/http/pprof will be enabled on port 6060.
 	EnablePProf bool
+
+	// ----------------------------------------------------------------------------------------------------------------
+	// Updatable config
+	// The following configs are updatable via the `Config.Update` method and should be passed by pointer
+
+	// The batch size used to iterate the data during data copy. This batch size
+	// is always used: if this is specified to be 100, 100 rows will be copied
+	// per iteration.
+	//
+	// With the current implementation of Ghostferry, we need to lock the rows
+	// we select. This means, the larger this number is, the longer we need to
+	// hold this lock. On the flip side, the smaller this number is, the slower
+	// the copy will likely be.
+	//
+	// Optional: defaults to 200
+	DataIterationBatchSize uint64
+
+	// End of Updatable config
+	// ----------------------------------------------------------------------------------------------------------------
+
+
 }
 
 func (c *Config) ValidateConfig() error {
@@ -803,7 +827,15 @@ func (c *Config) ValidateConfig() error {
 		}
 	}
 
-	if c.DBWriteRetries == 0 {
+	if c.ControlServerConfig == nil {
+		c.ControlServerConfig = &ControlServerConfig{}
+	}
+
+	if err := c.ControlServerConfig.Validate(); err != nil {
+		return fmt.Errorf("control_server: %s", err)
+	}
+
+		if c.DBWriteRetries == 0 {
 		c.DBWriteRetries = 5
 	}
 
@@ -827,14 +859,6 @@ func (c *Config) ValidateConfig() error {
 		c.DBReadRetries = 5
 	}
 
-	if c.ServerBindAddr == "" {
-		c.ServerBindAddr = "0.0.0.0:8000"
-	}
-
-	if c.WebBasedir == "" {
-		c.WebBasedir = "."
-	}
-
 	if c.MaxCutoverRetries == 0 {
 		c.MaxCutoverRetries = 1
 	}
@@ -844,6 +868,12 @@ func (c *Config) ValidateConfig() error {
 	}
 
 	return nil
+}
+
+// UpdatableConfigs is used as an input for `Config.Update`
+// It defines config fields that support dynamic updates and their types
+type UpdatableConfigs struct {
+	DataIterationBatchSize uint64
 }
 
 func (c *Config) Update(updatedConfig UpdatableConfigs) {

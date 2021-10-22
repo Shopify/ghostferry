@@ -42,7 +42,7 @@ func (t *CopydbTestSuite) SetupTest() {
 	}
 
 	// TODO: remove this hack
-	t.copydbConfig.WebBasedir = "../.."
+	t.copydbConfig.ControlServerConfig.WebBasedir = "../.."
 
 	err := t.copydbConfig.InitializeAndValidateConfig()
 	t.Require().Nil(err)

@@ -253,10 +253,8 @@ func (f *Ferry) NewControlServer() (*ControlServer, error) {
 	f.ensureInitialized()
 
 	controlServer := &ControlServer{
+		ControlServerConfig: f.Config.ControlServerConfig,
 		F:             f,
-		Addr:          f.Config.ServerBindAddr,
-		Basedir:       f.Config.WebBasedir,
-		CustomScripts: f.Config.ControlServerCustomScripts,
 		Verifier:      f.Verifier,
 	}
 
@@ -306,6 +304,7 @@ func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
 	v := &IterativeVerifier{
 		CursorConfig: &CursorConfig{
 			DB:                        f.SourceDB,
+			// BatchSize is a pointer to make this value updatable
 			BatchSize:                 &f.Config.DataIterationBatchSize,
 			BatchSizePerTableOverride: f.Config.DataIterationBatchSizePerTableOverride,
 			ReadRetries:               f.Config.DBReadRetries,
@@ -533,7 +532,7 @@ func (f *Ferry) Initialize() (err error) {
 	f.DataIterator = f.NewDataIterator()
 	f.BatchWriter = f.NewBatchWriter()
 
-	if f.Config.EnableControlServer {
+	if f.Config.ControlServerConfig.EnableControlServer {
 		f.ControlServer, err = f.NewControlServer()
 		if err != nil {
 			return err
@@ -665,7 +664,7 @@ func (f *Ferry) Run() {
 		handleError("throttler", f.Throttler.Run(ctx))
 	}()
 
-	if f.Config.EnableControlServer {
+	if f.Config.ControlServerConfig.EnableControlServer {
 		supportingServicesWg.Add(1)
 		go func() {
 			defer supportingServicesWg.Done()
@@ -830,7 +829,7 @@ func (f *Ferry) Run() {
 	binlogWg.Wait()
 
 	f.logger.Info("ghostferry run is complete, shutting down auxiliary services")
-	if f.Config.EnableControlServer == true {
+	if f.Config.ControlServerConfig.EnableControlServer == true {
 		logrus.Info("ghostferry main operations has terminated but the control server remains online")
 		logrus.Info("press CTRL+C or send an interrupt to stop the control server and end this process")
 	}

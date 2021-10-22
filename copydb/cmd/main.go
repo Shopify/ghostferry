@@ -61,8 +61,11 @@ func main() {
 				User: "ghostferry",
 			},
 
+			ControlServerConfig: &ghostferry.ControlServerConfig{
+				EnableControlServer:    true,
+			},
+
 			AutomaticCutover:       false,
-			EnableControlServer:    true,
 		},
 	}
 
