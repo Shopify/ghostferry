@@ -106,7 +106,7 @@ func (f *Ferry) NewDataIterator() *DataIterator {
 			DB:        f.SourceDB,
 			Throttler: f.Throttler,
 
-			BatchSize:                 &f.Config.DataIterationBatchSize,
+			BatchSize:                 &f.Config.UpdatableConfig.DataIterationBatchSize,
 			BatchSizePerTableOverride: f.Config.DataIterationBatchSizePerTableOverride,
 			ReadRetries:               f.Config.DBReadRetries,
 		},
@@ -305,7 +305,7 @@ func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
 		CursorConfig: &CursorConfig{
 			DB:                        f.SourceDB,
 			// BatchSize is a pointer to make this value updatable
-			BatchSize:                 &f.Config.DataIterationBatchSize,
+			BatchSize:                 &f.Config.UpdatableConfig.DataIterationBatchSize,
 			BatchSizePerTableOverride: f.Config.DataIterationBatchSizePerTableOverride,
 			ReadRetries:               f.Config.DBReadRetries,
 		},

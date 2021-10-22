@@ -118,7 +118,7 @@ func (this *ConfigTestSuite) TestDefaultValues() {
 	this.Require().Equal("tcp", this.config.Source.Net)
 	this.Require().Equal("tcp", this.config.Target.Net)
 	this.Require().Equal(5, this.config.DBWriteRetries)
-	this.Require().Equal(uint64(200), this.config.DataIterationBatchSize)
+	this.Require().Equal(uint64(200), this.config.UpdatableConfig.DataIterationBatchSize)
 	this.Require().Equal(4, this.config.DataIterationConcurrency)
 	this.Require().Equal(5, this.config.DBReadRetries)
 	this.Require().Equal("0.0.0.0:8000", this.config.ControlServerConfig.ServerBindAddr)

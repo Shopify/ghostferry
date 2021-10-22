@@ -363,7 +363,7 @@ func (this *ControlServer) HandleConfig(w http.ResponseWriter, r *http.Request) 
 	var decoder = json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 
-	var updatableConfig UpdatableConfigs
+	var updatableConfig UpdatableConfig
 	err := decoder.Decode(&updatableConfig)
 
 	if err != nil {

@@ -782,22 +782,7 @@ type Config struct {
 	// Updatable config
 	// The following configs are updatable via the `Config.Update` method and should be passed by pointer
 
-	// The batch size used to iterate the data during data copy. This batch size
-	// is always used: if this is specified to be 100, 100 rows will be copied
-	// per iteration.
-	//
-	// With the current implementation of Ghostferry, we need to lock the rows
-	// we select. This means, the larger this number is, the longer we need to
-	// hold this lock. On the flip side, the smaller this number is, the slower
-	// the copy will likely be.
-	//
-	// Optional: defaults to 200
-	DataIterationBatchSize uint64
-
-	// End of Updatable config
-	// ----------------------------------------------------------------------------------------------------------------
-
-
+	UpdatableConfig *UpdatableConfig
 }
 
 func (c *Config) ValidateConfig() error {
@@ -839,8 +824,12 @@ func (c *Config) ValidateConfig() error {
 		c.DBWriteRetries = 5
 	}
 
-	if c.DataIterationBatchSize == 0 {
-		c.DataIterationBatchSize = 200
+	if c.UpdatableConfig == nil {
+		c.UpdatableConfig = &UpdatableConfig{}
+	}
+
+	if err := c.UpdatableConfig.Validate(); err != nil {
+		return fmt.Errorf("updatable config: %s", err)
 	}
 
 	if err := c.DataIterationBatchSizePerTableOverride.Validate(); err != nil {
@@ -870,15 +859,34 @@ func (c *Config) ValidateConfig() error {
 	return nil
 }
 
-// UpdatableConfigs is used as an input for `Config.Update`
-// It defines config fields that support dynamic updates and their types
-type UpdatableConfigs struct {
-	DataIterationBatchSize uint64
+func (c *Config) Update(updatedConfig UpdatableConfig) {
+	if updatedConfig.DataIterationBatchSize > 0 {
+		c.UpdatableConfig.DataIterationBatchSize = updatedConfig.DataIterationBatchSize
+	}
 }
 
-func (c *Config) Update(updatedConfig UpdatableConfigs) {
-	if updatedConfig.DataIterationBatchSize > 0 {
-		c.DataIterationBatchSize = updatedConfig.DataIterationBatchSize
+// UpdatableConfig defines config fields that support dynamic updates
+type UpdatableConfig struct {
+	// The batch size used to iterate the data during data copy. This batch size
+	// is always used: if this is specified to be 100, 100 rows will be copied
+	// per iteration.
+	//
+	// With the current implementation of Ghostferry, we need to lock the rows
+	// we select. This means, the larger this number is, the longer we need to
+	// hold this lock. On the flip side, the smaller this number is, the slower
+	// the copy will likely be.
+	//
+	// Optional: defaults to 200
+	DataIterationBatchSize uint64
+
+	// End of Updatable config
+	// ----------------------------------------------------------------------------------------------------------------
+}
+
+func (c *UpdatableConfig) Validate() error {
+	if c.DataIterationBatchSize == 0 {
+		c.DataIterationBatchSize = 200
 	}
 
+	return nil
 }
