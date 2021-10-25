@@ -22,6 +22,8 @@ type ControlServerTableStatus struct {
 	Status                      string
 	LastSuccessfulPaginationKey uint64
 	TargetPaginationKey         uint64
+
+	BatchSize                   uint64
 }
 
 type CustomScriptStatus struct {
@@ -230,9 +232,9 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 	status.StartTime = this.F.StartTime
 	status.CurrentTime = time.Now()
 
-	status.TimeTaken = time.Duration(status.Progress.TimeTaken * float64(time.Second))
-	status.BinlogStreamerLag = time.Duration(status.Progress.BinlogStreamerLag * float64(time.Second))
-	status.ETA = time.Duration(status.Progress.ETA * float64(time.Second))
+	status.TimeTaken = time.Duration(status.Progress.TimeTaken) * time.Second
+	status.BinlogStreamerLag = time.Duration(status.Progress.BinlogStreamerLag) * time.Second
+	status.ETA = time.Duration(status.Progress.ETA) * time.Second
 
 	status.AutomaticCutover = this.F.Config.AutomaticCutover
 	status.BinlogStreamerStopRequested = this.F.BinlogStreamer.stopRequested
@@ -286,6 +288,8 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 			Status:                      tableProgress.CurrentAction,
 			LastSuccessfulPaginationKey: lastSuccessfulPaginationKey,
 			TargetPaginationKey:         tableProgress.TargetPaginationKey,
+			BatchSize:			         tableProgress.BatchSize,
+
 		}
 
 		tablesGroupByStatus[tableStatus] = append(tablesGroupByStatus[tableStatus], controlStatus)
