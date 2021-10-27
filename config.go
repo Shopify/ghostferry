@@ -301,6 +301,11 @@ type ControlServerConfig struct {
 }
 
 func (c *ControlServerConfig) Validate() error {
+	// this is used to update the web base dir path from the debian packager
+	if WebUiBasedir != "" {
+		c.WebBasedir = WebUiBasedir
+	}
+
 	if c.ServerBindAddr == "" {
 		c.ServerBindAddr = "0.0.0.0:8000"
 	}
@@ -782,7 +787,7 @@ type Config struct {
 	// Updatable config
 	// The following configs are updatable via the `Config.Update` method and should be passed by pointer
 
-	UpdatableConfig *UpdatableConfig
+	UpdatableConfig UpdatableConfig
 }
 
 func (c *Config) ValidateConfig() error {
@@ -824,9 +829,6 @@ func (c *Config) ValidateConfig() error {
 		c.DBWriteRetries = 5
 	}
 
-	if c.UpdatableConfig == nil {
-		c.UpdatableConfig = &UpdatableConfig{}
-	}
 
 	if err := c.UpdatableConfig.Validate(); err != nil {
 		return fmt.Errorf("updatable config: %s", err)

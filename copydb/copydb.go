@@ -102,6 +102,11 @@ func (this *CopydbFerry) Run() {
 
 	// This is where you cutover from using the source database to
 	// using the target database
+
+	logrus.Info("ghostferry main operations has terminated but the control server remains online")
+	logrus.Info("press CTRL+C or send an interrupt to stop the control server and end this process")
+
+	select{}
 }
 
 func (this *CopydbFerry) ShutdownControlServer() error {

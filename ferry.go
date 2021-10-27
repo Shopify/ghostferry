@@ -253,9 +253,9 @@ func (f *Ferry) NewControlServer() (*ControlServer, error) {
 	f.ensureInitialized()
 
 	controlServer := &ControlServer{
-		ControlServerConfig: f.Config.ControlServerConfig,
-		F:             f,
-		Verifier:      f.Verifier,
+		Config:   f.Config.ControlServerConfig,
+		F:        f,
+		Verifier: f.Verifier,
 	}
 
 	err := controlServer.Initialize()
@@ -665,12 +665,7 @@ func (f *Ferry) Run() {
 	}()
 
 	if f.Config.ControlServerConfig.EnableControlServer {
-		supportingServicesWg.Add(1)
-		go func() {
-			defer supportingServicesWg.Done()
-
-			f.ControlServer.Run()
-		}()
+		go f.ControlServer.Run()
 	}
 
 	if f.Config.ProgressCallback.URI != "" {
@@ -829,10 +824,7 @@ func (f *Ferry) Run() {
 	binlogWg.Wait()
 
 	f.logger.Info("ghostferry run is complete, shutting down auxiliary services")
-	if f.Config.ControlServerConfig.EnableControlServer == true {
-		logrus.Info("ghostferry main operations has terminated but the control server remains online")
-		logrus.Info("press CTRL+C or send an interrupt to stop the control server and end this process")
-	}
+
 	f.OverallState.Store(StateDone)
 	f.DoneTime = time.Now()
 

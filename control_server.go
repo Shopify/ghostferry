@@ -69,9 +69,9 @@ type ControlServerStatus struct {
 }
 
 type ControlServer struct {
-	ControlServerConfig *ControlServerConfig
-	F             *Ferry
-	Verifier      Verifier
+	Config   *ControlServerConfig
+	F        *Ferry
+	Verifier Verifier
 
 	server    *http.Server
 	logger    *logrus.Entry
@@ -105,21 +105,17 @@ func (this *ControlServer) Initialize() (err error) {
 	this.router.HandleFunc("/api/script", this.HandleScript).Methods("POST")
 	this.router.HandleFunc("/api/config", this.HandleConfig).Methods("POST")
 
-	if WebUiBasedir != "" {
-		this.ControlServerConfig.WebBasedir = WebUiBasedir
-	}
-
-	staticFiles := http.StripPrefix("/static/", http.FileServer(http.Dir(filepath.Join(this.ControlServerConfig.WebBasedir, "webui", "static"))))
+	staticFiles := http.StripPrefix("/static/", http.FileServer(http.Dir(filepath.Join(this.Config.WebBasedir, "webui", "static"))))
 	this.router.PathPrefix("/static/").Handler(staticFiles)
 
-	this.templates, err = template.New("").ParseFiles(filepath.Join(this.ControlServerConfig.WebBasedir, "webui", "index.html"))
+	this.templates, err = template.New("").ParseFiles(filepath.Join(this.Config.WebBasedir, "webui", "index.html"))
 
 	if err != nil {
 		return err
 	}
 
 	this.server = &http.Server{
-		Addr:    this.ControlServerConfig.ServerBindAddr,
+		Addr:    this.Config.ServerBindAddr,
 		Handler: this,
 	}
 
@@ -127,7 +123,7 @@ func (this *ControlServer) Initialize() (err error) {
 }
 
 func (this *ControlServer) Run() {
-	this.logger.Infof("running on %s", this.ControlServerConfig.ServerBindAddr)
+	this.logger.Infof("running on %s", this.Config.ServerBindAddr)
 	err := this.server.ListenAndServe()
 	if err != nil {
 		logrus.WithError(err).Error("error on ListenAndServe")
@@ -317,11 +313,11 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 		status.VerifierAvailable = false
 	}
 
-	if this.ControlServerConfig.ControlServerCustomScripts != nil {
+	if this.Config.ControlServerCustomScripts != nil {
 		status.CustomScriptStatuses = map[string]CustomScriptStatus{}
 
 		this.customScriptsLock.RLock()
-		for name := range this.ControlServerConfig.ControlServerCustomScripts {
+		for name := range this.Config.ControlServerCustomScripts {
 			scriptStatus := this.customScriptsStatus[name]
 			if scriptStatus == "" {
 				scriptStatus = "not started yet"
@@ -342,7 +338,7 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 }
 
 func (this *ControlServer) HandleScript(w http.ResponseWriter, r *http.Request) {
-	if this.ControlServerConfig.ControlServerCustomScripts == nil {
+	if this.Config.ControlServerCustomScripts == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -353,7 +349,7 @@ func (this *ControlServer) HandleScript(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	cmd, found := this.ControlServerConfig.ControlServerCustomScripts[name]
+	cmd, found := this.Config.ControlServerCustomScripts[name]
 	if !found {
 		http.NotFound(w, r)
 		return
