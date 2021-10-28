@@ -1047,6 +1047,7 @@ func (f *Ferry) ReportState() {
 	state, err := f.SerializeStateToJSON()
 	if err != nil {
 		f.logger.WithError(err).Error("failed to serialize state to JSON")
+		return
 	}
 
 	callback.Payload = string(state)
