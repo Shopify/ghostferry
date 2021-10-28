@@ -77,6 +77,7 @@ type ControlServer struct {
 	logger    *logrus.Entry
 	router    *mux.Router
 	templates *template.Template
+	wg        *sync.WaitGroup
 
 	customScriptsLock     sync.RWMutex
 	customScriptsRunning  map[string]bool
@@ -122,7 +123,12 @@ func (this *ControlServer) Initialize() (err error) {
 	return nil
 }
 
+func (this *ControlServer) Wait() {
+	this.wg.Wait()
+}
+
 func (this *ControlServer) Run() {
+	this.wg.Add(1)
 	this.logger.Infof("running on %s", this.Config.ServerBindAddr)
 	err := this.server.ListenAndServe()
 	if err != nil {
@@ -207,6 +213,12 @@ func (this *ControlServer) HandleVerify(w http.ResponseWriter, r *http.Request) 
 
 func (this *ControlServer) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	status := this.fetchStatus()
+
+	// Converting time values to seconds manually for json output
+	status.TimeTaken = status.TimeTaken / time.Second
+	status.BinlogStreamerLag = status.BinlogStreamerLag  / time.Second
+	status.ETA = status.ETA / time.Second
+
 	w.Header().Set("Content-Type", "application/json")
 	err := json.NewEncoder(w).Encode(status)
 	if err != nil {
@@ -284,7 +296,7 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 			Status:                      tableProgress.CurrentAction,
 			LastSuccessfulPaginationKey: lastSuccessfulPaginationKey,
 			TargetPaginationKey:         tableProgress.TargetPaginationKey,
-			BatchSize:			         tableProgress.BatchSize,
+			BatchSize:                   tableProgress.BatchSize,
 
 		}
 
@@ -313,11 +325,11 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 		status.VerifierAvailable = false
 	}
 
-	if this.Config.ControlServerCustomScripts != nil {
+	if this.Config.CustomScripts != nil {
 		status.CustomScriptStatuses = map[string]CustomScriptStatus{}
 
 		this.customScriptsLock.RLock()
-		for name := range this.Config.ControlServerCustomScripts {
+		for name := range this.Config.CustomScripts {
 			scriptStatus := this.customScriptsStatus[name]
 			if scriptStatus == "" {
 				scriptStatus = "not started yet"
@@ -338,7 +350,7 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 }
 
 func (this *ControlServer) HandleScript(w http.ResponseWriter, r *http.Request) {
-	if this.Config.ControlServerCustomScripts == nil {
+	if this.Config.CustomScripts == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -349,7 +361,7 @@ func (this *ControlServer) HandleScript(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	cmd, found := this.Config.ControlServerCustomScripts[name]
+	cmd, found := this.Config.CustomScripts[name]
 	if !found {
 		http.NotFound(w, r)
 		return

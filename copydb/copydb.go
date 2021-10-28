@@ -106,7 +106,7 @@ func (this *CopydbFerry) Run() {
 	logrus.Info("ghostferry main operations has terminated but the control server remains online")
 	logrus.Info("press CTRL+C or send an interrupt to stop the control server and end this process")
 
-	select{}
+	this.Ferry.ControlServer.Wait()
 }
 
 func (this *CopydbFerry) ShutdownControlServer() error {

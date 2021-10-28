@@ -37,7 +37,8 @@ type CursorConfig struct {
 
 	ColumnsToSelect           []string
 	BuildSelect               func([]string, *TableSchema, uint64, uint64) (squirrel.SelectBuilder, error)
-	// BatchSize is a pointer to make this value updatable
+	// BatchSize is a pointer to the BatchSize in Config.UpdatableConfig which can be independently updated from this code.
+	// Having it as a pointer allows the updated value to be read without needing additional code to copy the batch size value into the cursor config for each cursor we create.
 	BatchSize                 *uint64
 	BatchSizePerTableOverride *DataIterationBatchSizePerTableOverride
 	ReadRetries               int

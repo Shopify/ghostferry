@@ -284,7 +284,7 @@ func (c *IterativeVerifierConfig) Validate() error {
 
 type ControlServerConfig struct {
 	// enable/disable http control server
-	EnableControlServer bool
+	Enabled bool
 
 	// Bind control server address
 	ServerBindAddr string
@@ -297,7 +297,7 @@ type ControlServerConfig struct {
 	// path specified.
 	// The format is "script name" => ["path to script", "arg1", "arg2"]. The script name
 	// will be displayed on the web ui.
-	ControlServerCustomScripts map[string][]string
+	CustomScripts map[string][]string
 }
 
 func (c *ControlServerConfig) Validate() error {

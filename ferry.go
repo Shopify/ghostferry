@@ -304,7 +304,6 @@ func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
 	v := &IterativeVerifier{
 		CursorConfig: &CursorConfig{
 			DB:                        f.SourceDB,
-			// BatchSize is a pointer to make this value updatable
 			BatchSize:                 &f.Config.UpdatableConfig.DataIterationBatchSize,
 			BatchSizePerTableOverride: f.Config.DataIterationBatchSizePerTableOverride,
 			ReadRetries:               f.Config.DBReadRetries,
@@ -532,7 +531,7 @@ func (f *Ferry) Initialize() (err error) {
 	f.DataIterator = f.NewDataIterator()
 	f.BatchWriter = f.NewBatchWriter()
 
-	if f.Config.ControlServerConfig.EnableControlServer {
+	if f.Config.ControlServerConfig.Enabled {
 		f.ControlServer, err = f.NewControlServer()
 		if err != nil {
 			return err
@@ -664,7 +663,7 @@ func (f *Ferry) Run() {
 		handleError("throttler", f.Throttler.Run(ctx))
 	}()
 
-	if f.Config.ControlServerConfig.EnableControlServer {
+	if f.Config.ControlServerConfig.Enabled {
 		go f.ControlServer.Run()
 	}
 

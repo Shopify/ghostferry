@@ -62,7 +62,7 @@ func main() {
 			},
 
 			ControlServerConfig: &ghostferry.ControlServerConfig{
-				EnableControlServer:    true,
+				Enabled: true,
 			},
 
 			AutomaticCutover:       false,
