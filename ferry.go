@@ -1052,7 +1052,7 @@ func (f *Ferry) ReportState() {
 	callback.Payload = string(state)
 	err = callback.Post(&http.Client{})
 	if err != nil {
-		f.logger.WithError(err).Errorf("failed to post state to callback to %s", callback.URI)
+		f.logger.WithError(err).Errorf("failed to post state to callback %s", callback.URI)
 	}
 }
 
