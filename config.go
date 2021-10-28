@@ -788,6 +788,14 @@ type Config struct {
 	// The following configs are updatable via the `Config.Update` method and should be passed by pointer
 
 	UpdatableConfig UpdatableConfig
+
+	// ----------------------------------------------------------------------------------------------------------------
+	// DEPRECATED CONFIGS
+	// The following configs are deprecated
+	DataIterationBatchSize     uint64              // replaced by UpdatableConfig.DataIterationBatchSize
+	ServerBindAddr             string              // replaced by ControlServerConfig.ServerBindAddr
+	WebBasedir                 string              // replaced by ControlServerConfig.WebBasedir
+	ControlServerCustomScripts map[string][]string // replaced by ControlServerConfig.CustomScripts
 }
 
 func (c *Config) ValidateConfig() error {
@@ -821,6 +829,8 @@ func (c *Config) ValidateConfig() error {
 		c.ControlServerConfig = &ControlServerConfig{}
 	}
 
+	c.checkForDeprecatedConfig()
+
 	if err := c.ControlServerConfig.Validate(); err != nil {
 		return fmt.Errorf("control_server: %s", err)
 	}
@@ -828,7 +838,6 @@ func (c *Config) ValidateConfig() error {
 		if c.DBWriteRetries == 0 {
 		c.DBWriteRetries = 5
 	}
-
 
 	if err := c.UpdatableConfig.Validate(); err != nil {
 		return fmt.Errorf("updatable config: %s", err)
@@ -859,6 +868,32 @@ func (c *Config) ValidateConfig() error {
 	}
 
 	return nil
+}
+
+func (c *Config) checkForDeprecatedConfig()  {
+	if c.DataIterationBatchSize != 0 {
+		c.logDeprecated("DataIterationBatchSize", "UpdatableConfig.DataIterationBatchSize")
+		c.UpdatableConfig.DataIterationBatchSize = c.DataIterationBatchSize
+	}
+
+	if c.ServerBindAddr != "" {
+		c.logDeprecated("ServerBindAddr", "ControlServerConfig.ServerBindAddr")
+		c.ControlServerConfig.ServerBindAddr = c.ServerBindAddr
+	}
+
+	if c.WebBasedir != "" {
+		c.logDeprecated("WebBasedir", "ControlServerConfig.WebBasedir")
+		c.ControlServerConfig.WebBasedir = c.WebBasedir
+	}
+
+	if len(c.ControlServerCustomScripts) != 0 {
+		c.logDeprecated("ControlServerCustomScripts", "ControlServerConfig.CustomScripts")
+		c.ControlServerConfig.CustomScripts= c.ControlServerCustomScripts
+	}
+}
+
+func (c *Config) logDeprecated(deprecatedConfig string, newConfig string)  {
+	logrus.Warnf("Config.%s is deprecated in favour of Config.%s", deprecatedConfig, newConfig)
 }
 
 func (c *Config) Update(updatedConfig UpdatableConfig) {

@@ -39,11 +39,12 @@
 
   "VerifierType": "Inline",
 
-  "ControlServerCustomScripts": {
-    "Custom Script 1": ["examples/copydb/s1"],
-    "Custom Script 2": ["examples/copydb/s2"]
+  "ControlServer": {
+    "CustomScripts": {
+      "Custom Script 1": ["examples/copydb/s1"],
+      "Custom Script 2": ["examples/copydb/s2"]
+    }
   },
-
   "DumpStateToStdoutOnError": true,
   "SkipTargetVerification": true
 }
