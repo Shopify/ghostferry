@@ -109,10 +109,6 @@ func (this *CopydbFerry) Run() {
 	this.Ferry.ControlServer.Wait()
 }
 
-func (this *CopydbFerry) ShutdownControlServer() error {
-	return this.Ferry.ControlServer.Shutdown()
-}
-
 func (this *CopydbFerry) initializeWaitUntilReplicaIsCaughtUpToMasterConnection() error {
 	masterDB, err := this.config.SourceReplicationMaster.SqlDB(logrus.WithField("tag", "copydb"))
 	if err != nil {

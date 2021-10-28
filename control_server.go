@@ -89,6 +89,7 @@ type ControlServer struct {
 func (this *ControlServer) Initialize() (err error) {
 	this.logger = logrus.WithField("tag", "control_server")
 	this.logger.Info("initializing")
+	this.wg = &sync.WaitGroup{}
 
 	this.customScriptsRunning = make(map[string]bool)
 	this.customScriptsLogs = make(map[string]string)
@@ -134,10 +135,6 @@ func (this *ControlServer) Run() {
 	if err != nil {
 		logrus.WithError(err).Error("error on ListenAndServe")
 	}
-}
-
-func (this *ControlServer) Shutdown() error {
-	return this.server.Shutdown(nil)
 }
 
 func (this *ControlServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
