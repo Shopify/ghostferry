@@ -34,8 +34,8 @@
 
           <div class="body" role="main">
             
-  <div class="section" id="verifiers">
-<span id="id1"></span><h1>Verifiers<a class="headerlink" href="#verifiers" title="Permalink to this headline">¶</a></h1>
+  <div class="section" id="verifiers-1">
+<span id="verifiers"></span><h1>Verifiers<a class="headerlink" href="#verifiers-1" title="Permalink to this headline">¶</a></h1>
 <p>Verifiers in Ghostferry are designed to ensure that Ghostferry did not
 corrupt/miss data. There are three different verifiers: the
 <code class="docutils literal notranslate"><span class="pre">ChecksumTableVerifier</span></code>, the <code class="docutils literal notranslate"><span class="pre">InlineVerifier</span></code>, and the <code class="docutils literal notranslate"><span class="pre">TargetVerifier</span></code>. A comparison of the
@@ -60,10 +60,10 @@ and during cutover.</td>
 <tr class="row-odd"><td>Impacts on Cutover Time</td>
 <td>Linear w.r.t data size</td>
 <td>Linear w.r.t. change rate
-<a class="footnote-reference" href="#id4" id="id2">[1]</a></td>
+<a class="footnote-reference" href="#footnote-1" id="footnote-reference-1">[1]</a></td>
 </tr>
 <tr class="row-even"><td>Impacts on Copy Time
-<a class="footnote-reference" href="#id5" id="id3">[2]</a></td>
+<a class="footnote-reference" href="#footnote-2" id="footnote-reference-2">[2]</a></td>
 <td>None</td>
 <td>Linear w.r.t data size</td>
 </tr>
@@ -83,18 +83,18 @@ the change rate of the DB</td>
 </tr>
 </tbody>
 </table>
-<table class="docutils footnote" frame="void" id="id4" rules="none">
+<table class="docutils footnote" frame="void" id="footnote-1" rules="none">
 <colgroup><col class="label" /><col /></colgroup>
 <tbody valign="top">
-<tr><td class="label"><a class="fn-backref" href="#id2">[1]</a></td><td>Additional improvements could be made to reduce this as long as
+<tr><td class="label"><a class="fn-backref" href="#footnote-reference-1">[1]</a></td><td>Additional improvements could be made to reduce this as long as
 Ghostferry is faster than the rate of change. See
 <a class="reference external" href="https://github.com/Shopify/ghostferry/issues/13">https://github.com/Shopify/ghostferry/issues/13</a>.</td></tr>
 </tbody>
 </table>
-<table class="docutils footnote" frame="void" id="id5" rules="none">
+<table class="docutils footnote" frame="void" id="footnote-2" rules="none">
 <colgroup><col class="label" /><col /></colgroup>
 <tbody valign="top">
-<tr><td class="label"><a class="fn-backref" href="#id3">[2]</a></td><td>Increase in copy time does not increase downtime. Downtime occurs only
+<tr><td class="label"><a class="fn-backref" href="#footnote-reference-2">[2]</a></td><td>Increase in copy time does not increase downtime. Downtime occurs only
 in cutover.</td></tr>
 </tbody>
 </table>
@@ -121,7 +121,7 @@ cases are possible.</p>
 <tr class="row-even"><td>Data inconsistency due to Ghostferry issuing an
 incorrect UPDATE on the target database (example:
 encoding-type issues).</td>
-<td>Yes <a class="footnote-reference" href="#id12" id="id6">[3]</a></td>
+<td>Yes <a class="footnote-reference" href="#footnote-3" id="footnote-reference-3">[3]</a></td>
 <td>Yes</td>
 <td>Yes</td>
 </tr>
@@ -141,15 +141,15 @@ DELETE on the target database.</td>
 issuing writes (INSERT/UPDATE/DELETE) against the
 target database.</td>
 <td>Yes</td>
-<td>Sometimes <a class="footnote-reference" href="#id13" id="id7">[4]</a></td>
+<td>Sometimes <a class="footnote-reference" href="#footnote-4" id="footnote-reference-4">[4]</a></td>
 <td>Yes</td>
 </tr>
 <tr class="row-even"><td>Data inconsistency due to missing binlog events
 when Ghostferry is resumed from the wrong
 binlog coordinates.</td>
 <td>Yes</td>
-<td>Sometimes <a class="footnote-reference" href="#id14" id="id8">[5]</a></td>
-<td>Sometimes <a class="footnote-reference" href="#id14" id="id9">[5]</a></td>
+<td>Sometimes <a class="footnote-reference" href="#footnote-5" id="footnote-reference-5">[5]</a></td>
+<td>Sometimes <a class="footnote-reference" href="#footnote-5" id="footnote-reference-6">[5]</a></td>
 </tr>
 <tr class="row-odd"><td>Data inconsistency if Ghostferry’s Binlog writing
 implementation is incorrect and modified the
@@ -160,42 +160,42 @@ scenario, but is included for illustrative
 purposes.</td>
 <td>Yes</td>
 <td>Probably not
-<a class="footnote-reference" href="#id15" id="id10">[6]</a></td>
+<a class="footnote-reference" href="#footnote-6" id="footnote-reference-7">[6]</a></td>
 <td>Probably not
-<a class="footnote-reference" href="#id15" id="id11">[6]</a></td>
+<a class="footnote-reference" href="#footnote-6" id="footnote-reference-8">[6]</a></td>
 </tr>
 </tbody>
 </table>
-<table class="docutils footnote" frame="void" id="id12" rules="none">
+<table class="docutils footnote" frame="void" id="footnote-3" rules="none">
 <colgroup><col class="label" /><col /></colgroup>
 <tbody valign="top">
-<tr><td class="label"><a class="fn-backref" href="#id6">[3]</a></td><td>Note that the CHECKSUM TABLE statement is broken in MySQL 5.7 for tables
+<tr><td class="label"><a class="fn-backref" href="#footnote-reference-3">[3]</a></td><td>Note that the CHECKSUM TABLE statement is broken in MySQL 5.7 for tables
 with JSON columns. These tables will result in a false positive event:
 even if two tables are identical, they can emit different checksums. See
 <a class="reference external" href="https://bugs.mysql.com/bug.php?id=87847">https://bugs.mysql.com/bug.php?id=87847</a>. This applies to every row in
 this table.</td></tr>
 </tbody>
 </table>
-<table class="docutils footnote" frame="void" id="id13" rules="none">
+<table class="docutils footnote" frame="void" id="footnote-4" rules="none">
 <colgroup><col class="label" /><col /></colgroup>
 <tbody valign="top">
-<tr><td class="label"><a class="fn-backref" href="#id7">[4]</a></td><td>If the rows modified by the rogue application are modified again on
+<tr><td class="label"><a class="fn-backref" href="#footnote-reference-4">[4]</a></td><td>If the rows modified by the rogue application are modified again on
 the source after Ghostferry starts, the InlineVerifier’s binlog tailer
 should pick up that row and attempt to reverify it.</td></tr>
 </tbody>
 </table>
-<table class="docutils footnote" frame="void" id="id14" rules="none">
+<table class="docutils footnote" frame="void" id="footnote-5" rules="none">
 <colgroup><col class="label" /><col /></colgroup>
 <tbody valign="top">
-<tr><td class="label">[5]</td><td><em>(<a class="fn-backref" href="#id8">1</a>, <a class="fn-backref" href="#id9">2</a>)</em> If the rows missed after resume are modified again on the source after
+<tr><td class="label">[5]</td><td><em>(<a class="fn-backref" href="#footnote-reference-5">1</a>, <a class="fn-backref" href="#footnote-reference-6">2</a>)</em> If the rows missed after resume are modified again on the source after
 Ghostferry starts, the InlineVerifier’s binlog tailer should pick up
 that row and attempt to reverify it.</td></tr>
 </tbody>
 </table>
-<table class="docutils footnote" frame="void" id="id15" rules="none">
+<table class="docutils footnote" frame="void" id="footnote-6" rules="none">
 <colgroup><col class="label" /><col /></colgroup>
 <tbody valign="top">
-<tr><td class="label">[6]</td><td><em>(<a class="fn-backref" href="#id10">1</a>, <a class="fn-backref" href="#id11">2</a>)</em> If the implementation of the Ghostferry algorithm is so broken, chances
+<tr><td class="label">[6]</td><td><em>(<a class="fn-backref" href="#footnote-reference-7">1</a>, <a class="fn-backref" href="#footnote-reference-8">2</a>)</em> If the implementation of the Ghostferry algorithm is so broken, chances
 are the InlineVerifier won’t catch it either as it relies on the same
 algorithm to enumerate the table and tail the binlogs.</td></tr>
 </tbody>
