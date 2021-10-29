@@ -1046,13 +1046,14 @@ func (f *Ferry) ReportState() {
 	callback := f.Config.StateCallback
 	state, err := f.SerializeStateToJSON()
 	if err != nil {
-		f.logger.Panicf("failed to serialize state to JSON: %s", err)
+		f.logger.WithError(err).Error("failed to serialize state to JSON")
+		return
 	}
 
 	callback.Payload = string(state)
 	err = callback.Post(&http.Client{})
 	if err != nil {
-		f.logger.Panicf("failed to post state to callback: %s with err: %s", callback, err)
+		f.logger.WithError(err).Errorf("failed to post state to callback %s", callback.URI)
 	}
 }
 
