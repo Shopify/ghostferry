@@ -531,13 +531,6 @@ func (f *Ferry) Initialize() (err error) {
 	f.DataIterator = f.NewDataIterator()
 	f.BatchWriter = f.NewBatchWriter()
 
-	if f.Config.ControlServerConfig.Enabled {
-		f.ControlServer, err = f.NewControlServer()
-		if err != nil {
-			return err
-		}
-	}
-
 	if f.Config.VerifierType != "" {
 		if f.Verifier != nil {
 			return errors.New("VerifierType specified and Verifier is given. these are mutually exclusive options")
@@ -561,6 +554,13 @@ func (f *Ferry) Initialize() (err error) {
 			// skip
 		default:
 			return fmt.Errorf("'%s' is not a known VerifierType", f.Config.VerifierType)
+		}
+	}
+
+	if f.Config.ControlServerConfig.Enabled {
+		f.ControlServer, err = f.NewControlServer()
+		if err != nil {
+			return err
 		}
 	}
 
