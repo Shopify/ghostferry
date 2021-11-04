@@ -2,10 +2,9 @@ package test
 
 import (
 	"fmt"
+	"github.com/stretchr/testify/suite"
 	"sync"
 	"testing"
-
-	"github.com/stretchr/testify/suite"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
@@ -40,7 +39,7 @@ func (this *DataIteratorTestSuite) SetupTest() {
 	this.Ferry.Tables = tables
 	this.tables = tables.AsSlice()
 
-	config.DataIterationBatchSize = 2
+	config.UpdatableConfig.DataIterationBatchSize = 2
 
 	this.di = &ghostferry.DataIterator{
 		DB:          sourceDb,
@@ -52,7 +51,7 @@ func (this *DataIteratorTestSuite) SetupTest() {
 			Throttler: throttler,
 
 			BuildSelect:               nil,
-			BatchSize:                 config.DataIterationBatchSize,
+			BatchSize:                 &config.UpdatableConfig.DataIterationBatchSize,
 			BatchSizePerTableOverride: config.DataIterationBatchSizePerTableOverride,
 			ReadRetries:               config.DBReadRetries,
 		},
@@ -188,7 +187,7 @@ func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverride() 
 		// Using linear interpolation with points ControlPoints[3000] and ControlPoints[4000] gives 3862
 		this.Require().Equal(uint64(3862), this.di.CursorConfig.GetBatchSize(table.Schema, table.Name))
 	}
-	this.Require().Equal(this.Ferry.Config.DataIterationBatchSize, this.di.CursorConfig.GetBatchSize("DNE", "DNE"))
+	this.Require().Equal(this.Ferry.Config.UpdatableConfig.DataIterationBatchSize, this.di.CursorConfig.GetBatchSize("DNE", "DNE"))
 }
 
 func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverrideMinRowSize() {
@@ -231,6 +230,11 @@ func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverrideMax
 		// since 3276 > MaxRowSize  we default to use point ControlPoints[3000]
 		this.Require().Equal(uint64(4000), this.di.CursorConfig.GetBatchSize(table.Schema, table.Name))
 	}
+}
+
+func (this *DataIteratorTestSuite) TestBatchSizeUpdate() {
+	this.Ferry.Config.Update(ghostferry.UpdatableConfig{DataIterationBatchSize: 1234})
+	this.Require().Equal(uint64(1234), this.di.CursorConfig.GetBatchSize(testhelpers.TestSchemaName, "any_table"))
 }
 
 func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverrideCalculateBatchSize() {

@@ -145,7 +145,7 @@ func TestOnlyDeleteRowWithMaxPaginationKey(t *testing.T) {
 		Ferry: testhelpers.NewTestFerry(),
 	}
 
-	testcase.Ferry.DataIterationBatchSize = 1
+	testcase.Ferry.UpdatableConfig.DataIterationBatchSize = 1
 
 	lastRowDeleted := false
 	testcase.Ferry.BeforeBatchCopyListener = func(batch *ghostferry.RowBatch) error {

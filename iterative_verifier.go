@@ -435,7 +435,7 @@ func (v *IterativeVerifier) iterateTableFingerprints(table *TableSchema, mismatc
 }
 
 func (v *IterativeVerifier) verifyStore(sourceTag string, additionalTags []MetricTag) (VerificationResult, error) {
-	allBatches := v.reverifyStore.FlushAndBatchByTable(int(v.CursorConfig.BatchSize))
+	allBatches := v.reverifyStore.FlushAndBatchByTable(int(*v.CursorConfig.BatchSize))
 	v.logger.WithField("batches", len(allBatches)).Debug("reverifying")
 
 	if len(allBatches) == 0 {

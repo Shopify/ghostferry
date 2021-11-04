@@ -22,6 +22,8 @@ type ControlServerTableStatus struct {
 	Status                      string
 	LastSuccessfulPaginationKey uint64
 	TargetPaginationKey         uint64
+
+	BatchSize                   uint64
 }
 
 type CustomScriptStatus struct {
@@ -67,16 +69,15 @@ type ControlServerStatus struct {
 }
 
 type ControlServer struct {
-	F             *Ferry
-	Verifier      Verifier
-	Addr          string
-	Basedir       string
-	CustomScripts map[string][]string
+	Config   *ControlServerConfig
+	F        *Ferry
+	Verifier Verifier
 
 	server    *http.Server
 	logger    *logrus.Entry
 	router    *mux.Router
 	templates *template.Template
+	wg        *sync.WaitGroup
 
 	customScriptsLock     sync.RWMutex
 	customScriptsRunning  map[string]bool
@@ -88,6 +89,7 @@ type ControlServer struct {
 func (this *ControlServer) Initialize() (err error) {
 	this.logger = logrus.WithField("tag", "control_server")
 	this.logger.Info("initializing")
+	this.wg = &sync.WaitGroup{}
 
 	this.customScriptsRunning = make(map[string]bool)
 	this.customScriptsLogs = make(map[string]string)
@@ -103,40 +105,36 @@ func (this *ControlServer) Initialize() (err error) {
 	this.router.HandleFunc("/api/stop", this.HandleStop).Methods("POST")
 	this.router.HandleFunc("/api/verify", this.HandleVerify).Methods("POST")
 	this.router.HandleFunc("/api/script", this.HandleScript).Methods("POST")
+	this.router.HandleFunc("/api/config", this.HandleConfig).Methods("POST")
 
-	if WebUiBasedir != "" {
-		this.Basedir = WebUiBasedir
-	}
-
-	staticFiles := http.StripPrefix("/static/", http.FileServer(http.Dir(filepath.Join(this.Basedir, "webui", "static"))))
+	staticFiles := http.StripPrefix("/static/", http.FileServer(http.Dir(filepath.Join(this.Config.WebBasedir, "webui", "static"))))
 	this.router.PathPrefix("/static/").Handler(staticFiles)
 
-	this.templates, err = template.New("").ParseFiles(filepath.Join(this.Basedir, "webui", "index.html"))
+	this.templates, err = template.New("").ParseFiles(filepath.Join(this.Config.WebBasedir, "webui", "index.html"))
 
 	if err != nil {
 		return err
 	}
 
 	this.server = &http.Server{
-		Addr:    this.Addr,
+		Addr:    this.Config.ServerBindAddr,
 		Handler: this,
 	}
 
 	return nil
 }
 
-func (this *ControlServer) Run(wg *sync.WaitGroup) {
-	defer wg.Done()
+func (this *ControlServer) Wait() {
+	this.wg.Wait()
+}
 
-	this.logger.Infof("running on %s", this.Addr)
+func (this *ControlServer) Run() {
+	this.wg.Add(1)
+	this.logger.Infof("running on %s", this.Config.ServerBindAddr)
 	err := this.server.ListenAndServe()
 	if err != nil {
 		logrus.WithError(err).Error("error on ListenAndServe")
 	}
-}
-
-func (this *ControlServer) Shutdown() error {
-	return this.server.Shutdown(nil)
 }
 
 func (this *ControlServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -212,6 +210,12 @@ func (this *ControlServer) HandleVerify(w http.ResponseWriter, r *http.Request) 
 
 func (this *ControlServer) HandleStatus(w http.ResponseWriter, r *http.Request) {
 	status := this.fetchStatus()
+
+	// Converting time values to seconds manually for json output
+	status.TimeTaken = status.TimeTaken / time.Second
+	status.BinlogStreamerLag = status.BinlogStreamerLag  / time.Second
+	status.ETA = status.ETA / time.Second
+
 	w.Header().Set("Content-Type", "application/json")
 	err := json.NewEncoder(w).Encode(status)
 	if err != nil {
@@ -233,9 +237,9 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 	status.StartTime = this.F.StartTime
 	status.CurrentTime = time.Now()
 
-	status.TimeTaken = time.Duration(status.Progress.TimeTaken * float64(time.Second))
-	status.BinlogStreamerLag = time.Duration(status.Progress.BinlogStreamerLag * float64(time.Second))
-	status.ETA = time.Duration(status.Progress.ETA * float64(time.Second))
+	status.TimeTaken = time.Duration(status.Progress.TimeTaken) * time.Second
+	status.BinlogStreamerLag = time.Duration(status.Progress.BinlogStreamerLag) * time.Second
+	status.ETA = time.Duration(status.Progress.ETA) * time.Second
 
 	status.AutomaticCutover = this.F.Config.AutomaticCutover
 	status.BinlogStreamerStopRequested = this.F.BinlogStreamer.stopRequested
@@ -289,6 +293,8 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 			Status:                      tableProgress.CurrentAction,
 			LastSuccessfulPaginationKey: lastSuccessfulPaginationKey,
 			TargetPaginationKey:         tableProgress.TargetPaginationKey,
+			BatchSize:                   tableProgress.BatchSize,
+
 		}
 
 		tablesGroupByStatus[tableStatus] = append(tablesGroupByStatus[tableStatus], controlStatus)
@@ -316,11 +322,11 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 		status.VerifierAvailable = false
 	}
 
-	if this.CustomScripts != nil {
+	if this.Config.CustomScripts != nil {
 		status.CustomScriptStatuses = map[string]CustomScriptStatus{}
 
 		this.customScriptsLock.RLock()
-		for name := range this.CustomScripts {
+		for name := range this.Config.CustomScripts {
 			scriptStatus := this.customScriptsStatus[name]
 			if scriptStatus == "" {
 				scriptStatus = "not started yet"
@@ -341,7 +347,7 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 }
 
 func (this *ControlServer) HandleScript(w http.ResponseWriter, r *http.Request) {
-	if this.CustomScripts == nil {
+	if this.Config.CustomScripts == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -352,13 +358,30 @@ func (this *ControlServer) HandleScript(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	cmd, found := this.CustomScripts[name]
+	cmd, found := this.Config.CustomScripts[name]
 	if !found {
 		http.NotFound(w, r)
 		return
 	}
 
 	this.startScriptInBackground(name, cmd)
+	returnSuccess(w, r)
+}
+
+func (this *ControlServer) HandleConfig(w http.ResponseWriter, r *http.Request) {
+	var decoder = json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	var updatableConfig UpdatableConfig
+	err := decoder.Decode(&updatableConfig)
+
+	if err != nil {
+		this.logger.WithError(err).Error("failed to parse json")
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	this.F.Config.Update(updatableConfig)
 	returnSuccess(w, r)
 }
 

@@ -40,7 +40,7 @@ func (t *IterativeVerifierTestSuite) SetupTest() {
 		CompressionVerifier: compressionVerifier,
 		CursorConfig: &ghostferry.CursorConfig{
 			DB:          t.Ferry.SourceDB,
-			BatchSize:   t.Ferry.Config.DataIterationBatchSize,
+			BatchSize:   &t.Ferry.Config.UpdatableConfig.DataIterationBatchSize,
 			ReadRetries: t.Ferry.Config.DBReadRetries,
 		},
 		BinlogStreamer: t.Ferry.BinlogStreamer,
