@@ -1,9 +1,10 @@
 package test
 
 import (
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math/rand"
 	"testing"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry/sharding"
 	"github.com/Shopify/ghostferry/testhelpers"
