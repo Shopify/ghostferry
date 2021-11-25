@@ -1,9 +1,10 @@
 package test
 
 import (
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math/rand"
 	"testing"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry/sharding"
 	"github.com/Shopify/ghostferry/testhelpers"
@@ -141,4 +142,39 @@ func TestErrorsIfShardingKeyChanged(t *testing.T) {
 
 	assert.NotNil(t, errorHandler.LastError)
 	assert.Equal(t, "sharding key changed from 2 to 1", errorHandler.LastError.Error())
+}
+
+type InsertDDLWriter struct {
+	db *sql.DB
+}
+
+func (this *InsertDDLWriter) Run() {
+	this.db.Exec("ALTER TABLE gftest.table1 ADD COLUMN (bar INT)")
+}
+
+func (this *InsertDDLWriter) Stop() {}
+
+func (this *InsertDDLWriter) Wait() {}
+
+func (this *InsertDDLWriter) SetDB(db *sql.DB) {
+	this.db = db
+}
+
+func TestErrorsIfDDLDetected(t *testing.T) {
+	errorHandler := &testhelpers.ErrorHandler{}
+	ferry := selectiveFerry(int64(2))
+	ferry.ErrorHandler = errorHandler
+
+	testcase := &testhelpers.IntegrationTestCase{
+		T:           t,
+		Ferry:       ferry,
+		SetupAction: setupSingleTableDatabase,
+		DataWriter:  &InsertDDLWriter{},
+	}
+
+	defer testcase.Teardown()
+	testcase.CopyData()
+
+	assert.NotNil(t, errorHandler.LastError)
+	assert.Equal(t, "unexpected DDL event", errorHandler.LastError.Error())
 }

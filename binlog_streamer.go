@@ -8,6 +8,7 @@ import (
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
+	sqlparser "github.com/blastrain/vitess-sqlparser/sqlparser"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
@@ -230,6 +231,19 @@ func (s *BinlogStreamer) Run() {
 			// the full query that was executed on the master (with annotations)
 			// that is otherwise not possible to reconstruct
 			query = ev.Event.(*replication.RowsQueryEvent).Query
+		case *replication.QueryEvent:
+			query = ev.Event.(*replication.QueryEvent).Query
+			statement, err := sqlparser.Parse(string(query))
+			if err != nil {
+				s.logger.WithError(err).Error("failed to parse query event")
+				s.ErrorHandler.Fatal("binlog_streamer", err)
+			}
+			switch statement.(type) {
+			case *sqlparser.DDL:
+				s.logger.WithError(err).Error("unexpected DDL event")
+				err = fmt.Errorf("unexpected DDL event")
+				s.ErrorHandler.Fatal("binlog_streamer", err)
+			}
 		case *replication.RowsEvent:
 			err = s.handleRowsEvent(ev, query)
 			if err != nil {
