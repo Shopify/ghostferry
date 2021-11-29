@@ -105,7 +105,8 @@ func (this *ControlServer) Initialize() (err error) {
 	this.router.HandleFunc("/api/stop", this.HandleStop).Methods("POST")
 	this.router.HandleFunc("/api/verify", this.HandleVerify).Methods("POST")
 	this.router.HandleFunc("/api/script", this.HandleScript).Methods("POST")
-	this.router.HandleFunc("/api/config", this.HandleConfig).Methods("POST")
+	this.router.HandleFunc("/api/config", this.HandleConfigGet).Methods("GET")
+	this.router.HandleFunc("/api/config", this.HandleConfigPost).Methods("POST")
 
 	staticFiles := http.StripPrefix("/static/", http.FileServer(http.Dir(filepath.Join(this.Config.WebBasedir, "webui", "static"))))
 	this.router.PathPrefix("/static/").Handler(staticFiles)
@@ -368,7 +369,15 @@ func (this *ControlServer) HandleScript(w http.ResponseWriter, r *http.Request) 
 	returnSuccess(w, r)
 }
 
-func (this *ControlServer) HandleConfig(w http.ResponseWriter, r *http.Request) {
+func (this *ControlServer) HandleConfigGet(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	err := json.NewEncoder(w).Encode(this.F.UpdatableConfig)
+	if err != nil {
+		this.logger.WithError(err).Error("failed to send updatable config")
+	}
+}
+
+func (this *ControlServer) HandleConfigPost(w http.ResponseWriter, r *http.Request) {
 	var decoder = json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 
