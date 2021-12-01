@@ -25,7 +25,8 @@ func TestShardedTableFilterRejectsIgnoredTables(t *testing.T) {
 	filter := &sharding.ShardedTableFilter{
 		SourceShard: "shard_42",
 		ShardingKey: "tenant_id",
-		IgnoredTables: []*regexp.Regexp{
+		Type: sharding.IgnoredTablesFilter,
+		Tables: []*regexp.Regexp{
 			regexp.MustCompile("^_(.*)_new$"),
 			regexp.MustCompile("^_(.*)_old$"),
 			regexp.MustCompile("^lhm._(.*)"),
@@ -51,6 +52,32 @@ func TestShardedTableFilterRejectsIgnoredTables(t *testing.T) {
 	applicable, err := filter.ApplicableTables(tables)
 	assert.Nil(t, err)
 	assert.Equal(t, tables[5:], applicable)
+}
+
+func TestShardedTableFilterSelectsIncludedTables(t *testing.T) {
+	filter := &sharding.ShardedTableFilter{
+		SourceShard: "shard_42",
+		ShardingKey: "tenant_id",
+		Type: sharding.IncludedTablesFilter,
+		Tables: []*regexp.Regexp{
+			regexp.MustCompile("^table_.*"),
+			regexp.MustCompile("ghost"),
+		},
+	}
+
+	tables := []*ghostferry.TableSchema{
+		{Table: &schema.Table{Schema: "shard_42", Name: "_table_name_new", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "lhma_1234_table_name", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "new", Columns: []schema.TableColumn{{Name: "id"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "x_lhmn_table_name", Columns: []schema.TableColumn{{Name: "bar"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "table_new", Columns: []schema.TableColumn{{Name: "foo"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "ghost", Columns: []schema.TableColumn{{Name: "foo"}, {Name: "tenant_id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "table_name", Columns: []schema.TableColumn{{Name: "bar"}, {Name: "tenant_id"}}}},
+	}
+
+	applicable, err := filter.ApplicableTables(tables)
+	assert.Nil(t, err)
+	assert.Equal(t, tables[4:], applicable)
 }
 
 func TestShardedTableFilterSelectsTablesWithShardingKey(t *testing.T) {
