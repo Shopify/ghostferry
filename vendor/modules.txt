@@ -8,6 +8,27 @@ github.com/Masterminds/squirrel
 ## explicit
 github.com/Microsoft/go-winio
 github.com/Microsoft/go-winio/pkg/guid
+# github.com/blastrain/vitess-sqlparser v0.0.0-20201030050434-a139afbb1aba
+## explicit
+github.com/blastrain/vitess-sqlparser/bytes2
+github.com/blastrain/vitess-sqlparser/hack
+github.com/blastrain/vitess-sqlparser/sqlparser
+github.com/blastrain/vitess-sqlparser/sqltypes
+github.com/blastrain/vitess-sqlparser/tidbparser/ast
+github.com/blastrain/vitess-sqlparser/tidbparser/dependency/model
+github.com/blastrain/vitess-sqlparser/tidbparser/dependency/mysql
+github.com/blastrain/vitess-sqlparser/tidbparser/dependency/sessionctx/stmtctx
+github.com/blastrain/vitess-sqlparser/tidbparser/dependency/terror
+github.com/blastrain/vitess-sqlparser/tidbparser/dependency/types
+github.com/blastrain/vitess-sqlparser/tidbparser/dependency/types/json
+github.com/blastrain/vitess-sqlparser/tidbparser/dependency/util/auth
+github.com/blastrain/vitess-sqlparser/tidbparser/dependency/util/charset
+github.com/blastrain/vitess-sqlparser/tidbparser/dependency/util/chunk
+github.com/blastrain/vitess-sqlparser/tidbparser/dependency/util/format
+github.com/blastrain/vitess-sqlparser/tidbparser/dependency/util/hack
+github.com/blastrain/vitess-sqlparser/tidbparser/dependency/util/memory
+github.com/blastrain/vitess-sqlparser/tidbparser/parser
+github.com/blastrain/vitess-sqlparser/tidbparser/parser/opcode
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
 # github.com/go-mysql-org/go-mysql v1.3.0
@@ -30,6 +51,8 @@ github.com/gorilla/context
 # github.com/gorilla/mux v1.6.1
 ## explicit
 github.com/gorilla/mux
+# github.com/juju/errors v0.0.0-20170703010042-c7d06af17c68
+github.com/juju/errors
 # github.com/lann/builder v0.0.0-20180216234317-1b87b36280d0
 ## explicit
 github.com/lann/builder
@@ -74,8 +97,20 @@ go.uber.org/atomic
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
+# golang.org/x/text v0.3.6
+golang.org/x/text/encoding
+golang.org/x/text/encoding/charmap
+golang.org/x/text/encoding/internal
+golang.org/x/text/encoding/internal/identifier
+golang.org/x/text/encoding/japanese
+golang.org/x/text/encoding/korean
+golang.org/x/text/encoding/simplifiedchinese
+golang.org/x/text/encoding/traditionalchinese
+golang.org/x/text/encoding/unicode
+golang.org/x/text/internal/utf8internal
+golang.org/x/text/runes
+golang.org/x/text/transform
 # gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f
 ## explicit
-# gopkg.in/yaml.v2 v2.2.4
-## explicit
+# gopkg.in/yaml.v2 v2.2.8
 gopkg.in/yaml.v2

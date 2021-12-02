@@ -6,6 +6,7 @@ require (
 	github.com/DataDog/datadog-go v4.8.2+incompatible
 	github.com/Masterminds/squirrel v0.0.0-20180620232226-b127ed9be034
 	github.com/Microsoft/go-winio v0.5.0 // indirect
+	github.com/blastrain/vitess-sqlparser v0.0.0-20201030050434-a139afbb1aba
 	github.com/go-mysql-org/go-mysql v1.3.0
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db
@@ -23,6 +24,4 @@ require (
 	github.com/stretchr/testify v1.4.0
 	golang.org/x/sys v0.0.0-20210426230700-d19ff857e887 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
-	gopkg.in/yaml.v2 v2.2.4 // indirect
-	vitess.io/vitess v0.12.0
 )
