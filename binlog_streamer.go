@@ -233,6 +233,9 @@ func (s *BinlogStreamer) Run() {
 			query = ev.Event.(*replication.RowsQueryEvent).Query
 		case *replication.QueryEvent:
 			query = ev.Event.(*replication.QueryEvent).Query
+			if string(query) == "BEGIN" {
+				break
+			}
 			statement, err := sqlparser.Parse(string(query))
 			if err != nil {
 				s.logger.WithError(err).Error("failed to parse query event")
