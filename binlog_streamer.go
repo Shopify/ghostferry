@@ -4,11 +4,12 @@ import (
 	"context"
 	"crypto/tls"
 	sqlorig "database/sql"
+	"errors"
 	"fmt"
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
-	sqlparser "github.com/blastrain/vitess-sqlparser/sqlparser"
+	"github.com/blastrain/vitess-sqlparser/sqlparser"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
@@ -16,6 +17,13 @@ import (
 )
 
 const caughtUpThreshold = 10 * time.Second
+
+type ReplicationEventContext struct {
+	evPosition               mysql.Position
+	isEventPositionResumable bool
+	isEventPositionValid     bool
+	nextFilename             string
+}
 
 type BinlogStreamer struct {
 	DB           *sql.DB
@@ -37,6 +45,7 @@ type BinlogStreamer struct {
 	// See https://github.com/Shopify/ghostferry/pull/258 for details
 	DatabaseRewrites map[string]string
 	TableRewrites    map[string]string
+	EventHandlers    map[string]func(*replication.BinlogEvent, []byte, *ReplicationEventContext) ([]byte, error)
 
 	lastStreamedBinlogPosition  mysql.Position
 	lastResumableBinlogPosition mysql.Position
@@ -134,6 +143,121 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFrom(startFromBinlogPositio
 	return s.lastStreamedBinlogPosition, err
 }
 
+type HandlerError struct {
+	err   error
+	fatal bool
+}
+
+func (h *HandlerError) Error() string {
+	return fmt.Sprintf("%v", h.err)
+}
+
+func QueryEventHandler(ev *replication.BinlogEvent, query []byte, reContext *ReplicationEventContext) ([]byte, error) {
+	handlerError := HandlerError{}
+	var err error
+	query = ev.Event.(*replication.QueryEvent).Query
+	if string(query) == "BEGIN" {
+		return query, nil
+	}
+	statement, err := sqlparser.Parse(string(query))
+	if err != nil {
+		handlerError.err = errors.New("failed to parse query event")
+		handlerError.fatal = true
+		return query, &handlerError
+	}
+	switch statement.(type) {
+	case *sqlparser.DDL:
+		handlerError.err = errors.New("unexpected DDL event")
+		handlerError.fatal = true
+		return query, &handlerError
+	}
+	return query, nil
+}
+
+func (s *BinlogStreamer) DefaultEventHandler(ev *replication.BinlogEvent, query []byte, reContext *ReplicationEventContext) ([]byte, error) {
+	var err error
+	switch e := ev.Event.(type) {
+	case *replication.RotateEvent:
+		// This event is used to keep the "current binlog filename" of the binlog streamer in sync.
+		reContext.nextFilename = string(e.NextLogName)
+
+		isFakeRotateEvent := ev.Header.LogPos == 0 && ev.Header.Timestamp == 0
+		if isFakeRotateEvent {
+			// Sometimes the RotateEvent is fake and not a real rotation. we want to ignore the log position in the header for those events
+			// https://github.com/percona/percona-server/blob/3ff016a46ce2cde58d8007ec9834f958da53cbea/sql/rpl_binlog_sender.cc#L278-L287
+			// https://github.com/percona/percona-server/blob/3ff016a46ce2cde58d8007ec9834f958da53cbea/sql/rpl_binlog_sender.cc#L904-L907
+
+			// However, we can always advance our lastStreamedBinlogPosition according to its data fields
+			reContext.evPosition = mysql.Position{
+				Name: string(e.NextLogName),
+				Pos:  uint32(e.Position),
+			}
+		}
+
+		s.logger.WithFields(logrus.Fields{
+			"new_position":  reContext.evPosition.Pos,
+			"new_filename":  reContext.evPosition.Name,
+			"last_position": s.lastStreamedBinlogPosition.Pos,
+			"last_filename": s.lastStreamedBinlogPosition.Name,
+		}).Info("binlog file rotated")
+	case *replication.FormatDescriptionEvent:
+		// This event is sent:
+		//   1) when our replication client connects to mysql
+		//   2) at the beginning of each binlog file
+		//
+		// For (1), if we are starting the binlog from a position that's greater
+		// than BIN_LOG_HEADER_SIZE (currently, 4th byte), this event's position
+		// is explicitly set to 0 and should not be considered valid according to
+		// the mysql source. See:
+		// https://github.com/percona/percona-server/blob/93165de1451548ff11dd32c3d3e5df0ff28cfcfa/sql/rpl_binlog_sender.cc#L1020-L1026
+		reContext.isEventPositionValid = ev.Header.LogPos != 0
+	case *replication.RowsQueryEvent:
+		// A RowsQueryEvent will always precede the corresponding RowsEvent
+		// if binlog_rows_query_log_events is enabled, and is used to get
+		// the full query that was executed on the master (with annotations)
+		// that is otherwise not possible to reconstruct
+		query = ev.Event.(*replication.RowsQueryEvent).Query
+	case *replication.RowsEvent:
+		err = s.handleRowsEvent(ev, query)
+		if err != nil {
+			s.logger.WithError(err).Error("failed to handle rows event")
+			s.ErrorHandler.Fatal("binlog_streamer", err)
+		}
+	case *replication.XIDEvent, *replication.GTIDEvent:
+		// With regards to DMLs, we see (at least) the following sequence
+		// of events in the binlog stream:
+		//
+		// - GTIDEvent  <- START of transaction
+		// - QueryEvent
+		// - RowsQueryEvent
+		// - TableMapEvent
+		// - RowsEvent
+		// - RowsEvent
+		// - XIDEvent   <- END of transaction
+		//
+		// *NOTE*
+		//
+		// First, RowsQueryEvent is only available with `binlog_rows_query_log_events`
+		// set to "ON".
+		//
+		// Second, there will be at least one (but potentially more) RowsEvents
+		// depending on the number of rows updated in the transaction.
+		//
+		// Lastly, GTIDEvents will only be available if they are enabled.
+		//
+		// As a result, the following case will set the last resumable position for
+		// interruption to EITHER the start (if using GTIDs) or the end of the
+		// last transaction
+		reContext.isEventPositionResumable = true
+
+		// Here we also reset the query event as we are either at the beginning
+		// or the end of the current/next transaction. As such, the query will be
+		// reset following the next RowsQueryEvent before the corresponding RowsEvent(s)
+		query = nil
+	}
+	return query, err
+}
+
 func (s *BinlogStreamer) Run() {
 	s.ensureLogger()
 
@@ -146,13 +270,13 @@ func (s *BinlogStreamer) Run() {
 	}()
 
 	var query []byte
+	reContext := ReplicationEventContext{}
 
 	currentFilename := s.lastStreamedBinlogPosition.Name
-	nextFilename := s.lastStreamedBinlogPosition.Name
-
+	reContext.nextFilename = s.lastStreamedBinlogPosition.Name
 	s.logger.Info("starting binlog streamer")
 	for !s.stopRequested || (s.stopRequested && s.lastStreamedBinlogPosition.Compare(s.stopAtBinlogPosition) < 0) {
-		currentFilename = nextFilename
+		currentFilename = reContext.nextFilename
 		var ev *replication.BinlogEvent
 		var timedOut bool
 		var err error
@@ -175,121 +299,42 @@ func (s *BinlogStreamer) Run() {
 			continue
 		}
 
-		evPosition := mysql.Position{
+		reContext.evPosition = mysql.Position{
 			Name: currentFilename,
 			Pos:  ev.Header.LogPos,
 		}
 
 		s.logger.WithFields(logrus.Fields{
-			"position":                   evPosition.Pos,
-			"file":                       evPosition.Name,
+			"position":                   reContext.evPosition.Pos,
+			"file":                       reContext.evPosition.Name,
 			"type":                       fmt.Sprintf("%T", ev.Event),
 			"lastStreamedBinlogPosition": s.lastStreamedBinlogPosition,
 		}).Debug("reached position")
 
-		isEventPositionResumable := false
-		isEventPositionValid := true
+		reContext.isEventPositionResumable = false
+		reContext.isEventPositionValid = true
 
-		switch e := ev.Event.(type) {
-		case *replication.RotateEvent:
-			// This event is used to keep the "current binlog filename" of the binlog streamer in sync.
-			nextFilename = string(e.NextLogName)
-
-			isFakeRotateEvent := ev.Header.LogPos == 0 && ev.Header.Timestamp == 0
-			if isFakeRotateEvent {
-				// Sometimes the RotateEvent is fake and not a real rotation. we want to ignore the log position in the header for those events
-				// https://github.com/percona/percona-server/blob/3ff016a46ce2cde58d8007ec9834f958da53cbea/sql/rpl_binlog_sender.cc#L278-L287
-				// https://github.com/percona/percona-server/blob/3ff016a46ce2cde58d8007ec9834f958da53cbea/sql/rpl_binlog_sender.cc#L904-L907
-
-				// However, we can always advance our lastStreamedBinlogPosition according to its data fields
-				evPosition = mysql.Position{
-					Name: string(e.NextLogName),
-					Pos:  uint32(e.Position),
+		eventTypeString := ev.Header.EventType.String()
+		handler := s.EventHandlers[eventTypeString]
+		if handler == nil {
+			query, err = s.DefaultEventHandler(ev, query, &reContext)
+		} else {
+			query, err = handler(ev, query, &reContext)
+			handlerError, ok := err.(*HandlerError)
+			if ok {
+				if handlerError.err != nil {
+					s.logger.WithError(handlerError.err).Error("failed to handle event")
+					if handlerError.fatal {
+						s.ErrorHandler.Fatal("binlog_streamer", handlerError.err)
+					}
 				}
 			}
-
-			s.logger.WithFields(logrus.Fields{
-				"new_position":  evPosition.Pos,
-				"new_filename":  evPosition.Name,
-				"last_position": s.lastStreamedBinlogPosition.Pos,
-				"last_filename": s.lastStreamedBinlogPosition.Name,
-			}).Info("binlog file rotated")
-		case *replication.FormatDescriptionEvent:
-			// This event is sent:
-			//   1) when our replication client connects to mysql
-			//   2) at the beginning of each binlog file
-			//
-			// For (1), if we are starting the binlog from a position that's greater
-			// than BIN_LOG_HEADER_SIZE (currently, 4th byte), this event's position
-			// is explicitly set to 0 and should not be considered valid according to
-			// the mysql source. See:
-			// https://github.com/percona/percona-server/blob/93165de1451548ff11dd32c3d3e5df0ff28cfcfa/sql/rpl_binlog_sender.cc#L1020-L1026
-			isEventPositionValid = ev.Header.LogPos != 0
-		case *replication.RowsQueryEvent:
-			// A RowsQueryEvent will always precede the corresponding RowsEvent
-			// if binlog_rows_query_log_events is enabled, and is used to get
-			// the full query that was executed on the master (with annotations)
-			// that is otherwise not possible to reconstruct
-			query = ev.Event.(*replication.RowsQueryEvent).Query
-		case *replication.QueryEvent:
-			query = ev.Event.(*replication.QueryEvent).Query
-			if string(query) == "BEGIN" {
-				break
-			}
-			statement, err := sqlparser.Parse(string(query))
-			if err != nil {
-				s.logger.WithError(err).Error("failed to parse query event")
-				s.ErrorHandler.Fatal("binlog_streamer", err)
-			}
-			switch statement.(type) {
-			case *sqlparser.DDL:
-				s.logger.WithError(err).Error("unexpected DDL event")
-				err = fmt.Errorf("unexpected DDL event")
-				s.ErrorHandler.Fatal("binlog_streamer", err)
-			}
-		case *replication.RowsEvent:
-			err = s.handleRowsEvent(ev, query)
-			if err != nil {
-				s.logger.WithError(err).Error("failed to handle rows event")
-				s.ErrorHandler.Fatal("binlog_streamer", err)
-			}
-		case *replication.XIDEvent, *replication.GTIDEvent:
-			// With regards to DMLs, we see (at least) the following sequence
-			// of events in the binlog stream:
-			//
-			// - GTIDEvent  <- START of transaction
-			// - QueryEvent
-			// - RowsQueryEvent
-			// - TableMapEvent
-			// - RowsEvent
-			// - RowsEvent
-			// - XIDEvent   <- END of transaction
-			//
-			// *NOTE*
-			//
-			// First, RowsQueryEvent is only available with `binlog_rows_query_log_events`
-			// set to "ON".
-			//
-			// Second, there will be at least one (but potentially more) RowsEvents
-			// depending on the number of rows updated in the transaction.
-			//
-			// Lastly, GTIDEvents will only be available if they are enabled.
-			//
-			// As a result, the following case will set the last resumable position for
-			// interruption to EITHER the start (if using GTIDs) or the end of the
-			// last transaction
-			isEventPositionResumable = true
-
-			// Here we also reset the query event as we are either at the beginning
-			// or the end of the current/next transaction. As such, the query will be
-			// reset following the next RowsQueryEvent before the corresponding RowsEvent(s)
-			query = nil
 		}
 
-		if isEventPositionValid {
+		if reContext.isEventPositionValid {
 			evType := fmt.Sprintf("%T", ev.Event)
 			evTimestamp := ev.Header.Timestamp
-			s.updateLastStreamedPosAndTime(evTimestamp, evPosition, evType, isEventPositionResumable)
+			s.updateLastStreamedPosAndTime(evTimestamp, reContext.evPosition, evType, reContext.isEventPositionResumable)
 		}
 	}
 }

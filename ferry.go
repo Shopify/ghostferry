@@ -20,6 +20,7 @@ import (
 	_ "net/http/pprof"
 
 	siddontangmysql "github.com/go-mysql-org/go-mysql/mysql"
+	"github.com/go-mysql-org/go-mysql/replication"
 	"github.com/go-sql-driver/mysql"
 	siddontanglog "github.com/siddontang/go-log/log"
 	"github.com/sirupsen/logrus"
@@ -147,6 +148,9 @@ func (f *Ferry) NewTargetBinlogStreamer() (*BinlogStreamer, error) {
 func (f *Ferry) newBinlogStreamer(db *sql.DB, dbConf *DatabaseConfig, schemaRewrites, tableRewrites map[string]string, logTag string) *BinlogStreamer {
 	f.ensureInitialized()
 
+	eventHandlers := make(map[string]func(*replication.BinlogEvent, []byte, *ReplicationEventContext) ([]byte, error))
+	eventHandlers["QueryEvent"] = QueryEventHandler
+
 	return &BinlogStreamer{
 		DB:               db,
 		DBConfig:         dbConf,
@@ -157,6 +161,7 @@ func (f *Ferry) newBinlogStreamer(db *sql.DB, dbConf *DatabaseConfig, schemaRewr
 		LogTag:           logTag,
 		DatabaseRewrites: schemaRewrites,
 		TableRewrites:    tableRewrites,
+		EventHandlers:    eventHandlers,
 	}
 }
 
