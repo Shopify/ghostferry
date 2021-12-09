@@ -1,7 +1,7 @@
 #!/bin/bash
 set -xe
 
-DOCKER_COMPOSE_VERSION=1.21.2
+DOCKER_COMPOSE_VERSION=1.29.2
 
 sudo apt-get update
 sudo apt-get install -y netcat-openbsd make gcc
