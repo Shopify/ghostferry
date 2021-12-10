@@ -19,7 +19,7 @@ func TestConfigWithBothIncludedAndIgnoredTablesIsInvalid(t *testing.T)  {
 }
 
 
-func TestConfigWithRunFerryFromReplicaWithoutValidSourceReplicationMasterIsInvlaid(t *testing.T)  {
+func TestConfigWithRunFerryFromReplicaWithoutValidSourceReplicationMasterIsInvalid(t *testing.T)  {
 	config := sharding.Config{
 		RunFerryFromReplica: true,
 		SourceReplicationMaster: &ghostferry.DatabaseConfig{},
