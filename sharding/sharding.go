@@ -28,17 +28,37 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 
 	config.VerifierType = ghostferry.VerifierTypeInline
 
-	ignored, err := compileRegexps(config.IgnoredTables)
-	if err != nil {
-		return nil, fmt.Errorf("failed to compile ignored tables: %v", err)
+	var tableFilter ghostferry.TableFilter
+
+	if len(config.IncludedTables) != 0 {
+		included, err := compileRegexps(config.IncludedTables)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compile included tables: %v", err)
+		}
+
+		tableFilter = &ShardedTableFilter{
+			ShardingKey:   config.ShardingKey,
+			SourceShard:   config.SourceDB,
+			JoinedTables:  config.JoinedTables,
+			Type: IncludedTablesFilter,
+			Tables: included,
+		}
+	} else {
+		ignored, err := compileRegexps(config.IgnoredTables)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compile ignored tables: %v", err)
+		}
+
+		tableFilter = &ShardedTableFilter{
+			ShardingKey:   config.ShardingKey,
+			SourceShard:   config.SourceDB,
+			JoinedTables:  config.JoinedTables,
+			Type: IgnoredTablesFilter,
+			Tables: ignored,
+		}
 	}
 
-	config.TableFilter = &ShardedTableFilter{
-		ShardingKey:   config.ShardingKey,
-		SourceShard:   config.SourceDB,
-		JoinedTables:  config.JoinedTables,
-		IgnoredTables: ignored,
-	}
+	config.TableFilter = tableFilter
 
 	if err := config.ValidateConfig(); err != nil {
 		return nil, fmt.Errorf("failed to validate config: %v", err)

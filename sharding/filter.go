@@ -185,12 +185,28 @@ func (f *ShardedCopyFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, er
 	return false, nil
 }
 
+type ShardedTableFilterType int64
+
+const (
+	IgnoredTablesFilter ShardedTableFilterType = iota
+	IncludedTablesFilter
+)
+
 type ShardedTableFilter struct {
 	SourceShard      string
 	ShardingKey      string
 	JoinedTables     map[string][]JoinTable
-	IgnoredTables    []*regexp.Regexp
+	Type             ShardedTableFilterType
+	Tables           []*regexp.Regexp
 	PrimaryKeyTables map[string]struct{}
+}
+
+func (s *ShardedTableFilter) isIgnoreFilter() bool {
+	return s.Type == IgnoredTablesFilter
+}
+
+func (s *ShardedTableFilter) isIncludeFilter() bool {
+	return s.Type == IncludedTablesFilter
 }
 
 func (s *ShardedTableFilter) ApplicableDatabases(dbs []string) ([]string, error) {
@@ -199,7 +215,7 @@ func (s *ShardedTableFilter) ApplicableDatabases(dbs []string) ([]string, error)
 
 func (s *ShardedTableFilter) ApplicableTables(tables []*ghostferry.TableSchema) (applicable []*ghostferry.TableSchema, err error) {
 	for _, table := range tables {
-		if s.isIgnored(table) {
+		if ((s.isIgnoreFilter() && s.isPresent(table)) || (s.isIncludeFilter() && !s.isPresent(table))) {
 			continue
 		}
 
@@ -225,8 +241,8 @@ func (s *ShardedTableFilter) ApplicableTables(tables []*ghostferry.TableSchema) 
 	return
 }
 
-func (s *ShardedTableFilter) isIgnored(table *ghostferry.TableSchema) bool {
-	for _, re := range s.IgnoredTables {
+func (s *ShardedTableFilter) isPresent(table *ghostferry.TableSchema) bool {
+	for _, re := range s.Tables {
 		if re.Match([]byte(table.Name)) {
 			return true
 		}
