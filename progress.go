@@ -32,6 +32,7 @@ type Progress struct {
 
 	Tables                  map[string]TableProgress
 	LastSuccessfulBinlogPos mysql.Position
+	LastSuccessfulGTID      string
 	BinlogStreamerLag       float64 // This is the amount of seconds the binlog streamer is lagging by (seconds)
 	BinlogWriterLag         float64 // This is the amount of seconds the binlog writer is lagging by (seconds)
 	Throttled               bool

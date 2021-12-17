@@ -290,7 +290,7 @@ type ControlServerConfig struct {
 	ServerBindAddr string
 
 	// Path to `web` base dir
-	WebBasedir     string
+	WebBasedir string
 
 	// TODO: refactor control server config out of the base ferry at some point
 	// This adds optional buttons in the web ui that runs a script located at the
@@ -783,6 +783,9 @@ type Config struct {
 	// If true, net/http/pprof will be enabled on port 6060.
 	EnablePProf bool
 
+	//If true, Ghostferry will use GTIDs to connect as a replica and parse binlogs
+	GTIDEnabled bool
+
 	// ----------------------------------------------------------------------------------------------------------------
 	// Updatable config
 	// The following configs are updatable via the `Config.Update` method and should be passed by pointer
@@ -835,7 +838,7 @@ func (c *Config) ValidateConfig() error {
 		return fmt.Errorf("control_server: %s", err)
 	}
 
-		if c.DBWriteRetries == 0 {
+	if c.DBWriteRetries == 0 {
 		c.DBWriteRetries = 5
 	}
 
@@ -870,7 +873,7 @@ func (c *Config) ValidateConfig() error {
 	return nil
 }
 
-func (c *Config) checkForDeprecatedConfig()  {
+func (c *Config) checkForDeprecatedConfig() {
 	if c.DataIterationBatchSize != 0 {
 		c.logDeprecated("DataIterationBatchSize", "UpdatableConfig.DataIterationBatchSize")
 		c.UpdatableConfig.DataIterationBatchSize = c.DataIterationBatchSize
@@ -888,11 +891,11 @@ func (c *Config) checkForDeprecatedConfig()  {
 
 	if len(c.ControlServerCustomScripts) != 0 {
 		c.logDeprecated("ControlServerCustomScripts", "ControlServerConfig.CustomScripts")
-		c.ControlServerConfig.CustomScripts= c.ControlServerCustomScripts
+		c.ControlServerConfig.CustomScripts = c.ControlServerCustomScripts
 	}
 }
 
-func (c *Config) logDeprecated(deprecatedConfig string, newConfig string)  {
+func (c *Config) logDeprecated(deprecatedConfig string, newConfig string) {
 	logrus.Warnf("Config.%s is deprecated in favour of Config.%s", deprecatedConfig, newConfig)
 }
 

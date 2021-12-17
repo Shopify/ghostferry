@@ -8,6 +8,7 @@ import (
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
+	uuid "github.com/satori/go.uuid"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
@@ -40,6 +41,9 @@ type BinlogStreamer struct {
 	lastStreamedBinlogPosition  mysql.Position
 	lastResumableBinlogPosition mysql.Position
 	stopAtBinlogPosition        mysql.Position
+
+	lastStreamedGTID string
+	currentGTID      mysql.GTIDSet
 
 	lastProcessedEventTime   time.Time
 	lastLagMetricEmittedTime time.Time
@@ -91,6 +95,24 @@ func (s *BinlogStreamer) createBinlogSyncer() error {
 	}
 
 	s.binlogSyncer = replication.NewBinlogSyncer(syncerConfig)
+	return nil
+}
+
+func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlWithGTID(gtidSet mysql.GTIDSet) error {
+	s.ensureLogger()
+
+	err := s.createBinlogSyncer()
+	if err != nil {
+		s.logger.WithError(err).Error("failed to initialize binlog syncer")
+		return err
+	}
+
+	streamer, err := s.binlogSyncer.StartSyncGTID(gtidSet)
+	if err != nil {
+		s.logger.WithError(err).Error("failed to start syncing with GTIDs")
+		return err
+	}
+	s.binlogStreamer = streamer
 	return nil
 }
 
@@ -184,6 +206,7 @@ func (s *BinlogStreamer) Run() {
 			"file":                       evPosition.Name,
 			"type":                       fmt.Sprintf("%T", ev.Event),
 			"lastStreamedBinlogPosition": s.lastStreamedBinlogPosition,
+			"lastStreamedGTID":           s.lastStreamedGTID,
 		}).Debug("reached position")
 
 		isEventPositionResumable := false
@@ -236,7 +259,22 @@ func (s *BinlogStreamer) Run() {
 				s.logger.WithError(err).Error("failed to handle rows event")
 				s.ErrorHandler.Fatal("binlog_streamer", err)
 			}
-		case *replication.XIDEvent, *replication.GTIDEvent:
+
+		case *replication.GTIDEvent:
+			gtidEV := ev.Event.(*replication.GTIDEvent)
+			serverUUID, _ := uuid.FromBytes(gtidEV.SID)
+			gtid, err := mysql.ParseMysqlGTIDSet(fmt.Sprintf("%v:%v", serverUUID, gtidEV.GNO))
+			if err != nil {
+				s.logger.WithError(err).Error("failed to parse gtid event")
+				s.ErrorHandler.Fatal("binlog_streamer", err)
+			}
+
+			s.currentGTID = gtid
+
+			isEventPositionResumable = true
+			query = nil
+
+		case *replication.XIDEvent:
 			// With regards to DMLs, we see (at least) the following sequence
 			// of events in the binlog stream:
 			//
@@ -267,12 +305,12 @@ func (s *BinlogStreamer) Run() {
 			// or the end of the current/next transaction. As such, the query will be
 			// reset following the next RowsQueryEvent before the corresponding RowsEvent(s)
 			query = nil
+
+			s.currentGTID = nil
 		}
 
 		if isEventPositionValid {
-			evType := fmt.Sprintf("%T", ev.Event)
-			evTimestamp := ev.Header.Timestamp
-			s.updateLastStreamedPosAndTime(evTimestamp, evPosition, evType, isEventPositionResumable)
+			s.updateLastStreamedPosAndTime(ev, evPosition, isEventPositionResumable)
 		}
 	}
 }
@@ -310,10 +348,10 @@ func (s *BinlogStreamer) FlushAndStop() {
 	s.stopRequested = true
 }
 
-func (s *BinlogStreamer) updateLastStreamedPosAndTime(evTimestamp uint32, evPos mysql.Position, evType string, isResumablePosition bool) {
+func (s *BinlogStreamer) updateLastStreamedPosAndTime(ev *replication.BinlogEvent, evPos mysql.Position, isResumablePosition bool) {
 	if evPos.Pos == 0 {
 		// This shouldn't happen, as the cases where it does happen are excluded and thus signal a programming error
-		s.logger.Panicf("tried to advance to a zero log position: %s %d %T", evPos.Name, evPos.Pos, evType)
+		s.logger.Panicf("tried to advance to a zero log position: %s %d %T", evPos.Name, evPos.Pos, fmt.Sprintf("%T", ev.Event))
 	}
 
 	s.lastStreamedBinlogPosition = evPos
@@ -321,6 +359,14 @@ func (s *BinlogStreamer) updateLastStreamedPosAndTime(evTimestamp uint32, evPos 
 		s.lastResumableBinlogPosition = evPos
 	}
 
+	switch ev.Event.(type) {
+	case *replication.GTIDEvent:
+		event := ev.Event.(*replication.GTIDEvent)
+		serverUUID, _ := uuid.FromBytes(event.SID)
+		s.lastStreamedGTID = fmt.Sprintf("%v:%v", serverUUID, event.GNO)
+	}
+
+	evTimestamp := ev.Header.Timestamp
 	// The first couple of events when connecting the binlog syncer (RotateEvent
 	// and FormatDescriptionEvent) have a zero timestamp..  Ignore those for
 	// timing updates

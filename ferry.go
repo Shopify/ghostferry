@@ -56,6 +56,8 @@ type Ferry struct {
 	SourceDB *sql.DB
 	TargetDB *sql.DB
 
+	SourceUUID string
+
 	ControlServer *ControlServer
 
 	BinlogStreamer *BinlogStreamer
@@ -395,6 +397,15 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
+	if f.Config.GTIDEnabled {
+		f.SourceUUID, err = GetServerUUID(f.SourceDB)
+		if err != nil {
+			f.logger.WithError(err).Error("retrieving server uuid from source replica failed")
+			return err
+		}
+		f.logger = f.logger.WithField("SourceUUID", f.SourceUUID)
+	}
+
 	if !f.Config.AllowSuperUserOnReadOnly {
 		isReplica, err := CheckDbIsAReplica(f.TargetDB)
 		if err != nil {
@@ -597,13 +608,37 @@ func (f *Ferry) Start() error {
 	var targetPos siddontangmysql.Position
 
 	var err error
-	if f.StateToResumeFrom != nil {
-		sourcePos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.MinSourceBinlogPosition())
-	} else {
-		sourcePos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysql()
-	}
+	sourcePos, err = ShowMasterStatusBinlogPosition(f.SourceDB)
 	if err != nil {
 		return err
+	}
+	f.logger.WithField("position", sourcePos).Info("State Tracker initialized with starting position")
+
+	if f.Config.GTIDEnabled {
+		if f.StateToResumeFrom != nil {
+			panic("TODO")
+		} else {
+			f.logger.Info("Using Ghostferry in GTID Mode")
+			gtidSet, err := GetExecutedGTIDSet(f.SourceDB)
+			if err != nil {
+				return err
+			}
+			f.logger.WithField("gtidSet", gtidSet).Info("syncing from source db using GTID set")
+
+			err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlWithGTID(gtidSet)
+			if err != nil {
+				return err
+			}
+		}
+	} else {
+		if f.StateToResumeFrom != nil {
+			sourcePos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.MinSourceBinlogPosition())
+		} else {
+			sourcePos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysql()
+		}
+		if err != nil {
+			return err
+		}
 	}
 
 	if !f.Config.SkipTargetVerification {
@@ -977,6 +1012,7 @@ func (f *Ferry) Progress() *Progress {
 
 	// Binlog Progress
 	s.LastSuccessfulBinlogPos = f.BinlogStreamer.lastStreamedBinlogPosition
+	s.LastSuccessfulGTID = f.BinlogStreamer.lastStreamedGTID
 	s.BinlogStreamerLag = now.Sub(f.BinlogStreamer.lastProcessedEventTime).Seconds()
 	s.BinlogWriterLag = now.Sub(f.BinlogWriter.lastProcessedEventTime).Seconds()
 	s.FinalBinlogPos = f.BinlogStreamer.stopAtBinlogPosition

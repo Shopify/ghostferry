@@ -19,11 +19,13 @@ func usage() {
 
 var verbose bool
 var dryrun bool
+var gtidEnabled bool
 var stateFilePath string
 
 func init() {
 	flag.BoolVar(&verbose, "verbose", false, "Show verbose logging output")
 	flag.BoolVar(&dryrun, "dryrun", false, "Do not actually perform the move, just connect and check settings")
+	flag.BoolVar(&gtidEnabled, "gtidenabled", false, "Use GTID based replication for ghostferry instead of mysql positions")
 	flag.StringVar(&stateFilePath, "resumestate", "", "Path to the state dump JSON file to resume Ghostferry with")
 }
 
@@ -65,7 +67,7 @@ func main() {
 				Enabled: true,
 			},
 
-			AutomaticCutover:       false,
+			AutomaticCutover: false,
 		},
 	}
 

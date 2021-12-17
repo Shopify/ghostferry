@@ -188,20 +188,17 @@ func (c *StmtCache) getStmt(query string) (*sqlorig.Stmt, bool) {
 	return stmt, exists
 }
 
-func ShowMasterStatusBinlogPosition(db *sql.DB) (mysql.Position, error) {
+func ShowMasterStatus(db *sql.DB) (position uint32, file, binlog_do_db, binlog_ignore_db, executed_gtid_set string, err error) {
 	rows, err := db.Query("SHOW MASTER STATUS")
 	if err != nil {
-		return NewMysqlPosition("", 0, err)
+		return position, file, binlog_do_db, binlog_ignore_db, executed_gtid_set, err
 	}
 	defer rows.Close()
-	var file string
-	var position uint32
-	var binlog_do_db, binlog_ignore_db, executed_gtid_set string
 	var cols []string
 	if rows.Next() {
 		cols, err = rows.Columns()
 		if err != nil {
-			return NewMysqlPosition(file, position, err)
+			return position, file, binlog_do_db, binlog_ignore_db, executed_gtid_set, err
 		}
 		switch len(cols) {
 		case 4:
@@ -210,7 +207,26 @@ func ShowMasterStatusBinlogPosition(db *sql.DB) (mysql.Position, error) {
 			err = rows.Scan(&file, &position, &binlog_do_db, &binlog_ignore_db, &executed_gtid_set)
 		}
 	}
+	return position, file, binlog_do_db, binlog_ignore_db, executed_gtid_set, err
+}
+
+func ShowMasterStatusBinlogPosition(db *sql.DB) (mysql.Position, error) {
+	position, file, _, _, _, err := ShowMasterStatus(db)
 	return NewMysqlPosition(file, position, err)
+}
+
+func GetExecutedGTIDSet(db *sql.DB) (mysql.GTIDSet, error) {
+	_, _, _, _, executed_gtid_set, err := ShowMasterStatus(db)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching executed gtid set: %v", err)
+	}
+
+	gtidSet, err := mysql.ParseMysqlGTIDSet(executed_gtid_set)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing gtid set: %v", err)
+	}
+
+	return gtidSet, nil
 }
 
 func NewMysqlPosition(file string, position uint32, err error) (mysql.Position, error) {
@@ -229,6 +245,13 @@ func NewMysqlPosition(file string, position uint32, err error) (mysql.Position, 
 			Pos:  position,
 		}, nil
 	}
+}
+
+func GetServerUUID(db *sql.DB) (string, error) {
+	row := db.QueryRow("SELECT @@server_uuid")
+	var serverUUID string
+	err := row.Scan(&serverUUID)
+	return serverUUID, err
 }
 
 func CheckDbIsAReplica(db *sql.DB) (bool, error) {
