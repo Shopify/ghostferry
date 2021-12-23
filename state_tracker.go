@@ -37,6 +37,7 @@ type SerializableState struct {
 	LastSuccessfulPaginationKeys              map[string]uint64
 	CompletedTables                           map[string]bool
 	LastWrittenBinlogPosition                 mysql.Position
+	LastWrittenGTIDSet                        mysql.MysqlGTIDSet
 	BinlogVerifyStore                         BinlogVerifySerializedStore
 	LastStoredBinlogPositionForInlineVerifier mysql.Position
 	LastStoredBinlogPositionForTargetVerifier mysql.Position
@@ -89,6 +90,8 @@ type StateTracker struct {
 	CopyRWMutex   *sync.RWMutex
 
 	lastWrittenBinlogPosition                 mysql.Position
+	lastWrittenGTIDSet                        mysql.GTIDSet
+	currentGNO                                int64
 	lastStoredBinlogPositionForInlineVerifier mysql.Position
 	lastStoredBinlogPositionForTargetVerifier mysql.Position
 
@@ -120,6 +123,7 @@ func NewStateTrackerFromSerializedState(speedLogCount int, serializedState *Seri
 	s.lastSuccessfulPaginationKeys = serializedState.LastSuccessfulPaginationKeys
 	s.completedTables = serializedState.CompletedTables
 	s.lastWrittenBinlogPosition = serializedState.LastWrittenBinlogPosition
+	s.lastWrittenGTIDSet = &serializedState.LastWrittenGTIDSet
 	s.lastStoredBinlogPositionForInlineVerifier = serializedState.LastStoredBinlogPositionForInlineVerifier
 	s.lastStoredBinlogPositionForTargetVerifier = serializedState.LastStoredBinlogPositionForTargetVerifier
 	return s
@@ -130,6 +134,16 @@ func (s *StateTracker) UpdateLastResumableSourceBinlogPosition(pos mysql.Positio
 	defer s.BinlogRWMutex.Unlock()
 
 	s.lastWrittenBinlogPosition = pos
+}
+
+func (s *StateTracker) UpdateLastWrittenGTIDSet(GNO int64, currentGTIDSet mysql.GTIDSet) {
+	s.BinlogRWMutex.Lock()
+	defer s.BinlogRWMutex.Unlock()
+
+	if s.currentGNO != GNO {
+		s.lastWrittenGTIDSet = currentGTIDSet
+		s.currentGNO = GNO
+	}
 }
 
 func (s *StateTracker) UpdateLastResumableSourceBinlogPositionForInlineVerifier(pos mysql.Position) {
@@ -260,12 +274,18 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, bin
 	s.CopyRWMutex.RLock()
 	defer s.CopyRWMutex.RUnlock()
 
+	gtidSet, _ := s.lastWrittenGTIDSet.(*mysql.MysqlGTIDSet)
+	if gtidSet == nil {
+		gtidSet = &mysql.MysqlGTIDSet{}
+	}
+
 	state := &SerializableState{
 		GhostferryVersion:                         VersionString,
 		LastKnownTableSchemaCache:                 lastKnownTableSchemaCache,
 		LastSuccessfulPaginationKeys:              make(map[string]uint64),
 		CompletedTables:                           make(map[string]bool),
 		LastWrittenBinlogPosition:                 s.lastWrittenBinlogPosition,
+		LastWrittenGTIDSet:                        *gtidSet,
 		LastStoredBinlogPositionForInlineVerifier: s.lastStoredBinlogPositionForInlineVerifier,
 		LastStoredBinlogPositionForTargetVerifier: s.lastStoredBinlogPositionForTargetVerifier,
 	}

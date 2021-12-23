@@ -43,7 +43,8 @@ type BinlogStreamer struct {
 	stopAtBinlogPosition        mysql.Position
 
 	lastStreamedGTID string
-	currentGTID      mysql.GTIDSet
+	currentGTIDSet   *mysql.MysqlGTIDSet
+	currentGTID      *mysql.UUIDSet
 
 	lastProcessedEventTime   time.Time
 	lastLagMetricEmittedTime time.Time
@@ -112,6 +113,7 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlWithGTID(gtidSet mysql.GTID
 		s.logger.WithError(err).Error("failed to start syncing with GTIDs")
 		return err
 	}
+	s.currentGTIDSet = gtidSet.(*mysql.MysqlGTIDSet)
 	s.binlogStreamer = streamer
 	return nil
 }
@@ -263,14 +265,11 @@ func (s *BinlogStreamer) Run() {
 		case *replication.GTIDEvent:
 			gtidEV := ev.Event.(*replication.GTIDEvent)
 			serverUUID, _ := uuid.FromBytes(gtidEV.SID)
-			gtid, err := mysql.ParseMysqlGTIDSet(fmt.Sprintf("%v:%v", serverUUID, gtidEV.GNO))
-			if err != nil {
-				s.logger.WithError(err).Error("failed to parse gtid event")
-				s.ErrorHandler.Fatal("binlog_streamer", err)
+			interval := mysql.Interval{
+				Start: gtidEV.GNO,
+				Stop:  gtidEV.GNO + 1,
 			}
-
-			s.currentGTID = gtid
-
+			s.currentGTID = mysql.NewUUIDSet(serverUUID, interval)
 			isEventPositionResumable = true
 			query = nil
 
@@ -305,7 +304,8 @@ func (s *BinlogStreamer) Run() {
 			// or the end of the current/next transaction. As such, the query will be
 			// reset following the next RowsQueryEvent before the corresponding RowsEvent(s)
 			query = nil
-
+			gtid := ev.Event.(*replication.XIDEvent)
+			s.currentGTIDSet = gtid.GSet.(*mysql.MysqlGTIDSet)
 			s.currentGTID = nil
 		}
 
@@ -414,7 +414,7 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 		return nil
 	}
 
-	dmlEvs, err := NewBinlogDMLEvents(tableFromSchemaCache, ev, pos, s.lastResumableBinlogPosition, query)
+	dmlEvs, err := NewBinlogDMLEvents(tableFromSchemaCache, ev, pos, s.lastResumableBinlogPosition, query, *s.currentGTID, s.currentGTIDSet)
 	if err != nil {
 		return err
 	}

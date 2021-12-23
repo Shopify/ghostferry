@@ -79,6 +79,9 @@ type DMLEvent interface {
 	PaginationKey() (uint64, error)
 	BinlogPosition() mysql.Position
 	ResumableBinlogPosition() mysql.Position
+	ServerUUID() string
+	GNO() int64
+	BinlogGTIDSet() mysql.GTIDSet
 	Annotation() (string, error)
 	Timestamp() time.Time
 }
@@ -90,6 +93,8 @@ type DMLEventBase struct {
 	resumablePos mysql.Position
 	query        []byte
 	timestamp    time.Time
+	gtid         mysql.UUIDSet
+	gtidSet      mysql.GTIDSet
 }
 
 func (e *DMLEventBase) Database() string {
@@ -112,6 +117,18 @@ func (e *DMLEventBase) ResumableBinlogPosition() mysql.Position {
 	return e.resumablePos
 }
 
+func (e *DMLEventBase) GNO() int64 {
+	return e.gtid.Intervals[0].Start
+}
+
+func (e *DMLEventBase) ServerUUID() string {
+	return e.gtid.SID.String()
+}
+
+func (e *DMLEventBase) BinlogGTIDSet() mysql.GTIDSet {
+	return e.gtidSet
+}
+
 // Annotation will return the first prefixed comment on the SQL string,
 // or an error if the query attribute of the DMLEvent is not set
 func (e *DMLEventBase) Annotation() (string, error) {
@@ -131,13 +148,15 @@ func (e *DMLEventBase) Timestamp() time.Time {
 	return e.timestamp
 }
 
-func NewDMLEventBase(table *TableSchema, pos, resumablePos mysql.Position, query []byte, timestamp time.Time) *DMLEventBase {
+func NewDMLEventBase(table *TableSchema, pos, resumablePos mysql.Position, query []byte, timestamp time.Time, gtid mysql.UUIDSet, gtidSet *mysql.MysqlGTIDSet) *DMLEventBase {
 	return &DMLEventBase{
 		table:        table,
 		pos:          pos,
 		resumablePos: resumablePos,
 		query:        query,
 		timestamp:    timestamp,
+		gtid:         gtid,
+		gtidSet:      gtidSet,
 	}
 }
 
@@ -278,7 +297,7 @@ func (e *BinlogDeleteEvent) PaginationKey() (uint64, error) {
 	return paginationKeyFromEventData(e.table, e.oldValues)
 }
 
-func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, resumablePos mysql.Position, query []byte) ([]DMLEvent, error) {
+func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, resumablePos mysql.Position, query []byte, gtid mysql.UUIDSet, gtidSet *mysql.MysqlGTIDSet) ([]DMLEvent, error) {
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
 	for _, row := range rowsEvent.Rows {
@@ -310,7 +329,7 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 	}
 
 	timestamp := time.Unix(int64(ev.Header.Timestamp), 0)
-	eventBase := NewDMLEventBase(table, pos, resumablePos, query, timestamp)
+	eventBase := NewDMLEventBase(table, pos, resumablePos, query, timestamp, gtid, gtidSet)
 	switch ev.Header.EventType {
 	case replication.WRITE_ROWS_EVENTv1, replication.WRITE_ROWS_EVENTv2:
 		return NewBinlogInsertEvents(eventBase, rowsEvent)

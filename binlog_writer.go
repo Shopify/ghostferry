@@ -114,7 +114,9 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 	}
 
 	if b.StateTracker != nil {
-		b.StateTracker.UpdateLastResumableSourceBinlogPosition(events[len(events)-1].ResumableBinlogPosition())
+		ev := events[len(events)-1]
+		b.StateTracker.UpdateLastResumableSourceBinlogPosition(ev.ResumableBinlogPosition())
+		b.StateTracker.UpdateLastWrittenGTIDSet(ev.GNO(), ev.BinlogGTIDSet())
 	}
 
 	b.lastProcessedEventTime = events[len(events)-1].Timestamp()

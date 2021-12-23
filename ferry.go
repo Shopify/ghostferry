@@ -616,7 +616,9 @@ func (f *Ferry) Start() error {
 
 	if f.Config.GTIDEnabled {
 		if f.StateToResumeFrom != nil {
-			panic("TODO")
+			gtid := f.StateToResumeFrom.LastWrittenGTIDSet
+			f.logger.WithField("gtidSet", gtid).Info("resuming from gtid set")
+			f.BinlogStreamer.ConnectBinlogStreamerToMysqlWithGTID(&gtid)
 		} else {
 			f.logger.Info("Using Ghostferry in GTID Mode")
 			gtidSet, err := GetExecutedGTIDSet(f.SourceDB)
