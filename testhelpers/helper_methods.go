@@ -2,9 +2,10 @@ package testhelpers
 
 import (
 	sqlorig "database/sql"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"strings"
 	"testing"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/stretchr/testify/assert"
@@ -30,7 +31,9 @@ func ProcessListContainsQueries(db *sql.DB, queries []string) bool {
 	}
 
 	for rows.Next() {
-		data, err := ghostferry.ScanGenericRow(rows, 10)
+		//columns, _ := rows.Columns()
+		//data, err := ghostferry.ScanGenericRow(rows, len(columns))
+		data, err := ghostferry.ScanGenericRow(rows, 8)
 		if err != nil {
 			panic(err)
 		}

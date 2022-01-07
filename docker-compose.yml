@@ -1,8 +1,7 @@
 version: "3"
 services:
   mysql-1:
-    image: percona:5.7
-    platform: linux/x86_64
+    image: docker.io/mysql/mysql-server:8.0
     command: --server-id=1
       --log-bin=mysql-bin
       --max-binlog-size=4096
@@ -18,14 +17,14 @@ services:
       --binlog-rows-query-log-events=ON
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_ROOT_HOST: "%"
     volumes:
       - /var/lib/mysql
     ports:
       - "29291:3306"
 
   mysql-2:
-    image: percona:5.7
-    platform: linux/x86_64
+    image: docker.io/mysql/mysql-server:8.0
     command: --server-id=2
       --log-bin=mysql-bin
       --binlog-format=ROW
@@ -40,13 +39,14 @@ services:
       --binlog-rows-query-log-events=ON
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_ROOT_HOST: "%"
     volumes:
       - /var/lib/mysql
     ports:
       - "29292:3306"
 
   mysql-3:
-    image: percona:5.7
+    image: docker.io/mysql/mysql-server:8.0
     command: --server-id=3
       --log-bin=mysql-bin
       --binlog-format=ROW
@@ -61,6 +61,7 @@ services:
       --binlog-rows-query-log-events=ON
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_ROOT_HOST: "%"
     volumes:
       - /var/lib/mysql
     ports:

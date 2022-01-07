@@ -2,9 +2,10 @@ package test
 
 import (
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"testing"
 	"time"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
@@ -25,6 +26,7 @@ func annotate(queries []string, marginalia string) []string {
 }
 
 func TestSelectUpdateBinlogCopy(t *testing.T) {
+	t.Skip("Skipping for MySQL8")
 	testcase := testhelpers.IntegrationTestCase{
 		T:           t,
 		SetupAction: setupSingleEntryTable,
