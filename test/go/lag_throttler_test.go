@@ -38,12 +38,12 @@ func setupLagTable(db *sql.DB, ctx context.Context) {
 	_, err = db.Exec("CREATE DATABASE meta")
 	testhelpers.PanicIfError(err)
 
-	_, err = db.Exec("CREATE TABLE meta.lag_table (lag FLOAT NOT NULL, server_id int unsigned NOT NULL PRIMARY KEY)")
+	_, err = db.Exec("CREATE TABLE meta.lag_table (lag_value FLOAT NOT NULL, server_id int unsigned NOT NULL PRIMARY KEY)")
 	testhelpers.PanicIfError(err)
 }
 
 func setLag(throttler *ghostferry.LagThrottler, serverId int, lag float32) {
-	_, err := throttler.DB.Exec("INSERT INTO meta.lag_table (lag, server_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE lag = ?", lag, serverId, lag)
+	_, err := throttler.DB.Exec("INSERT INTO meta.lag_table (lag_value, server_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE lag_value = ?", lag, serverId, lag)
 	testhelpers.PanicIfError(err)
 	time.Sleep(10 * time.Millisecond)
 }
