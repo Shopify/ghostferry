@@ -556,9 +556,12 @@ class InlineVerifierTest < GhostferryTestCase
     run_collation_test(UTF8MB3DATA, "utf8mb4", "utf8mb3", identical: true)
   end
 
+  # skip on MySQL 8
+  # More details at
+  # https://github.com/Shopify/ghostferry/pull/328#discussion_r791197939
   def test_utfmb4_data_from_utfmb4_to_utfmb3
     run_collation_test(UTF8MB4DATA, "utf8mb4", "utf8mb3", identical: false)
-  end
+  end unless ENV['MYSQL_VERSION'] == '8.0'
 
   private
 

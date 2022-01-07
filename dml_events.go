@@ -423,6 +423,9 @@ func appendEscapedValue(buffer []byte, value interface{}, column schema.TableCol
 
 	switch v := value.(type) {
 	case string:
+		if column.Type == schema.TYPE_JSON {
+			return appendEscapedBuffer(buffer, []byte(v), true)
+		}
 		var rightPadLengthForBinaryColumn int = 0
 		// see appendEscapedString() for details why we need special
 		// handling of BINARY column types

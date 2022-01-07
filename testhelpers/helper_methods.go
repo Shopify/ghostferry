@@ -2,9 +2,11 @@ package testhelpers
 
 import (
 	sqlorig "database/sql"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
+	"regexp"
 	"strings"
 	"testing"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/stretchr/testify/assert"
@@ -24,26 +26,29 @@ func ProcessListContainsQueries(db *sql.DB, queries []string) bool {
 
 	defer rows.Close()
 
-	queriesFound := make(map[string]bool)
+	queriesFound := make(map[*regexp.Regexp]bool)
 	for _, query := range queries {
-		queriesFound[query] = false
+		re := regexp.MustCompile(strings.Replace(regexp.QuoteMeta(query), `\?`, `\S`, -1))
+		queriesFound[re] = false
 	}
 
 	for rows.Next() {
-		data, err := ghostferry.ScanGenericRow(rows, 10)
+		columns, _ := rows.Columns()
+		data, err := ghostferry.ScanGenericRow(rows, len(columns))
 		if err != nil {
 			panic(err)
 		}
 
-		if data[7] == nil {
+		if data[7] == nil || data[4] == nil {
 			continue
 		}
 
 		info := data[7].([]byte)
+		command := data[4].([]byte)
 
-		for query, found := range queriesFound {
-			if !found && strings.TrimSpace(string(info)) == query {
-				queriesFound[query] = true
+		for re, found := range queriesFound {
+			if !found && string(command) == "Execute" && re.MatchString(string(info)) {
+				queriesFound[re] = true
 				break
 			}
 		}

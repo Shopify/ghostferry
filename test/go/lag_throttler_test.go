@@ -2,10 +2,12 @@ package test
 
 import (
 	"context"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
+	"os"
 	"sync"
 	"testing"
 	"time"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
@@ -28,7 +30,7 @@ func newThrottlerWithQuery(query string) *ghostferry.LagThrottler {
 }
 
 func newThrottler() *ghostferry.LagThrottler {
-	return newThrottlerWithQuery("SELECT MAX(lag) FROM meta.lag_table")
+	return newThrottlerWithQuery("SELECT MAX(throttler_lag) FROM meta.lag_table")
 }
 
 func setupLagTable(db *sql.DB, ctx context.Context) {
@@ -38,12 +40,12 @@ func setupLagTable(db *sql.DB, ctx context.Context) {
 	_, err = db.Exec("CREATE DATABASE meta")
 	testhelpers.PanicIfError(err)
 
-	_, err = db.Exec("CREATE TABLE meta.lag_table (lag FLOAT NOT NULL, server_id int unsigned NOT NULL PRIMARY KEY)")
+	_, err = db.Exec("CREATE TABLE meta.lag_table (throttler_lag FLOAT NOT NULL, server_id int unsigned NOT NULL PRIMARY KEY)")
 	testhelpers.PanicIfError(err)
 }
 
 func setLag(throttler *ghostferry.LagThrottler, serverId int, lag float32) {
-	_, err := throttler.DB.Exec("INSERT INTO meta.lag_table (lag, server_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE lag = ?", lag, serverId, lag)
+	_, err := throttler.DB.Exec("INSERT INTO meta.lag_table (throttler_lag, server_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE throttler_lag = ?", lag, serverId, lag)
 	testhelpers.PanicIfError(err)
 	time.Sleep(10 * time.Millisecond)
 }
@@ -108,7 +110,7 @@ func TestNewThrottlerConfigErrors(t *testing.T) {
 
 	okConfig := ghostferry.LagThrottlerConfig{
 		Connection: connConfig,
-		Query:      "SELECT MAX(lag) FROM meta.lag_table",
+		Query:      "SELECT MAX(throttler_lag) FROM meta.lag_table",
 	}
 
 	config := okConfig
@@ -141,7 +143,14 @@ func TestThrottlerRunErrors(t *testing.T) {
 
 	err = throttler.Run(ctx)
 	assert.NotNil(t, err)
-	assert.Equal(t, "Error 1146: Table 'meta.lag_table' doesn't exist", err.Error())
+	expectedError := "Error 1146: Table 'meta.lag_table' doesn't exist"
+
+	if os.Getenv("MYSQL_VERSION") == "8.0" {
+		expectedError = "Error 1049: Unknown database 'meta'"
+	}
+
+	validError := (err.Error() == expectedError)
+	assert.True(t, validError)
 
 	done()
 	err = throttler.Run(ctx)
@@ -151,7 +160,7 @@ func TestThrottlerRunErrors(t *testing.T) {
 func TestThrottlerWithNullReturned(t *testing.T) {
 	ctx, done := context.WithCancel(context.Background())
 
-	throttler := newThrottlerWithQuery("SELECT MAX(lag) FROM meta.lag_table")
+	throttler := newThrottlerWithQuery("SELECT MAX(throttler_lag) FROM meta.lag_table")
 	setupLagTable(throttler.DB, ctx)
 
 	wg := &sync.WaitGroup{}
