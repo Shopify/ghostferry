@@ -33,7 +33,8 @@ BIN_TARGET       = $(GOBIN)/$(PROJECT_BIN)
 DEB_TARGET       = $(BUILD_DIR)/$(PROJECT_BIN)_$(VERSION_STR).deb
 
 PLATFORM        := $(shell uname -s | tr A-Z a-z)
-GOTESTSUM_URL   := "https://github.com/gotestyourself/gotestsum/releases/download/v0.5.1/gotestsum_0.5.1_$(PLATFORM)_amd64.tar.gz"
+ARCH            := $(shell uname -m | sed 's/x86_64/amd64/g' | sed 's/aarch64/arm64/g')
+GOTESTSUM_URL   := "https://github.com/gotestyourself/gotestsum/releases/download/v1.7.0/gotestsum_1.7.0_$(PLATFORM)_$(ARCH).tar.gz"
 
 .PHONY: test test-go test-ruby clean reset-deb-dir $(PROJECTS) $(PROJECT_DEBS)
 .DEFAULT_GOAL := test
@@ -58,7 +59,7 @@ $(GOBIN):
 test-go:
 	@go version
 	@if [ ! -f ./bin/gotestsum ]; then \
-		mkdir ./bin; \
+		mkdir -p ./bin; \
 		curl -sL $(GOTESTSUM_URL) | tar -xz -C ./bin gotestsum; \
 	fi
 
@@ -74,6 +75,7 @@ clean:
 	rm -rf build
 	$(eval proj := *)
 	rm -f $(BIN_TARGET)
+	rm -f ./bin/gotestsum
 
 reset-deb-dir:
 	rm -rf $(DEB_PREFIX)
