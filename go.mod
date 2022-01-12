@@ -6,7 +6,7 @@ require (
 	github.com/DataDog/datadog-go v4.8.2+incompatible
 	github.com/Masterminds/squirrel v0.0.0-20180620232226-b127ed9be034
 	github.com/Microsoft/go-winio v0.5.0 // indirect
-	github.com/go-mysql-org/go-mysql v1.3.0
+	github.com/go-mysql-org/go-mysql v1.4.1-0.20220112102103-b3f1a27311d8
 	github.com/go-sql-driver/mysql v1.5.0
 	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db
 	github.com/gorilla/context v1.1.1 // indirect
