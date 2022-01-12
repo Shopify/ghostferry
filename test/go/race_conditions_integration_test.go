@@ -26,7 +26,6 @@ func annotate(queries []string, marginalia string) []string {
 }
 
 func TestSelectUpdateBinlogCopy(t *testing.T) {
-	t.Skip("Skipping for MySQL8")
 	testcase := testhelpers.IntegrationTestCase{
 		T:           t,
 		SetupAction: setupSingleEntryTable,

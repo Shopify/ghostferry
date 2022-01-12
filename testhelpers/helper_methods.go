@@ -45,7 +45,7 @@ func ProcessListContainsQueries(db *sql.DB, queries []string) bool {
 		info := data[7].([]byte)
 
 		for query, found := range queriesFound {
-			if !found && strings.TrimSpace(string(info)) == query {
+			if !found && strings.HasSuffix(strings.TrimSpace(string(info)), query) {
 				queriesFound[query] = true
 				break
 			}
