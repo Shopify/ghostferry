@@ -127,7 +127,7 @@ class GhostferryTestCase < Minitest::Test
   end
 
   def after_all
-    reset_data
+    #reset_data
     teardown_connections
     super
   end

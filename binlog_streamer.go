@@ -12,6 +12,7 @@ import (
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
 	"github.com/sirupsen/logrus"
+	"github.com/davecgh/go-spew/spew"
 )
 
 const caughtUpThreshold = 10 * time.Second
@@ -394,6 +395,8 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 			MetricTag{"source", "binlog"},
 		}, 1.0)
 	}
+
+	spew.Dump(events)
 
 	if len(events) == 0 {
 		return nil

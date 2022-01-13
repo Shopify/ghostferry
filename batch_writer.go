@@ -91,6 +91,8 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 			return fmt.Errorf("unable to begin transaction in BatchWriter: %v", err)
 		}
 
+		fmt.Println("XXX", args)
+
 		_, err = tx.Stmt(stmt).Exec(args...)
 		if err != nil {
 			tx.Rollback()

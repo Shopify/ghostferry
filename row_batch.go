@@ -3,6 +3,7 @@ package ghostferry
 import (
 	"encoding/json"
 	"strings"
+	"fmt"
 )
 
 type RowBatch struct {
@@ -71,6 +72,7 @@ func (e *RowBatch) AsSQLQuery(schemaName, tableName string) (string, []interface
 		QuotedTableNameFromString(schemaName, tableName) +
 		" (" + strings.Join(QuoteFields(e.columns), ",") + ") VALUES " + valuesStr
 
+	fmt.Println("AWDBX", query)
 	return query, e.flattenRowData(), nil
 }
 

@@ -184,7 +184,6 @@ class TypesTest < GhostferryTestCase
     ghostferry.on_status(Ghostferry::Status::BINLOG_STREAMING_STARTED) do
       insert_json_on_source
     end
-
     timedout = false
     ghostferry.on_status(Ghostferry::Status::ROW_COPY_COMPLETED) do
       # Need to make sure we don't flush binlogs until we affirmatively see the
