@@ -18,7 +18,7 @@ wait_for_mysql() {
   port=$1
   echo "Waiting for MySQL at port $port..."
   attempts=0
-  while ! nc -w 1 localhost $port | grep -q "mysql"; do
+  while nc -vvw 1 localhost $port | grep -q "succeeded"; do
     sleep 1
     attempts=$((attempts + 1))
     if (( attempts > 60 )); then
@@ -29,7 +29,41 @@ wait_for_mysql() {
   echo "MySQL at port $port has started!"
 }
 
+wait_for_version () {
+  instance=$1
+  max_attempts=$2
+
+  attempts=0
+  until docker exec -t $instance mysql -u root -e "select @@version"; do
+    sleep 1
+    attempts=$((attempts + 1))
+    if (( attempts > $max_attempts )); then
+      echo "ERROR: $instance was not started." >&2
+    exit 1
+    fi
+  done
+}
+
+wait_for_healthy () {
+  instance=$1
+  max_attempts=$2
+
+  attempts=0
+  while [ "`docker inspect $instance -f '{{json .State.Health.Status}}'`" != "\"healthy\"" ]; do
+    sleep 1
+    attempts=$((attempts + 1))
+    if (( attempts > $max_attempts )); then
+      echo "ERROR: $instance was not started." >&2
+    exit 1
+    fi
+  done
+}
+
 wait_for_mysql 29291
 wait_for_mysql 29292
 
-docker-compose exec -T mysql-1 mysql -u root -e "select @@version"
+wait_for_version "ghostferry_mysql-1_1" 60
+wait_for_version "ghostferry_mysql-2_1" 60
+
+wait_for_healthy "ghostferry_mysql-1_1" 60
+wait_for_healthy "ghostferry_mysql-2_1" 60
