@@ -26,9 +26,10 @@ func ProcessListContainsQueries(db *sql.DB, queries []string) bool {
 
 	defer rows.Close()
 
-	queriesFound := make(map[string]bool)
+	queriesFound := make(map[*regexp.Regexp]bool)
 	for _, query := range queries {
-		queriesFound[query] = false
+		re := regexp.MustCompile(strings.Replace(regexp.QuoteMeta(query), `\?`, `\S`, -1))
+		queriesFound[re] = false
 	}
 
 	for rows.Next() {
@@ -45,10 +46,9 @@ func ProcessListContainsQueries(db *sql.DB, queries []string) bool {
 		info := data[7].([]byte)
 		command := data[4].([]byte)
 
-		for query, found := range queriesFound {
-			re := regexp.MustCompile(strings.Replace(regexp.QuoteMeta(query), `\?`, `\S`, -1))
+		for re, found := range queriesFound {
 			if !found && string(command) == "Execute" && re.MatchString(string(info)) {
-				queriesFound[query] = true
+				queriesFound[re] = true
 				break
 			}
 		}
