@@ -2,6 +2,7 @@ package testhelpers
 
 import (
 	sqlorig "database/sql"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -31,21 +32,22 @@ func ProcessListContainsQueries(db *sql.DB, queries []string) bool {
 	}
 
 	for rows.Next() {
-		//columns, _ := rows.Columns()
-		//data, err := ghostferry.ScanGenericRow(rows, len(columns))
-		data, err := ghostferry.ScanGenericRow(rows, 8)
+		columns, _ := rows.Columns()
+		data, err := ghostferry.ScanGenericRow(rows, len(columns))
 		if err != nil {
 			panic(err)
 		}
 
-		if data[7] == nil {
+		if data[7] == nil || data[4] == nil {
 			continue
 		}
 
 		info := data[7].([]byte)
+		command := data[4].([]byte)
 
 		for query, found := range queriesFound {
-			if !found && strings.HasSuffix(strings.TrimSpace(string(info)), query) {
+			re := regexp.MustCompile(strings.Replace(regexp.QuoteMeta(query), `\?`, `\S`, -1))
+			if !found && string(command) == "Execute" && re.MatchString(string(info)) {
 				queriesFound[query] = true
 				break
 			}
