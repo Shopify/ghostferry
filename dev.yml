@@ -23,9 +23,9 @@ up:
       meet: echo 'go mod failed to download dependencies'; false
   - custom:
       name: MySQL
-      met?: docker-compose up -d mysql-1 mysql-2
+      met?: docker-compose -f docker-compose_8.0.yml up -d mysql-1 mysql-2
       meet: echo 'mysql failed to start'; false
-      down: docker-compose stop mysql-1 mysql-2
+      down: docker-compose -f docker-compose_8.0.yml stop mysql-1 mysql-2
 
 commands:
   test:

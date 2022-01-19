@@ -1,7 +1,7 @@
 #!/bin/bash
 set -xe
 
-DOCKER_COMPOSE_VERSION=1.29.2
+DOCKER_COMPOSE_VERSION=v2.2.3
 
 sudo apt-get update
 sudo apt-get install -y netcat-openbsd make gcc
@@ -9,61 +9,41 @@ sudo apt-get install -y netcat-openbsd make gcc
 sudo curl -o /usr/local/bin/docker-compose -L https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-`uname -s`-`uname -m`
 sudo chmod +x /usr/local/bin/docker-compose
 
-docker-compose up -d mysql-1 mysql-2
+if [ "$MYSQL_VERSION" == "8.0" ]; then
+  docker-compose -f docker-compose_8.0.yml up -d mysql-1 mysql-2
+else
+  docker-compose up -d mysql-1 mysql-2
+fi
 
-# We need a way to check if the mysql servers have booted or not before running
-# the tests and this way is slightly faster than installing mysql-client
+MAX_ATTEMPTS=60
 
-wait_for_mysql() {
-  port=$1
-  echo "Waiting for MySQL at port $port..."
+function wait_for_version () {
   attempts=0
-  while nc -vvw 1 localhost $port | grep -q "succeeded"; do
+  until docker exec -t $1 mysql -N -s -u root -e "select @@version"; do
     sleep 1
     attempts=$((attempts + 1))
-    if (( attempts > 60 )); then
-      echo "ERROR: mysql $port was not started." >&2
-      exit 1
-    fi
-  done
-  echo "MySQL at port $port has started!"
-}
-
-wait_for_version () {
-  instance=$1
-  max_attempts=$2
-
-  attempts=0
-  until docker exec -t $instance mysql -u root -e "select @@version"; do
-    sleep 1
-    attempts=$((attempts + 1))
-    if (( attempts > $max_attempts )); then
-      echo "ERROR: $instance was not started." >&2
+    if (( attempts > $MAX_ATTEMPTS )); then
+      echo "ERROR: $1 was not started." >&2
     exit 1
     fi
   done
 }
 
-wait_for_healthy () {
-  instance=$1
-  max_attempts=$2
-
+wait_for_configuration () {
   attempts=0
-  while [ "`docker inspect $instance -f '{{json .State.Health.Status}}'`" != "\"healthy\"" ]; do
+  # we do need to see the "root@%" user configured, so wait for that
+  until mysql --port $1 --protocol tcp --skip-password -N -s -u root -e "select host from mysql.user where user = 'root';" 2>/dev/null | grep -q '%'; do
     sleep 1
     attempts=$((attempts + 1))
-    if (( attempts > $max_attempts )); then
-      echo "ERROR: $instance was not started." >&2
+    if (( attempts > $MAX_ATTEMPTS )); then
+      echo "ERROR: $1 was not started." >&2
     exit 1
     fi
   done
 }
 
-wait_for_mysql 29291
-wait_for_mysql 29292
+wait_for_version "ghostferry-mysql-1-1"
+wait_for_version "ghostferry-mysql-2-1"
 
-wait_for_version "ghostferry_mysql-1_1" 60
-wait_for_version "ghostferry_mysql-2_1" 60
-
-wait_for_healthy "ghostferry_mysql-1_1" 60
-wait_for_healthy "ghostferry_mysql-2_1" 60
+wait_for_configuration 29291
+wait_for_configuration 29292
