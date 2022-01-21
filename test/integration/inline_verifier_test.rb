@@ -141,6 +141,53 @@ class InlineVerifierTest < GhostferryTestCase
     end
   end
 
+  def test_extra_column_passes_verification
+    [source_db, target_db].each do |db|
+      db.query("CREATE DATABASE IF NOT EXISTS #{DEFAULT_DB}")
+      db.query("CREATE TABLE IF NOT EXISTS #{DEFAULT_FULL_TABLE_NAME} (id bigint(20) not null auto_increment, data VARCHAR(255), data2 VARCHAR(255), primary key(id))")
+    end
+
+    source_db.prepare("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data, data2) VALUES (?, ?, ?)").execute(1, "data1", "same")
+    target_db.query("ALTER TABLE #{DEFAULT_FULL_TABLE_NAME} ADD COLUMN fake INT")
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline", ignored_column: "data" })
+
+    ghostferry.on_status(Ghostferry::Status::ROW_COPY_COMPLETED) do
+      target_db.query("ALTER TABLE #{DEFAULT_FULL_TABLE_NAME} ADD COLUMN fake2 INT")
+      source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'data3' WHERE id = 1")
+    end
+
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
+
+    ghostferry.run
+
+    assert verification_ran
+    assert_equal [], incorrect_tables
+
+    rows = source_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME}")
+    assert_equal 1, rows.count
+    rows.each do |row|
+      assert_equal 3, row.length
+      assert_equal 1, row["id"]
+      assert_equal "data3", row["data"]
+      refute row.has_key?("fake")
+    end
+
+    rows = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME}")
+    assert_equal 1, rows.count
+    rows.each do |row|
+      assert_equal 5, row.length
+      assert_equal 1, row["id"]
+      assert_equal "data3", row["data"]
+      assert row.has_key?("fake")
+    end
+  end
+
   def test_catches_binlog_streamer_corruption
     seed_random_data(source_db, number_of_rows: 1)
     seed_random_data(target_db, number_of_rows: 0)

@@ -23,6 +23,8 @@ type BinlogStreamer struct {
 	ErrorHandler ErrorHandler
 	Filter       CopyFilter
 
+	Ferry *Ferry
+
 	TableSchema TableSchemaCache
 	LogTag      string
 
@@ -363,14 +365,30 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 		table = rewrittenTableName
 	}
 
+	var counter uint8 = 0
+leap:
+
 	tableFromSchemaCache := s.TableSchema.Get(db, table)
 	if tableFromSchemaCache == nil {
 		return nil
 	}
 
+	// AWDB
 	dmlEvs, err := NewBinlogDMLEvents(tableFromSchemaCache, ev, pos, s.lastResumableBinlogPosition, query)
 	if err != nil {
-		return err
+		fmt.Printf("DEBUG ERROR %s", err.Error())
+		f := s.Ferry
+		fmt.Printf("DEBUG DEBUG %#v\n", f)
+		var err2 error
+		s.TableSchema, err2 = LoadTables(f.TargetDB, f.TableFilter, f.CompressedColumnsForVerification, f.IgnoredColumnsForVerification, f.ForceIndexForVerification, f.CascadingPaginationColumnConfig)
+		if err2 != nil {
+			return err2
+		}
+		counter++
+		if counter == 100 {
+			return err
+		}
+		goto leap
 	}
 
 	events := make([]DMLEvent, 0)

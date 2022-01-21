@@ -150,6 +150,7 @@ func (f *Ferry) newBinlogStreamer(db *sql.DB, dbConf *DatabaseConfig, schemaRewr
 	return &BinlogStreamer{
 		DB:               db,
 		DBConfig:         dbConf,
+		Ferry:            f,
 		MyServerId:       f.Config.MyServerId,
 		ErrorHandler:     f.ErrorHandler,
 		Filter:           f.CopyFilter,
@@ -512,6 +513,7 @@ func (f *Ferry) Initialize() (err error) {
 	// The iterative verifier needs the binlog streamer so this has to be first.
 	// Eventually this can be moved below the verifier initialization.
 	f.BinlogStreamer = f.NewSourceBinlogStreamer()
+	f.BinlogStreamer.Ferry = f
 
 	if !f.Config.SkipTargetVerification {
 		targetBinlogStreamer, err := f.NewTargetBinlogStreamer()
