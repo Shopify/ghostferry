@@ -30,4 +30,4 @@ up:
 commands:
   test:
     desc: Run the test suite.
-    run: make test
+    run: MYSQL_VERSION="8.0" make test
