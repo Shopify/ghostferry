@@ -10,7 +10,7 @@ github.com/Microsoft/go-winio
 github.com/Microsoft/go-winio/pkg/guid
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
-# github.com/go-mysql-org/go-mysql v1.3.0
+# github.com/go-mysql-org/go-mysql v1.4.1-0.20220112102103-b3f1a27311d8
 ## explicit
 github.com/go-mysql-org/go-mysql/client
 github.com/go-mysql-org/go-mysql/mysql

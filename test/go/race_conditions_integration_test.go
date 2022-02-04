@@ -2,9 +2,10 @@ package test
 
 import (
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"testing"
 	"time"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
