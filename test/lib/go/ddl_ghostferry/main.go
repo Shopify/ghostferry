@@ -14,7 +14,7 @@ func queryEventHandler(ev *replication.BinlogEvent, query []byte, es *ghostferry
 }
 
 func AfterInitialize(f *tf.IntegrationFerry) error {
-	f.Ferry.BinlogStreamer.AddBinlogEventHandler("QueryEvent", queryEventHandler)
+	f.Ferry.BinlogStreamer.AddBinlogEventHandler(replication.QUERY_EVENT, queryEventHandler)
 	return nil
 }
 

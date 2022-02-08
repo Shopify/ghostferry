@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	sqlorig "database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -281,6 +282,7 @@ func (s *BinlogStreamer) Run() {
 		es.isEventPositionResumable = false
 		es.isEventPositionValid = true
 
+		// if there is a handler associated with this eventType, call it
 		eventTypeString := ev.Header.EventType.String()
 		if handler, ok := s.eventHandlers[eventTypeString]; ok {
 			query, err = handler(ev, query, &es)
@@ -289,6 +291,7 @@ func (s *BinlogStreamer) Run() {
 				s.ErrorHandler.Fatal("binlog_streamer", err)
 			}
 		} else {
+			// call the default event handler for everything else
 			query, err = s.defaultEventHandler(ev, query, &es)
 		}
 
@@ -300,11 +303,22 @@ func (s *BinlogStreamer) Run() {
 	}
 }
 
-func (s *BinlogStreamer) AddBinlogEventHandler(ev string, eh func(*replication.BinlogEvent, []byte, *BinlogEventState) ([]byte, error)) {
+// Attach an event handler to a replication BinLogEvent
+// We only support attaching events to any of the events defined in
+// https://github.com/go-mysql-org/go-mysql/blob/master/replication/const.go
+func (s *BinlogStreamer) AddBinlogEventHandler(evType replication.EventType, eh func(*replication.BinlogEvent, []byte, *BinlogEventState) ([]byte, error)) error {
+	// verify that event-type is valid
+	// if eventTypeString is unrecognized, bail
+	eventTypeString := evType.String()
+	if eventTypeString == "UnknownEvent" {
+		return errors.New("Unknown event type")
+	}
+
 	if s.eventHandlers == nil {
 		s.eventHandlers = make(map[string]func(*replication.BinlogEvent, []byte, *BinlogEventState) ([]byte, error))
 	}
-	s.eventHandlers[ev] = eh
+	s.eventHandlers[eventTypeString] = eh
+	return nil
 }
 
 func (s *BinlogStreamer) AddEventListener(listener func([]DMLEvent) error) {
