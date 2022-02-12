@@ -267,6 +267,14 @@ func (s *BinlogStreamer) Run() {
 			// or the end of the current/next transaction. As such, the query will be
 			// reset following the next RowsQueryEvent before the corresponding RowsEvent(s)
 			query = nil
+		case *replication.GenericEvent:
+			if ev.RawData[4] == 164 && ev.Header.Flags == replication.LOG_EVENT_IGNORABLE_F {
+				// This event is published in binlog when encrypt_binlog is enabled for MariaDB
+				// event 164 shouldn't be published to replica but actually is, as it is not relevant
+				// since we receive binlogs unencrypted we can skip this event
+				// https://mariadb.com/kb/en/start_encryption_event/
+				isEventPositionValid = false
+			}
 		}
 
 		if isEventPositionValid {
