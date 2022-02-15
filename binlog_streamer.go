@@ -17,6 +17,7 @@ import (
 
 const caughtUpThreshold = 10 * time.Second
 
+// this is passed into event handlers to keep track of state of the binlog event stream.
 type BinlogEventState struct {
 	evPosition               mysql.Position
 	isEventPositionResumable bool
@@ -56,7 +57,11 @@ type BinlogStreamer struct {
 
 	logger         *logrus.Entry
 	eventListeners []func([]DMLEvent) error
-	eventHandlers  map[string]func(*replication.BinlogEvent, []byte, *BinlogEventState) ([]byte, error)
+	// eventhandlers can be attached to binlog Replication Events
+	// for any event that does not have a specific handler attached, a default eventHandler
+	// is provided (defaultEventHandler). Event handlers are provided the replication binLogEvent
+	// and a state object that carries information about the state of the binlog event stream.
+	eventHandlers map[string]func(*replication.BinlogEvent, []byte, *BinlogEventState) ([]byte, error)
 }
 
 func (s *BinlogStreamer) ensureLogger() {
@@ -141,6 +146,9 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFrom(startFromBinlogPositio
 
 	return s.lastStreamedBinlogPosition, err
 }
+
+// the default event handler is called for replication binLogEvents that do not have a
+// separate event Handler registered.
 
 func (s *BinlogStreamer) defaultEventHandler(ev *replication.BinlogEvent, query []byte, es *BinlogEventState) ([]byte, error) {
 	var err error
@@ -306,6 +314,8 @@ func (s *BinlogStreamer) Run() {
 // Attach an event handler to a replication BinLogEvent
 // We only support attaching events to any of the events defined in
 // https://github.com/go-mysql-org/go-mysql/blob/master/replication/const.go
+// custom event handlers are provided the replication BinLogEvent and a state object
+// that carries the current state of the binlog event stream.
 func (s *BinlogStreamer) AddBinlogEventHandler(evType replication.EventType, eh func(*replication.BinlogEvent, []byte, *BinlogEventState) ([]byte, error)) error {
 	// verify that event-type is valid
 	// if eventTypeString is unrecognized, bail
