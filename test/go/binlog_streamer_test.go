@@ -11,6 +11,7 @@ import (
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
 
+	"github.com/go-mysql-org/go-mysql/replication"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -193,6 +194,20 @@ func (this *BinlogStreamerTestSuite) TestBinlogStreamerSetsQueryEventOnRowsEvent
 
 	wg.Wait()
 	this.Require().True(eventAsserted)
+}
+
+func (this *BinlogStreamerTestSuite) TestBinlogStreamerAddEventHandlerEventTypes() {
+	qe := func(ev *replication.BinlogEvent, query []byte, es *ghostferry.BinlogEventState) ([]byte, error) {
+		return query, nil
+	}
+
+	// try attaching a handler to a valid event type
+	err := this.binlogStreamer.AddBinlogEventHandler(replication.TABLE_MAP_EVENT, qe)
+	this.Require().Nil(err)
+
+	// try attaching a handler to an invalid event type
+	err = this.binlogStreamer.AddBinlogEventHandler(replication.EventType(byte(0)), qe)
+	this.Require().NotNil(err)
 }
 
 func TestBinlogStreamerTestSuite(t *testing.T) {

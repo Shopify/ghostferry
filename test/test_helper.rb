@@ -44,18 +44,18 @@ class GhostferryTestCase < Minitest::Test
   include DbHelper
   include DataWriterHelper
 
-  MINIMAL_GHOSTFERRY = "integrationferry.go"
+  MINIMAL_GHOSTFERRY = "minimal_ghostferry"
 
-  def new_ghostferry(filename, config: {})
+  def new_ghostferry(filepath, config: {})
     # Transform path to something ruby understands
-    path = File.join(GO_CODE_PATH, filename)
+    path = File.join(GO_CODE_PATH, filepath, "main.go")
     g = Ghostferry.new(path, config: config, logger: @log_capturer.logger)
     @ghostferry_instances << g
     g
   end
 
-  def new_ghostferry_with_interrupt_after_row_copy(filename, config: {}, after_batches_written: 0)
-    g = new_ghostferry(filename, config)
+  def new_ghostferry_with_interrupt_after_row_copy(filepath, config: {}, after_batches_written: 0)
+    g = new_ghostferry(filepath, config)
 
     batches_written = 0
     g.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
