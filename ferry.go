@@ -904,11 +904,17 @@ func (f *Ferry) FlushBinlogAndStopStreaming() {
 	f.BinlogStreamer.FlushAndStop()
 }
 
-func (f *Ferry) StopTargetVerifier() {
+func (f *Ferry) StopTargetVerifier() error {
 	if !f.Config.SkipTargetVerification {
 		f.TargetVerifier.BinlogStreamer.FlushAndStop()
 		f.targetVerifierWg.Wait()
+		if f.TargetVerifier.EventsChecked == 0 {
+			err := fmt.Errorf("no events checked")
+			f.logger.WithField("error", err).Errorf("target verifier did not check any events")
+			return err
+		}
 	}
+	return nil
 }
 
 func (f *Ferry) StartCutover() time.Time {

@@ -94,7 +94,10 @@ func (this *CopydbFerry) Run() {
 	// should be identical.
 	copyWG.Wait()
 
-	this.Ferry.StopTargetVerifier()
+	err := this.Ferry.StopTargetVerifier()
+	if err != nil {
+		this.Ferry.ErrorHandler.Fatal("target_verifier", err)
+	}
 
 	// Optionally (configurable) POST to an HTTP endpoint telling that service Ghostferry has completed cutover and has stopped streaming the binlog.
 	// The external service can then perform steps needed after cutover. For example, on receiving the callback, the service can set the target database to allow writes.

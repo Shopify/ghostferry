@@ -156,11 +156,10 @@ func (r *ShardingFerry) Run() {
 		r.logger.WithField("error", err).Errorf("verification encountered an error, aborting run")
 		r.Ferry.ErrorHandler.Fatal("inline_verifier", err)
 	} else if !verificationResult.DataCorrect {
-		err = fmt.Errorf("verifier detected data discrepancy: %s", verificationResult.Message)
+		err = fmt.Errorf("verifier detected error: %s", verificationResult.Message)
 		r.logger.WithField("error", err).Errorf("verification failed, aborting run")
 		r.Ferry.ErrorHandler.Fatal("inline_verifier", err)
 	}
-
 	metrics.Measure("CopyPrimaryKeyTables", nil, 1.0, func() {
 		err = r.copyPrimaryKeyTables()
 	})
@@ -171,7 +170,10 @@ func (r *ShardingFerry) Run() {
 
 	r.Ferry.Throttler.SetDisabled(false)
 
-	r.Ferry.StopTargetVerifier()
+	err = r.Ferry.StopTargetVerifier()
+	if err != nil {
+		r.Ferry.ErrorHandler.Fatal("target_verifier", err)
+	}
 
 	r.Ferry.EndCutover(cutoverStart)
 }

@@ -248,6 +248,7 @@ type InlineVerifier struct {
 	reverifyStore              *BinlogVerifyStore
 	verifyDuringCutoverStarted AtomicBoolean
 
+	rowsChecked     int
 	sourceStmtCache *StmtCache
 	targetStmtCache *StmtCache
 	logger          *logrus.Entry
@@ -435,6 +436,13 @@ func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 		return VerificationResult{}, err
 	}
 
+	if v.rowsChecked == 0 {
+		return VerificationResult{
+			DataCorrect: false,
+			Message:     "cutover verification failed, no rows were compared",
+		}, nil
+	}
+
 	if !mismatchFound {
 		return VerificationResult{
 			DataCorrect: true,
@@ -563,6 +571,7 @@ func (v *InlineVerifier) compareHashes(source, target map[uint64][]byte) map[uin
 		if !bytes.Equal(sourceHash, targetHash) || !exists {
 			mismatchSet[paginationKey] = struct{}{}
 		}
+		v.rowsChecked += 1
 	}
 
 	for paginationKey, sourceHash := range source {
@@ -570,6 +579,7 @@ func (v *InlineVerifier) compareHashes(source, target map[uint64][]byte) map[uin
 		if !bytes.Equal(sourceHash, targetHash) || !exists {
 			mismatchSet[paginationKey] = struct{}{}
 		}
+		v.rowsChecked += 1
 	}
 
 	return mismatchSet
@@ -587,6 +597,7 @@ func (v *InlineVerifier) compareDecompressedData(source, target map[uint64]map[s
 
 		for colName, targetData := range targetDecompressedColumns {
 			sourceData, exists := sourceDecompressedColumns[colName]
+			v.rowsChecked += 1
 			if !exists || !bytes.Equal(sourceData, targetData) {
 				mismatchSet[paginationKey] = struct{}{}
 				break // no need to compare other columns
@@ -603,6 +614,7 @@ func (v *InlineVerifier) compareDecompressedData(source, target map[uint64]map[s
 
 		for colName, sourceData := range sourceDecompressedColumns {
 			targetData, exists := targetDecompressedColumns[colName]
+			v.rowsChecked += 1
 			if !exists || !bytes.Equal(sourceData, targetData) {
 				mismatchSet[paginationKey] = struct{}{}
 				break
