@@ -820,7 +820,7 @@ func (f *Ferry) Run() {
 	}
 	f.notifyRowCopyComplete()
 
-	binlogWg.Wait()
+	// binlogWg.Wait()
 
 	f.logger.Info("ghostferry run is complete, shutting down auxiliary services")
 
