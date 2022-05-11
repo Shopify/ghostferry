@@ -1200,3 +1200,96 @@ func (f *Ferry) checkSourceForeignKeyConstraints() error {
 
 	return nil
 }
+
+func (f *Ferry) CreateDatabasesAndTables(db string, tablesToBeCreatedFirst []string, allowExistingTargetTable bool) error {
+	// We need to create the same table/schemas on the target database
+	// as the ones we are copying.
+	logrus.Info("creating databases and tables on target")
+	for _, tableName := range f.Tables.GetTableListWithPriority(tablesToBeCreatedFirst) {
+		t := strings.Split(tableName, ".")
+		logrus.Debug(">>", t)
+
+		err := f.createDatabaseIfExistsOnTarget(db)
+		if err != nil {
+			logrus.WithError(err).WithField("database", t[0]).Error("cannot create database, this may leave the target database in an insane state")
+			return err
+		}
+
+		err = f.createTableOnTarget(t[0], t[1], allowExistingTargetTable)
+		if err != nil {
+			logrus.WithError(err).WithField("table", tableName).Error("cannot create table, this may leave the target database in an insane state")
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (f *Ferry) createDatabaseIfExistsOnTarget(database string) error {
+	var originalDatabaseName, createDatabaseQuery string
+	r := f.SourceDB.QueryRow(fmt.Sprintf("SHOW CREATE DATABASE `%s`", database))
+	err := r.Scan(&originalDatabaseName, &createDatabaseQuery)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"error":    err,
+			"database": database,
+		}).Error("unable to show create database on source")
+		return err
+	}
+
+	if targetDbName, exists := f.DatabaseRewrites[database]; exists {
+		database = targetDbName
+	}
+
+	createDatabaseQuery = strings.Replace(
+		createDatabaseQuery,
+		fmt.Sprintf("CREATE DATABASE `%s`", originalDatabaseName),
+		fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`", database),
+		1,
+	)
+	_, err = f.TargetDB.Exec(createDatabaseQuery)
+	return err
+}
+
+func (f *Ferry) createTableOnTarget(database, table string, allowExistingTargetTable bool) error {
+	var tableNameAgain, createTableQuery, createStatement string
+
+	r := f.SourceDB.QueryRow(fmt.Sprintf("SHOW CREATE TABLE `%s`.`%s`", database, table))
+	err := r.Scan(&tableNameAgain, &createTableQuery)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"error":    err,
+			"database": database,
+			"table":    table,
+		}).Error("unable to show table on source")
+		return err
+	}
+
+	if targetDbName, exists := f.DatabaseRewrites[database]; exists {
+		database = targetDbName
+	}
+
+	if targetTableName, exists := f.TableRewrites[tableNameAgain]; exists {
+		tableNameAgain = targetTableName
+	}
+
+	if allowExistingTargetTable {
+		createStatement = "CREATE TABLE IF NOT EXISTS `%s`.`%s`"
+	} else {
+		createStatement = "CREATE TABLE `%s`.`%s`"
+	}
+
+	createTableQueryReplaced := strings.Replace(
+		createTableQuery,
+		fmt.Sprintf("CREATE TABLE `%s`", table),
+		fmt.Sprintf(createStatement, database, tableNameAgain),
+		1,
+	)
+
+	if createTableQueryReplaced == createTableQuery {
+		return fmt.Errorf("no effect on replacing the create table <table> with create table <db>.<table> query on query: %s", createTableQuery)
+	}
+
+	_, err = f.TargetDB.Exec(createTableQueryReplaced)
+	return err
+}
