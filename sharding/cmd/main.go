@@ -62,7 +62,7 @@ func main() {
 	}
 
 	if config.StateToResumeFrom == nil {
-		err = ferry.Ferry.CreateDatabasesAndTables(config.TargetDB, nil, false)
+		err = ferry.Ferry.CreateDatabasesAndTables(nil, false)
 		if err != nil {
 			ferry.Ferry.ErrorHandler.ReportError("ferry.createDatabasesAndTables", err)
 			errorAndExit(fmt.Sprintf("failed to create databases and tables: %v", err))

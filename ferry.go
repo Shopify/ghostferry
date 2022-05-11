@@ -1201,15 +1201,14 @@ func (f *Ferry) checkSourceForeignKeyConstraints() error {
 	return nil
 }
 
-func (f *Ferry) CreateDatabasesAndTables(db string, tablesToBeCreatedFirst []string, allowExistingTargetTable bool) error {
+func (f *Ferry) CreateDatabasesAndTables(tablesToBeCreatedFirst []string, allowExistingTargetTable bool) error {
 	// We need to create the same table/schemas on the target database
 	// as the ones we are copying.
 	logrus.Info("creating databases and tables on target")
 	for _, tableName := range f.Tables.GetTableListWithPriority(tablesToBeCreatedFirst) {
 		t := strings.Split(tableName, ".")
-		logrus.Debug(">>", t)
 
-		err := f.createDatabaseIfExistsOnTarget(db)
+		err := f.createDatabaseIfExistsOnTarget(t[0])
 		if err != nil {
 			logrus.WithError(err).WithField("database", t[0]).Error("cannot create database, this may leave the target database in an insane state")
 			return err
