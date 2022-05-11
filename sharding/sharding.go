@@ -121,7 +121,7 @@ func (r *ShardingFerry) Run() {
 
 	ghostferry.WaitForThrottle(r.Ferry.Throttler)
 
-	r.Ferry.WaitUntilBinlogStreamerCatchesUp()
+	// r.Ferry.WaitUntilBinlogStreamerCatchesUp()
 
 	r.AbortIfTargetDbNoLongerWriteable()
 
