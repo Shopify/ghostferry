@@ -736,20 +736,20 @@ func (f *Ferry) Run() {
 		}()
 	}
 
-	binlogWg := &sync.WaitGroup{}
-	binlogWg.Add(1)
-	go func() {
-		defer binlogWg.Done()
-		f.BinlogWriter.Run()
-	}()
+	// binlogWg := &sync.WaitGroup{}
+	// binlogWg.Add(1)
+	// go func() {
+	// 	defer binlogWg.Done()
+	// 	f.BinlogWriter.Run()
+	// }()
 
-	binlogWg.Add(1)
-	go func() {
-		defer binlogWg.Done()
+	// binlogWg.Add(1)
+	// go func() {
+	// 	defer binlogWg.Done()
 
-		f.BinlogStreamer.Run()
-		f.BinlogWriter.Stop()
-	}()
+	// 	f.BinlogStreamer.Run()
+	// 	f.BinlogWriter.Stop()
+	// }()
 
 	if !f.Config.SkipTargetVerification {
 		f.targetVerifierWg = &sync.WaitGroup{}
