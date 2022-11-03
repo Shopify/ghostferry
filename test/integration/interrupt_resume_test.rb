@@ -262,7 +262,7 @@ class InterruptResumeTest < GhostferryTestCase
     assert_equal "gftest.test_table_1", incorrect_tables.first
 
     error_line = ghostferry.error_lines.last
-    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: #{chosen_id} ] ", error_line["msg"]
+    assert error_line["msg"].start_with?("cutover verification failed for: gftest.test_table_1 [paginationKeys: #{chosen_id}")
   end
 
   def test_interrupt_resume_inline_verifier_will_verify_additional_rows_changed_on_source_during_interrupt
@@ -306,7 +306,7 @@ class InterruptResumeTest < GhostferryTestCase
     assert_equal "gftest.test_table_1", incorrect_tables.first
 
     error_line = ghostferry.error_lines.last
-    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: #{chosen_id} ] ", error_line["msg"]
+    assert error_line["msg"].start_with?("cutover verification failed for: gftest.test_table_1 [paginationKeys: #{chosen_id}")
   end
 
   # originally taken from @kolbitsch-lastline in https://github.com/Shopify/ghostferry/pull/160
@@ -671,6 +671,6 @@ class InterruptResumeTest < GhostferryTestCase
 
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
-    assert_equal "cutover verification failed for: gftest.test_table_1 [paginationKeys: #{id_to_change} ] ", ghostferry.error_lines.last["msg"]
+    assert ghostferry.error_lines.last["msg"].start_with?("cutover verification failed for: gftest.test_table_1 [paginationKeys: #{id_to_change}")
   end
 end
