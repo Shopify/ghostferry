@@ -19,7 +19,7 @@ func init() {
 }
 
 type BatchWriterVerificationFailed struct {
-	mismatchedPaginationKeys []uint64
+	mismatchedPaginationKeys []InlineVerifierMismatches
 	table                    string
 }
 

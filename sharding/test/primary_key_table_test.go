@@ -3,6 +3,7 @@ package test
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -90,7 +91,9 @@ func (t *PrimaryKeyTableTestSuite) TestPrimaryKeyTableVerificationFailure() {
 	t.Ferry.Run()
 
 	t.Require().NotNil(errHandler.LastError)
-	t.Require().Equal("row fingerprints for paginationKeys [2] on gftest1.tenants_table do not match", errHandler.LastError.Error())
+
+	t.Require().True(strings.HasPrefix(errHandler.LastError.Error(), "row fingerprints for paginationKeys [{2"))
+	t.Require().True(strings.HasSuffix(errHandler.LastError.Error(), "on gftest1.tenants_table do not match"))
 }
 
 func TestPrimaryKeyTableTestSuite(t *testing.T) {
