@@ -40,17 +40,17 @@
 <h2>Consuming Ghostferry Metrics<a class="headerlink" href="#consuming-ghostferry-metrics" title="Permalink to this headline">¶</a></h2>
 <p>Ghostferry provides optional metrics to your application.</p>
 <p>Start consuming the metrics:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sink</span> <span class="p">:</span><span class="o">=</span> <span class="n">make</span><span class="p">(</span><span class="n">chan</span> <span class="n">interface</span><span class="p">{},</span> <span class="mi">512</span><span class="p">)</span>
-<span class="n">metrics</span> <span class="p">:</span><span class="o">=</span> <span class="n">ghostferry</span><span class="o">.</span><span class="n">SetGlobalMetrics</span><span class="p">(</span><span class="s2">&quot;myApp&quot;</span><span class="p">,</span> <span class="n">sink</span><span class="p">)</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">sink</span> <span class="o">:=</span> <span class="n">make</span><span class="p">(</span><span class="n">chan</span> <span class="n">interface</span><span class="p">{},</span> <span class="mi">512</span><span class="p">)</span>
+<span class="n">metrics</span> <span class="o">:=</span> <span class="n">ghostferry</span><span class="o">.</span><span class="n">SetGlobalMetrics</span><span class="p">(</span><span class="s2">&quot;myApp&quot;</span><span class="p">,</span> <span class="n">sink</span><span class="p">)</span>
 
 <span class="n">go</span> <span class="n">func</span><span class="p">(){</span>
   <span class="k">for</span> <span class="p">{</span>
-    <span class="n">switch</span> <span class="n">metric</span> <span class="p">:</span><span class="o">=</span> <span class="p">(</span><span class="o">&lt;-</span><span class="n">sink</span><span class="p">)</span><span class="o">.</span><span class="p">(</span><span class="nb">type</span><span class="p">)</span> <span class="p">{</span>
-    <span class="n">case</span> <span class="n">ghostferry</span><span class="o">.</span><span class="n">CountMetric</span><span class="p">:</span>
+    <span class="n">switch</span> <span class="n">metric</span> <span class="o">:=</span> <span class="p">(</span><span class="o">&lt;-</span><span class="n">sink</span><span class="p">)</span><span class="o">.</span><span class="p">(</span><span class="nb">type</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">case</span> <span class="n">ghostferry</span><span class="o">.</span><span class="n">CountMetric</span><span class="p">:</span>
       <span class="o">//</span> <span class="n">Do</span> <span class="n">something</span> <span class="k">with</span> <span class="n">the</span> <span class="n">metric</span>
-    <span class="n">case</span> <span class="n">ghostferry</span><span class="o">.</span><span class="n">GaugeMetric</span><span class="p">:</span>
+    <span class="k">case</span> <span class="n">ghostferry</span><span class="o">.</span><span class="n">GaugeMetric</span><span class="p">:</span>
       <span class="o">//</span> <span class="n">Do</span> <span class="n">something</span> <span class="k">with</span> <span class="n">the</span> <span class="n">metric</span>
-    <span class="n">case</span> <span class="n">ghostferry</span><span class="o">.</span><span class="n">TimerMetric</span><span class="p">:</span>
+    <span class="k">case</span> <span class="n">ghostferry</span><span class="o">.</span><span class="n">TimerMetric</span><span class="p">:</span>
       <span class="o">//</span> <span class="n">Do</span> <span class="n">something</span> <span class="k">with</span> <span class="n">the</span> <span class="n">metric</span>
     <span class="p">}</span>
   <span class="p">}</span>
@@ -141,7 +141,7 @@
       
       |
       Powered by <a href="http://sphinx-doc.org/">Sphinx 1.8.5</a>
-      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.13</a>
       
       |
       <a href="_sources/howtousecustom.rst.txt"

@@ -48,22 +48,22 @@ be found in <a class="reference internal" href="copydbinprod.html#copydbinprod">
 <p>In this tutorial, we will be using two test databases that we setup locally and
 we will not consider the application. With git, clone the Ghostferry repository
 and create the test MySQL instances:</p>
-<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$</span> git clone https://github.com/Shopify/ghostferry.git
-<span class="gp">$</span> <span class="nb">cd</span> ghostferry
-<span class="gp">$</span> docker-compose up -d mysql-1 mysql-2
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>git clone https://github.com/Shopify/ghostferry.git
+<span class="gp">$ </span><span class="nb">cd</span> ghostferry
+<span class="gp">$ </span>docker-compose up -d mysql-1 mysql-2
 </pre></div>
 </div>
 <p>Users without docker-compose can either install it on their machine or manually
 setup two localhost MySQL instances available at port 29291 and 29292 with FULL
 image row based replication.</p>
 <p>Confirm that you can access both MySQL instances with the MySQL console:</p>
-<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">#</span> mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29291</span>
-<span class="gp">#</span> mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29292</span>
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp"># </span>mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29291</span>
+<span class="gp"># </span>mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29292</span>
 </pre></div>
 </div>
 <p>We will be moving data from the 29291 server to the 29292 server. To do this,
 we must first create some test data on the 29291 server to be copied over:</p>
-<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">#</span> <span class="nb">export</span> <span class="nv">LC_CTYPE</span><span class="o">=</span>C <span class="c1"># Only need this if you&#39;re mac</span>
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp"># </span><span class="nb">export</span> <span class="nv">LC_CTYPE</span><span class="o">=</span>C <span class="c1"># Only need this if you&#39;re mac</span>
 <span class="go">echo &quot;CREATE DATABASE abc;&quot; &gt; /tmp/n1create.sql</span>
 <span class="go">echo &quot;CREATE TABLE abc.table1 (id bigint(20) AUTO_INCREMENT, data varchar(16), primary key(id));&quot; &gt;&gt; /tmp/n1create.sql</span>
 <span class="go">echo &quot;CREATE TABLE abc.table2 (id bigint(20) AUTO_INCREMENT, data TEXT, primary key(id));&quot; &gt;&gt; /tmp/n1create.sql</span>
@@ -120,39 +120,39 @@ not supported and you should not use it in production.</p>
 <p>We will need to provide ghostferry-copydb with a configuration file such that
 it knows how to connect to the databases and what to copy. This is a json file
 which should look like the following:</p>
-<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
-  <span class="nt">&quot;Source&quot;</span><span class="p">:</span> <span class="p">{</span>
-    <span class="nt">&quot;Host&quot;</span><span class="p">:</span> <span class="s2">&quot;127.0.0.1&quot;</span><span class="p">,</span>
-    <span class="nt">&quot;Port&quot;</span><span class="p">:</span> <span class="mi">29291</span><span class="p">,</span>
-    <span class="nt">&quot;User&quot;</span><span class="p">:</span> <span class="s2">&quot;ghostferry&quot;</span><span class="p">,</span>
-    <span class="nt">&quot;Pass&quot;</span><span class="p">:</span> <span class="s2">&quot;ghostferry&quot;</span><span class="p">,</span>
-    <span class="nt">&quot;Collation&quot;</span><span class="p">:</span> <span class="s2">&quot;utf8mb4_unicode_ci&quot;</span><span class="p">,</span>
-    <span class="nt">&quot;Params&quot;</span><span class="p">:</span> <span class="p">{</span>
-      <span class="nt">&quot;charset&quot;</span><span class="p">:</span> <span class="s2">&quot;utf8mb4&quot;</span>
-    <span class="p">}</span>
-  <span class="p">},</span>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="w"></span>
+<span class="w">  </span><span class="nt">&quot;Source&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">&quot;Host&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;127.0.0.1&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">&quot;Port&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">29291</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">&quot;User&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ghostferry&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">&quot;Pass&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ghostferry&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">&quot;Collation&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;utf8mb4_unicode_ci&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">&quot;Params&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">      </span><span class="nt">&quot;charset&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;utf8mb4&quot;</span><span class="w"></span>
+<span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="w">  </span><span class="p">},</span><span class="w"></span>
 
-  <span class="nt">&quot;Target&quot;</span><span class="p">:</span> <span class="p">{</span>
-    <span class="nt">&quot;Host&quot;</span><span class="p">:</span> <span class="s2">&quot;127.0.0.1&quot;</span><span class="p">,</span>
-    <span class="nt">&quot;Port&quot;</span><span class="p">:</span> <span class="mi">29292</span><span class="p">,</span>
-    <span class="nt">&quot;User&quot;</span><span class="p">:</span> <span class="s2">&quot;ghostferry&quot;</span><span class="p">,</span>
-    <span class="nt">&quot;Pass&quot;</span><span class="p">:</span> <span class="s2">&quot;ghostferry&quot;</span><span class="p">,</span>
-    <span class="nt">&quot;Collation&quot;</span><span class="p">:</span> <span class="s2">&quot;utf8mb4_unicode_ci&quot;</span><span class="p">,</span>
-    <span class="nt">&quot;Params&quot;</span><span class="p">:</span> <span class="p">{</span>
-      <span class="nt">&quot;charset&quot;</span><span class="p">:</span> <span class="s2">&quot;utf8mb4&quot;</span>
-    <span class="p">}</span>
-  <span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;Target&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">&quot;Host&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;127.0.0.1&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">&quot;Port&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">29292</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">&quot;User&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ghostferry&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">&quot;Pass&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ghostferry&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">&quot;Collation&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;utf8mb4_unicode_ci&quot;</span><span class="p">,</span><span class="w"></span>
+<span class="w">    </span><span class="nt">&quot;Params&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">      </span><span class="nt">&quot;charset&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;utf8mb4&quot;</span><span class="w"></span>
+<span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="w">  </span><span class="p">},</span><span class="w"></span>
 
-  <span class="nt">&quot;Databases&quot;</span><span class="p">:</span> <span class="p">{</span>
-    <span class="nt">&quot;Whitelist&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;abc&quot;</span><span class="p">]</span>
-  <span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;Databases&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">&quot;Whitelist&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;abc&quot;</span><span class="p">]</span><span class="w"></span>
+<span class="w">  </span><span class="p">},</span><span class="w"></span>
 
-  <span class="nt">&quot;Tables&quot;</span><span class="p">:</span> <span class="p">{</span>
-    <span class="nt">&quot;Blacklist&quot;</span><span class="p">:</span> <span class="p">[</span><span class="s2">&quot;table2&quot;</span><span class="p">]</span>
-  <span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;Tables&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="nt">&quot;Blacklist&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;table2&quot;</span><span class="p">]</span><span class="w"></span>
+<span class="w">  </span><span class="p">},</span><span class="w"></span>
 
-  <span class="nt">&quot;VerifierType&quot;</span><span class="p">:</span> <span class="s2">&quot;ChecksumTable&quot;</span>
-<span class="p">}</span>
+<span class="w">  </span><span class="nt">&quot;VerifierType&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ChecksumTable&quot;</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
 </pre></div>
 </div>
 <p>Save this file to a file called <code class="docutils literal notranslate"><span class="pre">examplerun.json</span></code>.</p>
@@ -173,7 +173,7 @@ configuration you specified. ghostferry-copydb has a dryrun flag that will try
 to use the configuration you have to connect to the database. It will also scan
 the tables according to the black/whitelist specified and print it out in the
 debug logs:</p>
-<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$</span> ghostferry-copydb -dryrun -verbose examplerun.json
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>ghostferry-copydb -dryrun -verbose examplerun.json
 </pre></div>
 </div>
 <p>The verbose flag gives slightly more debug information in case there are any
@@ -204,12 +204,12 @@ show up there, it means the whitelist/blacklist configuration is incorrect.</p>
 without the dryrun flag. You can also turn off the verbose flag, although it
 may be good practise to leave it on and redirect stdout to a file so the move
 can be audited at a later time. We will do this here for good practise:</p>
-<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$</span> ghostferry-copydb -verbose examplerun.json <span class="m">2</span><span class="p">&amp;</span>&gt;examplerun.log
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>ghostferry-copydb -verbose examplerun.json <span class="m">2</span><span class="p">&amp;</span>&gt;examplerun.log
 </pre></div>
 </div>
 <p>To confirm that Ghostferry indeed copies changes to the source table, we can
 manually insert a row into <code class="docutils literal notranslate"><span class="pre">abc.table1</span></code> during the run</p>
-<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">#</span> mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29291</span>
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp"># </span>mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29291</span>
 <span class="go">mysql&gt; INSERT INTO abc.table1 (id, data) VALUES (351, &quot;helloworld&quot;);</span>
 </pre></div>
 </div>
@@ -249,7 +249,7 @@ you must stop writes to the data on the source database. For the purpose of
 this tutorial, we will set the source database to read only. Even though we
 have no applications writing to the source in this case, let’s do it anyway so
 we get into the habit of thinking of this step:</p>
-<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">#</span> mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29291</span>
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp"># </span>mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29291</span>
 <span class="go">mysql&gt; FLUSH TABLES WITH READ LOCK; -- Ensure all writes are done</span>
 <span class="go">mysql&gt; SET GLOBAL read_only = ON;   -- Sets the database to read only</span>
 <span class="go">mysql&gt; FLUSH BINARY LOGS            -- Ensure all writes are record in binlog</span>
@@ -273,7 +273,7 @@ perform the verification in the background. Refresh the page a couple of times
 until it tells you the verification was successful.</p>
 <p>Additionally, since we manually inserted a row earlier, we should be able to
 find it via:</p>
-<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">#</span> mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29292</span>
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp"># </span>mysql --protocol<span class="o">=</span>tcp -u root -P <span class="m">29292</span>
 <span class="go">mysql&gt; SELECT * FROM abc.table1 WHERE id = 351;</span>
 </pre></div>
 </div>
@@ -379,7 +379,7 @@ If you need to interrupt and resume Ghostferry, you should also read through
       
       |
       Powered by <a href="http://sphinx-doc.org/">Sphinx 1.8.5</a>
-      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.13</a>
       
       |
       <a href="_sources/tutorialcopydb.rst.txt"
