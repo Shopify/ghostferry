@@ -13,22 +13,16 @@ up:
   - bundler
   - go:
       version: "1.16"
-  - custom:
-      name: Docker for Mac
-      met?: test -e /Applications/Docker.app && which docker-compose
-      meet: |
-        echo "Docker.app not found." ;
-        echo "Download Docker Desktop from https://docs.docker.com/docker-for-mac/install.\nInstallation includes necessary dependencies (ie. docker-compose)";
-        open "https://docs.docker.com/docker-for-mac/install" ;
+  - podman
   - custom:
       name: Go Dependencies
       met?: go mod download
       meet: echo 'go mod failed to download dependencies'; false
   - custom:
       name: MySQL
-      met?: docker-compose -f docker-compose_8.0.yml up -d mysql-1 mysql-2
+      met?: podman-compose -f docker-compose_8.0.yml up -d mysql-1 mysql-2
       meet: echo 'mysql failed to start'; false
-      down: docker-compose -f docker-compose_8.0.yml stop mysql-1 mysql-2
+      down: podman-compose -f docker-compose_8.0.yml stop mysql-1 mysql-2
 
 commands:
   test:
