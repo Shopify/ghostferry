@@ -156,7 +156,7 @@ module GhostferryHelper
     def start_server
       @server_last_error = nil
 
-      @last_message_time = Time.now
+      @last_message_time = now
       @server = WEBrick::HTTPServer.new(
         BindAddress: "127.0.0.1",
         Port: @server_port,
@@ -185,7 +185,7 @@ module GhostferryHelper
 
           status = status.first
 
-          @last_message_time = Time.now
+          @last_message_time = now
           @status_handlers[status].each { |f| f.call(*data) } unless @status_handlers[status].nil?
         rescue StandardError => e
           # errors are not reported from WEBrick but the server should fail early
@@ -328,7 +328,7 @@ module GhostferryHelper
       # HTTP server to free up the port.
       @server_watchdog_thread = Thread.new do
         while @subprocess_thread.alive? do
-          if Time.now - @last_message_time > @message_timeout
+          if (now - @last_message_time) > @message_timeout
             @server.shutdown
             raise "ghostferry did not report to the integration test server for the last #{@message_timeout}s"
           end
@@ -404,6 +404,10 @@ module GhostferryHelper
       yield
     ensure
       ENV[key] = previous_value
+    end
+
+    def now
+      ::Process.clock_gettime(::Process::CLOCK_MONOTONIC)
     end
   end
 end
