@@ -55,7 +55,7 @@ class GhostferryTestCase < Minitest::Test
   end
 
   def new_ghostferry_with_interrupt_after_row_copy(filepath, config: {}, after_batches_written: 0)
-    g = new_ghostferry(filepath, config)
+    g = new_ghostferry(filepath, config: config)
 
     batches_written = 0
     g.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
