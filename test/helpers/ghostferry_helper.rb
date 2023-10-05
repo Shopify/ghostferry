@@ -174,19 +174,22 @@ module GhostferryHelper
 
           query = CGI::parse(req.body)
 
-          status = query["status"]
+          statuses = query["status"]
           data = query["data"]
 
-          unless status
+          unless statuses
             @server_last_error = ArgumentError.new("Ghostferry is improperly implemented and did not send a status")
             resp.status = 400
             @server.shutdown
           end
 
-          status = status.first
-
           @last_message_time = now
-          @status_handlers[status].each { |f| f.call(*data) } unless @status_handlers[status].nil?
+
+          statuses.each do |status|
+            next if @status_handlers[status].nil?
+
+            @status_handlers[status].each { |f| f.call(*data) }
+          end
         rescue StandardError => e
           # errors are not reported from WEBrick but the server should fail early
           # as this indicates there is likely a programming error.
