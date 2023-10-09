@@ -174,16 +174,20 @@ module GhostferryHelper
 
           query = CGI::parse(req.body)
 
-          statuses = query["status"]
-          data = query["data"]
+          statuses = Array(query["status"])
 
-          unless statuses
+          if statuses.empty?
             @server_last_error = ArgumentError.new("Ghostferry is improperly implemented and did not send a status")
             resp.status = 400
             @server.shutdown
+          elsif statuses.size > 1
+            @logger.warn("Got multiple statuses at once: #{statuses.inspect}")
+            puts "Got multiple statuses at once: #{statuses.inspect}"
           end
 
           @last_message_time = now
+
+          data = query["data"]
 
           statuses.each do |status|
             next if @status_handlers[status].nil?
