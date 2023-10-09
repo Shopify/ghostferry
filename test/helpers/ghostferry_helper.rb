@@ -49,12 +49,9 @@ module GhostferryHelper
 
     attr_reader :stdout, :stderr, :logrus_lines, :exit_status, :pid, :error, :error_lines
 
-    def initialize(main_path, config: {}, logger: nil, message_timeout: 30, port: 39393)
-      @logger = logger
-      if @logger.nil?
-        @logger = Logger.new(STDOUT)
-        @logger.level = Logger::DEBUG
-      end
+    def initialize(main_path, config: {}, log_capturer:, message_timeout: 30, port: 39393)
+      @log_capturer = log_capturer
+      @logger = log_capturer.logger
 
       @main_path = main_path
       @config = config
@@ -337,7 +334,7 @@ module GhostferryHelper
         while @subprocess_thread.alive? do
           if (now - @last_message_time) > @message_timeout
             @server.shutdown
-            @logger&.print_output
+            @log_capturer.print_output
             raise "ghostferry did not report to the integration test server for the last #{@message_timeout}s"
           end
 

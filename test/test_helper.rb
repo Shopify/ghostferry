@@ -49,7 +49,7 @@ class GhostferryTestCase < Minitest::Test
   def new_ghostferry(filepath, config: {})
     # Transform path to something ruby understands
     path = File.join(GO_CODE_PATH, filepath, "main.go")
-    g = Ghostferry.new(path, config: config, logger: @log_capturer.logger)
+    g = Ghostferry.new(path, config: config, log_capturer: @log_capturer)
     @ghostferry_instances << g
     g
   end
