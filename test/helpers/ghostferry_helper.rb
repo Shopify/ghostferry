@@ -337,6 +337,7 @@ module GhostferryHelper
         while @subprocess_thread.alive? do
           if (now - @last_message_time) > @message_timeout
             @server.shutdown
+            @logger&.print_output
             raise "ghostferry did not report to the integration test server for the last #{@message_timeout}s"
           end
 
