@@ -11,6 +11,7 @@ class InterruptResumeTest < GhostferryTestCase
 
     # Writes one batch
     ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      info("test[09]: on_status, received -> TERM")
       ghostferry.send_signal("TERM")
     end
 
@@ -32,6 +33,7 @@ class InterruptResumeTest < GhostferryTestCase
 
     # Writes one batch
     ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      info("test[31]: on_status, received -> TERM")
       ghostferry.send_signal("TERM")
     end
 
@@ -448,19 +450,26 @@ class InterruptResumeTest < GhostferryTestCase
   end
 
   def test_interrupt_resume_idempotence_with_multiple_interrupts_and_writes_to_source
+    @debug_me = true
+    info("test[452] start\n\n")
     ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, after_batches_written: 2)
 
     datawriter = new_source_datawriter
     start_datawriter_with_ghostferry(datawriter, ghostferry)
 
+    info("test[461] ghostferry#run_expecting_interrupt, no state\n\n")
     dumped_state = ghostferry.run_expecting_interrupt
     assert_basic_fields_exist_in_dumped_state(dumped_state)
 
     ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, after_batches_written: 2)
+
+    info("test[466] ghostferry#run_expecting_interrupt, with state\n\n")
     ghostferry.run_expecting_interrupt(dumped_state)
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
     stop_datawriter_during_cutover(datawriter, ghostferry)
+
+    info("test[472] ghostferry#run_with_logs, with state\n\n")
     ghostferry.run_with_logs(dumped_state)
 
     assert_test_table_is_identical

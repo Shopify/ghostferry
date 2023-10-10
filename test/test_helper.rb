@@ -11,7 +11,7 @@ require "ghostferry_helper"
 require "data_writer_helper"
 
 class LogCapturer
-  attr_reader :logger
+  attr_reader :logger, :logger_device
 
   def initialize(level: Logger::DEBUG)
     @capture = ENV["DEBUG"] != "1"
@@ -50,6 +50,7 @@ class GhostferryTestCase < Minitest::Test
     # Transform path to something ruby understands
     path = File.join(GO_CODE_PATH, filepath, "main.go")
     g = Ghostferry.new(path, config: config, log_capturer: @log_capturer)
+    info("[#{g.tag}] new_ghostferry: create")
     @ghostferry_instances << g
     g
   end
@@ -57,11 +58,16 @@ class GhostferryTestCase < Minitest::Test
   def new_ghostferry_with_interrupt_after_row_copy(filepath, config: {}, after_batches_written: 0)
     g = new_ghostferry(filepath, config: config)
 
+    info("[#{g.tag}] new_ghostferry_wiarc: register status hook")
     batches_written = 0
     g.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
       batches_written += 1
+
       if batches_written >= after_batches_written
+        info("[#{g.tag}] new_ghostferry_wiarc: on_status #{batches_written} >= #{after_batches_written} -> true")
         g.send_signal("TERM")
+      else
+        info("[#{g.tag}] new_ghostferry_wiarc: on_status #{batches_written} >= #{after_batches_written} -> false")
       end
     end
 
@@ -81,6 +87,10 @@ class GhostferryTestCase < Minitest::Test
   def setup_signal_watcher
     Signal.trap("INT") { self.on_term }
     Signal.trap("TERM") { self.on_term }
+  end
+
+  def info(msg)
+    @log_capturer.logger.info(msg)
   end
 
   ##############
@@ -105,6 +115,7 @@ class GhostferryTestCase < Minitest::Test
 
     # Same thing with DataWriter as above
     @datawriter_instances = []
+    @debug_me = nil
   end
 
   def after_teardown
@@ -116,7 +127,7 @@ class GhostferryTestCase < Minitest::Test
       datawriter.stop_and_join
     end
 
-    @log_capturer.print_output if self.failure
+    @log_capturer.print_output if self.failure || @debug_me
     @log_capturer.reset
     super
   end
