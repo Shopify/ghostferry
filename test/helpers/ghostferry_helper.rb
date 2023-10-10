@@ -158,6 +158,7 @@ module GhostferryHelper
         BindAddress: "127.0.0.1",
         Port: @server_port,
         Logger: @logger,
+        MaxClients: 1024,
         AccessLog: [],
       )
 

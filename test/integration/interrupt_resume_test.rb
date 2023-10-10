@@ -50,17 +50,9 @@ class InterruptResumeTest < GhostferryTestCase
   def test_interrupt_resume_with_writes_to_source
     # Start a ghostferry run expecting it to be interrupted.
     datawriter = new_source_datawriter
-    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, after_batches_written: 2)
 
     start_datawriter_with_ghostferry(datawriter, ghostferry)
-
-    batches_written = 0
-    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
-      batches_written += 1
-      if batches_written >= 2
-        ghostferry.send_signal("TERM")
-      end
-    end
 
     dumped_state = ghostferry.run_expecting_interrupt
     assert_basic_fields_exist_in_dumped_state(dumped_state)
