@@ -148,11 +148,14 @@ func (f *IntegrationFerry) Main() error {
 		return err
 	}
 
+	f.logger.Debug("flush binlog and stop streaming")
 	// TODO: this method should return errors rather than calling
 	// the error handler to panic directly.
 	f.FlushBinlogAndStopStreaming()
+	f.logger.Debug("wait for Ferry to exit")
 	wg.Wait()
 
+	f.logger.Debug("finished waiting")
 	if f.Verifier != nil {
 		err := f.SendStatusAndWaitUntilContinue(StatusVerifyDuringCutover)
 		if err != nil {
