@@ -6,7 +6,6 @@ require "thread"
 require "tmpdir"
 require "webrick"
 require "cgi"
-require "securerandom"
 
 module GhostferryHelper
   GHOSTFERRY_TEMPDIR = File.join(Dir.tmpdir, "ghostferry-integration")
@@ -50,12 +49,10 @@ module GhostferryHelper
       AFTER_BINLOG_APPLY = "AFTER_BINLOG_APPLY"
     end
 
-    attr_reader :stdout, :stderr, :logrus_lines, :exit_status, :pid, :error, :error_lines, :tag
+    attr_reader :stdout, :stderr, :logrus_lines, :exit_status, :pid, :error, :error_lines
 
-    def initialize(main_path, config: {}, log_capturer:, message_timeout: 30, port: 39393)
-      @log_capturer = log_capturer
-      @logger = log_capturer.logger
-      @tag = SecureRandom.hex[0..3]
+    def initialize(main_path, config: {}, logger:, message_timeout: 30, port: 39393)
+      @logger = logger
 
       @main_path = main_path
       @config = config
@@ -98,7 +95,6 @@ module GhostferryHelper
 
     # The main method to call to run a Ghostferry subprocess.
     def run(resuming_state = nil)
-      @logger.info("[#{@tag}] ghostferry#run(state:#{(!resuming_state.nil?).inspect})")
       resuming_state = JSON.generate(resuming_state) if resuming_state.is_a?(Hash)
 
       compile_binary
@@ -117,26 +113,21 @@ module GhostferryHelper
     # When using this method, you need to ensure that the datawriter has been
     # stopped properly (if you're using stop_datawriter_during_cutover).
     def run_expecting_interrupt(resuming_state = nil)
-      @logger.info("[#{@tag}] ghostferry#run_expecting_interrupt(state:#{(!resuming_state.nil?).inspect})")
       run(resuming_state)
     rescue ExitError
-      @logger.info("[#{@tag}] ghostferry#run_expecting_interrupt: got Ghostferry::ExitError")
       dumped_state = @stdout.join("")
       JSON.parse(dumped_state)
     else
-      @logger.error("[#{@tag}] ghostferry#run_expecting_interrupt: something's wrong")
       raise "Ghostferry did not get interrupted"
     end
 
     # Same as above - ensure that the datawriter has been
     # stopped properly (if you're using stop_datawriter_during_cutover).
     def run_expecting_failure(resuming_state = nil)
-      @logger.info("[#{@tag}] ghostferry#run_expecting_failure(state:#{(!resuming_state.nil?).inspect})")
       run(resuming_state)
     rescue ExitError
-      @logger.info("[#{@tag}] ghostferry#run_expecting_failure: got Ghostferry::ExitError")
     else
-      raise "[#{@tag}] Ghostferry did not fail"
+      raise "Ghostferry did not fail"
     end
 
     def run_with_logs(resuming_state = nil)
@@ -150,14 +141,14 @@ module GhostferryHelper
     def compile_binary
       return if File.exist?(@compiled_binary_path)
 
-      @logger.debug("[#{@tag}] compiling test binary to #{@compiled_binary_path}")
+      @logger.debug("compiling test binary to #{@compiled_binary_path}")
       rc = system(
         "go", "build",
         "-o", @compiled_binary_path,
         @main_path
       )
 
-      raise "[#{@tag}] could not compile ghostferry" unless rc
+      raise "could not compile ghostferry" unless rc
     end
 
     def start_server
@@ -182,27 +173,17 @@ module GhostferryHelper
 
           query = CGI::parse(req.body)
 
-          statuses = Array(query["status"])
+          status = Array(query["status"]).first
+          data = query["data"]
 
-          if statuses.empty?
+          if status.nil?
             @server_last_error = ArgumentError.new("Ghostferry is improperly implemented and did not send a status")
             resp.status = 400
             @server.shutdown
-          elsif statuses.size > 1
-            @logger.warn("[#{@tag}] Got multiple statuses at once: #{statuses.inspect}")
-            puts "Got multiple statuses at once: #{statuses.inspect}"
           end
 
           @last_message_time = now
-
-          data = query["data"]
-
-          @logger.info("[#{@tag}] server: got / with #{statuses.inspect}")
-          statuses.each do |status|
-            next if @status_handlers[status].nil?
-
-            @status_handlers[status].each { |f| f.call(*data) }
-          end
+          @status_handlers[status].each { |f| f.call(*data) } unless @status_handlers[status].nil?
         rescue StandardError => e
           # errors are not reported from WEBrick but the server should fail early
           # as this indicates there is likely a programming error.
@@ -213,7 +194,6 @@ module GhostferryHelper
 
       @server.mount_proc "/callbacks/progress" do |req, resp|
         begin
-          @logger.info("[#{@tag}] server: got /callbacks/progress")
           unless req.body
             @server_last_error = ArgumentError.new("Ghostferry is improperly implemented and did not send data")
             resp.status = 400
@@ -228,7 +208,6 @@ module GhostferryHelper
 
       @server.mount_proc "/callbacks/state" do |req, resp|
         begin
-          @logger.info("[#{@tag}] server: got /callbacks/state")
           unless req.body
             @server_last_error = ArgumentError.new("Ghostferry is improperly implemented and did not send data")
             resp.status = 400
@@ -241,15 +220,14 @@ module GhostferryHelper
       end
 
       @server.mount_proc "/callbacks/error" do |req, resp|
-        @logger.info("[#{@tag}] server: got /callbacks/error")
         @error = JSON.parse(JSON.parse(req.body)["Payload"])
         @callback_handlers["error"].each { |f| f.call(@error) } unless @callback_handlers["error"].nil?
       end
 
       @server_thread = Thread.new do
-        @logger.debug("[#{@tag}] starting server thread")
+        @logger.debug("starting server thread")
         @server.start
-        @logger.debug("[#{@tag}] server thread stopped")
+        @logger.debug("server thread stopped")
       end
     end
 
@@ -289,7 +267,7 @@ module GhostferryHelper
           environment["GHOSTFERRY_MARGINALIA"] = @config[:marginalia]
         end
 
-        @logger.debug("[#{@tag}] starting ghostferry test binary #{@compiled_binary_path}")
+        @logger.debug("starting ghostferry test binary #{@compiled_binary_path}")
         Open3.popen3(environment, @compiled_binary_path) do |stdin, stdout, stderr, wait_thr|
           stdin.puts(resuming_state) unless resuming_state.nil?
           stdin.close
@@ -311,7 +289,7 @@ module GhostferryHelper
 
               if reader == stdout
                 @stdout << line
-                @logger.debug("[#{@tag}] stdout: #{line}")
+                @logger.debug("stdout: #{line}")
               elsif reader == stderr
                 @stderr << line
                 if json_log_line?(line)
@@ -324,11 +302,8 @@ module GhostferryHelper
                   if logline["level"] == "error"
                     @error_lines << logline
                   end
-
-                  @logger.debug("[#{@tag}] stderr: #{line}") unless tag.end_with?("_binlog_streamer")
-                else
-                  @logger.debug("[#{@tag}] stderr: #{line}")
                 end
+                @logger.debug("stderr: #{line}")
               end
             end
           end
@@ -337,9 +312,9 @@ module GhostferryHelper
           @pid = 0
         end
 
-        @logger.debug("[#{@tag}] ghostferry test binary exitted: #{@exit_status}")
+        @logger.debug("ghostferry test binary exitted: #{@exit_status}")
         if @exit_status.exitstatus != 0
-          raise ExitError, "[#{@tag}] ghostferry test binary returned non-zero status: #{@exit_status}"
+          raise ExitError, "ghostferry test binary returned non-zero status: #{@exit_status}"
         end
       end
     end
@@ -352,15 +327,14 @@ module GhostferryHelper
         while @subprocess_thread.alive? do
           if (now - @last_message_time) > @message_timeout
             @server.shutdown
-            @log_capturer.print_output
-            raise TimeoutError, "[#{@tag}] ghostferry did not report to the integration test server for the last #{@message_timeout}s"
+            raise TimeoutError, "ghostferry did not report to the integration test server for the last #{@message_timeout}s"
           end
 
           sleep 1
         end
 
         @server.shutdown
-        @logger.debug("[#{@tag}] server watchdog thread stopped")
+        @logger.debug("server watchdog thread stopped")
       end
 
       @server_watchdog_thread.abort_on_exception = true
