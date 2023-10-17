@@ -16,6 +16,8 @@ GEM
       builder
       minitest (>= 5.0)
       ruby-progressbar
+    minitest-retry (0.2.2)
+      minitest (>= 5.0)
     mysql2 (0.5.5)
     pry (0.14.2)
       coderay (~> 1.1)
@@ -35,6 +37,7 @@ DEPENDENCIES
   minitest-fail-fast (~> 0.1.0)
   minitest-hooks
   minitest-reporters (~> 1.4)
+  minitest-retry
   mysql2
   pry-byebug
   tqdm

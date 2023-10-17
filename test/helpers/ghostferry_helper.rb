@@ -15,8 +15,6 @@ module GhostferryHelper
     FileUtils.remove_entry(GHOSTFERRY_TEMPDIR) if Dir.exist?(GHOSTFERRY_TEMPDIR)
   end
 
-  class GhostferryExitFailure < StandardError
-  end
 
   class Ghostferry
     # Manages compiling, running, and communicating with Ghostferry.
@@ -32,6 +30,10 @@ module GhostferryHelper
 
     # Keep these in sync with integrationferry.go
     ENV_KEY_PORT = "GHOSTFERRY_INTEGRATION_PORT"
+
+    Error = Class.new(StandardError)
+    ExitError = Class.new(Error)
+    TimeoutError = Class.new(Error)
 
     module Status
       # This should be in sync with integrationferry.go
@@ -117,8 +119,8 @@ module GhostferryHelper
     def run_expecting_interrupt(resuming_state = nil)
       @logger.info("[#{@tag}] ghostferry#run_expecting_interrupt(state:#{(!resuming_state.nil?).inspect})")
       run(resuming_state)
-    rescue GhostferryExitFailure
-      @logger.info("[#{@tag}] ghostferry#run_expecting_interrupt: got GhostferryExitFailure")
+    rescue ExitError
+      @logger.info("[#{@tag}] ghostferry#run_expecting_interrupt: got Ghostferry::ExitError")
       dumped_state = @stdout.join("")
       JSON.parse(dumped_state)
     else
@@ -131,8 +133,8 @@ module GhostferryHelper
     def run_expecting_failure(resuming_state = nil)
       @logger.info("[#{@tag}] ghostferry#run_expecting_failure(state:#{(!resuming_state.nil?).inspect})")
       run(resuming_state)
-    rescue GhostferryExitFailure
-      @logger.info("[#{@tag}] ghostferry#run_expecting_failure: got GhostferryExitFailure")
+    rescue ExitError
+      @logger.info("[#{@tag}] ghostferry#run_expecting_failure: got Ghostferry::ExitError")
     else
       raise "[#{@tag}] Ghostferry did not fail"
     end
@@ -337,7 +339,7 @@ module GhostferryHelper
 
         @logger.debug("[#{@tag}] ghostferry test binary exitted: #{@exit_status}")
         if @exit_status.exitstatus != 0
-          raise GhostferryExitFailure, "[#{@tag}] ghostferry test binary returned non-zero status: #{@exit_status}"
+          raise ExitError, "[#{@tag}] ghostferry test binary returned non-zero status: #{@exit_status}"
         end
       end
     end
@@ -351,7 +353,7 @@ module GhostferryHelper
           if (now - @last_message_time) > @message_timeout
             @server.shutdown
             @log_capturer.print_output
-            raise "[#{@tag}] ghostferry did not report to the integration test server for the last #{@message_timeout}s"
+            raise TimeoutError, "[#{@tag}] ghostferry did not report to the integration test server for the last #{@message_timeout}s"
           end
 
           sleep 1
@@ -408,7 +410,7 @@ module GhostferryHelper
 
       begin
         @subprocess_thread.join if @subprocess_thread
-      rescue GhostferryExitFailure
+      rescue ExitError
         # ignore
       end
     end
