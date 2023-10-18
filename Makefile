@@ -67,7 +67,7 @@ test-go:
 
 test-ruby:
 	bundle install
-	ruby test/main.rb
+	bundle exec ruby test/main.rb
 
 test: test-go test-ruby
 

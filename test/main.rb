@@ -15,10 +15,12 @@ require "ghostferry_helper"
 
 require "minitest"
 require "minitest/reporters"
+require "minitest/retry"
 require "minitest/fail_fast"
 require "minitest/hooks/test"
 
 Minitest::Reporters.use! Minitest::Reporters::SpecReporter.new
+Minitest::Retry.use!(exceptions_to_retry: [GhostferryHelper::Ghostferry::TimeoutError])
 
 test_files.each do |f|
   require f

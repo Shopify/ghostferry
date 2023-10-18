@@ -6,25 +6,28 @@ GEM
     byebug (11.1.3)
     coderay (1.1.3)
     method_source (1.0.0)
-    minitest (5.14.4)
+    minitest (5.20.0)
     minitest-fail-fast (0.1.0)
       minitest (~> 5)
-    minitest-hooks (1.5.0)
+    minitest-hooks (1.5.1)
       minitest (> 5.3)
-    minitest-reporters (1.4.3)
+    minitest-reporters (1.6.1)
       ansi
       builder
       minitest (>= 5.0)
       ruby-progressbar
-    mysql2 (0.5.3)
-    pry (0.13.1)
+    minitest-retry (0.2.2)
+      minitest (>= 5.0)
+    mysql2 (0.5.5)
+    pry (0.14.2)
       coderay (~> 1.1)
       method_source (~> 1.0)
-    pry-byebug (3.9.0)
+    pry-byebug (3.10.1)
       byebug (~> 11.0)
-      pry (~> 0.13.0)
-    ruby-progressbar (1.11.0)
-    tqdm (0.3.0)
+      pry (>= 0.13, < 0.15)
+    ruby-progressbar (1.13.0)
+    tqdm (0.4.1)
+    webrick (1.8.1)
 
 PLATFORMS
   ruby
@@ -34,9 +37,11 @@ DEPENDENCIES
   minitest-fail-fast (~> 0.1.0)
   minitest-hooks
   minitest-reporters (~> 1.4)
+  minitest-retry
   mysql2
   pry-byebug
   tqdm
+  webrick
 
 BUNDLED WITH
    2.2.22

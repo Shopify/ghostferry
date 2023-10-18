@@ -14,8 +14,6 @@ module GhostferryHelper
     FileUtils.remove_entry(GHOSTFERRY_TEMPDIR) if Dir.exist?(GHOSTFERRY_TEMPDIR)
   end
 
-  class GhostferryExitFailure < StandardError
-  end
 
   class Ghostferry
     # Manages compiling, running, and communicating with Ghostferry.
@@ -23,7 +21,7 @@ module GhostferryHelper
     #
     # To use this class:
     #
-    # ghostferry = Ghostferry.new("path/to/main.go")
+    # ghostferry = Ghostferry.new("path/to/main.go", logger: Logger.new(STDOUT))
     # ghostferry.on_status(Ghostferry::Status::BEFORE_ROW_COPY) do
     #   # do custom work here, such as injecting data into the database
     # end
@@ -31,6 +29,10 @@ module GhostferryHelper
 
     # Keep these in sync with integrationferry.go
     ENV_KEY_PORT = "GHOSTFERRY_INTEGRATION_PORT"
+
+    Error = Class.new(StandardError)
+    ExitError = Class.new(Error)
+    TimeoutError = Class.new(Error)
 
     module Status
       # This should be in sync with integrationferry.go
@@ -49,12 +51,8 @@ module GhostferryHelper
 
     attr_reader :stdout, :stderr, :logrus_lines, :exit_status, :pid, :error, :error_lines
 
-    def initialize(main_path, config: {}, logger: nil, message_timeout: 30, port: 39393)
+    def initialize(main_path, config: {}, logger:, message_timeout: 30, port: 39393)
       @logger = logger
-      if @logger.nil?
-        @logger = Logger.new(STDOUT)
-        @logger.level = Logger::DEBUG
-      end
 
       @main_path = main_path
       @config = config
@@ -116,7 +114,7 @@ module GhostferryHelper
     # stopped properly (if you're using stop_datawriter_during_cutover).
     def run_expecting_interrupt(resuming_state = nil)
       run(resuming_state)
-    rescue GhostferryExitFailure
+    rescue ExitError
       dumped_state = @stdout.join("")
       JSON.parse(dumped_state)
     else
@@ -127,7 +125,7 @@ module GhostferryHelper
     # stopped properly (if you're using stop_datawriter_during_cutover).
     def run_expecting_failure(resuming_state = nil)
       run(resuming_state)
-    rescue GhostferryExitFailure
+    rescue ExitError
     else
       raise "Ghostferry did not fail"
     end
@@ -156,11 +154,12 @@ module GhostferryHelper
     def start_server
       @server_last_error = nil
 
-      @last_message_time = Time.now
+      @last_message_time = now
       @server = WEBrick::HTTPServer.new(
         BindAddress: "127.0.0.1",
         Port: @server_port,
         Logger: @logger,
+        MaxClients: 1024,
         AccessLog: [],
       )
 
@@ -174,18 +173,16 @@ module GhostferryHelper
 
           query = CGI::parse(req.body)
 
-          status = query["status"]
+          status = Array(query["status"]).first
           data = query["data"]
 
-          unless status
+          if status.nil?
             @server_last_error = ArgumentError.new("Ghostferry is improperly implemented and did not send a status")
             resp.status = 400
             @server.shutdown
           end
 
-          status = status.first
-
-          @last_message_time = Time.now
+          @last_message_time = now
           @status_handlers[status].each { |f| f.call(*data) } unless @status_handlers[status].nil?
         rescue StandardError => e
           # errors are not reported from WEBrick but the server should fail early
@@ -317,7 +314,7 @@ module GhostferryHelper
 
         @logger.debug("ghostferry test binary exitted: #{@exit_status}")
         if @exit_status.exitstatus != 0
-          raise GhostferryExitFailure, "ghostferry test binary returned non-zero status: #{@exit_status}"
+          raise ExitError, "ghostferry test binary returned non-zero status: #{@exit_status}"
         end
       end
     end
@@ -328,9 +325,9 @@ module GhostferryHelper
       # HTTP server to free up the port.
       @server_watchdog_thread = Thread.new do
         while @subprocess_thread.alive? do
-          if Time.now - @last_message_time > @message_timeout
+          if (now - @last_message_time) > @message_timeout
             @server.shutdown
-            raise "ghostferry did not report to the integration test server for the last #{@message_timeout}s"
+            raise TimeoutError, "ghostferry did not report to the integration test server for the last #{@message_timeout}s"
           end
 
           sleep 1
@@ -387,7 +384,7 @@ module GhostferryHelper
 
       begin
         @subprocess_thread.join if @subprocess_thread
-      rescue GhostferryExitFailure
+      rescue ExitError
         # ignore
       end
     end
@@ -404,6 +401,10 @@ module GhostferryHelper
       yield
     ensure
       ENV[key] = previous_value
+    end
+
+    def now
+      ::Process.clock_gettime(::Process::CLOCK_MONOTONIC)
     end
   end
 end
