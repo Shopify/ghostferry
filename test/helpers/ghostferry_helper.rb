@@ -21,7 +21,7 @@ module GhostferryHelper
     #
     # To use this class:
     #
-    # ghostferry = Ghostferry.new("path/to/main.go")
+    # ghostferry = Ghostferry.new("path/to/main.go", logger: Logger.new(STDOUT))
     # ghostferry.on_status(Ghostferry::Status::BEFORE_ROW_COPY) do
     #   # do custom work here, such as injecting data into the database
     # end
