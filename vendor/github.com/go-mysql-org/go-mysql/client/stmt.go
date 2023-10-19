@@ -74,7 +74,7 @@ func (s *Stmt) write(args ...interface{}) error {
 
 	for i := range args {
 		if args[i] == nil {
-			nullBitmap[i/8] |= (1 << (uint(i) % 8))
+			nullBitmap[i/8] |= 1 << (uint(i) % 8)
 			paramTypes[i<<1] = MYSQL_TYPE_NULL
 			continue
 		}
@@ -214,7 +214,7 @@ func (c *Conn) Prepare(query string) (*Stmt, error) {
 
 	//warnings
 	s.warnings = int(binary.LittleEndian.Uint16(data[pos:]))
-	pos += 2
+	// pos += 2
 
 	if s.params > 0 {
 		if err := s.conn.readUntilEOF(); err != nil {

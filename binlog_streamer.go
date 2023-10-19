@@ -102,6 +102,7 @@ func (s *BinlogStreamer) createBinlogSyncer() error {
 		TLSConfig:               tlsConfig,
 		UseDecimal:              true,
 		TimestampStringLocation: time.UTC,
+		Logger:                  s.logger,
 	}
 
 	s.binlogSyncer = replication.NewBinlogSyncer(syncerConfig)
