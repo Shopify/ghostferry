@@ -3,7 +3,7 @@ name: Documentation on github pages
 on:
   push:
     branches:
-      - master
+      - main
 
 jobs:
   github-pages:

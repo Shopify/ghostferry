@@ -27,7 +27,7 @@ entirely correct as proofs remain elusive.
 
 On a high-level, Ghostferry is broken into several components, enabling it to
 copy data. This is documented at
-https://shopify.github.io/ghostferry/master/technicaloverview.html
+https://shopify.github.io/ghostferry/main/technicaloverview.html
 
 Development Setup
 -----------------

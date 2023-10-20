@@ -3,7 +3,7 @@ name: Ghostferry MySQL 8.0 tests
 on:
   push:
     branches:
-      - master
+      - main
   pull_request:
 
 jobs:
