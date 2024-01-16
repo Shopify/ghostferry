@@ -84,3 +84,9 @@ jobs:
 
       - name: Building Ghostferry
         run: .github/workflows/build-deb.sh
+
+      - name: Upload debs
+        uses: actions/upload-artifact@v3
+        with:
+          name: debs
+          path: build/ghostferry*
