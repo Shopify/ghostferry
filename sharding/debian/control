@@ -2,7 +2,7 @@ Package: ghostferry-sharding
 Version: {version}
 Section: misc
 Priority: optional
-Architecture: amd64
+Architecture: {arch}
 Maintainer: Shuhao Wu <shuhao.wu@shopify.com>
 Uploaders: Justin Li <justin.li@shopify.com>,Hormoz Kheradmand <hormoz.kheradmand@shopify.com>
 Description: Migrate MySQL sharded data from one server to
