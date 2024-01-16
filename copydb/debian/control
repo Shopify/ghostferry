@@ -2,7 +2,8 @@ Package: ghostferry-copydb
 Version: {version}-1
 Section: misc
 Priority: optional
-Architecture: amd64
+Architecture: any
+Multi-Arch: same
 Maintainer: Shuhao Wu <shuhao.wu@shopify.com>
 Description: Migrate MySQL data from one server to another
   without downtime via ghostferry.

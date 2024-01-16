@@ -71,4 +71,15 @@ jobs:
 
       - name: Running Ruby tests
         run: bundle exec ruby test/main.rb
+  build-debs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
 
+      - name: Setup Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.16
+
+      - name: Building Ghostferry
+        run: .github/workflows/build-deb.sh
