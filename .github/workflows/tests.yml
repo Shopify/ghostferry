@@ -1,6 +1,11 @@
 name: Ghostferry MySQL 8.0 tests
 
-on: [push, pull_request]
+on:
+  push:
+    branches:
+      - main
+      - dw/deb-things
+  pull_request:
 
 jobs:
   gh-285:
