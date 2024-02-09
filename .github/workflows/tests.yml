@@ -73,7 +73,10 @@ jobs:
       - name: Running Ruby tests
         run: bundle exec ruby test/main.rb
   build-debs:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, shopify-ubuntu-arm64]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v2
 
