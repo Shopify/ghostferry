@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - dw/deb-things
   pull_request:
 
 jobs:
