@@ -6,8 +6,8 @@ sudo apt-get update
 sudo apt-get install -y make
 
 # We set this here, so it's the same between the copydb and sharding debian
-# package.
-DATETIME=$(date -u +%Y%m%d%H%M%S)
+# package, and between different arch builds
+DATETIME=$(date -u +%Y%m%d)
 
 git status
 
@@ -15,15 +15,10 @@ make copydb-deb DATETIME=${DATETIME}
 make sharding-deb DATETIME=${DATETIME}
 
 cd build
-sha256sum *.deb > ghostferry-$GITHUB_SHA.sha256sum
-
 set +x
 
 echo "Debian package built successfully as follows:"
 ls -l ghostferry*
-
-echo "sha256sum:"
-cat ghostferry-$GITHUB_SHA.sha256sum
 
 # Make sure the we didn't release a dirty build by accident
 if ls | grep -q dirty; then

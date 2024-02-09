@@ -93,3 +93,23 @@ jobs:
         with:
           name: debs
           path: build/ghostferry*
+
+  checksum-debs:
+    runs-on: ubuntu-latest
+    needs: build-debs
+    steps:
+      - name: Fetch uploaded artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: debs
+      - name: shasum
+        shell: bash
+        run: |
+          sha256sum *.deb > ghostferry-$GITHUB_SHA.sha256sum
+          echo "sha256sum:"
+          cat ghostferry-$GITHUB_SHA.sha256sum
+      - name: Upload checksum
+        uses: actions/upload-artifact@v3
+        with:
+          name: debs
+          path: "*.sha256sum"
