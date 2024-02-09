@@ -6,8 +6,11 @@ on:
       - main
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build-debs:
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, shopify-ubuntu-arm64]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v2
 
@@ -19,7 +22,28 @@ jobs:
       - name: Building Ghostferry
         run: .github/workflows/build-deb.sh
 
+      - name: Upload debs
+        uses: actions/upload-artifact@v3
+        with:
+          name: debs-${{ github.sha }}
+          path: build/ghostferry*
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build-debs
+    steps:
+      - name: Fetch uploaded artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: debs-${{ github.sha }}
+      - name: shasum
+        shell: bash
+        run: |
+          sha256sum *.deb > ghostferry-$GITHUB_SHA.sha256sum
+          echo "sha256sum:"
+          cat ghostferry-$GITHUB_SHA.sha256sum
+
       - name: Releasing Ghostferry to Github
-        run: gh release create --target ${GITHUB_REF#refs/heads/} -p release-${GITHUB_SHA::7} build/ghostferry*
+        run: gh release create --target ${GITHUB_REF#refs/heads/} -p release-${GITHUB_SHA::7} ghostferry*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
