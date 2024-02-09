@@ -91,7 +91,7 @@ jobs:
       - name: Upload debs
         uses: actions/upload-artifact@v3
         with:
-          name: debs
+          name: debs-${{ github.sha }}
           path: build/ghostferry*
 
   checksum-debs:
@@ -101,7 +101,7 @@ jobs:
       - name: Fetch uploaded artifacts
         uses: actions/download-artifact@v3
         with:
-          name: debs
+          name: debs-${{ github.sha }}
       - name: shasum
         shell: bash
         run: |
@@ -111,5 +111,5 @@ jobs:
       - name: Upload checksum
         uses: actions/upload-artifact@v3
         with:
-          name: debs
+          name: debs-${{ github.sha }}
           path: "*.sha256sum"
