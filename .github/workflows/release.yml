@@ -32,6 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-debs
     steps:
+      - uses: actions/checkout@v2
       - name: Fetch uploaded artifacts
         uses: actions/download-artifact@v3
         with:
