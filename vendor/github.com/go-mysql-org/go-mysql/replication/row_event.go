@@ -11,7 +11,6 @@ import (
 
 	"github.com/pingcap/errors"
 	"github.com/shopspring/decimal"
-	"github.com/siddontang/go-log/log"
 	"github.com/siddontang/go/hack"
 
 	. "github.com/go-mysql-org/go-mysql/mysql"
@@ -197,13 +196,13 @@ func (e *TableMapEvent) decodeMeta(data []byte) error {
 	for i, t := range e.ColumnType {
 		switch t {
 		case MYSQL_TYPE_STRING:
-			var x uint16 = uint16(data[pos]) << 8 //real type
-			x += uint16(data[pos+1])              //pack or field length
+			var x = uint16(data[pos]) << 8 //real type
+			x += uint16(data[pos+1])       //pack or field length
 			e.ColumnMeta[i] = x
 			pos += 2
 		case MYSQL_TYPE_NEWDECIMAL:
-			var x uint16 = uint16(data[pos]) << 8 //precision
-			x += uint16(data[pos+1])              //decimals
+			var x = uint16(data[pos]) << 8 //precision
+			x += uint16(data[pos+1])       //decimals
 			e.ColumnMeta[i] = x
 			pos += 2
 		case MYSQL_TYPE_VAR_STRING,
@@ -857,7 +856,7 @@ type RowsEvent struct {
 	ignoreJSONDecodeErr     bool
 }
 
-func (e *RowsEvent) Decode(data []byte) (err2 error) {
+func (e *RowsEvent) DecodeHeader(data []byte) (int, error) {
 	pos := 0
 	e.TableID = FixedLengthInt(data[0:e.tableIDSize])
 	pos += e.tableIDSize
@@ -890,20 +889,23 @@ func (e *RowsEvent) Decode(data []byte) (err2 error) {
 	e.Table, ok = e.tables[e.TableID]
 	if !ok {
 		if len(e.tables) > 0 {
-			return errors.Errorf("invalid table id %d, no corresponding table map event", e.TableID)
+			return 0, errors.Errorf("invalid table id %d, no corresponding table map event", e.TableID)
 		} else {
-			return errors.Annotatef(errMissingTableMapEvent, "table id %d", e.TableID)
+			return 0, errors.Annotatef(errMissingTableMapEvent, "table id %d", e.TableID)
 		}
 	}
+	return pos, nil
+}
 
-	var err error
-
+func (e *RowsEvent) DecodeData(pos int, data []byte) (err2 error) {
+	var (
+		n   int
+		err error
+	)
 	// ... repeat rows until event-end
 	defer func() {
 		if r := recover(); r != nil {
-			errStr := fmt.Sprintf("parse rows event panic %v, data %q, parsed rows %#v, table map %#v", r, data, e, e.Table)
-			log.Errorf("%s\n%s", errStr, Pstack())
-			err2 = errors.Trace(errors.New(errStr))
+			err2 = errors.Errorf("parse rows event panic %v, data %q, parsed rows %#v, table map %#v", r, data, e, e.Table)
 		}
 	}()
 
@@ -930,6 +932,14 @@ func (e *RowsEvent) Decode(data []byte) (err2 error) {
 	}
 
 	return nil
+}
+
+func (e *RowsEvent) Decode(data []byte) error {
+	pos, err := e.DecodeHeader(data)
+	if err != nil {
+		return err
+	}
+	return e.DecodeData(pos, data)
 }
 
 func isBitSet(bitmap []byte, i int) bool {
@@ -1002,7 +1012,7 @@ func (e *RowsEvent) parseFracTime(t interface{}) interface{} {
 
 // see mysql sql/log_event.cc log_event_print_value
 func (e *RowsEvent) decodeValue(data []byte, tp byte, meta uint16) (v interface{}, n int, err error) {
-	var length int = 0
+	var length = 0
 
 	if tp == MYSQL_TYPE_STRING {
 		if meta >= 256 {
@@ -1428,7 +1438,7 @@ func decodeDatetime2(data []byte, dec uint16) (interface{}, int, error) {
 
 	second := int(hms % (1 << 6))
 	minute := int((hms >> 6) % (1 << 6))
-	hour := int((hms >> 12))
+	hour := int(hms >> 12)
 
 	// DATETIME encoding for nonfractional part after MySQL 5.6.4
 	// https://dev.mysql.com/doc/internals/en/date-and-time-data-type-representation.html
@@ -1500,20 +1510,20 @@ func decodeTime2(data []byte, dec uint16) (string, int, error) {
 
 	case 5, 6:
 		tmp = int64(BFixedLengthInt(data[0:6])) - TIMEF_OFS
-		return timeFormat(tmp, n)
+		return timeFormat(tmp, dec, n)
 	default:
 		intPart = int64(BFixedLengthInt(data[0:3])) - TIMEF_INT_OFS
 		tmp = intPart << 24
 	}
 
-	if intPart == 0 {
+	if intPart == 0 && frac == 0 {
 		return "00:00:00", n, nil
 	}
 
-	return timeFormat(tmp, n)
+	return timeFormat(tmp, dec, n)
 }
 
-func timeFormat(tmp int64, n int) (string, int, error) {
+func timeFormat(tmp int64, dec uint16, n int) (string, int, error) {
 	hms := int64(0)
 	sign := ""
 	if tmp < 0 {
@@ -1529,7 +1539,8 @@ func timeFormat(tmp int64, n int) (string, int, error) {
 	secPart := tmp % (1 << 24)
 
 	if secPart != 0 {
-		return fmt.Sprintf("%s%02d:%02d:%02d.%06d", sign, hour, minute, second, secPart), n, nil
+		s := fmt.Sprintf("%s%02d:%02d:%02d.%06d", sign, hour, minute, second, secPart)
+		return s[0 : len(s)-(6-int(dec))], n, nil
 	}
 
 	return fmt.Sprintf("%s%02d:%02d:%02d", sign, hour, minute, second), n, nil

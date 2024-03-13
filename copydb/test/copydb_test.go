@@ -98,7 +98,7 @@ func (t *CopydbTestSuite) TestCreateDatabasesAndTablesAlreadyExists() {
 	testhelpers.SeedInitialData(t.ferry.TargetDB, renamedSchemaName, renamedTableName, 1)
 
 	err = t.copydbFerry.CreateDatabasesAndTables()
-	t.Require().EqualError(err, "Error 1050: Table 'test_table_1_renamed' already exists")
+	t.Require().EqualError(err, "Error 1050 (42S01): Table 'test_table_1_renamed' already exists")
 }
 
 func (t *CopydbTestSuite) TestCreateDatabasesAndTablesAlreadyExistsAllowed() {

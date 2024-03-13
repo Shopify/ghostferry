@@ -12,7 +12,7 @@ up:
   - ruby: "3.2.2"
   - bundler
   - go:
-      version: "1.16"
+      version: "1.21.3"
   - podman
   - custom:
       name: Go Dependencies

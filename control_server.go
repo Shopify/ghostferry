@@ -23,7 +23,7 @@ type ControlServerTableStatus struct {
 	LastSuccessfulPaginationKey uint64
 	TargetPaginationKey         uint64
 
-	BatchSize                   uint64
+	BatchSize uint64
 }
 
 type CustomScriptStatus struct {
@@ -214,7 +214,7 @@ func (this *ControlServer) HandleStatus(w http.ResponseWriter, r *http.Request) 
 
 	// Converting time values to seconds manually for json output
 	status.TimeTaken = status.TimeTaken / time.Second
-	status.BinlogStreamerLag = status.BinlogStreamerLag  / time.Second
+	status.BinlogStreamerLag = status.BinlogStreamerLag / time.Second
 	status.ETA = status.ETA / time.Second
 
 	w.Header().Set("Content-Type", "application/json")
@@ -295,7 +295,6 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 			LastSuccessfulPaginationKey: lastSuccessfulPaginationKey,
 			TargetPaginationKey:         tableProgress.TargetPaginationKey,
 			BatchSize:                   tableProgress.BatchSize,
-
 		}
 
 		tablesGroupByStatus[tableStatus] = append(tablesGroupByStatus[tableStatus], controlStatus)

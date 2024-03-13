@@ -40,9 +40,7 @@ func (b *BufPool) Return(buf *bytes.Buffer) {
 	b.pool.Put(buf)
 }
 
-/*
-	Conn is the base class to handle MySQL protocol.
-*/
+// Conn is the base class to handle MySQL protocol.
 type Conn struct {
 	net.Conn
 
@@ -92,7 +90,9 @@ func (c *Conn) ReadPacket() ([]byte, error) {
 func (c *Conn) ReadPacketReuseMem(dst []byte) ([]byte, error) {
 	// Here we use `sync.Pool` to avoid allocate/destroy buffers frequently.
 	buf := utils.BytesBufferGet()
-	defer utils.BytesBufferPut(buf)
+	defer func() {
+		utils.BytesBufferPut(buf)
+	}()
 
 	if err := c.ReadPacketTo(buf); err != nil {
 		return nil, errors.Trace(err)
