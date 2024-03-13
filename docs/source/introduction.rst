@@ -29,7 +29,7 @@ backup and restore along with replaying the changes via replication. Backup is
 traditionally done via mysqldump or Percona Xtrabackup. It may not be possible
 to use either of these methods if holding a transaction for a very long time is
 not feasible (mysqldump) or if the filesystem of the database host is not
-available (for Perconal Xtrabackup), such as in the case of cloud provided
+available (for Percona Xtrabackup), such as in the case of cloud provided
 database as a service.
 
 The traditional process can only move a single table at minimum. Ghostferry
