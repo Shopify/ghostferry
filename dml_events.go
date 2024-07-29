@@ -425,6 +425,7 @@ func appendEscapedValue(buffer []byte, value interface{}, column schema.TableCol
 	case string:
 		// since https://github.com/go-mysql-org/go-mysql/pull/658/files merged, go-mysql returns JSON events as a string, but we would prefer them as []byte for consistency with other types
 		if column.Type == schema.TYPE_JSON {
+			fmt.Printf("JSON value: %s\n", v)
 			return appendEscapedBuffer(buffer, []byte(v), true)
 		}
 		var rightPadLengthForBinaryColumn int = 0

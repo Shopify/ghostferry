@@ -14,4 +14,5 @@ end
 group :development do
   gem "tqdm"
   gem "pry-byebug"
+  gem "debug"
 end

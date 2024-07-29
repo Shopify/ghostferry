@@ -29,7 +29,7 @@ func (this *DMLEventsTestSuite) SetupTest() {
 
 	columns := []schema.TableColumn{
 		{Name: "col1"},
-		{Name: "col2"},
+		{Name: "col2", Type: schema.TYPE_JSON},
 		{Name: "col3"},
 	}
 
@@ -62,12 +62,13 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventGeneratesInsertQuery() {
 		Rows: [][]interface{}{
 			{1000, []byte("val1"), true},
 			{1001, []byte("val2"), false},
+			{1002, "{\"val\": 42.0}", false},
 		},
 	}
 
 	dmlEvents, err := ghostferry.NewBinlogInsertEvents(this.eventBase, rowsEvent)
 	this.Require().Nil(err)
-	this.Require().Equal(2, len(dmlEvents))
+	this.Require().Equal(3, len(dmlEvents))
 
 	q1, err := dmlEvents[0].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().Nil(err)
@@ -76,6 +77,10 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventGeneratesInsertQuery() {
 	q2, err := dmlEvents[1].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().Nil(err)
 	this.Require().Equal("INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col2`,`col3`) VALUES (1001,_binary'val2',0)", q2)
+
+	q3, err := dmlEvents[2].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
+	this.Require().Nil(err)
+	this.Require().Equal("INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col2`,`col3`) VALUES (1002,CAST('{\"val\": 42.0}' AS JSON),0)", q3)
 }
 
 func (this *DMLEventsTestSuite) TestBinlogInsertEventWithWrongColumnsReturnsError() {
@@ -117,12 +122,14 @@ func (this *DMLEventsTestSuite) TestBinlogUpdateEventGeneratesUpdateQuery() {
 			{1000, []byte("val2"), false},
 			{1001, []byte("val3"), false},
 			{1001, []byte("val4"), true},
+			{1002, "{\"val\": 42.0}", false},
+			{1002, "{\"val\": 43.0}", false},
 		},
 	}
 
 	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(this.eventBase, rowsEvent)
 	this.Require().Nil(err)
-	this.Require().Equal(2, len(dmlEvents))
+	this.Require().Equal(3, len(dmlEvents))
 
 	q1, err := dmlEvents[0].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().Nil(err)
@@ -131,6 +138,10 @@ func (this *DMLEventsTestSuite) TestBinlogUpdateEventGeneratesUpdateQuery() {
 	q2, err := dmlEvents[1].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().Nil(err)
 	this.Require().Equal("UPDATE `target_schema`.`target_table` SET `col1`=1001,`col2`=_binary'val4',`col3`=1 WHERE `col1`=1001 AND `col2`=_binary'val3' AND `col3`=0", q2)
+
+	q3, err := dmlEvents[2].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
+	this.Require().Nil(err)
+	this.Require().Equal("UPDATE `target_schema`.`target_table` SET `col1`=1002,`col2`=CAST('{\"val\": 43.0}' AS JSON),`col3`=0 WHERE `col1`=1002 AND `col2`=CAST('{\"val\": 42.0}' AS JSON) AND `col3`=0", q3)
 }
 
 func (this *DMLEventsTestSuite) TestBinlogUpdateEventWithWrongColumnsReturnsError() {

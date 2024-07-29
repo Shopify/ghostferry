@@ -99,6 +99,8 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 			return fmt.Errorf("generating sql query at pos %v: %v", ev.BinlogPosition(), err)
 		}
 
+		b.logger.Debugln(sqlStmt)
+
 		queryBuffer = append(queryBuffer, sql.AnnotateStmt(sqlStmt, b.DB.Marginalia)...)
 		queryBuffer = append(queryBuffer, ";\n"...)
 	}
