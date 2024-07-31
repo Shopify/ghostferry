@@ -42,14 +42,14 @@ type RowData []interface{}
 // https://github.com/Shopify/ghostferry/issues/165.
 //
 // In summary:
-// - This code receives values from both go-sql-driver/mysql and
-//   go-mysql-org/go-mysql.
-// - go-sql-driver/mysql gives us int64 for signed integer, and uint64 in a byte
-//   slice for unsigned integer.
-// - go-mysql-org/go-mysql gives us int64 for signed integer, and uint64 for
-//   unsigned integer.
-// - We currently make this function deal with both cases. In the future we can
-//   investigate alternative solutions.
+//   - This code receives values from both go-sql-driver/mysql and
+//     go-mysql-org/go-mysql.
+//   - go-sql-driver/mysql gives us int64 for signed integer, and uint64 in a byte
+//     slice for unsigned integer.
+//   - go-mysql-org/go-mysql gives us int64 for signed integer, and uint64 for
+//     unsigned integer.
+//   - We currently make this function deal with both cases. In the future we can
+//     investigate alternative solutions.
 func (r RowData) GetUint64(colIdx int) (uint64, error) {
 	u64, ok := Uint64Value(r[colIdx])
 	if ok {
@@ -292,6 +292,12 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 			)
 		}
 		for i, col := range table.Columns {
+			if col.Type == schema.TYPE_JSON {
+				bytes, ok := row[i].([]uint8)
+				if ok {
+					row[i] = string(bytes)
+				}
+			}
 			if col.IsUnsigned {
 				switch v := row[i].(type) {
 				case int64:
@@ -501,10 +507,10 @@ func Int64Value(value interface{}) (int64, bool) {
 //
 // This is specifically mentioned in the the below link:
 //
-//    When BINARY values are stored, they are right-padded with the pad value
-//    to the specified length. The pad value is 0x00 (the zero byte). Values
-//    are right-padded with 0x00 for inserts, and no trailing bytes are removed
-//    for retrievals.
+//	When BINARY values are stored, they are right-padded with the pad value
+//	to the specified length. The pad value is 0x00 (the zero byte). Values
+//	are right-padded with 0x00 for inserts, and no trailing bytes are removed
+//	for retrievals.
 //
 // ref: https://dev.mysql.com/doc/refman/5.7/en/binary-varbinary.html
 func appendEscapedString(buffer []byte, value string, rightPadToLengthWithZeroBytes int) []byte {
