@@ -141,6 +141,60 @@ class InlineVerifierTest < GhostferryTestCase
     end
   end
 
+  def test_json_data_with_float_numbers_verification_fail
+    [source_db, target_db].each do |db|
+      db.query("CREATE DATABASE IF NOT EXISTS #{DEFAULT_DB}")
+      db.query("CREATE TABLE IF NOT EXISTS #{DEFAULT_FULL_TABLE_NAME} (id bigint(20) not null auto_increment, data JSON, data2 JSON, primary key(id))")
+    end
+
+    enable_corrupting_insert_trigger(2, '{\"data\": {\"float\": 100}}')
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY,  config: { verifier_type: "Inline" })
+
+    ghostferry.on_status(Ghostferry::Status::BINLOG_STREAMING_STARTED) do
+      source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data, data2) VALUES ('{\"data\": {\"float\": 32.0}}', '{\"data\": {\"float\": 42.0}}')")
+      source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data, data2) VALUES ('{\"data\": {\"float\": 25.0}}', '{\"data\": {\"float\": 35.0}}')")
+    end
+
+    verification_ran = false
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*incorrect_tables|
+      verification_ran = true
+      assert_equal ["gftest.test_table_1"], incorrect_tables
+    end
+
+    ghostferry.run
+    assert verification_ran
+
+    assert ghostferry.error_lines.last["msg"].start_with?("cutover verification failed for: gftest.test_table_1 [paginationKeys: 2")
+  end
+
+  def test_json_data_with_float_numbers_verification
+    [source_db, target_db].each do |db|
+      db.query("CREATE DATABASE IF NOT EXISTS #{DEFAULT_DB}")
+      db.query("CREATE TABLE IF NOT EXISTS #{DEFAULT_FULL_TABLE_NAME} (id bigint(20) not null auto_increment, data JSON, data2 JSON, primary key(id))")
+    end
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY,  config: { verifier_type: "Inline" })
+
+    ghostferry.on_status(Ghostferry::Status::BINLOG_STREAMING_STARTED) do
+      source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data, data2) VALUES ('{\"data\": {\"float\": 32.0}}', '{\"data\": {\"float\": 42.0}}')")
+      source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data, data2) VALUES ('{\"data\": {\"float\": 25.0}}', '{\"data\": {\"float\": 35.0}}')")
+    end
+
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
+
+    ghostferry.run
+
+    assert_nil ghostferry.error
+    assert verification_ran
+    assert_equal [], incorrect_tables
+  end
+
   def test_catches_binlog_streamer_corruption
     seed_random_data(source_db, number_of_rows: 1)
     seed_random_data(target_db, number_of_rows: 0)
@@ -613,12 +667,12 @@ class InlineVerifierTest < GhostferryTestCase
     db.query("ALTER TABLE #{DEFAULT_FULL_TABLE_NAME} MODIFY data VARCHAR(255) CHARACTER SET #{charset} COLLATE #{CHARSET_TO_COLLATION[charset]}")
   end
 
-  def enable_corrupting_insert_trigger(corrupting_id)
+  def enable_corrupting_insert_trigger(corrupting_id, new_data = "corrupted")
     query = [
       "CREATE TRIGGER #{INSERT_TRIGGER_NAME} BEFORE INSERT ON #{DEFAULT_TABLE}",
       "FOR EACH ROW BEGIN",
       "IF NEW.id = #{corrupting_id} THEN",
-      "SET NEW.data = 'corrupted';",
+      "SET NEW.data = '#{new_data}';",
       "END IF;",
       "END",
     ].join("\n")

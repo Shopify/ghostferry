@@ -9,10 +9,15 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"encoding/json"
+	"reflect"
+	sqlorig "database/sql"
+
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/golang/snappy"
+	"github.com/go-mysql-org/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -696,7 +701,7 @@ func (v *InlineVerifier) verifyAllEventsInStore() (bool, map[string]map[string][
 	v.logger.WithField("batches", len(allBatches)).Debug("verifyAllEventsInStore")
 
 	for _, batch := range allBatches {
-		batchMismatches, err := v.verifyBinlogBatch(batch)
+		batchMismatches, err := v.verifyBinlogBatch(batch, false)
 		if err != nil {
 			return false, nil, err
 		}
@@ -724,7 +729,11 @@ func (v *InlineVerifier) verifyAllEventsInStore() (bool, map[string]map[string][
 // Since the mismatches gets re-added to the reverify store, this must return
 // a union of mismatches of fingerprints and mismatches due to decompressed
 // data.
-func (v *InlineVerifier) verifyBinlogBatch(batch BinlogVerifyBatch) ([]InlineVerifierMismatches, error) {
+func (v *InlineVerifier) verifyBinlogBatch(batch BinlogVerifyBatch, skipJsonColumnCheck bool) ([]InlineVerifierMismatches, error) {
+	if !skipJsonColumnCheck {
+		skipJsonColumnCheck = false
+	}
+
 	targetSchema := batch.SchemaName
 	if targetSchemaName, exists := v.DatabaseRewrites[targetSchema]; exists {
 		targetSchema = targetSchemaName
@@ -783,5 +792,208 @@ func (v *InlineVerifier) verifyBinlogBatch(batch BinlogVerifyBatch) ([]InlineVer
 		return nil, targetErr
 	}
 
-	return v.compareHashesAndData(sourceFingerprints, targetFingerprints, sourceDecompressedData, targetDecompressedData), nil
+	mismatches := v.compareHashesAndData(sourceFingerprints, targetFingerprints, sourceDecompressedData, targetDecompressedData)
+
+	if len(mismatches) > 0 && !skipJsonColumnCheck {
+		return v.compareJsonColumnValues(batch, mismatches, sourceTableSchema, targetSchema, targetTable)
+	}
+
+	return mismatches, nil
 }
+
+func (v *InlineVerifier) compareJsonColumnValues(batch BinlogVerifyBatch, mismatches []InlineVerifierMismatches, sourceTableSchema *TableSchema, targetSchema string, targetTable string) ([]InlineVerifierMismatches, error) {
+	jsonColumnNames := []string{}
+	for _, column := range sourceTableSchema.Columns {
+		if column.Type == schema.TYPE_JSON {
+			jsonColumnNames = append(jsonColumnNames, column.Name)
+		}
+	}
+
+	if len(jsonColumnNames) > 0 {
+		addJsonColumnNamesToIgnoredColumnsForVerification(sourceTableSchema, jsonColumnNames)
+
+		mismatches, err := v.verifyBinlogBatch(batch, true)
+
+		if err != nil {
+			return nil, err
+		}
+
+		if len(mismatches) == 0 {
+			args := make([]interface{}, len(batch.PaginationKeys))
+			for i, paginationKey := range batch.PaginationKeys {
+				args[i] = paginationKey
+			}
+
+			sourceQuery := jsonColumnValueQuery(sourceTableSchema, batch.SchemaName, batch.TableName, jsonColumnNames, len(batch.PaginationKeys))
+			targetQuery := jsonColumnValueQuery(sourceTableSchema, targetSchema, targetTable, jsonColumnNames, len(batch.PaginationKeys))
+
+			sourceStatement, _ := v.sourceStmtCache.StmtFor(v.SourceDB, sourceQuery)
+			targetStatement, _ := v.targetStmtCache.StmtFor(v.TargetDB, targetQuery)
+
+			sourceRows, _ := sourceStatement.Query(args...)
+			targetRows, _ := targetStatement.Query(args...)
+
+			defer sourceRows.Close()
+			defer targetRows.Close()
+
+			sourceRowBatch := [][][]byte{}
+			targetRowBatch := [][][]byte{}
+
+			sourceRowBatch, err = addRowsToBatch(sourceRows, sourceRowBatch, len(jsonColumnNames))
+
+			if err != nil {
+				return nil, err
+			}
+
+			targetRowBatch, err = addRowsToBatch(targetRows, targetRowBatch, len(jsonColumnNames))
+
+			if err != nil {
+				return nil, err
+			}
+
+			var sourceJsonColumnValue map[string]interface{}
+			var sourcePaginationKey uint64
+
+			var targetJsonColumnValue map[string]interface{}
+			var targetPaginationKey uint64
+
+			for i := 0; i < len(args); i++ {
+				sourceRowData := sourceRowBatch[i]
+				targetRowData := targetRowBatch[i]
+
+				sourcePaginationKey, _ = strconv.ParseUint(string(sourceRowData[0]), 10, 64)
+				targetPaginationKey, _ = strconv.ParseUint(string(targetRowData[0]), 10, 64)
+
+				mismatchJsonColumns := []string{}
+				paginationKeysWithMismatchedJson := []uint64{}
+
+				for  j, jsonColumn := range jsonColumnNames {
+					err := json.Unmarshal([]byte(sourceRowData[j+1]), &sourceJsonColumnValue)
+
+					if err != nil {
+						fmt.Println("Error parsing JSON:", err)
+						return nil, err
+					}
+
+					err = json.Unmarshal([]byte(targetRowData[j+1]), &targetJsonColumnValue)
+
+					if err != nil {
+						fmt.Println("Error parsing JSON:", err)
+						return nil, err
+					}
+
+					if sourcePaginationKey == targetPaginationKey && reflect.DeepEqual(sourceJsonColumnValue, targetJsonColumnValue) {
+						continue
+					}
+
+					if !uint64SliceContains(paginationKeysWithMismatchedJson, sourcePaginationKey) {
+						paginationKeysWithMismatchedJson = append(paginationKeysWithMismatchedJson, sourcePaginationKey)
+					}
+
+					if !stringSliceContains(mismatchJsonColumns, jsonColumn) {
+						mismatchJsonColumns = append(mismatchJsonColumns, jsonColumn)
+					}
+				}
+
+				if len(mismatchJsonColumns) > 0 {
+					removeJsonColumnsFromIgnoredColumnsForVerification(sourceTableSchema, mismatchJsonColumns)
+
+					mismatched, err := v.verifyBinlogBatch(batch, true)
+
+					if err != nil {
+						return nil, err
+					}
+
+					filteredMismatches := []InlineVerifierMismatches{}
+
+					// filtering out the mismatches that have successful json value comparison
+					for _, mismatch := range mismatched {
+						for _, mismatchedJsonPK := range paginationKeysWithMismatchedJson {
+							if mismatch.Pk == mismatchedJsonPK {
+								filteredMismatches = append(filteredMismatches, mismatch)
+							}
+						}
+					}
+
+					return filteredMismatches, nil
+				}
+			}
+
+			return mismatches, nil
+		}
+
+		return mismatches, nil
+	}
+
+	return mismatches, nil
+}
+
+
+func jsonColumnValueQuery(sourceTableSchema *TableSchema, schemaName string, tableName string, jsonColumnNames []string, paginationKeysCount int) (string) {
+	paginationColumn := QuoteField(sourceTableSchema.GetPaginationColumn().Name)
+
+	return fmt.Sprintf(
+		"SELECT %s FROM %s WHERE %s IN (%s) ORDER BY %s",
+		fmt.Sprintf("%s, %s", paginationColumn, strings.Join(jsonColumnNames, ",")),
+		QuotedTableNameFromString(schemaName, tableName),
+		paginationColumn,
+		strings.Repeat("?,", paginationKeysCount-1)+"?",
+		paginationColumn,
+	)
+}
+
+func addJsonColumnNamesToIgnoredColumnsForVerification(sourceTableSchema *TableSchema, jsonColumnNames []string) {
+	for _, jsonColumn := range jsonColumnNames {
+		if sourceTableSchema.IgnoredColumnsForVerification == nil {
+			sourceTableSchema.IgnoredColumnsForVerification = make(map[string]struct{})
+		}
+
+		sourceTableSchema.IgnoredColumnsForVerification[jsonColumn] = struct{}{}
+	}
+
+	sourceTableSchema.rowMd5Query = ""
+	sourceTableSchema.RowMd5Query()
+}
+
+func addRowsToBatch(rows *sqlorig.Rows, batch [][][]byte, jsonColumnsCount int) ([][][]byte, error) {
+	for rows.Next() {
+		rowData, err := ScanByteRow(rows, jsonColumnsCount + 1)
+		if err != nil {
+			return nil, err
+		}
+
+		batch = append(batch, rowData)
+	}
+
+	return batch, nil
+}
+
+func removeJsonColumnsFromIgnoredColumnsForVerification(sourceTableSchema *TableSchema, jsonColumnNames []string){
+	for _, jsonColumn := range jsonColumnNames {
+		delete(sourceTableSchema.IgnoredColumnsForVerification, jsonColumn)
+	}
+
+	sourceTableSchema.rowMd5Query = ""
+	sourceTableSchema.RowMd5Query()
+}
+
+func uint64SliceContains(s []uint64, item uint64) bool {
+	for _, v := range s {
+		if item == v {
+			return true
+		}
+	}
+
+	return false
+}
+
+func stringSliceContains(s []string, item string) bool {
+	for _, v := range s {
+		if item == v {
+			return true
+		}
+	}
+
+	return false
+}
+
