@@ -3,21 +3,19 @@ package ghostferry
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"encoding/json"
-	"reflect"
-	sqlorig "database/sql"
-
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
-	"github.com/golang/snappy"
 	"github.com/go-mysql-org/go-mysql/schema"
+	"github.com/golang/snappy"
 	"github.com/sirupsen/logrus"
 )
 
@@ -730,10 +728,6 @@ func (v *InlineVerifier) verifyAllEventsInStore() (bool, map[string]map[string][
 // a union of mismatches of fingerprints and mismatches due to decompressed
 // data.
 func (v *InlineVerifier) verifyBinlogBatch(batch BinlogVerifyBatch, skipJsonColumnCheck bool) ([]InlineVerifierMismatches, error) {
-	if !skipJsonColumnCheck {
-		skipJsonColumnCheck = false
-	}
-
 	targetSchema := batch.SchemaName
 	if targetSchemaName, exists := v.DatabaseRewrites[targetSchema]; exists {
 		targetSchema = targetSchemaName
@@ -809,127 +803,124 @@ func (v *InlineVerifier) compareJsonColumnValues(batch BinlogVerifyBatch, mismat
 		}
 	}
 
-	if len(jsonColumnNames) > 0 {
-		addJsonColumnNamesToIgnoredColumnsForVerification(sourceTableSchema, jsonColumnNames)
+	if len(jsonColumnNames) == 0 {
+		return mismatches, nil
+	}
 
-		mismatches, err := v.verifyBinlogBatch(batch, true)
+	addJsonColumnNamesToIgnoredColumnsForVerification(sourceTableSchema, jsonColumnNames)
 
+	mismatches, err := v.verifyBinlogBatch(batch, true)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(mismatches) > 0 {
+		return mismatches, nil
+	}
+
+	args := make([]interface{}, len(batch.PaginationKeys))
+	for i, paginationKey := range batch.PaginationKeys {
+		args[i] = paginationKey
+	}
+
+	sourceQuery := jsonColumnValueQuery(sourceTableSchema, batch.SchemaName, batch.TableName, jsonColumnNames, len(batch.PaginationKeys))
+	targetQuery := jsonColumnValueQuery(sourceTableSchema, targetSchema, targetTable, jsonColumnNames, len(batch.PaginationKeys))
+
+	sourceStatement, _ := v.sourceStmtCache.StmtFor(v.SourceDB, sourceQuery)
+	targetStatement, _ := v.targetStmtCache.StmtFor(v.TargetDB, targetQuery)
+
+	sourceRows, _ := sourceStatement.Query(args...)
+	targetRows, _ := targetStatement.Query(args...)
+
+	defer sourceRows.Close()
+	defer targetRows.Close()
+
+	mismatchedJsonColumns := []string{}
+	paginationKeysWithMismatchedJson := []uint64{}
+
+	for {
+		hasSourceRows := sourceRows.Next()
+		hasTargetRows := targetRows.Next()
+
+		if !hasSourceRows && !hasTargetRows {
+			break
+		}
+
+		if (hasSourceRows && !hasTargetRows) || (!hasSourceRows && hasTargetRows) {
+			return nil, fmt.Errorf("Number of source and target rows are different")
+		}
+
+		sourceRowData, err := ScanByteRow(sourceRows, len(jsonColumnNames) + 1)
 		if err != nil {
 			return nil, err
 		}
 
-		if len(mismatches) == 0 {
-			args := make([]interface{}, len(batch.PaginationKeys))
-			for i, paginationKey := range batch.PaginationKeys {
-				args[i] = paginationKey
-			}
-
-			sourceQuery := jsonColumnValueQuery(sourceTableSchema, batch.SchemaName, batch.TableName, jsonColumnNames, len(batch.PaginationKeys))
-			targetQuery := jsonColumnValueQuery(sourceTableSchema, targetSchema, targetTable, jsonColumnNames, len(batch.PaginationKeys))
-
-			sourceStatement, _ := v.sourceStmtCache.StmtFor(v.SourceDB, sourceQuery)
-			targetStatement, _ := v.targetStmtCache.StmtFor(v.TargetDB, targetQuery)
-
-			sourceRows, _ := sourceStatement.Query(args...)
-			targetRows, _ := targetStatement.Query(args...)
-
-			defer sourceRows.Close()
-			defer targetRows.Close()
-
-			sourceRowBatch := [][][]byte{}
-			targetRowBatch := [][][]byte{}
-
-			sourceRowBatch, err = addRowsToBatch(sourceRows, sourceRowBatch, len(jsonColumnNames))
-
-			if err != nil {
-				return nil, err
-			}
-
-			targetRowBatch, err = addRowsToBatch(targetRows, targetRowBatch, len(jsonColumnNames))
-
-			if err != nil {
-				return nil, err
-			}
-
-			var sourceJsonColumnValue map[string]interface{}
-			var sourcePaginationKey uint64
-
-			var targetJsonColumnValue map[string]interface{}
-			var targetPaginationKey uint64
-
-			for i := 0; i < len(args); i++ {
-				sourceRowData := sourceRowBatch[i]
-				targetRowData := targetRowBatch[i]
-
-				sourcePaginationKey, _ = strconv.ParseUint(string(sourceRowData[0]), 10, 64)
-				targetPaginationKey, _ = strconv.ParseUint(string(targetRowData[0]), 10, 64)
-
-				mismatchJsonColumns := []string{}
-				paginationKeysWithMismatchedJson := []uint64{}
-
-				for  j, jsonColumn := range jsonColumnNames {
-					err := json.Unmarshal([]byte(sourceRowData[j+1]), &sourceJsonColumnValue)
-
-					if err != nil {
-						fmt.Println("Error parsing JSON:", err)
-						return nil, err
-					}
-
-					err = json.Unmarshal([]byte(targetRowData[j+1]), &targetJsonColumnValue)
-
-					if err != nil {
-						fmt.Println("Error parsing JSON:", err)
-						return nil, err
-					}
-
-					if sourcePaginationKey == targetPaginationKey && reflect.DeepEqual(sourceJsonColumnValue, targetJsonColumnValue) {
-						continue
-					}
-
-					if !uint64SliceContains(paginationKeysWithMismatchedJson, sourcePaginationKey) {
-						paginationKeysWithMismatchedJson = append(paginationKeysWithMismatchedJson, sourcePaginationKey)
-					}
-
-					if !stringSliceContains(mismatchJsonColumns, jsonColumn) {
-						mismatchJsonColumns = append(mismatchJsonColumns, jsonColumn)
-					}
-				}
-
-				if len(mismatchJsonColumns) > 0 {
-					removeJsonColumnsFromIgnoredColumnsForVerification(sourceTableSchema, mismatchJsonColumns)
-
-					mismatched, err := v.verifyBinlogBatch(batch, true)
-
-					if err != nil {
-						return nil, err
-					}
-
-					filteredMismatches := []InlineVerifierMismatches{}
-
-					// filtering out the mismatches that have successful json value comparison
-					for _, mismatch := range mismatched {
-						for _, mismatchedJsonPK := range paginationKeysWithMismatchedJson {
-							if mismatch.Pk == mismatchedJsonPK {
-								filteredMismatches = append(filteredMismatches, mismatch)
-							}
-						}
-					}
-
-					return filteredMismatches, nil
-				}
-			}
-
-			return mismatches, nil
+		targetRowData, err := ScanByteRow(targetRows, len(jsonColumnNames) + 1)
+		if err != nil {
+			return nil, err
 		}
 
+		var sourceJsonColumnValue map[string]interface{}
+		var sourcePaginationKey uint64
+
+		var targetJsonColumnValue map[string]interface{}
+		var targetPaginationKey uint64
+
+		sourcePaginationKey, _ = strconv.ParseUint(string(sourceRowData[0]), 10, 64)
+		targetPaginationKey, _ = strconv.ParseUint(string(targetRowData[0]), 10, 64)
+
+		for j, jsonColumn := range jsonColumnNames {
+			err := json.Unmarshal([]byte(sourceRowData[j+1]), &sourceJsonColumnValue)
+			if err != nil {
+				return nil, fmt.Errorf("unmarshalling target rowdata: %w")
+			}
+
+			err = json.Unmarshal([]byte(targetRowData[j+1]), &targetJsonColumnValue)
+			if err != nil {
+				return nil, fmt.Errorf("unmarshalling target rowdata: %w")
+			}
+
+			if sourcePaginationKey == targetPaginationKey && reflect.DeepEqual(sourceJsonColumnValue, targetJsonColumnValue) {
+				continue
+			}
+
+			if !uint64SliceContains(paginationKeysWithMismatchedJson, sourcePaginationKey) {
+				paginationKeysWithMismatchedJson = append(paginationKeysWithMismatchedJson, sourcePaginationKey)
+			}
+
+			if !stringSliceContains(mismatchedJsonColumns, jsonColumn) {
+				mismatchedJsonColumns = append(mismatchedJsonColumns, jsonColumn)
+			}
+		}
+	}
+
+	if len(mismatchedJsonColumns) == 0 {
 		return mismatches, nil
 	}
 
-	return mismatches, nil
+	removeJsonColumnsFromIgnoredColumnsForVerification(sourceTableSchema, mismatchedJsonColumns)
+
+	mismatched, err := v.verifyBinlogBatch(batch, true)
+
+	if err != nil {
+		return nil, err
+	}
+
+	filteredMismatches := []InlineVerifierMismatches{}
+
+	// filtering out the mismatches that have successful json value comparison
+	for _, mismatch := range mismatched {
+		for _, mismatchedJsonPK := range paginationKeysWithMismatchedJson {
+			if mismatch.Pk == mismatchedJsonPK {
+				filteredMismatches = append(filteredMismatches, mismatch)
+			}
+		}
+	}
+
+	return filteredMismatches, nil
 }
 
-
-func jsonColumnValueQuery(sourceTableSchema *TableSchema, schemaName string, tableName string, jsonColumnNames []string, paginationKeysCount int) (string) {
+func jsonColumnValueQuery(sourceTableSchema *TableSchema, schemaName string, tableName string, jsonColumnNames []string, paginationKeysCount int) string {
 	paginationColumn := QuoteField(sourceTableSchema.GetPaginationColumn().Name)
 
 	return fmt.Sprintf(
@@ -953,19 +944,6 @@ func addJsonColumnNamesToIgnoredColumnsForVerification(sourceTableSchema *TableS
 
 	sourceTableSchema.rowMd5Query = ""
 	sourceTableSchema.RowMd5Query()
-}
-
-func addRowsToBatch(rows *sqlorig.Rows, batch [][][]byte, jsonColumnsCount int) ([][][]byte, error) {
-	for rows.Next() {
-		rowData, err := ScanByteRow(rows, jsonColumnsCount + 1)
-		if err != nil {
-			return nil, err
-		}
-
-		batch = append(batch, rowData)
-	}
-
-	return batch, nil
 }
 
 func removeJsonColumnsFromIgnoredColumnsForVerification(sourceTableSchema *TableSchema, jsonColumnNames []string){
@@ -996,4 +974,3 @@ func stringSliceContains(s []string, item string) bool {
 
 	return false
 }
-
