@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - prerelease
 
 jobs:
   build-debs:
@@ -45,6 +46,8 @@ jobs:
           cat ghostferry-$GITHUB_SHA.sha256sum
 
       - name: Releasing Ghostferry to Github
-        run: gh release create --target ${GITHUB_REF#refs/heads/} -p release-${GITHUB_SHA::7} ghostferry*
+        run: |
+          if [[ "${GITHUB_REF#refs/heads/}" == "prerelease" ]]; then PRERELEASE="--prerelease"; fi
+          gh release create --target ${GITHUB_REF#refs/heads/} -p release-${GITHUB_SHA::7} ${PRERELEASE} ghostferry*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
