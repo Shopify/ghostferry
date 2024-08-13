@@ -19,7 +19,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v2
         with:
-          go-version: 1.16
+          go-version: 1.22.1
 
       - name: Starting up MySQL
         run: .github/workflows/start-mysql.sh
@@ -38,7 +38,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v2
         with:
-          go-version: 1.16
+          go-version: 1.22.1
 
       - name: Starting up MySQL
         run: .github/workflows/start-mysql.sh
@@ -58,7 +58,7 @@ jobs:
       - name: Setup Golang
         uses: actions/setup-go@v2
         with:
-          go-version: 1.16
+          go-version: 1.22.1
 
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1

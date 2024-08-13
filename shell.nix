@@ -1,6 +1,6 @@
 with (import <nixpkgs> {});
 let
-  ruby = ruby_2_7;
+  ruby = ruby_3_3_3;
   env = bundlerEnv {
     name = "ghostferry-bundler-env";
     ruby = ruby;
@@ -15,7 +15,7 @@ in stdenv.mkDerivation {
   buildInputs = [
     env
     ruby
-    go_1_16
+    go_1_22_1
     mysql57
   ];
 }
