@@ -14,10 +14,10 @@ jobs:
       CI: "true"
       MYSQL_VERSION: "8.0"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Setup Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
           go-version: 1.22.1
 
@@ -33,10 +33,10 @@ jobs:
       CI: "true"
       MYSQL_VERSION: "8.0"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Setup Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
           go-version: 1.22.1
 
@@ -53,10 +53,10 @@ jobs:
       BUNDLE_WITHOUT: "development"
       MYSQL_VERSION: "8.0"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Setup Golang
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
           go-version: 1.22.1
 
@@ -77,10 +77,10 @@ jobs:
         runner: [ubuntu-latest, shopify-ubuntu-arm64]
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
       - name: Setup Go
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v4
         with:
           go-version: 1.22.1
 
