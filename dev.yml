@@ -5,7 +5,7 @@ env:
 
 up:
   - packages:
-      - mysql-client
+      - mysql-client@5.7
   - ruby: "3.2.2"
   - bundler
   - go:
