@@ -4,11 +4,8 @@ env:
   MYSQL_VERSION: "8.0"
 
 up:
-  - homebrew:
-      - mysql-client@5.7:
-          or: [mysql@5.7]
-          conflicts: [mysql-connector-c, mysql, mysql-client]
-
+  - packages:
+      - mysql-client
   - ruby: "3.2.2"
   - bundler
   - go:
