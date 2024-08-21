@@ -12,15 +12,19 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+type JoinThroughTable struct {
+	JoinedTableName, JoinCondition string
+}
 type JoinTable struct {
 	TableName, JoinColumn string
 }
 
 type ShardedCopyFilter struct {
-	ShardingKey      string
-	ShardingValue    interface{}
-	JoinedTables     map[string][]JoinTable
-	PrimaryKeyTables map[string]struct{}
+	ShardingKey         string
+	ShardingValue       interface{}
+	JoinedTables        map[string][]JoinTable
+	JoinedThroughTables map[string]JoinThroughTable
+	PrimaryKeyTables    map[string]struct{}
 
 	missingShardingKeyIndexLogged sync.Map
 }
@@ -44,77 +48,96 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 			Where(sq.Gt{quotedPaginationKey: lastPaginationKey}), nil
 	}
 
-	joinTables, exists := f.JoinedTables[table.Name]
-	if !exists {
-		// This is a normal sharded table; functionally:
-		//   SELECT * FROM x
-		//     WHERE ShardingKey = ShardingValue AND PaginationKey > LastPaginationKey
-		//     ORDER BY PaginationKey LIMIT BatchSize
+	if joinTables, exists := f.JoinedTables[table.Name]; exists {
+		// This is a "joined table". It is the only supported type of table that
+		// does not have the sharding key in any column. This only occurs when a
+		// row may be shared between multiple sharding values, otherwise a sharding
+		// key column can be added.
 		//
-		// However, we found that for some tables, MySQL would not use the
-		// covering index correctly, indicated in EXPLAIN by used_key_parts
-		// including only the sharding key. Copying a sharding key having many
-		// rows in an affected table was very slow.
+		// To determine which rows in the joined table are copied, the "join table"
+		// is consulted. The join table must contain a sharding key column and a
+		// column relating the joined table. There may be multiple join tables for
+		// for one joined table.
 		//
-		// To force MySQL to use the index fully, we use:
-		//   SELECT * FROM x JOIN (SELECT PaginationKey FROM x ...) USING (PaginationKey)
+		// Such tables are typically going to have reference-counted/copy-on-write
+		// values, and we require their rows to be immutable (no UPDATE) and
+		// uniquely identified by primary key (perhaps the hash of another column).
 		//
-		// i.e. load the primary keys first, then load the rest of the columns.
+		// The final query is something like:
+		//
+		// SELECT * FROM x WHERE PaginationKey IN (
+		//   (SELECT PaginationKey FROM JoinTable1 WHERE ShardingKey = ? AND JoinTable1.PaginationKey > ?)
+		//   UNION DISTINCT
+		//   (SELECT PaginationKey FROM JoinTable2 WHERE ShardingKey = ? AND JoinTable2.PaginationKey > ?)
+		//      < ... more UNION DISTINCT for each other join table >
+		//   ORDER BY PaginationKey LIMIT BatchSize
+		// )
+		//
+		// i.e. load the primary keys for each join table, take their UNION, limit
+		// it to a batch, then select the rest of the columns.
+		var clauses []string
+		var args []interface{}
 
-		selectPaginationKeys := "SELECT " + quotedPaginationKey + " FROM " + quotedTable + " " + f.shardingKeyIndexHint(table) +
-			" WHERE " + quotedShardingKey + " = ? AND " + quotedPaginationKey + " > ?" +
-			" ORDER BY " + quotedPaginationKey + " LIMIT " + strconv.Itoa(int(batchSize))
+		for _, joinTable := range joinTables {
+			pattern := "SELECT `%s` AS sharding_join_alias FROM `%s`.`%s` WHERE `%s` = ? AND `%s` > ?"
+			sql := fmt.Sprintf(pattern, joinTable.JoinColumn, table.Schema, joinTable.TableName, f.ShardingKey, joinTable.JoinColumn)
+			clauses = append(clauses, sql)
+			args = append(args, f.ShardingValue, lastPaginationKey)
+		}
+
+		subquery := strings.Join(clauses, " UNION DISTINCT ")
+		subquery += " ORDER BY sharding_join_alias LIMIT " + strconv.FormatUint(batchSize, 10)
+
+		condition := fmt.Sprintf("%s IN (SELECT * FROM (%s) AS sharding_join_table)", quotedPaginationKey, subquery)
 
 		return sq.Select(columns...).
 			From(quotedTable).
-			Join("("+selectPaginationKeys+") AS `batch` USING("+quotedPaginationKey+")", f.ShardingValue, lastPaginationKey), nil
+			Where(sq.Expr(condition, args...)).
+			OrderBy(quotedPaginationKey), nil // LIMIT comes from the subquery.
 	}
 
-	// This is a "joined table". It is the only supported type of table that
-	// does not have the sharding key in any column. This only occurs when a
-	// row may be shared between multiple sharding values, otherwise a sharding
-	// key column can be added.
-	//
-	// To determine which rows in the joined table are copied, the "join table"
-	// is consulted. The join table must contain a sharding key column and a
-	// column relating the joined table. There may be multiple join tables for
-	// for one joined table.
-	//
-	// Such tables are typically going to have reference-counted/copy-on-write
-	// values, and we require their rows to be immutable (no UPDATE) and
-	// uniquely identified by primary key (perhaps the hash of another column).
-	//
-	// The final query is something like:
-	//
-	// SELECT * FROM x WHERE PaginationKey IN (
-	//   (SELECT PaginationKey FROM JoinTable1 WHERE ShardingKey = ? AND JoinTable1.PaginationKey > ?)
-	//   UNION DISTINCT
-	//   (SELECT PaginationKey FROM JoinTable2 WHERE ShardingKey = ? AND JoinTable2.PaginationKey > ?)
-	//      < ... more UNION DISTINCT for each other join table >
-	//   ORDER BY PaginationKey LIMIT BatchSize
-	// )
-	//
-	// i.e. load the primary keys for each join table, take their UNION, limit
-	// it to a batch, then select the rest of the columns.
-	var clauses []string
-	var args []interface{}
+	if joinThroughTable, exists := f.JoinedThroughTables[table.Name]; exists {
+		// Target query:
+		//
+		// SELECT * FROM x
+		// JOIN JoinedTableName ON JoinCondition
+		// WHERE JoinedTableName.ShardingKey = ?
+		// AND x.PaginationKey > LastPaginationKey
+		// ORDER BY x.PaginationKey
+		// LIMIT BatchSize
 
-	for _, joinTable := range joinTables {
-		pattern := "SELECT `%s` AS sharding_join_alias FROM `%s`.`%s` WHERE `%s` = ? AND `%s` > ?"
-		sql := fmt.Sprintf(pattern, joinTable.JoinColumn, table.Schema, joinTable.TableName, f.ShardingKey, joinTable.JoinColumn)
-		clauses = append(clauses, sql)
-		args = append(args, f.ShardingValue, lastPaginationKey)
+		return sq.Select(columns...).
+			From(quotedTable).
+			Join(joinThroughTable.JoinedTableName + " ON " + joinThroughTable.JoinCondition).
+			Where(sq.Eq{joinThroughTable.JoinedTableName + "." + f.ShardingKey: f.ShardingValue}).
+			Where(sq.Gt{quotedPaginationKey: lastPaginationKey}).
+			OrderBy(quotedPaginationKey).
+			Limit(batchSize), nil
 	}
 
-	subquery := strings.Join(clauses, " UNION DISTINCT ")
-	subquery += " ORDER BY sharding_join_alias LIMIT " + strconv.FormatUint(batchSize, 10)
+	// This is a normal sharded table; functionally:
+	//   SELECT * FROM x
+	//     WHERE ShardingKey = ShardingValue AND PaginationKey > LastPaginationKey
+	//     ORDER BY PaginationKey LIMIT BatchSize
+	//
+	// However, we found that for some tables, MySQL would not use the
+	// covering index correctly, indicated in EXPLAIN by used_key_parts
+	// including only the sharding key. Copying a sharding key having many
+	// rows in an affected table was very slow.
+	//
+	// To force MySQL to use the index fully, we use:
+	//   SELECT * FROM x JOIN (SELECT PaginationKey FROM x ...) USING (PaginationKey)
+	//
+	// i.e. load the primary keys first, then load the rest of the columns.
 
-	condition := fmt.Sprintf("%s IN (SELECT * FROM (%s) AS sharding_join_table)", quotedPaginationKey, subquery)
+	selectPaginationKeys := "SELECT " + quotedPaginationKey + " FROM " + quotedTable + " " + f.shardingKeyIndexHint(table) +
+		" WHERE " + quotedShardingKey + " = ? AND " + quotedPaginationKey + " > ?" +
+		" ORDER BY " + quotedPaginationKey + " LIMIT " + strconv.Itoa(int(batchSize))
 
 	return sq.Select(columns...).
 		From(quotedTable).
-		Where(sq.Expr(condition, args...)).
-		OrderBy(quotedPaginationKey), nil // LIMIT comes from the subquery.
+		Join("("+selectPaginationKeys+") AS `batch` USING("+quotedPaginationKey+")", f.ShardingValue, lastPaginationKey), nil
+
 }
 
 func (f *ShardedCopyFilter) shardingKeyIndexHint(table *ghostferry.TableSchema) string {
@@ -215,7 +238,7 @@ func (s *ShardedTableFilter) ApplicableDatabases(dbs []string) ([]string, error)
 
 func (s *ShardedTableFilter) ApplicableTables(tables []*ghostferry.TableSchema) (applicable []*ghostferry.TableSchema, err error) {
 	for _, table := range tables {
-		if ((s.isIgnoreFilter() && s.isPresent(table)) || (s.isIncludeFilter() && !s.isPresent(table))) {
+		if (s.isIgnoreFilter() && s.isPresent(table)) || (s.isIncludeFilter() && !s.isPresent(table)) {
 			continue
 		}
 

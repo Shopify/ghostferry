@@ -20,7 +20,8 @@ type Config struct {
 
 	StatsDAddress string
 
-	JoinedTables map[string][]JoinTable
+	JoinedTables        map[string][]JoinTable
+	JoinedThroughTables map[string]JoinThroughTable
 
 	// IgnoredTables and IncludedTables are mutually exclusive. Specifying both is an error.
 	IgnoredTables  []string

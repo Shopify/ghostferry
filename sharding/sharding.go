@@ -21,9 +21,10 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 	config.DatabaseRewrites = map[string]string{config.SourceDB: config.TargetDB}
 
 	config.CopyFilter = &ShardedCopyFilter{
-		ShardingKey:   config.ShardingKey,
-		ShardingValue: config.ShardingValue,
-		JoinedTables:  config.JoinedTables,
+		ShardingKey:         config.ShardingKey,
+		ShardingValue:       config.ShardingValue,
+		JoinedTables:        config.JoinedTables,
+		JoinedThroughTables: config.JoinedThroughTables,
 	}
 
 	config.VerifierType = ghostferry.VerifierTypeInline
@@ -37,11 +38,11 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 		}
 
 		tableFilter = &ShardedTableFilter{
-			ShardingKey:   config.ShardingKey,
-			SourceShard:   config.SourceDB,
-			JoinedTables:  config.JoinedTables,
-			Type: IncludedTablesFilter,
-			Tables: included,
+			ShardingKey:  config.ShardingKey,
+			SourceShard:  config.SourceDB,
+			JoinedTables: config.JoinedTables,
+			Type:         IncludedTablesFilter,
+			Tables:       included,
 		}
 	} else {
 		ignored, err := compileRegexps(config.IgnoredTables)
@@ -50,11 +51,11 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 		}
 
 		tableFilter = &ShardedTableFilter{
-			ShardingKey:   config.ShardingKey,
-			SourceShard:   config.SourceDB,
-			JoinedTables:  config.JoinedTables,
-			Type: IgnoredTablesFilter,
-			Tables: ignored,
+			ShardingKey:  config.ShardingKey,
+			SourceShard:  config.SourceDB,
+			JoinedTables: config.JoinedTables,
+			Type:         IgnoredTablesFilter,
+			Tables:       ignored,
 		}
 	}
 
@@ -124,7 +125,6 @@ func (r *ShardingFerry) Run() {
 	r.Ferry.WaitUntilBinlogStreamerCatchesUp()
 
 	r.AbortIfTargetDbNoLongerWriteable()
-
 
 	// The callback must ensure that all in-flight transactions are complete and
 	// there will be no more writes to the database after it returns.
