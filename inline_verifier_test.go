@@ -16,7 +16,7 @@ func TestCompareDecompressedDataNoDifference(t *testing.T) {
 
 	result := compareDecompressedData(source, target)
 
-	assert.Equal(t, map[uint64]struct{}{}, result)
+	assert.Equal(t, map[uint64]mismatch{}, result)
 }
 
 func TestCompareDecompressedDataContentDifference(t *testing.T) {
@@ -29,7 +29,7 @@ func TestCompareDecompressedDataContentDifference(t *testing.T) {
 
 	result := compareDecompressedData(source, target)
 
-	assert.Equal(t, map[uint64]struct{}{1: {}}, result)
+	assert.Equal(t, map[uint64]mismatch{1: {paginationKey: 1, mismatchType: MismatchContentDifference, column: "name"}}, result)
 }
 
 func TestCompareDecompressedDataMissingTarget(t *testing.T) {
@@ -40,7 +40,7 @@ func TestCompareDecompressedDataMissingTarget(t *testing.T) {
 
 	result := compareDecompressedData(source, target)
 
-	assert.Equal(t, map[uint64]struct{}{1: {}}, result)
+	assert.Equal(t, map[uint64]mismatch{1: {paginationKey: 1, mismatchType: MismatchRowMissingOnTarget}}, result)
 }
 
 func TestCompareDecompressedDataMissingSource(t *testing.T) {
@@ -51,5 +51,5 @@ func TestCompareDecompressedDataMissingSource(t *testing.T) {
 
 	result := compareDecompressedData(source, target)
 
-	assert.Equal(t, map[uint64]struct{}{3: {}}, result)
+	assert.Equal(t, map[uint64]mismatch{3: {paginationKey: 3, mismatchType: MismatchRowMissingOnSource}}, result)
 }
