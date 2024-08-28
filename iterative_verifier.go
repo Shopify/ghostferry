@@ -337,7 +337,7 @@ func (v *IterativeVerifier) reverifyUntilStoreIsSmallEnough(maxIterations int) e
 		before := v.reverifyStore.RowCount
 		start := time.Now()
 
-		_, err := v.verifyStore("reverification_before_cutover", []MetricTag{{"iteration", string(iteration)}})
+		_, err := v.verifyStore("reverification_before_cutover", []MetricTag{{"iteration", strconv.FormatInt(int64(iteration), 10)}})
 		if err != nil {
 			return err
 		}

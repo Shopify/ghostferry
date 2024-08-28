@@ -596,10 +596,10 @@ func (v *InlineVerifier) compareHashes(source, target map[uint64][]byte) map[uin
 	return mismatchSet
 }
 
-func (v *InlineVerifier) compareDecompressedData(source, target map[uint64]map[string][]byte) map[uint64]struct{} {
+func compareDecompressedData(source, target map[uint64]map[string][]byte) map[uint64]struct{} {
 	mismatchSet := map[uint64]struct{}{}
 
-	for paginationKey, targetDecompressedColumns := range target {
+	for paginationKey, targetDecompressedColumns := range target { // per row/pk
 		sourceDecompressedColumns, exists := source[paginationKey]
 		if !exists {
 			mismatchSet[paginationKey] = struct{}{}
@@ -636,7 +636,7 @@ func (v *InlineVerifier) compareDecompressedData(source, target map[uint64]map[s
 
 func (v *InlineVerifier) compareHashesAndData(sourceHashes, targetHashes map[uint64][]byte, sourceData, targetData map[uint64]map[string][]byte) []InlineVerifierMismatches {
 	mismatches := v.compareHashes(sourceHashes, targetHashes)
-	compressedMismatch := v.compareDecompressedData(sourceData, targetData)
+	compressedMismatch := compareDecompressedData(sourceData, targetData)
 	for paginationKey, _ := range compressedMismatch {
 		mismatches[paginationKey] = InlineVerifierMismatches{
 			Pk:             paginationKey,
@@ -850,12 +850,12 @@ func (v *InlineVerifier) compareJsonColumnValues(batch BinlogVerifyBatch, mismat
 			return nil, fmt.Errorf("Number of source and target rows are different")
 		}
 
-		sourceRowData, err := ScanByteRow(sourceRows, len(jsonColumnNames) + 1)
+		sourceRowData, err := ScanByteRow(sourceRows, len(jsonColumnNames)+1)
 		if err != nil {
 			return nil, err
 		}
 
-		targetRowData, err := ScanByteRow(targetRows, len(jsonColumnNames) + 1)
+		targetRowData, err := ScanByteRow(targetRows, len(jsonColumnNames)+1)
 		if err != nil {
 			return nil, err
 		}
@@ -872,12 +872,12 @@ func (v *InlineVerifier) compareJsonColumnValues(batch BinlogVerifyBatch, mismat
 		for j, jsonColumn := range jsonColumnNames {
 			err := json.Unmarshal([]byte(sourceRowData[j+1]), &sourceJsonColumnValue)
 			if err != nil {
-				return nil, fmt.Errorf("unmarshalling target rowdata: %w")
+				return nil, fmt.Errorf("unmarshalling target rowdata: %w", err)
 			}
 
 			err = json.Unmarshal([]byte(targetRowData[j+1]), &targetJsonColumnValue)
 			if err != nil {
-				return nil, fmt.Errorf("unmarshalling target rowdata: %w")
+				return nil, fmt.Errorf("unmarshalling target rowdata: %w", err)
 			}
 
 			if sourcePaginationKey == targetPaginationKey && reflect.DeepEqual(sourceJsonColumnValue, targetJsonColumnValue) {
@@ -946,7 +946,7 @@ func addJsonColumnNamesToIgnoredColumnsForVerification(sourceTableSchema *TableS
 	sourceTableSchema.RowMd5Query()
 }
 
-func removeJsonColumnsFromIgnoredColumnsForVerification(sourceTableSchema *TableSchema, jsonColumnNames []string){
+func removeJsonColumnsFromIgnoredColumnsForVerification(sourceTableSchema *TableSchema, jsonColumnNames []string) {
 	for _, jsonColumn := range jsonColumnNames {
 		delete(sourceTableSchema.IgnoredColumnsForVerification, jsonColumn)
 	}
