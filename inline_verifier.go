@@ -451,6 +451,8 @@ func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 		}, nil
 	}
 
+	// TODO make this into a func:
+	//   func FormatMismatches(mismatches map[string]map[string][]InlineVerifierMismatches)) string
 	// Build error message for display
 	var messageBuf bytes.Buffer
 	messageBuf.WriteString("cutover verification failed for: ")
@@ -468,6 +470,10 @@ func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 				messageBuf.WriteString(mismatch.SourceChecksum)
 				messageBuf.WriteString(", target: ")
 				messageBuf.WriteString(mismatch.TargetChecksum)
+				// TODO add the mismatch details somehow
+				// ([paginationKeys: (source: "..", target: "..")])
+				// to
+				// ([paginationKeys: (source: "..", target: "..", type: "missing on source", column: "")])
 				messageBuf.WriteString(") ")
 			}
 			messageBuf.WriteString("] ")
@@ -479,7 +485,7 @@ func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 
 	return VerificationResult{
 		DataCorrect:     false,
-		Message:         messageBuf.String(),
+		Message:         message,
 		IncorrectTables: incorrectTables,
 	}, nil
 }
