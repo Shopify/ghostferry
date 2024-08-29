@@ -593,7 +593,7 @@ func (v *InlineVerifier) compareHashes(source, target map[uint64][]byte) map[uin
 	return mismatchSet
 }
 
-func (v *InlineVerifier) compareDecompressedData(source, target map[uint64]map[string][]byte) map[uint64]struct{} {
+func compareDecompressedData(source, target map[uint64]map[string][]byte) map[uint64]struct{} {
 	mismatchSet := map[uint64]struct{}{}
 
 	for paginationKey, targetDecompressedColumns := range target {
@@ -633,7 +633,7 @@ func (v *InlineVerifier) compareDecompressedData(source, target map[uint64]map[s
 
 func (v *InlineVerifier) compareHashesAndData(sourceHashes, targetHashes map[uint64][]byte, sourceData, targetData map[uint64]map[string][]byte) []InlineVerifierMismatches {
 	mismatches := v.compareHashes(sourceHashes, targetHashes)
-	compressedMismatch := v.compareDecompressedData(sourceData, targetData)
+	compressedMismatch := compareDecompressedData(sourceData, targetData)
 	for paginationKey, _ := range compressedMismatch {
 		mismatches[paginationKey] = InlineVerifierMismatches{
 			Pk:             paginationKey,
