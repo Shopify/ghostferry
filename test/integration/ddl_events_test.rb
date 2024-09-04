@@ -41,6 +41,7 @@ class DdlEventsTest < GhostferryTestCase
     source_count = source[DEFAULT_FULL_TABLE_NAME][:row_count]
     target_count = target[DEFAULT_FULL_TABLE_NAME][:row_count]
 
+    puts "ERROR LINES", ghostferry.error_lines.inspect
     refute_equal(source_count, target_count, "target should have fewer rows than source")
 
   end

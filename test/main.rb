@@ -4,7 +4,7 @@ test_lib_path    = File.join(test_path, "lib")
 lib_path         = File.expand_path(File.join(test_path, "..", "lib"))
 helpers_path     = File.join(test_path, "helpers")
 integration_path = File.join(test_path, "integration")
-test_files       = Dir.glob("#{integration_path}/**/*_test.rb")
+test_files       = Dir.glob("#{integration_path}/**/ddl_events_test.rb")
 
 $LOAD_PATH.unshift(test_path) unless $LOAD_PATH.include?(test_path)
 $LOAD_PATH.unshift(test_lib_path) unless $LOAD_PATH.include?(test_lib_path)

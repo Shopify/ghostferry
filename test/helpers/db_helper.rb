@@ -20,7 +20,11 @@ module DbHelper
         sql_annotations << "/*#{annotation}*/"
       end
       sql = "#{sql_annotations.join(" ")} #{sql}" unless exclude_marginalia
-      query_without_maginalia(sql)
+      puts "QUERY: #{sql}"
+      query_without_maginalia(sql).tap do
+
+        puts "QUERY: #{sql} DONE"
+      end
     end
 
     def prepare(sql, exclude_marginalia: false, annotations: [DEFAULT_ANNOTATION])
@@ -29,6 +33,7 @@ module DbHelper
         sql_annotations << "/*#{annotation}*/"
       end
       sql = "#{sql_annotations.join(" ")} #{sql}" unless exclude_marginalia
+      puts "PREPARE: #{sql}"
       prepare_without_maginalia(sql)
     end
   end
@@ -65,6 +70,7 @@ module DbHelper
   def transaction(connection)
     raise ArgumentError, "must pass a block" if !block_given?
 
+    puts "TRANSACTION"
     begin
       connection.query("BEGIN")
       yield

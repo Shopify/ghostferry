@@ -89,6 +89,7 @@ class GhostferryTestCase < Minitest::Test
   ##############
 
   def before_all
+    puts "before_all"
     super
     @log_capturer = LogCapturer.new
     initialize_db_connections
@@ -96,6 +97,7 @@ class GhostferryTestCase < Minitest::Test
   end
 
   def before_setup
+    puts "before_setup"
     super
     reset_data
 
@@ -109,6 +111,7 @@ class GhostferryTestCase < Minitest::Test
   end
 
   def after_teardown
+    puts "after_teardown"
     @ghostferry_instances.each do |ghostferry|
       ghostferry.kill
     end
@@ -128,6 +131,7 @@ class GhostferryTestCase < Minitest::Test
   end
 
   def after_all
+    puts "after_all"
     reset_data
     teardown_connections
     super
