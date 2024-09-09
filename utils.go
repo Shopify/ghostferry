@@ -256,3 +256,7 @@ func QuoteFields(fields []string) (out []string) {
 func QuoteField(field string) string {
 	return fmt.Sprintf("`%s`", field)
 }
+
+func QuoteFieldWithTableName(tableName string, field string) string {
+	return fmt.Sprintf("`%s`.`%s`", tableName, field)
+}

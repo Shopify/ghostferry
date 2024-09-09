@@ -22,8 +22,11 @@ const (
 	joinedTableName = "joined_table"
 	joinTableName   = "join_table"
 	joiningKey      = "join_id"
-	shardingKey     = "tenant_id"
-	shardingValue   = 2
+
+	testWithSecondaryTableName = "test_with_secondary_table"
+
+	shardingKey   = "tenant_id"
+	shardingValue = 2
 )
 
 type ShardingUnitTestSuite struct {
@@ -85,6 +88,9 @@ func (t *ShardingUnitTestSuite) SetupTest() {
 	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, testTable, 100)
 	testhelpers.SeedInitialData(t.TargetDB, targetDbName, testTable, 0)
 
+	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, testWithSecondaryTableName, 100)
+	testhelpers.SeedInitialData(t.TargetDB, targetDbName, testWithSecondaryTableName, 0)
+
 	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, joinedTableName, 10)
 	testhelpers.SeedInitialData(t.TargetDB, targetDbName, joinedTableName, 0)
 
@@ -97,8 +103,11 @@ func (t *ShardingUnitTestSuite) SetupTest() {
 	testhelpers.AddTenantID(t.SourceDB, sourceDbName, joinTableName, 3)
 	testhelpers.AddTenantID(t.TargetDB, targetDbName, joinTableName, 3)
 
-	addJoinID(t.SourceDB, sourceDbName, joinTableName)
-	addJoinID(t.TargetDB, targetDbName, joinTableName)
+	addJoinID(t.SourceDB, sourceDbName, testWithSecondaryTableName, true)
+	addJoinID(t.TargetDB, targetDbName, testWithSecondaryTableName, true)
+
+	addJoinID(t.SourceDB, sourceDbName, joinTableName, false)
+	addJoinID(t.TargetDB, targetDbName, joinTableName, false)
 
 	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, primaryKeyTable, 3)
 	testhelpers.SeedInitialData(t.TargetDB, targetDbName, primaryKeyTable, 0)
@@ -149,17 +158,23 @@ func (t *ShardingUnitTestSuite) setupShardingFerry() {
 			},
 		},
 
+		JoinedThroughTables: map[string]sharding.JoinThroughTable{
+			testWithSecondaryTableName: sharding.JoinThroughTable{
+				JoinTableName: joinTableName,
+				JoinCondition: fmt.Sprintf("`%s`.`%s` = `%s`.`%s`", testWithSecondaryTableName, joiningKey, joinTableName, joiningKey),
+			},
+		},
+
 		PrimaryKeyTables: []string{primaryKeyTable},
 	}
 
-
 	t.Config.CutoverLock = ghostferry.HTTPCallback{
-		URI: fmt.Sprintf("%s/lock", t.server.URL),
+		URI:     fmt.Sprintf("%s/lock", t.server.URL),
 		Payload: "test_lock",
 	}
 
 	t.Config.CutoverUnlock = ghostferry.HTTPCallback{
-		URI: fmt.Sprintf("%s/unlock", t.server.URL),
+		URI:     fmt.Sprintf("%s/unlock", t.server.URL),
 		Payload: "test_unlock",
 	}
 
@@ -183,8 +198,12 @@ func (t *ShardingUnitTestSuite) dropTestDbs() {
 	t.Require().Nil(err)
 }
 
-func addJoinID(db *sql.DB, dbName, tableName string) {
-	query := fmt.Sprintf("ALTER TABLE %s.%s ADD %s bigint(20) NOT NULL", dbName, tableName, joiningKey)
+func addJoinID(db *sql.DB, dbName, tableName string, nullable bool) {
+	query := fmt.Sprintf("ALTER TABLE %s.%s ADD %s bigint(20)", dbName, tableName, joiningKey)
+	if !nullable {
+		query += " NOT NULL"
+	}
+
 	_, err := db.Exec(query)
 	testhelpers.PanicIfError(err)
 

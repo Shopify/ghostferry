@@ -3,8 +3,9 @@ package ghostferry
 import (
 	sqlorig "database/sql"
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"strings"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Masterminds/squirrel"
 	"github.com/go-mysql-org/go-mysql/schema"
@@ -35,8 +36,8 @@ type CursorConfig struct {
 	DB        *sql.DB
 	Throttler Throttler
 
-	ColumnsToSelect           []string
-	BuildSelect               func([]string, *TableSchema, uint64, uint64) (squirrel.SelectBuilder, error)
+	ColumnsToSelect []string
+	BuildSelect     func([]string, *TableSchema, uint64, uint64) (squirrel.SelectBuilder, error)
 	// BatchSize is a pointer to the BatchSize in Config.UpdatableConfig which can be independently updated from this code.
 	// Having it as a pointer allows the updated value to be read without needing additional code to copy the batch size value into the cursor config for each cursor we create.
 	BatchSize                 *uint64
@@ -180,6 +181,8 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos uint64
 		c.logger.WithError(err).Error("failed to build chunking sql")
 		return
 	}
+	fmt.Println("query:", query)
+	fmt.Println("args: ", args)
 
 	// With the inline verifier, the columns to be selected may be very large as
 	// the query generated will be very large. The code here simply hides the

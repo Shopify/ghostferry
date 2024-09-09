@@ -697,7 +697,7 @@ func rowMd5Selector(columns []schema.TableColumn, paginationKeyColumn string) sq
 }
 
 func normalizeAndQuoteColumn(column schema.TableColumn) (quoted string) {
-	quoted = QuoteField(column.Name)
+	quoted = QuoteFieldWithTableName(column.TableName, column.Name)
 	if column.Type == schema.TYPE_FLOAT {
 		quoted = fmt.Sprintf("(if (%s = '-0', 0, %s))", quoted, quoted)
 	}

@@ -62,11 +62,11 @@ func (t *TableSchema) FingerprintQuery(schemaName, tableName string, numRows int
 	var forceIndex string
 
 	columnsToSelect := make([]string, 2+len(t.CompressedColumnsForVerification))
-	columnsToSelect[0] = QuoteField(t.GetPaginationColumn().Name)
+	columnsToSelect[0] = QuoteFieldWithTableName(tableName, t.GetPaginationColumn().Name)
 	columnsToSelect[1] = t.RowMd5Query()
 	i := 2
 	for columnName, _ := range t.CompressedColumnsForVerification {
-		columnsToSelect[i] = QuoteField(columnName)
+		columnsToSelect[i] = QuoteFieldWithTableName(tableName, columnName)
 		i += 1
 	}
 

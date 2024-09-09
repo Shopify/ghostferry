@@ -65,6 +65,15 @@ test-go:
 
 	ulimit -n 1024 && ./bin/gotestsum --format short-verbose ./test/go ./copydb/test ./sharding/test -count 1 -p 1 -failfast
 
+test-go-sharding:
+	@go version
+	@if [ ! -f ./bin/gotestsum ]; then \
+		mkdir -p ./bin; \
+		curl -sL $(GOTESTSUM_URL) | tar -xz -C ./bin gotestsum; \
+	fi
+
+	ulimit -n 1024 && ./bin/gotestsum --format standard-verbose ./sharding/test/joined_through_tables_test.go -count 1 -p 1 -failfast
+
 test-ruby:
 	bundle install
 	bundle exec ruby test/main.rb

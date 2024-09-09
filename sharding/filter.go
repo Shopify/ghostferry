@@ -13,7 +13,7 @@ import (
 )
 
 type JoinThroughTable struct {
-	JoinedTableName, JoinCondition string
+	JoinTableName, JoinCondition string
 }
 type JoinTable struct {
 	TableName, JoinColumn string
@@ -105,11 +105,12 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 		// AND x.PaginationKey > LastPaginationKey
 		// ORDER BY x.PaginationKey
 		// LIMIT BatchSize
-
+		quotedJoinTableName := ghostferry.QuotedTableNameFromString(table.Schema, joinThroughTable.JoinTableName)
+		quotedPaginationKey := fmt.Sprintf("`joined`.%s", quotedPaginationKey)
 		return sq.Select(columns...).
-			From(quotedTable).
-			Join(joinThroughTable.JoinedTableName + " ON " + joinThroughTable.JoinCondition).
-			Where(sq.Eq{joinThroughTable.JoinedTableName + "." + f.ShardingKey: f.ShardingValue}).
+			From(fmt.Sprintf("%s AS joined", quotedTable)).
+			Join(quotedJoinTableName + " ON " + joinThroughTable.JoinCondition).
+			Where(sq.Eq{quotedShardingKey: f.ShardingValue}).
 			Where(sq.Gt{quotedPaginationKey: lastPaginationKey}).
 			OrderBy(quotedPaginationKey).
 			Limit(batchSize), nil
@@ -216,12 +217,13 @@ const (
 )
 
 type ShardedTableFilter struct {
-	SourceShard      string
-	ShardingKey      string
-	JoinedTables     map[string][]JoinTable
-	Type             ShardedTableFilterType
-	Tables           []*regexp.Regexp
-	PrimaryKeyTables map[string]struct{}
+	SourceShard         string
+	ShardingKey         string
+	JoinedTables        map[string][]JoinTable
+	JoinedThroughTables map[string]JoinThroughTable
+	Type                ShardedTableFilterType
+	Tables              []*regexp.Regexp
+	PrimaryKeyTables    map[string]struct{}
 }
 
 func (s *ShardedTableFilter) isIgnoreFilter() bool {
@@ -251,6 +253,10 @@ func (s *ShardedTableFilter) ApplicableTables(tables []*ghostferry.TableSchema) 
 		}
 
 		if _, exists := s.JoinedTables[table.Name]; exists {
+			applicable = append(applicable, table)
+		}
+
+		if _, exists := s.JoinedThroughTables[table.Name]; exists {
 			applicable = append(applicable, table)
 		}
 

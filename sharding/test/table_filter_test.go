@@ -25,7 +25,7 @@ func TestShardedTableFilterRejectsIgnoredTables(t *testing.T) {
 	filter := &sharding.ShardedTableFilter{
 		SourceShard: "shard_42",
 		ShardingKey: "tenant_id",
-		Type: sharding.IgnoredTablesFilter,
+		Type:        sharding.IgnoredTablesFilter,
 		Tables: []*regexp.Regexp{
 			regexp.MustCompile("^_(.*)_new$"),
 			regexp.MustCompile("^_(.*)_old$"),
@@ -58,7 +58,7 @@ func TestShardedTableFilterSelectsIncludedTables(t *testing.T) {
 	filter := &sharding.ShardedTableFilter{
 		SourceShard: "shard_42",
 		ShardingKey: "tenant_id",
-		Type: sharding.IncludedTablesFilter,
+		Type:        sharding.IncludedTablesFilter,
 		Tables: []*regexp.Regexp{
 			regexp.MustCompile("^table_.*"),
 			regexp.MustCompile("ghost"),
@@ -110,4 +110,23 @@ func TestShardedTableFilterSelectsJoinedTables(t *testing.T) {
 	applicable, err := filter.ApplicableTables(tables)
 	assert.Nil(t, err)
 	assert.Equal(t, tables[1:], applicable)
+}
+
+func TestShardedTableFilterSelectsJoinedThroughTables(t *testing.T) {
+	filter := &sharding.ShardedTableFilter{
+		SourceShard: "shard_42",
+		ShardingKey: "tenant_id",
+		JoinedThroughTables: map[string]sharding.JoinThroughTable{
+			"table2": {JoinTableName: "table3", JoinCondition: "table2.id = table3.id"}},
+	}
+
+	tables := []*ghostferry.TableSchema{
+		{Table: &schema.Table{Schema: "shard_42", Name: "table1", Columns: []schema.TableColumn{{Name: "id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "table2", Columns: []schema.TableColumn{{Name: "id"}}}},
+		{Table: &schema.Table{Schema: "shard_42", Name: "table3", Columns: []schema.TableColumn{{Name: "id"}}}},
+	}
+
+	applicable, err := filter.ApplicableTables(tables)
+	assert.Nil(t, err)
+	assert.Equal(t, tables[1:2], applicable)
 }

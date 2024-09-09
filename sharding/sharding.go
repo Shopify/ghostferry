@@ -38,11 +38,12 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 		}
 
 		tableFilter = &ShardedTableFilter{
-			ShardingKey:  config.ShardingKey,
-			SourceShard:  config.SourceDB,
-			JoinedTables: config.JoinedTables,
-			Type:         IncludedTablesFilter,
-			Tables:       included,
+			ShardingKey:         config.ShardingKey,
+			SourceShard:         config.SourceDB,
+			JoinedTables:        config.JoinedTables,
+			JoinedThroughTables: config.JoinedThroughTables,
+			Type:                IncludedTablesFilter,
+			Tables:              included,
 		}
 	} else {
 		ignored, err := compileRegexps(config.IgnoredTables)
@@ -51,11 +52,12 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 		}
 
 		tableFilter = &ShardedTableFilter{
-			ShardingKey:  config.ShardingKey,
-			SourceShard:  config.SourceDB,
-			JoinedTables: config.JoinedTables,
-			Type:         IgnoredTablesFilter,
-			Tables:       ignored,
+			ShardingKey:         config.ShardingKey,
+			SourceShard:         config.SourceDB,
+			JoinedTables:        config.JoinedTables,
+			JoinedThroughTables: config.JoinedThroughTables,
+			Type:                IgnoredTablesFilter,
+			Tables:              ignored,
 		}
 	}
 
@@ -181,6 +183,9 @@ func (r *ShardingFerry) deltaCopyJoinedTables() error {
 
 	for _, table := range r.Ferry.Tables {
 		if _, exists := r.config.JoinedTables[table.Name]; exists {
+			tables = append(tables, table)
+		}
+		if _, exists := r.config.JoinedThroughTables[table.Name]; exists {
 			tables = append(tables, table)
 		}
 	}

@@ -51,6 +51,7 @@ type TableColumn struct {
 	SetValues  []string
 	FixedSize  uint
 	MaxSize    uint
+	TableName  string
 }
 
 type Index struct {
@@ -77,7 +78,7 @@ func (ta *Table) String() string {
 
 func (ta *Table) AddColumn(name string, columnType string, collation string, extra string) {
 	index := len(ta.Columns)
-	ta.Columns = append(ta.Columns, TableColumn{Name: name, Collation: collation})
+	ta.Columns = append(ta.Columns, TableColumn{Name: name, Collation: collation, TableName: ta.Name})
 	ta.Columns[index].RawType = columnType
 
 	if strings.HasPrefix(columnType, "float") ||
