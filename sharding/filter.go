@@ -106,9 +106,9 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 		// ORDER BY x.PaginationKey
 		// LIMIT BatchSize
 		quotedJoinTableName := ghostferry.QuotedTableNameFromString(table.Schema, joinThroughTable.JoinTableName)
-		quotedPaginationKey := fmt.Sprintf("`joined`.%s", quotedPaginationKey)
+		quotedPaginationKey := fmt.Sprintf("%s.%s", quotedTable, quotedPaginationKey)
 		return sq.Select(columns...).
-			From(fmt.Sprintf("%s AS joined", quotedTable)).
+			From(fmt.Sprintf("%s", quotedTable)).
 			Join(quotedJoinTableName + " ON " + joinThroughTable.JoinCondition).
 			Where(sq.Eq{quotedShardingKey: f.ShardingValue}).
 			Where(sq.Gt{quotedPaginationKey: lastPaginationKey}).

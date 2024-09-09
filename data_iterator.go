@@ -98,7 +98,7 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 				cursor := d.CursorConfig.NewCursor(table, startPaginationKey, targetPaginationKeyInterface.(uint64))
 				if d.SelectFingerprint {
 					if len(cursor.ColumnsToSelect) == 0 {
-						cursor.ColumnsToSelect = []string{"*"}
+						cursor.ColumnsToSelect = []string{fmt.Sprintf("%s.*", QuotedTableName(table))}
 					}
 
 					cursor.ColumnsToSelect = append(cursor.ColumnsToSelect, table.RowMd5Query())
