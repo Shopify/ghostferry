@@ -63,7 +63,7 @@ func (t *TableSchema) FingerprintQuery(schemaName, tableName string, numRows int
 
 	columnsToSelect := make([]string, 2+len(t.CompressedColumnsForVerification))
 	columnsToSelect[0] = QuoteFieldWithTableName(tableName, t.GetPaginationColumn().Name)
-	columnsToSelect[1] = t.RowMd5Query()
+	columnsToSelect[1] = t.RowMd5Query(tableName)
 	i := 2
 	for columnName, _ := range t.CompressedColumnsForVerification {
 		columnsToSelect[i] = QuoteFieldWithTableName(tableName, columnName)
@@ -84,7 +84,7 @@ func (t *TableSchema) FingerprintQuery(schemaName, tableName string, numRows int
 	)
 }
 
-func (t *TableSchema) RowMd5Query() string {
+func (t *TableSchema) RowMd5Query(tableName string) string {
 	if t.rowMd5Query != "" {
 		return t.rowMd5Query
 	}
@@ -105,7 +105,7 @@ func (t *TableSchema) RowMd5Query() string {
 	for i, column := range columns {
 		// Magic string that's unlikely to be a real record. For a history of this
 		// issue, refer to https://github.com/Shopify/ghostferry/pull/137
-		hashStrs[i] = fmt.Sprintf("MD5(COALESCE(%s, 'NULL_PBj}b]74P@JTo$5G_null'))", normalizeAndQuoteColumn(column))
+		hashStrs[i] = fmt.Sprintf("MD5(COALESCE(%s, 'NULL_PBj}b]74P@JTo$5G_null'))", normalizeAndQuoteColumn(tableName, column))
 	}
 
 	t.rowMd5Query = fmt.Sprintf("MD5(CONCAT(%s)) AS __ghostferry_row_md5", strings.Join(hashStrs, ","))

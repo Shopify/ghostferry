@@ -18,8 +18,8 @@ func TestHashesSql(t *testing.T) {
 	sql, args, err := ghostferry.GetMd5HashesSql("gftest", "test_table", "id", columns, paginationKeys)
 
 	assert.Nil(t, err)
-	assert.Equal(t, "SELECT `id`, MD5(CONCAT(MD5(COALESCE(`id`, 'NULL')),MD5(COALESCE(`data`, 'NULL')),MD5(COALESCE((if (`float_col` = '-0', 0, `float_col`)), 'NULL')))) "+
-		"AS row_fingerprint FROM `gftest`.`test_table` WHERE `id` IN (?,?,?) ORDER BY `id`", sql)
+	assert.Equal(t, "SELECT `test_table`.`id`, MD5(CONCAT(MD5(COALESCE(`test_table`.`id`, 'NULL')),MD5(COALESCE(`test_table`.`data`, 'NULL')),MD5(COALESCE((if (`test_table`.`float_col` = '-0', 0, `test_table`.`float_col`)), 'NULL')))) "+
+		"AS row_fingerprint FROM `gftest`.`test_table` WHERE `test_table`.`id` IN (?,?,?) ORDER BY `test_table`.`id`", sql)
 	for idx, arg := range args {
 		assert.Equal(t, paginationKeys[idx], arg.(uint64))
 	}

@@ -672,20 +672,20 @@ func compareHashes(source, target map[uint64][]byte) []uint64 {
 }
 
 func GetMd5HashesSql(schema, table, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []uint64) (string, []interface{}, error) {
-	quotedPaginationKey := QuoteField(paginationKeyColumn)
-	return rowMd5Selector(columns, paginationKeyColumn).
+	quotedPaginationKey := QuoteFieldWithTableName(table, paginationKeyColumn)
+	return rowMd5Selector(table, columns, paginationKeyColumn).
 		From(QuotedTableNameFromString(schema, table)).
 		Where(sq.Eq{quotedPaginationKey: paginationKeys}).
 		OrderBy(quotedPaginationKey).
 		ToSql()
 }
 
-func rowMd5Selector(columns []schema.TableColumn, paginationKeyColumn string) sq.SelectBuilder {
-	quotedPaginationKey := QuoteField(paginationKeyColumn)
+func rowMd5Selector(tableName string, columns []schema.TableColumn, paginationKeyColumn string) sq.SelectBuilder {
+	quotedPaginationKey := QuoteFieldWithTableName(tableName, paginationKeyColumn)
 
 	hashStrs := make([]string, len(columns))
 	for idx, column := range columns {
-		quotedCol := normalizeAndQuoteColumn(column)
+		quotedCol := normalizeAndQuoteColumn(tableName, column)
 		hashStrs[idx] = fmt.Sprintf("MD5(COALESCE(%s, 'NULL'))", quotedCol)
 	}
 
@@ -696,8 +696,8 @@ func rowMd5Selector(columns []schema.TableColumn, paginationKeyColumn string) sq
 	))
 }
 
-func normalizeAndQuoteColumn(column schema.TableColumn) (quoted string) {
-	quoted = QuoteFieldWithTableName(column.TableName, column.Name)
+func normalizeAndQuoteColumn(tableName string, column schema.TableColumn) (quoted string) {
+	quoted = QuoteFieldWithTableName(tableName, column.Name)
 	if column.Type == schema.TYPE_FLOAT {
 		quoted = fmt.Sprintf("(if (%s = '-0', 0, %s))", quoted, quoted)
 	}

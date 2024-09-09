@@ -313,12 +313,12 @@ func (this *TableSchemaCacheTestSuite) TestFingerprintQuery() {
 	tables := tableSchemaCache.AsSlice()
 	table := tables[0]
 	query := table.FingerprintQuery("s", "t", 10)
-	this.Require().Equal("SELECT `id`,MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')),MD5(COALESCE(`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5 FROM `s`.`t` WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
+	this.Require().Equal("SELECT `t`.`id`,MD5(CONCAT(MD5(COALESCE(`t`.`id`, 'NULL_PBj}b]74P@JTo$5G_null')),MD5(COALESCE(`t`.`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5 FROM `s`.`t` WHERE `t`.`id` IN (?,?,?,?,?,?,?,?,?,?)", query)
 
 	table = tables[1]
 	table.CompressedColumnsForVerification = map[string]string{"data": "SNAPPY"}
 	query = table.FingerprintQuery("s", "t", 10)
-	this.Require().Equal("SELECT `id`,MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5,`data` FROM `s`.`t` WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
+	this.Require().Equal("SELECT `t`.`id`,MD5(CONCAT(MD5(COALESCE(`t`.`id`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5,`t`.`data` FROM `s`.`t` WHERE `t`.`id` IN (?,?,?,?,?,?,?,?,?,?)", query)
 }
 
 func (this *TableSchemaCacheTestSuite) TestTableRowMd5Query() {
@@ -327,13 +327,13 @@ func (this *TableSchemaCacheTestSuite) TestTableRowMd5Query() {
 
 	tables := tableSchemaCache.AsSlice()
 	table := tables[0]
-	query := table.RowMd5Query()
-	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')),MD5(COALESCE(`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5", query)
+	query := table.RowMd5Query("table_1")
+	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`table_1`.`id`, 'NULL_PBj}b]74P@JTo$5G_null')),MD5(COALESCE(`table_1`.`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5", query)
 
 	table = tables[1]
 	table.CompressedColumnsForVerification = map[string]string{"data": "SNAPPY"}
-	query = table.RowMd5Query()
-	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5", query)
+	query = table.RowMd5Query("table_2")
+	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`table_2`.`id`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5", query)
 }
 
 func (this *TableSchemaCacheTestSuite) TestFingerprintQueryWithIgnoredColumns() {
@@ -346,7 +346,7 @@ func (this *TableSchemaCacheTestSuite) TestFingerprintQueryWithIgnoredColumns() 
 		"data": struct{}{},
 	}
 	query := table.FingerprintQuery("s", "t", 10)
-	this.Require().Equal("SELECT `id`,MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5 FROM `s`.`t` WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
+	this.Require().Equal("SELECT `t`.`id`,MD5(CONCAT(MD5(COALESCE(`t`.`id`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5 FROM `s`.`t` WHERE `t`.`id` IN (?,?,?,?,?,?,?,?,?,?)", query)
 }
 
 func (this *TableSchemaCacheTestSuite) TestFingerprintQueryWithForcedIndex() {
@@ -367,13 +367,13 @@ func (this *TableSchemaCacheTestSuite) TestFingerprintQueryWithForcedIndex() {
 	})
 
 	query = tables[0].FingerprintQuery("gftest", "test_table_1", 10)
-	this.Require().Equal("SELECT `id`,MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')),MD5(COALESCE(`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5 FROM `gftest`.`test_table_1` FORCE INDEX (forced_index_1) WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
+	this.Require().Equal("SELECT `test_table_1`.`id`,MD5(CONCAT(MD5(COALESCE(`test_table_1`.`id`, 'NULL_PBj}b]74P@JTo$5G_null')),MD5(COALESCE(`test_table_1`.`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5 FROM `gftest`.`test_table_1` FORCE INDEX (forced_index_1) WHERE `test_table_1`.`id` IN (?,?,?,?,?,?,?,?,?,?)", query)
 
 	query = tables[1].FingerprintQuery("gftest", "test_table_2", 10)
-	this.Require().Equal("SELECT `id`,MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')),MD5(COALESCE(`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5 FROM `gftest`.`test_table_2` FORCE INDEX (forced_index_2) WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
+	this.Require().Equal("SELECT `test_table_2`.`id`,MD5(CONCAT(MD5(COALESCE(`test_table_2`.`id`, 'NULL_PBj}b]74P@JTo$5G_null')),MD5(COALESCE(`test_table_2`.`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5 FROM `gftest`.`test_table_2` FORCE INDEX (forced_index_2) WHERE `test_table_2`.`id` IN (?,?,?,?,?,?,?,?,?,?)", query)
 
 	query = tables[2].FingerprintQuery("gftest", "test_table_3", 10)
-	this.Require().Equal("SELECT `id`,MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')),MD5(COALESCE(`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5 FROM `gftest`.`test_table_3` WHERE `id` IN (?,?,?,?,?,?,?,?,?,?)", query)
+	this.Require().Equal("SELECT `test_table_3`.`id`,MD5(CONCAT(MD5(COALESCE(`test_table_3`.`id`, 'NULL_PBj}b]74P@JTo$5G_null')),MD5(COALESCE(`test_table_3`.`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5 FROM `gftest`.`test_table_3` WHERE `test_table_3`.`id` IN (?,?,?,?,?,?,?,?,?,?)", query)
 }
 
 func (this *TableSchemaCacheTestSuite) TestQuotedTableName() {

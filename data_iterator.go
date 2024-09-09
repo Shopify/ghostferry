@@ -101,7 +101,7 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 						cursor.ColumnsToSelect = []string{fmt.Sprintf("%s.*", QuotedTableName(table))}
 					}
 
-					cursor.ColumnsToSelect = append(cursor.ColumnsToSelect, table.RowMd5Query())
+					cursor.ColumnsToSelect = append(cursor.ColumnsToSelect, table.RowMd5Query(table.Name))
 				}
 
 				err := cursor.Each(func(batch *RowBatch) error {

@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/Shopify/ghostferry"
 	tf "github.com/Shopify/ghostferry/test/lib/go/integrationferry"
@@ -10,7 +9,6 @@ import (
 )
 
 func queryEventHandler(ev *replication.BinlogEvent, query []byte, es *ghostferry.BinlogEventState) ([]byte, error) {
-	fmt.Println("queryEventHandler")
 	query = ev.Event.(*replication.QueryEvent).Query
 	return query, errors.New("Query event")
 }
