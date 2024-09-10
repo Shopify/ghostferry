@@ -103,11 +103,11 @@ func (t *ShardingUnitTestSuite) SetupTest() {
 	testhelpers.AddTenantID(t.SourceDB, sourceDbName, joinTableName, 3)
 	testhelpers.AddTenantID(t.TargetDB, targetDbName, joinTableName, 3)
 
-	addJoinID(t.SourceDB, sourceDbName, testWithSecondaryTableName, true)
-	addJoinID(t.TargetDB, targetDbName, testWithSecondaryTableName, true)
+	addJoinID(t.SourceDB, sourceDbName, testWithSecondaryTableName, true, 10)
+	addJoinID(t.TargetDB, targetDbName, testWithSecondaryTableName, true, 10)
 
-	addJoinID(t.SourceDB, sourceDbName, joinTableName, false)
-	addJoinID(t.TargetDB, targetDbName, joinTableName, false)
+	addJoinID(t.SourceDB, sourceDbName, joinTableName, false, -1)
+	addJoinID(t.TargetDB, targetDbName, joinTableName, false, -1)
 
 	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, primaryKeyTable, 3)
 	testhelpers.SeedInitialData(t.TargetDB, targetDbName, primaryKeyTable, 0)
@@ -198,7 +198,7 @@ func (t *ShardingUnitTestSuite) dropTestDbs() {
 	t.Require().Nil(err)
 }
 
-func addJoinID(db *sql.DB, dbName, tableName string, nullable bool) {
+func addJoinID(db *sql.DB, dbName, tableName string, nullable bool, numberOfJoins int) {
 	query := fmt.Sprintf("ALTER TABLE %s.%s ADD %s bigint(20)", dbName, tableName, joiningKey)
 	if !nullable {
 		query += " NOT NULL"
@@ -208,6 +208,10 @@ func addJoinID(db *sql.DB, dbName, tableName string, nullable bool) {
 	testhelpers.PanicIfError(err)
 
 	query = fmt.Sprintf("UPDATE %s.%s SET %s = id", dbName, tableName, joiningKey)
+	if numberOfJoins != -1 {
+		query += fmt.Sprintf(" %% %d", numberOfJoins)
+	}
+
 	_, err = db.Exec(query)
 	testhelpers.PanicIfError(err)
 }

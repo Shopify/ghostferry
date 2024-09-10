@@ -16,9 +16,6 @@ type JoinedThroughTablesTestSuite struct {
 	DataWriter testhelpers.DataWriter
 }
 
-// TODO:
-// 1. Multiple test_with_secondary_table rows with same join_id
-
 /*
 === test_with_secondary_table (grants) ===
 id   bigint
@@ -71,7 +68,7 @@ func (t *JoinedThroughTablesTestSuite) TearDownTest() {
 	t.ShardingUnitTestSuite.TearDownTest()
 }
 
-func (t *JoinedThroughTablesTestSuite) TestJoinedTablesWithDataWriter() {
+func (t *JoinedThroughTablesTestSuite) TestJoinedThroughTablesWithDataWriter() {
 	t.CutoverLock = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := t.Ferry.Ferry.SourceDB.Exec("SET GLOBAL read_only = ON")
 		t.Require().Nil(err)
@@ -87,24 +84,24 @@ func (t *JoinedThroughTablesTestSuite) TestJoinedTablesWithDataWriter() {
 	testhelpers.AssertTwoQueriesHaveEqualResult(
 		t.T(),
 		t.Ferry.Ferry,
-		"SELECT * FROM gftest1.test_with_secondary_table jdt JOIN gftest1.join_table jt on jdt.join_id = jt.join_id WHERE jt.tenant_id = 2",
-		"SELECT * FROM gftest2.test_with_secondary_table jdt JOIN gftest2.join_table jt on jdt.join_id = jt.join_id WHERE jt.tenant_id = 2",
+		"SELECT * FROM gftest1.test_with_secondary_table jtt JOIN gftest1.join_table jt on jtt.join_id = jt.join_id WHERE jt.tenant_id = 2",
+		"SELECT * FROM gftest2.test_with_secondary_table jtt JOIN gftest2.join_table jt on jtt.join_id = jt.join_id WHERE jt.tenant_id = 2",
 	)
-
 	var count int
 	// Assert no other rows were copied.
-	row := t.Ferry.Ferry.TargetDB.QueryRow("SELECT count(*) FROM gftest2.join_table jt WHERE jt.tenant_id != 2")
+	row := t.Ferry.Ferry.TargetDB.QueryRow("SELECT count(*) FROM gftest2.test_with_secondary_table jtt JOIN gftest2.join_table jt on jtt.join_id = jt.join_id WHERE jt.tenant_id != 2")
 	testhelpers.PanicIfError(row.Scan(&count))
 	t.Require().Equal(0, count)
 
-	/*var expectedCount int
-	row = t.Ferry.Ferry.TargetDB.QueryRow("SELECT count(distinct(join_id)) FROM gftest2.join_table jt WHERE jt.tenant_id = 2")
+	var expectedCount int
+	row = t.Ferry.Ferry.TargetDB.QueryRow("SELECT count(*) FROM gftest2.test_with_secondary_table jtt JOIN gftest2.join_table jt on jtt.join_id = jt.join_id WHERE jt.tenant_id = 2")
 	testhelpers.PanicIfError(row.Scan(&expectedCount))
 
 	var actualCount int
-	row = t.Ferry.Ferry.TargetDB.QueryRow("SELECT count(*) FROM gftest2.joined_table")
+	row = t.Ferry.Ferry.TargetDB.QueryRow("SELECT count(*) FROM gftest2.test_with_secondary_table")
 	testhelpers.PanicIfError(row.Scan(&actualCount))
-	t.Require().Equal(expectedCount, actualCount)*/
+
+	t.Require().Equal(expectedCount, actualCount)
 }
 
 func TestJoinedThroughTablesTestSuite(t *testing.T) {
