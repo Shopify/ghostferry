@@ -20,7 +20,7 @@ type CopyFilterTestSuite struct {
 	shardingValue       int64
 	paginationKeyCursor uint64
 
-	normalTable, joinedTable, primaryKeyTable *ghostferry.TableSchema
+	normalTable, joinedTable, joinedThroughTable, primaryKeyTable *ghostferry.TableSchema
 
 	filter *sharding.ShardedCopyFilter
 }
@@ -57,6 +57,17 @@ func (t *CopyFilterTestSuite) SetupTest() {
 		PaginationKeyColumn: &columns[0],
 	}
 
+	columns = []schema.TableColumn{{Name: "id"}, {Name: "join_id"}}
+	t.joinedThroughTable = &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema:    "shard_1",
+			Name:      "joinedthroughtable",
+			Columns:   columns,
+			PKColumns: []int{0},
+		},
+		PaginationKeyColumn: &columns[0],
+	}
+
 	columns = []schema.TableColumn{{Name: "tenant_id"}}
 	t.primaryKeyTable = &ghostferry.TableSchema{
 		Table: &schema.Table{
@@ -76,6 +87,13 @@ func (t *CopyFilterTestSuite) SetupTest() {
 			"joinedtable": []sharding.JoinTable{
 				{TableName: "join1", JoinColumn: "joined_paginationKey1"},
 				{TableName: "join2", JoinColumn: "joined_paginationKey2"},
+			},
+		},
+
+		JoinedThroughTables: map[string]sharding.JoinThroughTable{
+			"joinedthroughtable": sharding.JoinThroughTable{
+				JoinTableName: "join3",
+				JoinCondition: "`joinedthroughtable`.`join_id` = `join3`.`join_id`",
 			},
 		},
 
@@ -124,6 +142,16 @@ func (t *CopyFilterTestSuite) TestSelectsJoinedTables() {
 	t.Require().Nil(err)
 	t.Require().Equal("SELECT * FROM `shard_1`.`joinedtable` WHERE `joined_paginationKey` IN (SELECT * FROM (SELECT `joined_paginationKey1` AS sharding_join_alias FROM `shard_1`.`join1` WHERE `tenant_id` = ? AND `joined_paginationKey1` > ? UNION DISTINCT SELECT `joined_paginationKey2` AS sharding_join_alias FROM `shard_1`.`join2` WHERE `tenant_id` = ? AND `joined_paginationKey2` > ? ORDER BY sharding_join_alias LIMIT 1024) AS sharding_join_table) ORDER BY `joined_paginationKey`", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor, t.shardingValue, t.paginationKeyCursor}, args)
+}
+
+func (t *CopyFilterTestSuite) TestSelectsJoinedThroughTables() {
+	selectBuilder, err := t.filter.BuildSelect([]string{"*"}, t.joinedThroughTable, t.paginationKeyCursor, 1024)
+	t.Require().Nil(err)
+
+	sql, args, err := selectBuilder.ToSql()
+	t.Require().Nil(err)
+	t.Require().Equal("SELECT * FROM `shard_1`.`joinedthroughtable` JOIN `shard_1`.`join3` ON `joinedthroughtable`.`join_id` = `join3`.`join_id` WHERE `tenant_id` = ? AND `shard_1`.`joinedthroughtable`.`id` > ? ORDER BY `shard_1`.`joinedthroughtable`.`id` LIMIT 1024", sql)
+	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor}, args)
 }
 
 func (t *CopyFilterTestSuite) TestSelectsPrimaryKeyTables() {
