@@ -40,7 +40,10 @@ class InlineVerifierTest < GhostferryTestCase
 
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
-    assert ghostferry.error_lines.last["msg"].start_with?("cutover verification failed for: gftest.test_table_1 [paginationKeys: #{corrupting_id}")
+
+    expected_message = "cutover verification failed for: gftest.test_table_1 "\
+      "[PKs: #{corrupting_id} (type: rows checksum difference, source: "
+    assert ghostferry.error_lines.last["msg"].start_with?(expected_message)
   end
 
   def test_different_compressed_data_is_detected_inline_with_batch_writer
@@ -68,7 +71,11 @@ class InlineVerifierTest < GhostferryTestCase
 
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
-    assert ghostferry.error_lines.last["msg"].start_with?("cutover verification failed for: gftest.test_table_1 [paginationKeys: 1")
+
+    expected_message = "cutover verification failed for: gftest.test_table_1 "\
+      "[PKs: 1 (type: content difference, source: 389101948d1694a3bbfb904f57ae845c, target: 4594bb26f2f93c5c60328df6c86a0846, column: data) ] "
+
+    assert_equal expected_message, ghostferry.error_lines.last["msg"]
   end
 
   def test_same_decompressed_data_different_compressed_test_passes_inline_verification
@@ -163,7 +170,11 @@ class InlineVerifierTest < GhostferryTestCase
 
     ghostferry.run
     assert verification_ran
-    assert ghostferry.error_lines.last["msg"].start_with?("cutover verification failed for: gftest.test_table_1 [paginationKeys: #{corrupting_id}")
+
+    expected_message = "cutover verification failed for: gftest.test_table_1 "\
+      "[PKs: #{corrupting_id} (type: rows checksum difference, source: ced197ee28c2e73cc737242eb0e8c49c, target: ff030f09c559a197ed440b0eee7950a0) ] "
+
+    assert_equal expected_message, ghostferry.error_lines.last["msg"]
   end
 
   def test_target_corruption_is_ignored_if_skip_target_verification
@@ -399,7 +410,11 @@ class InlineVerifierTest < GhostferryTestCase
     ghostferry.run
     assert verification_ran
     assert incorrect_tables_found, "verification did not catch corrupted table"
-    assert ghostferry.error_lines.last["msg"].start_with?("cutover verification failed for: #{DEFAULT_DB}.#{DEFAULT_TABLE} [paginationKeys: #{corrupting_id}")
+
+    expected_message = "cutover verification failed for: #{DEFAULT_DB}.#{DEFAULT_TABLE} "\
+      "[PKs: #{corrupting_id} (type: rows checksum difference, source: 0cc788986133d5289aba8cd87705d106, target: f4c00525c4daf1388254f1b1024ed35d) ] "
+
+    assert_equal expected_message, ghostferry.error_lines.last["msg"]
   end
 
   def test_positive_negative_zero
@@ -430,7 +445,10 @@ class InlineVerifierTest < GhostferryTestCase
 
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
-    assert ghostferry.error_lines.last["msg"].start_with?("cutover verification failed for: #{DEFAULT_DB}.#{DEFAULT_TABLE} [paginationKeys: 1")
+
+    expected_message = "cutover verification failed for: #{DEFAULT_DB}.#{DEFAULT_TABLE} "\
+      "[PKs: 1 (type: rows checksum difference, source: 2888f4944da0fba0d5a5c7a7de2346f3, target: 2fa7e7e5e76005ffd8bfa5082da9f2f9) ] "
+    assert_equal expected_message, ghostferry.error_lines.last["msg"]
 
     # Now we run the real test case.
     target_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = -0.0 WHERE id = 1")
@@ -484,7 +502,10 @@ class InlineVerifierTest < GhostferryTestCase
 
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
-    assert ghostferry.error_lines.last["msg"].start_with?("cutover verification failed for: gftest.test_table_1 [paginationKeys: 1")
+
+    expected_message = "cutover verification failed for: gftest.test_table_1 [PKs: 1 (type: "
+
+    assert ghostferry.error_lines.last["msg"].start_with?(expected_message)
   end
 
   def test_null_vs_null_string
@@ -507,7 +528,11 @@ class InlineVerifierTest < GhostferryTestCase
 
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
-    assert ghostferry.error_lines.last["msg"].start_with?("cutover verification failed for: gftest.test_table_1 [paginationKeys: 1")
+
+    expected_message = "cutover verification failed for: gftest.test_table_1 " \
+      "[PKs: 1 (type: rows checksum difference, source: 7dfce9db8fc0f2475d2ff8ac3a5382e9, target: dc4cca2441c365c72466c75076782022) ] "
+
+    assert_equal expected_message, ghostferry.error_lines.last["msg"]
   end
 
   def test_null_in_different_order
@@ -533,7 +558,11 @@ class InlineVerifierTest < GhostferryTestCase
 
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
-    assert ghostferry.error_lines.last["msg"].start_with?("cutover verification failed for: gftest.test_table_1 [paginationKeys: 1")
+
+    expected_message = "cutover verification failed for: gftest.test_table_1 "\
+      "[PKs: 1 (type: rows checksum difference, source: 8e8e0931b9b2e5cb422a76d63160bbf3, target: 503b2de936a8da9e8d67b0d4594117d9) ] "
+
+    assert_equal expected_message, ghostferry.error_lines.last["msg"]
   end
 
   ###################
@@ -605,7 +634,9 @@ class InlineVerifierTest < GhostferryTestCase
 
       assert verify_during_cutover_ran
       assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
-      assert ghostferry.error_lines.last["msg"].start_with?("cutover verification failed for: gftest.test_table_1 [paginationKeys: 1")
+
+      expected_message = "cutover verification failed for: gftest.test_table_1 [PKs: 1 ("
+      assert ghostferry.error_lines.last["msg"].start_with?(expected_message)
     end
   end
 

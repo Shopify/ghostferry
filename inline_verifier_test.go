@@ -16,7 +16,7 @@ func TestCompareDecompressedDataNoDifference(t *testing.T) {
 
 	result := compareDecompressedData(source, target)
 
-	assert.Equal(t, map[uint64]mismatch{}, result)
+	assert.Equal(t, map[uint64]InlineVerifierMismatches{}, result)
 }
 
 func TestCompareDecompressedDataContentDifference(t *testing.T) {
@@ -29,7 +29,15 @@ func TestCompareDecompressedDataContentDifference(t *testing.T) {
 
 	result := compareDecompressedData(source, target)
 
-	assert.Equal(t, map[uint64]mismatch{1: {mismatchType: MismatchContentDifference, column: "name"}}, result)
+	assert.Equal(t, map[uint64]InlineVerifierMismatches{
+		1: {
+			Pk: 1,
+			MismatchType: MismatchContentDifference,
+			MismatchColumn: "name",
+			SourceChecksum: "e356a972989f87a1531252cfa2152797",
+			TargetChecksum: "81b8a1b77068d06e1c8190825253066f",
+		},
+	}, result)
 }
 
 func TestCompareDecompressedDataMissingTarget(t *testing.T) {
@@ -40,7 +48,7 @@ func TestCompareDecompressedDataMissingTarget(t *testing.T) {
 
 	result := compareDecompressedData(source, target)
 
-	assert.Equal(t, map[uint64]mismatch{1: {mismatchType: MismatchRowMissingOnTarget}}, result)
+	assert.Equal(t, map[uint64]InlineVerifierMismatches{1: {Pk: 1, MismatchType: MismatchRowMissingOnTarget}}, result)
 }
 
 func TestCompareDecompressedDataMissingSource(t *testing.T) {
@@ -51,7 +59,7 @@ func TestCompareDecompressedDataMissingSource(t *testing.T) {
 
 	result := compareDecompressedData(source, target)
 
-	assert.Equal(t, map[uint64]mismatch{3: {mismatchType: MismatchRowMissingOnSource}}, result)
+	assert.Equal(t, map[uint64]InlineVerifierMismatches{3: {Pk: 3, MismatchType: MismatchRowMissingOnSource}}, result)
 }
 
 func TestFormatMismatch(t *testing.T) {
@@ -60,18 +68,14 @@ func TestFormatMismatch(t *testing.T) {
 			"users": {
 				InlineVerifierMismatches{
 					Pk: 1,
-					SourceChecksum: "",
-					TargetChecksum: "bar",
-					Mismatch: mismatch{
-						mismatchType: MismatchRowMissingOnSource,
-					},
+					MismatchType: MismatchRowMissingOnSource,
 				},
 			},
 		},
 	}
 	message, tables := formatMismatches(mismatches)
 
-	assert.Equal(t, string("cutover verification failed for: default.users [paginationKeys: 1 (source: , target: bar, type: row missing on source) ] "), message)
+	assert.Equal(t, string("cutover verification failed for: default.users [PKs: 1 (type: row missing on source) ] "), message)
 	assert.Equal(t, []string{string("default.users")}, tables)
 }
 
@@ -81,47 +85,35 @@ func TestFormatMismatches(t *testing.T) {
 			"users": {
 				InlineVerifierMismatches{
 					Pk: 1,
-					SourceChecksum: "",
-					TargetChecksum: "bar",
-					Mismatch: mismatch{
-						mismatchType: MismatchRowMissingOnSource,
-					},
+					MismatchType: MismatchRowMissingOnSource,
 				},
 				InlineVerifierMismatches{
 					Pk: 5,
-					SourceChecksum: "baz",
-					TargetChecksum: "",
-					Mismatch: mismatch{
-						mismatchType: MismatchRowMissingOnTarget,
-					},
+					MismatchType: MismatchRowMissingOnTarget,
 				},
 			},
 			"posts": {
 				InlineVerifierMismatches{
 					Pk: 9,
+					MismatchType: MismatchContentDifference,
+					MismatchColumn: string("title"),
 					SourceChecksum: "boo",
 					TargetChecksum: "aaa",
-					Mismatch: mismatch{
-						mismatchType: MismatchContentDifference,
-						column: string("title"),
-					},
 				},
 			},
 			"attachments": {
 				InlineVerifierMismatches{
 					Pk: 7,
+					MismatchType: MismatchContentDifference,
+					MismatchColumn: string("name"),
 					SourceChecksum: "boo",
 					TargetChecksum: "aaa",
-					Mismatch: mismatch{
-						mismatchType: MismatchContentDifference,
-						column: string("name"),
-					},
 				},
 			},
 		},
 	}
 	message, tables := formatMismatches(mismatches)
 
-	assert.Equal(t, string("cutover verification failed for: default.attachments [paginationKeys: 7 (source: boo, target: aaa, type: content difference, column: name) ] default.posts [paginationKeys: 9 (source: boo, target: aaa, type: content difference, column: title) ] default.users [paginationKeys: 1 (source: , target: bar, type: row missing on source) 5 (source: baz, target: , type: row missing on target) ] "), message)
+	assert.Equal(t, string("cutover verification failed for: default.attachments [PKs: 7 (type: content difference, source: boo, target: aaa, column: name) ] default.posts [PKs: 9 (type: content difference, source: boo, target: aaa, column: title) ] default.users [PKs: 1 (type: row missing on source) 5 (type: row missing on target) ] "), message)
 	assert.Equal(t, []string{string("default.attachments"), string("default.posts"), string("default.users")}, tables)
 }
