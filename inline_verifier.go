@@ -242,8 +242,8 @@ const (
 	MismatchColumnMissingOnTarget mismatchType = "column missing on target"
 	MismatchRowMissingOnSource    mismatchType = "row missing on source"
 	MismatchRowMissingOnTarget    mismatchType = "row missing on target"
-	MismatchContentDifference     mismatchType = "content difference"
-	MismatchChecksumDifference    mismatchType = "rows checksum difference"
+	MismatchColumnValueDifference mismatchType = "column value difference"
+	MismatchRowChecksumDifference mismatchType = "rows checksum difference"
 )
 
 type InlineVerifierMismatches struct {
@@ -491,7 +491,7 @@ func formatMismatches(mismatches map[string]map[string][]InlineVerifierMismatche
 		}
 	}
 
-  return messageBuf.String(), incorrectTables
+	return messageBuf.String(), incorrectTables
 }
 
 func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
@@ -613,13 +613,13 @@ func (v *InlineVerifier) compareHashes(source, target map[uint64][]byte) map[uin
 		sourceHash, exists := source[paginationKey]
 		if !exists {
 			mismatchSet[paginationKey] = InlineVerifierMismatches{
-				Pk:             paginationKey,
-				MismatchType:   MismatchRowMissingOnSource,
+				Pk:           paginationKey,
+				MismatchType: MismatchRowMissingOnSource,
 			}
 		} else if !bytes.Equal(sourceHash, targetHash) {
 			mismatchSet[paginationKey] = InlineVerifierMismatches{
 				Pk:             paginationKey,
-				MismatchType:   MismatchChecksumDifference,
+				MismatchType:   MismatchRowChecksumDifference,
 				SourceChecksum: string(sourceHash),
 				TargetChecksum: string(targetHash),
 			}
@@ -630,15 +630,14 @@ func (v *InlineVerifier) compareHashes(source, target map[uint64][]byte) map[uin
 		_, exists := target[paginationKey]
 		if !exists {
 			mismatchSet[paginationKey] = InlineVerifierMismatches{
-				Pk:             paginationKey,
-				MismatchType:   MismatchRowMissingOnTarget,
+				Pk:           paginationKey,
+				MismatchType: MismatchRowMissingOnTarget,
 			}
 		}
 	}
 
 	return mismatchSet
 }
-
 
 func compareDecompressedData(source, target map[uint64]map[string][]byte) map[uint64]InlineVerifierMismatches {
 	mismatchSet := map[uint64]InlineVerifierMismatches{}
@@ -648,8 +647,8 @@ func compareDecompressedData(source, target map[uint64]map[string][]byte) map[ui
 		if !exists {
 			// row missing on source
 			mismatchSet[paginationKey] = InlineVerifierMismatches{
-				Pk:            paginationKey,
-				MismatchType:  MismatchRowMissingOnSource,
+				Pk:           paginationKey,
+				MismatchType: MismatchRowMissingOnSource,
 			}
 			continue
 		}
@@ -669,7 +668,7 @@ func compareDecompressedData(source, target map[uint64]map[string][]byte) map[ui
 
 				mismatchSet[paginationKey] = InlineVerifierMismatches{
 					Pk:             paginationKey,
-					MismatchType:   MismatchContentDifference,
+					MismatchType:   MismatchColumnValueDifference,
 					MismatchColumn: colName,
 					SourceChecksum: hex.EncodeToString(sourceChecksum[:]),
 					TargetChecksum: hex.EncodeToString(targetChecksum[:]),
@@ -684,8 +683,8 @@ func compareDecompressedData(source, target map[uint64]map[string][]byte) map[ui
 		if !exists {
 			// row missing on target
 			mismatchSet[paginationKey] = InlineVerifierMismatches{
-				Pk:            paginationKey,
-				MismatchType:  MismatchRowMissingOnTarget,
+				Pk:           paginationKey,
+				MismatchType: MismatchRowMissingOnTarget,
 			}
 			continue
 		}

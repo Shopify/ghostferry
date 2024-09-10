@@ -73,7 +73,7 @@ class InlineVerifierTest < GhostferryTestCase
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
 
     expected_message = "cutover verification failed for: gftest.test_table_1 "\
-      "[PKs: 1 (type: content difference, source: 389101948d1694a3bbfb904f57ae845c, target: 4594bb26f2f93c5c60328df6c86a0846, column: data) ] "
+      "[PKs: 1 (type: column value difference, source: 389101948d1694a3bbfb904f57ae845c, target: 4594bb26f2f93c5c60328df6c86a0846, column: data) ] "
 
     assert_equal expected_message, ghostferry.error_lines.last["msg"]
   end
