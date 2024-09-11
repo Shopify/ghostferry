@@ -3,8 +3,11 @@ package ghostferry
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -232,10 +235,23 @@ func (s *BinlogVerifyStore) Serialize() BinlogVerifySerializedStore {
 	return s.store.Copy()
 }
 
+type mismatchType string
+
+const (
+	MismatchColumnMissingOnSource mismatchType = "column missing on source"
+	MismatchColumnMissingOnTarget mismatchType = "column missing on target"
+	MismatchRowMissingOnSource    mismatchType = "row missing on source"
+	MismatchRowMissingOnTarget    mismatchType = "row missing on target"
+	MismatchColumnValueDifference mismatchType = "column value difference"
+	MismatchRowChecksumDifference mismatchType = "rows checksum difference"
+)
+
 type InlineVerifierMismatches struct {
 	Pk             uint64
 	SourceChecksum string
 	TargetChecksum string
+	MismatchColumn string
+	MismatchType   mismatchType
 }
 
 type InlineVerifier struct {
@@ -432,10 +448,57 @@ func (v *InlineVerifier) VerifyBeforeCutover() error {
 	return nil
 }
 
+func formatMismatches(mismatches map[string]map[string][]InlineVerifierMismatches) (string, []string) {
+	// Build error message for display
+	var messageBuf bytes.Buffer
+	messageBuf.WriteString("cutover verification failed for: ")
+	incorrectTables := make([]string, 0)
+
+	for schemaName, _ := range mismatches {
+		sortedTables := make([]string, 0, len(mismatches[schemaName]))
+		for tableName, _ := range mismatches[schemaName] {
+			sortedTables = append(sortedTables, tableName)
+		}
+		sort.Strings(sortedTables)
+
+		for _, tableName := range sortedTables {
+			tableNameWithSchema := fmt.Sprintf("%s.%s", schemaName, tableName)
+			incorrectTables = append(incorrectTables, tableNameWithSchema)
+
+			messageBuf.WriteString(tableNameWithSchema)
+			messageBuf.WriteString(" [PKs: ")
+			for _, mismatch := range mismatches[schemaName][tableName] {
+				messageBuf.WriteString(strconv.FormatUint(mismatch.Pk, 10))
+				messageBuf.WriteString(" (type: ")
+				messageBuf.WriteString(string(mismatch.MismatchType))
+				if mismatch.SourceChecksum != "" {
+					messageBuf.WriteString(", source: ")
+					messageBuf.WriteString(mismatch.SourceChecksum)
+				}
+				if mismatch.TargetChecksum != "" {
+					messageBuf.WriteString(", target: ")
+					messageBuf.WriteString(mismatch.TargetChecksum)
+				}
+
+				if mismatch.MismatchColumn != "" {
+					messageBuf.WriteString(", column: ")
+					messageBuf.WriteString(mismatch.MismatchColumn)
+				}
+
+				messageBuf.WriteString(") ")
+			}
+			messageBuf.WriteString("] ")
+		}
+	}
+
+	return messageBuf.String(), incorrectTables
+}
+
 func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	v.verifyDuringCutoverStarted.Set(true)
 
 	mismatchFound, mismatches, err := v.verifyAllEventsInStore()
+
 	if err != nil {
 		v.logger.WithError(err).Error("failed to VerifyDuringCutover")
 		return VerificationResult{}, err
@@ -447,35 +510,13 @@ func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 		}, nil
 	}
 
-	// Build error message for display
-	var messageBuf bytes.Buffer
-	messageBuf.WriteString("cutover verification failed for: ")
-	incorrectTables := make([]string, 0)
-	for schemaName, _ := range mismatches {
-		for tableName, mismatches := range mismatches[schemaName] {
-			tableName = fmt.Sprintf("%s.%s", schemaName, tableName)
-			incorrectTables = append(incorrectTables, tableName)
+	message, incorrectTables := formatMismatches(mismatches)
 
-			messageBuf.WriteString(tableName)
-			messageBuf.WriteString(" [paginationKeys: ")
-			for _, mismatch := range mismatches {
-				messageBuf.WriteString(strconv.FormatUint(mismatch.Pk, 10))
-				messageBuf.WriteString(" (source: ")
-				messageBuf.WriteString(mismatch.SourceChecksum)
-				messageBuf.WriteString(", target: ")
-				messageBuf.WriteString(mismatch.TargetChecksum)
-				messageBuf.WriteString(") ")
-			}
-			messageBuf.WriteString("] ")
-		}
-	}
-
-	message := messageBuf.String()
 	v.logger.WithField("incorrect_tables", incorrectTables).Error(message)
 
 	return VerificationResult{
 		DataCorrect:     false,
-		Message:         messageBuf.String(),
+		Message:         message,
 		IncorrectTables: incorrectTables,
 	}, nil
 }
@@ -570,22 +611,27 @@ func (v *InlineVerifier) compareHashes(source, target map[uint64][]byte) map[uin
 
 	for paginationKey, targetHash := range target {
 		sourceHash, exists := source[paginationKey]
-		if !bytes.Equal(sourceHash, targetHash) || !exists {
+		if !exists {
+			mismatchSet[paginationKey] = InlineVerifierMismatches{
+				Pk:           paginationKey,
+				MismatchType: MismatchRowMissingOnSource,
+			}
+		} else if !bytes.Equal(sourceHash, targetHash) {
 			mismatchSet[paginationKey] = InlineVerifierMismatches{
 				Pk:             paginationKey,
+				MismatchType:   MismatchRowChecksumDifference,
 				SourceChecksum: string(sourceHash),
 				TargetChecksum: string(targetHash),
 			}
 		}
 	}
 
-	for paginationKey, sourceHash := range source {
-		targetHash, exists := target[paginationKey]
-		if !bytes.Equal(sourceHash, targetHash) || !exists {
+	for paginationKey, _ := range source {
+		_, exists := target[paginationKey]
+		if !exists {
 			mismatchSet[paginationKey] = InlineVerifierMismatches{
-				Pk:             paginationKey,
-				SourceChecksum: string(sourceHash),
-				TargetChecksum: string(targetHash),
+				Pk:           paginationKey,
+				MismatchType: MismatchRowMissingOnTarget,
 			}
 		}
 	}
@@ -593,20 +639,40 @@ func (v *InlineVerifier) compareHashes(source, target map[uint64][]byte) map[uin
 	return mismatchSet
 }
 
-func (v *InlineVerifier) compareDecompressedData(source, target map[uint64]map[string][]byte) map[uint64]struct{} {
-	mismatchSet := map[uint64]struct{}{}
+func compareDecompressedData(source, target map[uint64]map[string][]byte) map[uint64]InlineVerifierMismatches {
+	mismatchSet := map[uint64]InlineVerifierMismatches{}
 
 	for paginationKey, targetDecompressedColumns := range target {
 		sourceDecompressedColumns, exists := source[paginationKey]
 		if !exists {
-			mismatchSet[paginationKey] = struct{}{}
+			// row missing on source
+			mismatchSet[paginationKey] = InlineVerifierMismatches{
+				Pk:           paginationKey,
+				MismatchType: MismatchRowMissingOnSource,
+			}
 			continue
 		}
 
 		for colName, targetData := range targetDecompressedColumns {
 			sourceData, exists := sourceDecompressedColumns[colName]
-			if !exists || !bytes.Equal(sourceData, targetData) {
-				mismatchSet[paginationKey] = struct{}{}
+			if !exists {
+				mismatchSet[paginationKey] = InlineVerifierMismatches{
+					Pk:             paginationKey,
+					MismatchType:   MismatchColumnMissingOnSource,
+					MismatchColumn: colName,
+				}
+				break // no need to compare other columns
+			} else if !bytes.Equal(sourceData, targetData) {
+				sourceChecksum := md5.Sum(sourceData)
+				targetChecksum := md5.Sum(targetData)
+
+				mismatchSet[paginationKey] = InlineVerifierMismatches{
+					Pk:             paginationKey,
+					MismatchType:   MismatchColumnValueDifference,
+					MismatchColumn: colName,
+					SourceChecksum: hex.EncodeToString(sourceChecksum[:]),
+					TargetChecksum: hex.EncodeToString(targetChecksum[:]),
+				}
 				break // no need to compare other columns
 			}
 		}
@@ -615,15 +681,22 @@ func (v *InlineVerifier) compareDecompressedData(source, target map[uint64]map[s
 	for paginationKey, sourceDecompressedColumns := range source {
 		targetDecompressedColumns, exists := target[paginationKey]
 		if !exists {
-			mismatchSet[paginationKey] = struct{}{}
+			// row missing on target
+			mismatchSet[paginationKey] = InlineVerifierMismatches{
+				Pk:           paginationKey,
+				MismatchType: MismatchRowMissingOnTarget,
+			}
 			continue
 		}
 
-		for colName, sourceData := range sourceDecompressedColumns {
-			targetData, exists := targetDecompressedColumns[colName]
-			if !exists || !bytes.Equal(sourceData, targetData) {
-				mismatchSet[paginationKey] = struct{}{}
-				break
+		for colName := range sourceDecompressedColumns {
+			_, exists := targetDecompressedColumns[colName]
+			if !exists {
+				mismatchSet[paginationKey] = InlineVerifierMismatches{
+					Pk:             paginationKey,
+					MismatchColumn: colName,
+					MismatchType:   MismatchColumnMissingOnTarget,
+				}
 			}
 		}
 	}
@@ -633,13 +706,9 @@ func (v *InlineVerifier) compareDecompressedData(source, target map[uint64]map[s
 
 func (v *InlineVerifier) compareHashesAndData(sourceHashes, targetHashes map[uint64][]byte, sourceData, targetData map[uint64]map[string][]byte) []InlineVerifierMismatches {
 	mismatches := v.compareHashes(sourceHashes, targetHashes)
-	compressedMismatch := v.compareDecompressedData(sourceData, targetData)
-	for paginationKey, _ := range compressedMismatch {
-		mismatches[paginationKey] = InlineVerifierMismatches{
-			Pk:             paginationKey,
-			SourceChecksum: "compressed-data-mismatch", // TODO: compute the hash of the compressed data and put it here
-			TargetChecksum: "compressed-data-mismatch",
-		}
+	compressedMismatch := compareDecompressedData(sourceData, targetData)
+	for paginationKey, mismatch := range compressedMismatch {
+		mismatches[paginationKey] = mismatch
 	}
 
 	mismatchList := make([]InlineVerifierMismatches, 0, len(mismatches))
