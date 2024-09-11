@@ -1,18 +1,10 @@
 #!/bin/bash
 set -xe
 
-DOCKER_COMPOSE_VERSION=v2.2.3
-
-sudo apt-get update
-sudo apt-get install -y netcat-openbsd make gcc
-
-sudo curl -o /usr/local/bin/docker-compose -L https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-`uname -s`-`uname -m`
-sudo chmod +x /usr/local/bin/docker-compose
-
 if [ "$MYSQL_VERSION" == "8.0" ]; then
-  docker-compose -f docker-compose_8.0.yml up -d mysql-1 mysql-2
+  docker compose -f docker-compose_8.0.yml up -d mysql-1 mysql-2
 else
-  docker-compose up -d mysql-1 mysql-2
+  docker compose up -d mysql-1 mysql-2
 fi
 
 MAX_ATTEMPTS=60
