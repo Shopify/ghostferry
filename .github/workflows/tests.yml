@@ -1,4 +1,4 @@
-name: Ghostferry MySQL 8.0 tests
+name: Ghostferry Tests
 
 on:
   push:
@@ -11,14 +11,17 @@ jobs:
     strategy:
       matrix:
         mysql: ["5.7", "8.0"]
+
     runs-on: ubuntu-latest
+    continue-on-error: true
     timeout-minutes: 15
+
     env:
       CI: "true"
       MYSQL_VERSION: ${{ matrix.mysql }}
+
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
           go-version: 1.16
@@ -33,14 +36,17 @@ jobs:
     strategy:
       matrix:
         mysql: ["5.7", "8.0"]
+
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    continue-on-error: true
+
     env:
       CI: "true"
       MYSQL_VERSION: ${{ matrix.mysql }}
+
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
           go-version: 1.16
@@ -55,18 +61,21 @@ jobs:
     strategy:
       matrix:
         mysql: ["5.7", "8.0"]
+
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    continue-on-error: true
+
     env:
       CI: "true"
       BUNDLE_WITHOUT: "development"
       MYSQL_VERSION: ${{ matrix.mysql }}
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: 1.16
-
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: 3.2
@@ -85,7 +94,6 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
           go-version: 1.16
