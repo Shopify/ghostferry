@@ -106,5 +106,5 @@ Algorithm Correctness
 ---------------------
 
 The overall algorithm of Ghostferry is specified in a TLA+ specification and
-validated via TLC. The algorithm can be see in the ``tlaplus`` directory in the
+validated via TLC. The algorithm can be seen in the ``tlaplus`` directory in the
 source tree.
