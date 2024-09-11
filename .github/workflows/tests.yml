@@ -14,10 +14,9 @@ jobs:
       CI: "true"
       MYSQL_VERSION: "8.0"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v2
+      - uses: actions/setup-go@v5
         with:
           go-version: 1.16
 
@@ -26,6 +25,7 @@ jobs:
 
       - name: Running GH-285 test
         run: ./examples/gh-285/bugreport.sh
+
   go-test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -33,10 +33,9 @@ jobs:
       CI: "true"
       MYSQL_VERSION: "8.0"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v2
+      - uses: actions/setup-go@v5
         with:
           go-version: 1.16
 
@@ -45,6 +44,7 @@ jobs:
 
       - name: Running Golang tests
         run: make test-go
+
   ruby-test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -53,15 +53,12 @@ jobs:
       BUNDLE_WITHOUT: "development"
       MYSQL_VERSION: "8.0"
     steps:
-      - uses: actions/checkout@v2
-
-      - name: Setup Golang
-        uses: actions/setup-go@v2
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
         with:
           go-version: 1.16
 
-      - name: Setup Ruby
-        uses: ruby/setup-ruby@v1
+      - uses: ruby/setup-ruby@v1
         with:
           ruby-version: 3.2
           bundler-cache: true
@@ -71,16 +68,16 @@ jobs:
 
       - name: Running Ruby tests
         run: bundle exec ruby test/main.rb
+
   build-debs:
     strategy:
       matrix:
         runner: [ubuntu-latest, shopify-ubuntu-arm64]
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v2
+      - uses: actions/setup-go@v5
         with:
           go-version: 1.16
 
@@ -88,7 +85,7 @@ jobs:
         run: .github/workflows/build-deb.sh
 
       - name: Upload debs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: debs-${{ github.sha }}
           path: build/ghostferry*
@@ -98,7 +95,7 @@ jobs:
     needs: build-debs
     steps:
       - name: Fetch uploaded artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: debs-${{ github.sha }}
       - name: shasum
@@ -108,7 +105,7 @@ jobs:
           echo "sha256sum:"
           cat ghostferry-$GITHUB_SHA.sha256sum
       - name: Upload checksum
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: debs-${{ github.sha }}
           path: "*.sha256sum"

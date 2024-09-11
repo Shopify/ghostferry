@@ -14,10 +14,9 @@ jobs:
       CI: "true"
       MYSQL_VERSION: "5.7"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v2
+      - uses: actions/setup-go@v5
         with:
           go-version: 1.16
 
@@ -26,6 +25,7 @@ jobs:
 
       - name: Running GH-285 test
         run: ./examples/gh-285/bugreport.sh
+
   go-test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -33,10 +33,9 @@ jobs:
       CI: "true"
       MYSQL_VERSION: "5.7"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v2
+      - uses: actions/setup-go@v5
         with:
           go-version: 1.16
 
@@ -45,6 +44,7 @@ jobs:
 
       - name: Running Golang tests
         run: make test-go
+
   ruby-test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -53,15 +53,13 @@ jobs:
       MYSQL_VERSION: "5.7"
       BUNDLE_WITHOUT: "development"
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - name: Setup Golang
-        uses: actions/setup-go@v2
+      - uses: actions/setup-go@v5
         with:
           go-version: 1.16
 
-      - name: Setup Ruby
-        uses: ruby/setup-ruby@v1
+      - uses: ruby/setup-ruby@v1
         with:
           ruby-version: 3.2
           bundler-cache: true
