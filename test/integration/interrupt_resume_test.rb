@@ -136,10 +136,11 @@ class InterruptResumeTest < GhostferryTestCase
     end
 
     dumped_state = ghostferry.run_expecting_interrupt
+    extra_message = "dumped state was: #{dumped_state.inspect}, expecting something under 'BinlogVerifyStore"
     assert_basic_fields_exist_in_dumped_state(dumped_state)
-    refute_nil dumped_state["BinlogVerifyStore"]
-    refute_nil dumped_state["BinlogVerifyStore"]["gftest"]
-    refute_nil dumped_state["BinlogVerifyStore"]["gftest"]["test_table_1"]
+    refute_nil dumped_state["BinlogVerifyStore"], "#{extra_message}'"
+    refute_nil dumped_state["BinlogVerifyStore"]["gftest"], "#{extra_message}.gftest'"
+    refute_nil dumped_state["BinlogVerifyStore"]["gftest"]["test_table_1"], "#{extra_message}.gftest.test_table_1'"
 
     # Resume Ghostferry with dumped state
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
@@ -297,8 +298,11 @@ class InterruptResumeTest < GhostferryTestCase
     assert_equal 1, incorrect_tables.length
     assert_equal "gftest.test_table_1", incorrect_tables.first
 
-    error_line = ghostferry.error_lines.last
-    assert error_line["msg"].start_with?("cutover verification failed for: gftest.test_table_1 [paginationKeys: #{chosen_id}")
+    error_message = ghostferry.error_lines.last["msg"]
+    predicate = "cutover verification failed for: gftest.test_table_1 [paginationKeys: #{chosen_id}"
+    expectation = error_message.start_with?(predicate)
+
+    assert expectation, "error message: #{error_message.inspect}, didn't start with #{predicate.inspect}"
   end
 
   # originally taken from @kolbitsch-lastline in https://github.com/Shopify/ghostferry/pull/160
