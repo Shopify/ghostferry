@@ -15,18 +15,22 @@ import (
 )
 
 const (
-	sourceDbName    = "gftest1"
-	targetDbName    = "gftest2"
-	testTable       = "table1"
+	SourceDBName = "gftest1"
+	TargetDBName = "gftest2"
+
+	testTable = "table1"
+
 	primaryKeyTable = "tenants_table"
+
 	joinedTableName = "joined_table"
 	joinTableName   = "join_table"
 	joiningKey      = "join_id"
 
-	testWithSecondaryTableName = "test_with_secondary_table"
+	joinedThroughTableName             = "joined_through_table"
+	joinTableForJoinedThroughTableName = "join_table_for_joined_through_table"
 
-	shardingKey   = "tenant_id"
-	shardingValue = 2
+	ShardingKey   = "tenant_id"
+	ShardingValue = 2
 )
 
 type ShardingUnitTestSuite struct {
@@ -85,41 +89,35 @@ func (t *ShardingUnitTestSuite) SetupTest() {
 	t.dropTestDbs()
 	testhelpers.SetupTest()
 
-	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, testTable, 100)
-	testhelpers.SeedInitialData(t.TargetDB, targetDbName, testTable, 0)
+	testhelpers.SeedInitialData(t.SourceDB, SourceDBName, testTable, 100)
+	testhelpers.SeedInitialData(t.TargetDB, TargetDBName, testTable, 0)
 
-	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, testWithSecondaryTableName, 100)
-	testhelpers.SeedInitialData(t.TargetDB, targetDbName, testWithSecondaryTableName, 0)
+	testhelpers.SeedInitialData(t.SourceDB, SourceDBName, joinedTableName, 10)
+	testhelpers.SeedInitialData(t.TargetDB, TargetDBName, joinedTableName, 0)
 
-	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, joinedTableName, 10)
-	testhelpers.SeedInitialData(t.TargetDB, targetDbName, joinedTableName, 0)
+	testhelpers.SeedInitialData(t.SourceDB, SourceDBName, joinTableName, 10)
+	testhelpers.SeedInitialData(t.TargetDB, TargetDBName, joinTableName, 0)
 
-	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, joinTableName, 10)
-	testhelpers.SeedInitialData(t.TargetDB, targetDbName, joinTableName, 0)
+	testhelpers.AddTenantID(t.SourceDB, SourceDBName, testTable, 3)
+	testhelpers.AddTenantID(t.TargetDB, TargetDBName, testTable, 3)
 
-	testhelpers.AddTenantID(t.SourceDB, sourceDbName, testTable, 3)
-	testhelpers.AddTenantID(t.TargetDB, targetDbName, testTable, 3)
+	testhelpers.AddTenantID(t.SourceDB, SourceDBName, joinTableName, 3)
+	testhelpers.AddTenantID(t.TargetDB, TargetDBName, joinTableName, 3)
 
-	testhelpers.AddTenantID(t.SourceDB, sourceDbName, joinTableName, 3)
-	testhelpers.AddTenantID(t.TargetDB, targetDbName, joinTableName, 3)
+	AddJoinID(t.SourceDB, SourceDBName, joinTableName, false)
+	AddJoinID(t.TargetDB, TargetDBName, joinTableName, false)
 
-	addJoinID(t.SourceDB, sourceDbName, testWithSecondaryTableName, true, 10)
-	addJoinID(t.TargetDB, targetDbName, testWithSecondaryTableName, true, 10)
+	testhelpers.SeedInitialData(t.SourceDB, SourceDBName, primaryKeyTable, 3)
+	testhelpers.SeedInitialData(t.TargetDB, TargetDBName, primaryKeyTable, 0)
 
-	addJoinID(t.SourceDB, sourceDbName, joinTableName, false, -1)
-	addJoinID(t.TargetDB, targetDbName, joinTableName, false, -1)
+	testhelpers.SeedInitialData(t.SourceDB, SourceDBName, testhelpers.TestCompressedTable1Name, 0)
+	testhelpers.SeedInitialData(t.TargetDB, TargetDBName, testhelpers.TestCompressedTable1Name, 0)
 
-	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, primaryKeyTable, 3)
-	testhelpers.SeedInitialData(t.TargetDB, targetDbName, primaryKeyTable, 0)
+	setColumnType(t.SourceDB, SourceDBName, testhelpers.TestCompressedTable1Name, testhelpers.TestCompressedColumn1Name, "MEDIUMBLOB")
+	setColumnType(t.TargetDB, TargetDBName, testhelpers.TestCompressedTable1Name, testhelpers.TestCompressedColumn1Name, "MEDIUMBLOB")
 
-	testhelpers.SeedInitialData(t.SourceDB, sourceDbName, testhelpers.TestCompressedTable1Name, 0)
-	testhelpers.SeedInitialData(t.TargetDB, targetDbName, testhelpers.TestCompressedTable1Name, 0)
-
-	setColumnType(t.SourceDB, sourceDbName, testhelpers.TestCompressedTable1Name, testhelpers.TestCompressedColumn1Name, "MEDIUMBLOB")
-	setColumnType(t.TargetDB, targetDbName, testhelpers.TestCompressedTable1Name, testhelpers.TestCompressedColumn1Name, "MEDIUMBLOB")
-
-	testhelpers.AddTenantID(t.SourceDB, sourceDbName, testhelpers.TestCompressedTable1Name, 3)
-	testhelpers.AddTenantID(t.TargetDB, targetDbName, testhelpers.TestCompressedTable1Name, 3)
+	testhelpers.AddTenantID(t.SourceDB, SourceDBName, testhelpers.TestCompressedTable1Name, 3)
+	testhelpers.AddTenantID(t.TargetDB, TargetDBName, testhelpers.TestCompressedTable1Name, 3)
 
 	t.setupShardingFerry()
 }
@@ -135,9 +133,61 @@ func (t *ShardingUnitTestSuite) AssertTenantCopied() {
 	testhelpers.AssertTwoQueriesHaveEqualResult(
 		t.T(),
 		t.Ferry.Ferry,
-		fmt.Sprintf("SELECT * FROM %s.%s WHERE %s = %d", sourceDbName, testTable, shardingKey, shardingValue),
-		fmt.Sprintf("SELECT * FROM %s.%s", targetDbName, testTable),
+		fmt.Sprintf("SELECT * FROM %s.%s WHERE %s = %d", SourceDBName, testTable, ShardingKey, ShardingValue),
+		fmt.Sprintf("SELECT * FROM %s.%s", TargetDBName, testTable),
 	)
+}
+
+func (t *ShardingUnitTestSuite) CreateShardingConfig() *sharding.Config {
+	ghostferryConfig := testhelpers.NewTestConfig()
+
+	shardingConfig := &sharding.Config{
+		Config: ghostferryConfig,
+
+		ShardingKey:   ShardingKey,
+		ShardingValue: ShardingValue,
+
+		SourceDB: SourceDBName,
+		TargetDB: TargetDBName,
+
+		JoinedTables: map[string][]sharding.JoinTable{
+			joinedTableName: []sharding.JoinTable{
+				{TableName: joinTableName, JoinColumn: joiningKey},
+			},
+		},
+		PrimaryKeyTables: []string{primaryKeyTable},
+	}
+
+	shardingConfig.CutoverLock = ghostferry.HTTPCallback{
+		URI:     fmt.Sprintf("%s/lock", t.server.URL),
+		Payload: "test_lock",
+	}
+
+	shardingConfig.CutoverUnlock = ghostferry.HTTPCallback{
+		URI:     fmt.Sprintf("%s/unlock", t.server.URL),
+		Payload: "test_unlock",
+	}
+
+	shardingConfig.ErrorCallback = ghostferry.HTTPCallback{
+		URI: fmt.Sprintf("%s/error", t.server.URL),
+	}
+
+	return shardingConfig
+}
+
+func (t *ShardingUnitTestSuite) SetupShardingFerry(config *sharding.Config) {
+
+	t.Config = config
+
+	var err error
+	t.Ferry, err = sharding.NewFerry(t.Config)
+	t.Require().Nil(err)
+
+	err = t.Ferry.Initialize()
+	t.Require().Nil(err)
+
+	err = t.Ferry.Start()
+	t.Require().Nil(err)
 }
 
 func (t *ShardingUnitTestSuite) setupShardingFerry() {
@@ -146,11 +196,11 @@ func (t *ShardingUnitTestSuite) setupShardingFerry() {
 	t.Config = &sharding.Config{
 		Config: ghostferryConfig,
 
-		ShardingKey:   shardingKey,
-		ShardingValue: shardingValue,
+		ShardingKey:   ShardingKey,
+		ShardingValue: ShardingValue,
 
-		SourceDB: sourceDbName,
-		TargetDB: targetDbName,
+		SourceDB: SourceDBName,
+		TargetDB: TargetDBName,
 
 		JoinedTables: map[string][]sharding.JoinTable{
 			joinedTableName: []sharding.JoinTable{
@@ -159,9 +209,9 @@ func (t *ShardingUnitTestSuite) setupShardingFerry() {
 		},
 
 		JoinedThroughTables: map[string]sharding.JoinThroughTable{
-			testWithSecondaryTableName: sharding.JoinThroughTable{
-				JoinTableName: joinTableName,
-				JoinCondition: fmt.Sprintf("`%s`.`%s` = `%s`.`%s`", testWithSecondaryTableName, joiningKey, joinTableName, joiningKey),
+			joinedThroughTableName: sharding.JoinThroughTable{
+				JoinTableName: joinTableForJoinedThroughTableName,
+				JoinCondition: fmt.Sprintf("`%s`.`%s` = `%s`.`%s`", joinedThroughTableName, joiningKey, joinTableForJoinedThroughTableName, joiningKey),
 			},
 		},
 
@@ -191,14 +241,14 @@ func (t *ShardingUnitTestSuite) setupShardingFerry() {
 }
 
 func (t *ShardingUnitTestSuite) dropTestDbs() {
-	_, err := t.SourceDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", sourceDbName))
+	_, err := t.SourceDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", SourceDBName))
 	t.Require().Nil(err)
 
-	_, err = t.TargetDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", targetDbName))
+	_, err = t.TargetDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", TargetDBName))
 	t.Require().Nil(err)
 }
 
-func addJoinID(db *sql.DB, dbName, tableName string, nullable bool, numberOfJoins int) {
+func AddJoinID(db *sql.DB, dbName, tableName string, nullable bool) {
 	query := fmt.Sprintf("ALTER TABLE %s.%s ADD %s bigint(20)", dbName, tableName, joiningKey)
 	if !nullable {
 		query += " NOT NULL"
@@ -208,9 +258,6 @@ func addJoinID(db *sql.DB, dbName, tableName string, nullable bool, numberOfJoin
 	testhelpers.PanicIfError(err)
 
 	query = fmt.Sprintf("UPDATE %s.%s SET %s = id", dbName, tableName, joiningKey)
-	if numberOfJoins != -1 {
-		query += fmt.Sprintf(" %% %d", numberOfJoins)
-	}
 
 	_, err = db.Exec(query)
 	testhelpers.PanicIfError(err)
