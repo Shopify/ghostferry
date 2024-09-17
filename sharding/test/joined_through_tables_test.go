@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/Shopify/ghostferry/sharding"
 	sth "github.com/Shopify/ghostferry/sharding/testhelpers"
@@ -36,15 +37,28 @@ func (t *JoinedThroughTablesTestSuite) SetupTest() {
 			JoinCondition: fmt.Sprintf("`%s`.`%s` = `%s`.`%s`", joinedThroughTable, joiningKey, joinTableForJoinedThroughTable, joiningKey),
 		},
 	}
-	t.SetupShardingFerry(config)
-}
-
-func (t *JoinedThroughTablesTestSuite) TestJoinedThroughTablesWithNoConcurrentUpdates() {
 	t.CutoverLock = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := t.Ferry.Ferry.SourceDB.Exec("SET GLOBAL read_only = ON")
 		t.Require().Nil(err)
+
+		if t.DataWriter != nil {
+			t.DataWriter.Stop()
+			t.DataWriter.Wait()
+		}
+		time.Sleep(1 * time.Second)
 	})
 
+	if t.DataWriter != nil {
+		go t.DataWriter.Run()
+	}
+	t.SetupShardingFerry(config)
+}
+
+func (t *JoinedThroughTablesTestSuite) TearDownTest() {
+	t.ShardingUnitTestSuite.TearDownTest()
+}
+
+func (t *JoinedThroughTablesTestSuite) TestJoinedThroughTablesWithNoConcurrentUpdates() {
 	t.Ferry.Run()
 
 	t.assertDataMatchBetweenSourceAndTargetForTenant()
@@ -62,9 +76,11 @@ func (t *JoinedThroughTablesTestSuite) TestJoinedThroughTablesWithConcurrentInse
 			fmt.Sprintf("%s.%s", sth.SourceDBName, joinTableForJoinedThroughTable),
 			fmt.Sprintf("%s.%s", sth.SourceDBName, joinedThroughTable),
 		},
+		Db: t.Ferry.Ferry.SourceDB,
 		ExtraInsertData: func(tableName string, vals map[string]interface{}) {
+			// randomly insert new records to join_table with a new join_id
+			// or joined_through_table records with a random existing join_id
 			if tableName == fmt.Sprintf("%s.%s", sth.SourceDBName, joinTableForJoinedThroughTable) {
-				fmt.Println("inserting into join_table_for_joined_through_table")
 
 				var maxJoinID int
 				row := t.Ferry.Ferry.SourceDB.QueryRow("SELECT MAX(join_id) FROM gftest1.join_table_for_joined_through_table")
@@ -74,9 +90,6 @@ func (t *JoinedThroughTablesTestSuite) TestJoinedThroughTablesWithConcurrentInse
 				vals["join_id"] = maxJoinID + 1
 				vals["tenant_id"] = rand.Intn(2) + 1
 			} else if tableName == fmt.Sprintf("%s.%s", sth.SourceDBName, joinedThroughTable) {
-				// insert test_with_secondary_table rows with max join_id
-				fmt.Println("inserting into joined_through_table")
-
 				var randomJoinID int
 				row := t.Ferry.Ferry.SourceDB.QueryRow("SELECT join_id FROM gftest1.join_table_for_joined_through_table WHERE tenant_id = ? AND join_id IS NOT NULL ORDER BY RAND() LIMIT 1", sth.ShardingValue)
 				err := row.Scan(&randomJoinID)
@@ -86,23 +99,67 @@ func (t *JoinedThroughTablesTestSuite) TestJoinedThroughTablesWithConcurrentInse
 			}
 		},
 	}
-	t.DataWriter.SetDB(t.Ferry.Ferry.SourceDB)
-
-	t.CutoverLock = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println("setting global read_only")
-		_, err := t.Ferry.Ferry.SourceDB.Exec("SET GLOBAL read_only = ON")
-		t.Require().Nil(err)
-
-		fmt.Println("stopping data writer")
-		t.DataWriter.Stop()
-		t.DataWriter.Wait()
-	})
 
 	go t.DataWriter.Run()
 	t.Ferry.Run()
 
 	t.assertDataMatchBetweenSourceAndTargetForTenant()
 	t.assertNoRowsForOtherTenantsCopied()
+}
+
+// This test fails because of inline verification error during cutover
+func (t *JoinedThroughTablesTestSuite) TestJoinedThroughTablesWithConcurrentUpdates() {
+	t.DataWriter = &testhelpers.MixedActionDataWriter{
+		ProbabilityOfUpdate: 1.0,
+		NumberOfWriters:     2,
+		Tables: []string{
+			fmt.Sprintf("%s.%s", sth.SourceDBName, joinTableForJoinedThroughTable),
+			fmt.Sprintf("%s.%s", sth.SourceDBName, joinedThroughTable),
+		},
+		Db: t.Ferry.Ferry.SourceDB,
+	}
+	go t.DataWriter.Run()
+	t.Ferry.Run()
+
+	t.assertDataMatchBetweenSourceAndTargetForTenant()
+	t.assertNoRowsForOtherTenantsCopied()
+}
+
+func (t *JoinedThroughTablesTestSuite) TestJoinedThroughTablesWithDataAlreadyExistInDestination() {
+	joinDataID := 50
+	joinID := 100
+	data := "foo"
+	joinedThroughDataPaginationKey := 150
+
+	t.insertJoinData(t.SourceDB, sth.SourceDBName, joinDataID, data, sth.ShardingValue, joinID)
+	t.insertJoinedThroughData(t.SourceDB, sth.SourceDBName, joinedThroughDataPaginationKey, data, joinID)
+
+	t.insertJoinData(t.TargetDB, sth.TargetDBName, joinDataID, data, sth.ShardingValue, joinID)
+	t.insertJoinedThroughData(t.TargetDB, sth.TargetDBName, joinedThroughDataPaginationKey, data, joinID)
+
+	t.Ferry.Run()
+
+	t.assertDataMatchBetweenSourceAndTargetForTenant()
+}
+
+// this fails right now because ID is the only unique constraint, and so after move the "existing data" is duplicated
+// in two rows
+func (t *JoinedThroughTablesTestSuite) TestJoinedThroughTablesWithDataAlreadyExistInDestinationDifferentPaginationKey() {
+	joinDataID := 50
+	joinID := 100
+	data := "foo"
+	joinedThroughDataPaginationKey := 150
+	targetJoinedThroughDataPaginationKey := 200
+
+	t.insertJoinData(t.SourceDB, sth.SourceDBName, joinDataID, data, sth.ShardingValue, joinID)
+	t.insertJoinedThroughData(t.SourceDB, sth.SourceDBName, joinedThroughDataPaginationKey, data, joinID)
+
+	t.insertJoinData(t.TargetDB, sth.TargetDBName, joinDataID, data, sth.ShardingValue, joinID)
+	t.insertJoinedThroughData(t.TargetDB, sth.TargetDBName, targetJoinedThroughDataPaginationKey, data, joinID)
+
+	t.Ferry.Run()
+
+	t.assertDataMatchBetweenSourceAndTargetForTenant()
 }
 
 func (t *JoinedThroughTablesTestSuite) setupTables() {
@@ -113,7 +170,6 @@ func (t *JoinedThroughTablesTestSuite) setupTables() {
 		| 1           | *           | 1                 |
 		| 2           | *           | 2                 |
 		| 3           | *           | 3                 |
-		| 4           | *           | 4                 |
 
 		=== join_table_for_joined_through_table ===
 		| id (bigint) | data (text) | tenant_id (bigint) | join_id (bigint) |
@@ -121,9 +177,8 @@ func (t *JoinedThroughTablesTestSuite) setupTables() {
 		| 1           | *           | 1                   | 1                 |
 		| 2           | *           | 2                   | 2                 |
 		| 3           | *           | 3                   | 3                 |
-		| 4           | *           | 4                   | 4                 |
-		| 5           | *           | 4                   | 1                 |
-		| 6           | *           | 2                   | null              |
+		| 4           | *           | 2                   | 3                 |
+		| 5           | *           | 2                   | null              |
 	*/
 	testhelpers.SeedInitialData(t.SourceDB, sth.SourceDBName, joinTableForJoinedThroughTable, 0)
 	testhelpers.SeedInitialData(t.TargetDB, sth.TargetDBName, joinTableForJoinedThroughTable, 0)
@@ -138,24 +193,22 @@ func (t *JoinedThroughTablesTestSuite) setupTables() {
 	sth.AddJoinID(t.SourceDB, sth.SourceDBName, joinedThroughTable, true)
 	sth.AddJoinID(t.TargetDB, sth.TargetDBName, joinedThroughTable, true)
 
-	t.insertJoinData(t.SourceDB, sth.SourceDBName, 1, 1)
-	t.insertJoinData(t.SourceDB, sth.SourceDBName, 2, 2)
-	t.insertJoinData(t.SourceDB, sth.SourceDBName, 3, 3)
-	t.insertJoinData(t.SourceDB, sth.SourceDBName, 4, 4)
-	t.insertJoinData(t.SourceDB, sth.SourceDBName, 4, 1)
-	t.insertJoinData(t.SourceDB, sth.SourceDBName, 2, 0)
+	t.insertJoinData(t.SourceDB, sth.SourceDBName, 1, "", 1, 1)
+	t.insertJoinData(t.SourceDB, sth.SourceDBName, 2, "", 2, 2)
+	t.insertJoinData(t.SourceDB, sth.SourceDBName, 3, "", 3, 3)
+	t.insertJoinData(t.SourceDB, sth.SourceDBName, 4, "", 2, 3)
+	t.insertJoinData(t.SourceDB, sth.SourceDBName, 5, "", 2, 0)
 
-	t.insertJoinedThroughData(t.SourceDB, sth.SourceDBName, 1)
-	t.insertJoinedThroughData(t.SourceDB, sth.SourceDBName, 2)
-	t.insertJoinedThroughData(t.SourceDB, sth.SourceDBName, 3)
-	t.insertJoinedThroughData(t.SourceDB, sth.SourceDBName, 4)
+	t.insertJoinedThroughData(t.SourceDB, sth.SourceDBName, 1, "", 1)
+	t.insertJoinedThroughData(t.SourceDB, sth.SourceDBName, 2, "", 2)
+	t.insertJoinedThroughData(t.SourceDB, sth.SourceDBName, 3, "", 3)
 }
 
-func (t *JoinedThroughTablesTestSuite) insertJoinData(db *sql.DB, dbName string, tenantID int, joinID int) {
+func (t *JoinedThroughTablesTestSuite) insertJoinData(db *sql.DB, dbName string, id int, data string, tenantID int, joinID int) {
 	tx, err := db.Begin()
 	testhelpers.PanicIfError(err)
 
-	query := fmt.Sprintf("INSERT INTO %s.%s (data, tenant_id, join_id) VALUES (?, ?, ?)", dbName, joinTableForJoinedThroughTable)
+	query := fmt.Sprintf("INSERT INTO %s.%s (id, data, tenant_id, join_id) VALUES (?, ?, ?, ?)", dbName, joinTableForJoinedThroughTable)
 
 	var joinIDValue interface{}
 	if joinID == 0 {
@@ -164,26 +217,28 @@ func (t *JoinedThroughTablesTestSuite) insertJoinData(db *sql.DB, dbName string,
 		joinIDValue = joinID
 	}
 
-	_, err = tx.Exec(query, testhelpers.RandData(), tenantID, joinIDValue)
+	if data == "" {
+		data = testhelpers.RandData()
+	}
+	_, err = tx.Exec(query, &id, data, tenantID, joinIDValue)
 	testhelpers.PanicIfError(err)
 
 	testhelpers.PanicIfError(tx.Commit())
 }
 
-func (t *JoinedThroughTablesTestSuite) insertJoinedThroughData(db *sql.DB, dbName string, joinID int) {
+func (t *JoinedThroughTablesTestSuite) insertJoinedThroughData(db *sql.DB, dbName string, id int, data string, joinID int) {
 	tx, err := db.Begin()
 	testhelpers.PanicIfError(err)
 
-	query := fmt.Sprintf("INSERT INTO %s.%s (data, join_id) VALUES (?, ?)", dbName, joinedThroughTable)
+	query := fmt.Sprintf("INSERT INTO %s.%s (id, data, join_id) VALUES (?, ?, ?)", dbName, joinedThroughTable)
 
-	_, err = tx.Exec(query, testhelpers.RandData(), joinID)
+	if data == "" {
+		data = testhelpers.RandData()
+	}
+	_, err = tx.Exec(query, id, data, joinID)
 	testhelpers.PanicIfError(err)
 
 	testhelpers.PanicIfError(tx.Commit())
-}
-
-func (t *JoinedThroughTablesTestSuite) TearDownTest() {
-	t.ShardingUnitTestSuite.TearDownTest()
 }
 
 func (t *JoinedThroughTablesTestSuite) assertDataMatchBetweenSourceAndTargetForTenant() {
