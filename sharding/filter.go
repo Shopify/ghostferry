@@ -98,9 +98,9 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 
 	if joinThroughTable, exists := f.JoinedThroughTables[table.Name]; exists {
 		// This is a "joined through table". It is similar to a "joined table" such that the table contains data
-		// shared between multiple sharding values, but having a n-1 relationship to the join table, so that
-		// table rows cannot be inidividually identified and paginated with sub-queries like in the "joined table" case,
-		// and must be done with a JOIN clause instead.
+		// shared (typically global data) between multiple sharding values, but having a n-1 relationship to the join table,
+		// so that table rows cannot be inidividually identified and paginated with sub-queries like in the "joined table"
+		// case, and must be done with a JOIN clause instead.
 		//
 		// Target query:
 		//

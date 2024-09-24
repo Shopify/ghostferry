@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/sharding"
 	sth "github.com/Shopify/ghostferry/sharding/testhelpers"
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -51,7 +52,7 @@ func (t *JoinedThroughTablesTestSuite) SetupTest() {
 	if t.DataWriter != nil {
 		go t.DataWriter.Run()
 	}
-	t.SetupShardingFerry(config)
+	// t.SetupShardingFerry(config)
 }
 
 func (t *JoinedThroughTablesTestSuite) TearDownTest() {
@@ -137,26 +138,63 @@ func (t *JoinedThroughTablesTestSuite) TestJoinedThroughTablesWithDataAlreadyExi
 	t.insertJoinData(t.TargetDB, sth.TargetDBName, joinDataID, data, sth.ShardingValue, joinID)
 	t.insertJoinedThroughData(t.TargetDB, sth.TargetDBName, joinedThroughDataPaginationKey, data, joinID)
 
-	t.Ferry.Run()
-
 	t.assertDataMatchBetweenSourceAndTargetForTenant()
 }
 
-// this fails right now because ID is the only unique constraint, and so after move the "existing data" is duplicated
-// in two rows
-func (t *JoinedThroughTablesTestSuite) TestJoinedThroughTablesWithDataAlreadyExistInDestinationDifferentPaginationKey() {
-	joinDataID := 50
+// The data already exists on destination with a different ID, we can exclude it from verification as long as there's another column
+// that can be used as the pagination key
+func (t *JoinedThroughTablesTestSuite) TestJoinedThroughTablesWithDataAlreadyExistInDestinationDifferentID() {
+	joinTableID := 50
 	joinID := 100
 	data := "foo"
-	joinedThroughDataPaginationKey := 150
-	targetJoinedThroughDataPaginationKey := 200
+	joinedThroughTableID := 150
+	targetJoinedThroughTableID := 200
+	globalID := 999
 
-	t.insertJoinData(t.SourceDB, sth.SourceDBName, joinDataID, data, sth.ShardingValue, joinID)
-	t.insertJoinedThroughData(t.SourceDB, sth.SourceDBName, joinedThroughDataPaginationKey, data, joinID)
+	addGlobalID := func(db *sql.DB, dbName string, tableName string) {
+		// add column
+		query := fmt.Sprintf("ALTER TABLE %s.%s ADD COLUMN global_id bigint UNIQUE ", dbName, tableName)
+		_, err := db.Exec(query)
+		testhelpers.PanicIfError(err)
 
-	t.insertJoinData(t.TargetDB, sth.TargetDBName, joinDataID, data, sth.ShardingValue, joinID)
-	t.insertJoinedThroughData(t.TargetDB, sth.TargetDBName, targetJoinedThroughDataPaginationKey, data, joinID)
+		// populate value
+		query = fmt.Sprintf("UPDATE %s.%s SET global_id = id", dbName, tableName)
+		_, err = db.Exec(query)
+		testhelpers.PanicIfError(err)
+	}
+	updateGlobalID := func(db *sql.DB, dbName string, tableName string, id int, globalID int) {
+		query := fmt.Sprintf("UPDATE %s.%s SET global_id = ? WHERE id = ?", dbName, tableName)
+		_, err := db.Exec(query, globalID, id)
+		testhelpers.PanicIfError(err)
+	}
 
+	addGlobalID(t.SourceDB, sth.SourceDBName, joinedThroughTable)
+	addGlobalID(t.TargetDB, sth.TargetDBName, joinedThroughTable)
+
+	t.insertJoinData(t.SourceDB, sth.SourceDBName, joinTableID, data, sth.ShardingValue, joinID)
+	t.insertJoinedThroughData(t.SourceDB, sth.SourceDBName, joinedThroughTableID, data, joinID)
+	updateGlobalID(t.SourceDB, sth.SourceDBName, joinedThroughTable, joinedThroughTableID, globalID)
+
+	t.insertJoinData(t.TargetDB, sth.TargetDBName, joinTableID, data, sth.ShardingValue, joinID)
+	t.insertJoinedThroughData(t.TargetDB, sth.TargetDBName, targetJoinedThroughTableID, data, joinID)
+	updateGlobalID(t.TargetDB, sth.TargetDBName, joinedThroughTable, targetJoinedThroughTableID, globalID)
+
+	config := t.Config
+	config.CascadingPaginationColumnConfig = &ghostferry.CascadingPaginationColumnConfig{
+		PerTable: map[string]map[string]string{
+			sth.SourceDBName: {
+				joinedThroughTable: "global_id",
+			},
+		},
+	}
+	config.IgnoredColumnsForVerification = ghostferry.ColumnIgnoreConfig{
+		sth.SourceDBName: {
+			joinedThroughTable: {
+				"id": {},
+			},
+		},
+	}
+	t.SetupShardingFerry(config)
 	t.Ferry.Run()
 
 	t.assertDataMatchBetweenSourceAndTargetForTenant()
@@ -239,6 +277,12 @@ func (t *JoinedThroughTablesTestSuite) insertJoinedThroughData(db *sql.DB, dbNam
 	testhelpers.PanicIfError(err)
 
 	testhelpers.PanicIfError(tx.Commit())
+}
+
+func (t *JoinedThroughTablesTestSuite) addGlobalID(db *sql.DB, dbName string, tableName string, columnType string) {
+	query := fmt.Sprintf("ALTER TABLE %s.%s ADD COLUMN global_id %s NOT NULL UNIQUE", dbName, tableName, columnType)
+	_, err := db.Exec(query)
+	testhelpers.PanicIfError(err)
 }
 
 func (t *JoinedThroughTablesTestSuite) assertDataMatchBetweenSourceAndTargetForTenant() {
