@@ -38,6 +38,7 @@ const (
 	StateVerifyBeforeCutover = "verify-before-cutover"
 	StateCutover             = "cutover"
 	StateDone                = "done"
+	minReportFrequency       = 1 * time.Minute
 )
 
 func MaskedDSN(c *mysql.Config) string {
@@ -673,6 +674,9 @@ func (f *Ferry) Run() {
 			defer supportingServicesWg.Done()
 
 			frequency := time.Duration(f.Config.ProgressReportFrequency) * time.Millisecond
+			if frequency < minReportFrequency {
+				frequency = minReportFrequency
+			}
 
 			for {
 				select {
@@ -691,6 +695,9 @@ func (f *Ferry) Run() {
 			defer supportingServicesWg.Done()
 
 			frequency := time.Duration(f.Config.StateReportFrequency) * time.Millisecond
+			if frequency < minReportFrequency {
+				frequency = minReportFrequency
+			}
 
 			for {
 				select {
