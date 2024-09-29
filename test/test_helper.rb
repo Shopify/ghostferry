@@ -1,7 +1,7 @@
 require "stringio"
 require "logger"
 
-require "pry-byebug" unless ENV["CI"]
+# require "pry-byebug" unless ENV["CI"]
 
 GO_CODE_PATH = File.join(File.absolute_path(File.dirname(__FILE__)), "lib", "go")
 FIXTURE_PATH = File.join(File.absolute_path(File.dirname(__FILE__)), "fixtures")
