@@ -27,7 +27,7 @@ GEM
       pry (>= 0.13, < 0.15)
     ruby-progressbar (1.13.0)
     tqdm (0.4.1)
-    webrick (1.8.1)
+    webrick (1.8.2)
 
 PLATFORMS
   ruby
