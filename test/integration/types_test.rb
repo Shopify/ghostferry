@@ -1,7 +1,8 @@
 require "test_helper"
 
 class TypesTest < GhostferryTestCase
-  JSON_OBJ = '{"data": {"float": 32.0, "quote": "\\\'", "value": [1, 12.13]}}'
+  JSON_OBJ = '{"data": {"quote": "\\\'", "value": [1, 12.13]}}'
+  JSON_OBJ_WITH_TRAILING_ZERO = '{"data": {"float": 32.0}}'
   EMPTY_JSON = '{}'
   JSON_ARRAY = '[\"test_data\", \"test_data_2\"]'
   JSON_NULL = 'null'
@@ -105,10 +106,10 @@ class TypesTest < GhostferryTestCase
     # with a JSON column is broken on 5.7.
     # See: https://bugs.mysql.com/bug.php?id=87847
     res = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
-    assert_equal 20, res.first["cnt"]
+    assert_equal ENV["MYSQL_VERSION"] == "8.0" ? 22 : 18, res.first["cnt"] # 22 rows with trailing zero data, 18 without trailing zero
 
     expected = [
-      {"id"=>1, "data"=>"{\"data\": {\"float\": 32.0, \"quote\": \"'\", \"value\": [1, 12.13]}}"},
+      {"id"=>1, "data"=>"{\"data\": {\"quote\": \"'\", \"value\": [1, 12.13]}}"},
       {"id"=>2, "data"=>"[\"test_data\", \"test_data_2\"]"},
       {"id"=>3, "data"=>"{}"},
       {"id"=>4, "data"=>nil},
@@ -116,19 +117,21 @@ class TypesTest < GhostferryTestCase
       {"id"=>6, "data"=>"true"},
       {"id"=>7, "data"=>"false"},
       {"id"=>8, "data"=>"42"},
-      {"id"=>9, "data"=>"52.0"},
-      {"id"=>10, "data"=>"52.13"},
-      {"id"=>11, "data"=>"{\"data\": {\"float\": 32.0, \"quote\": \"'\", \"value\": [1, 12.13]}}"},
-      {"id"=>12, "data"=>"[\"test_data\", \"test_data_2\"]"},
-      {"id"=>13, "data"=>"{}"},
-      {"id"=>14, "data"=>nil},
-      {"id"=>15, "data"=>"null"},
-      {"id"=>16, "data"=>"true"},
-      {"id"=>17, "data"=>"false"},
-      {"id"=>18, "data"=>"42"},
-      {"id"=>19, "data"=>"52.0"},
-      {"id"=>20, "data"=>"52.13"},
+      {"id"=>9, "data"=>"52.13"}
     ]
+
+    expected += [
+      {"id" => 10, "data" => "52.0"},
+      {"id" => 11, "data" => "{\"data\": {\"float\": 32.0}}"}
+    ] if ENV["MYSQL_VERSION"] == "8.0"
+
+    expected_length = expected.length
+    expected_for_second_insert = Marshal.load(Marshal.dump(expected)) # makes deep copy of the original array
+
+    expected += expected_for_second_insert.map do |row|
+      row["id"] += expected_length
+      row
+    end
 
     res = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME} ORDER BY id ASC")
     res.zip(expected).each do |row, expected_row|
@@ -157,8 +160,8 @@ class TypesTest < GhostferryTestCase
       loop do
         sleep 0.1
         res = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
-        if res.first["cnt"] == 8
-          1.upto(8) do |i|
+        if res.first["cnt"] == (ENV["MYSQL_VERSION"] == "8.0" ? 11 : 9)
+          1.upto(ENV["MYSQL_VERSION"] == "8.0" ? 11 : 9) do |i|
             source_db.query("DELETE FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{i}")
           end
           break
@@ -199,17 +202,21 @@ class TypesTest < GhostferryTestCase
       loop do
         sleep 0.1
         res = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
-        if res.first["cnt"] == 10
+        if res.first["cnt"] == (ENV["MYSQL_VERSION"] == "8.0" ? 11 : 9)
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{EMPTY_JSON}' WHERE id = 1")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_ARRAY}' WHERE id = 2")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = NULL WHERE id = 3")
-          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_OBJ}' WHERE id = 4")
+          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{ENV["MYSQL_VERSION"] == "8.0" ? JSON_OBJ_WITH_TRAILING_ZERO : JSON_OBJ}' WHERE id = 4")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_TRUE}' WHERE id = 5")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_FALSE}' WHERE id = 6")
-          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_FLOATING_POINT_WITH_ZERO_FRACTIONAL_PART}' WHERE id = 7")
-          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_NULL}' WHERE id = 8")
-          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_NUMBER}' WHERE id = 9")
-          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_FLOATING_POINT_WITH_NON_ZERO_FRACTIONAL_PART}' WHERE id = 10")
+          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_NULL}' WHERE id = 7")
+          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{ENV["MYSQL_VERSION"] == "8.0" ? JSON_FLOATING_POINT_WITH_ZERO_FRACTIONAL_PART : JSON_NUMBER}' WHERE id = 8")
+          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_FLOATING_POINT_WITH_NON_ZERO_FRACTIONAL_PART}' WHERE id = 9")
+
+          if ENV["MYSQL_VERSION"] == "8.0"
+            source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_NUMBER}' WHERE id = 10")
+            source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_OBJ}' WHERE id = 11")
+          end
           break
         end
 
@@ -224,20 +231,36 @@ class TypesTest < GhostferryTestCase
     refute timedout, "failed due to time out while waiting for the 4 insert binlogs to be written to the target"
 
     res = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
-    assert_equal 10, res.first["cnt"]
+    assert_equal (ENV["MYSQL_VERSION"] == "8.0" ? 11 : 9), res.first["cnt"]
 
-    expected = [
+    expected_mysql_5_7 = [
       {"id"=>1, "data"=>"{}"},
       {"id"=>2, "data"=>"[\"test_data\", \"test_data_2\"]"},
       {"id"=>3, "data"=>nil},
-      {"id"=>4, "data"=>"{\"data\": {\"float\": 32.0, \"quote\": \"'\", \"value\": [1, 12.13]}}"},
+      {"id"=>4, "data"=>"{\"data\": {\"quote\": \"'\", \"value\": [1, 12.13]}}"},
       {"id"=>5, "data"=>"true"},
       {"id"=>6, "data"=>"false"},
-      {"id"=>7, "data"=>"52.0"},
-      {"id"=>8, "data"=>"null"},
-      {"id"=>9, "data"=>"42"},
-      {"id"=>10, "data"=>"52.13"},
+      {"id"=>7, "data"=>"null"},
+      {"id"=>8, "data"=>"42"},
+      {"id"=>9, "data"=>"52.13"},
     ]
+
+    expected_mysql_8_0 = []
+    if ENV["MYSQL_VERSION"] == "8.0"
+      expected_mysql_8_0 = expected_mysql_5_7.map do |row|
+        if row["id"] == 4
+          row["data"] = "{\"data\": {\"float\": 32.0}}"
+        elsif row["id"] == 8
+          row["data"] = "52.0"
+        end
+        row
+      end + [
+        {"id" => 10, "data" => "42"},
+        {"id" => 11, "data" => "{\"data\": {\"quote\": \"'\", \"value\": [1, 12.13]}}"},
+      ]
+    end
+
+    expected = ENV["MYSQL_VERSION"] == "8.0" ? expected_mysql_8_0 : expected_mysql_5_7
 
     res = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME} ORDER BY id ASC")
     res.zip(expected).each do |row, expected_row|
@@ -404,6 +427,11 @@ class TypesTest < GhostferryTestCase
 
   private
 
+  def insert_json_with_trailing_zero_on_source
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_FLOATING_POINT_WITH_ZERO_FRACTIONAL_PART}')")
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_OBJ_WITH_TRAILING_ZERO}')")
+  end
+
   def insert_json_on_source
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_OBJ}')")
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_ARRAY}')")
@@ -413,8 +441,8 @@ class TypesTest < GhostferryTestCase
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_TRUE}')")
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_FALSE}')")
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_NUMBER}')")
-    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_FLOATING_POINT_WITH_ZERO_FRACTIONAL_PART}')")
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_FLOATING_POINT_WITH_NON_ZERO_FRACTIONAL_PART}')")
+    insert_json_with_trailing_zero_on_source if ENV["MYSQL_VERSION"] == "8.0"
   end
 
   def execute_copy_data_in_fixed_size_binary_column(column_size:, inserted_data:, expected_inserted_data:, updated_data:)
