@@ -1,13 +1,15 @@
 require "test_helper"
 
 class TypesTest < GhostferryTestCase
-  JSON_OBJ = '{"data": {"quote": "\\\'", "value": [1]}}'
+  JSON_OBJ = '{"data": {"float": 32.0, "quote": "\\\'", "value": [1, 12.13]}}'
   EMPTY_JSON = '{}'
   JSON_ARRAY = '[\"test_data\", \"test_data_2\"]'
   JSON_NULL = 'null'
   JSON_TRUE = 'true'
   JSON_FALSE = 'false'
   JSON_NUMBER = '42'
+  JSON_FLOATING_POINT_WITH_ZERO_FRACTIONAL_PART = '52.0'
+  JSON_FLOATING_POINT_WITH_NON_ZERO_FRACTIONAL_PART = '52.13'
 
   def test_json_colum_not_null_with_no_default_is_invalid_this_is_fine
     # See: https://bugs.mysql.com/bug.php?id=98496
@@ -103,10 +105,10 @@ class TypesTest < GhostferryTestCase
     # with a JSON column is broken on 5.7.
     # See: https://bugs.mysql.com/bug.php?id=87847
     res = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
-    assert_equal 16, res.first["cnt"]
+    assert_equal 20, res.first["cnt"]
 
     expected = [
-      {"id"=>1, "data"=>"{\"data\": {\"quote\": \"'\", \"value\": [1]}}"},
+      {"id"=>1, "data"=>"{\"data\": {\"float\": 32.0, \"quote\": \"'\", \"value\": [1, 12.13]}}"},
       {"id"=>2, "data"=>"[\"test_data\", \"test_data_2\"]"},
       {"id"=>3, "data"=>"{}"},
       {"id"=>4, "data"=>nil},
@@ -114,15 +116,18 @@ class TypesTest < GhostferryTestCase
       {"id"=>6, "data"=>"true"},
       {"id"=>7, "data"=>"false"},
       {"id"=>8, "data"=>"42"},
-
-      {"id"=>9, "data"=>"{\"data\": {\"quote\": \"'\", \"value\": [1]}}"},
-      {"id"=>10, "data"=>"[\"test_data\", \"test_data_2\"]"},
-      {"id"=>11, "data"=>"{}"},
-      {"id"=>12, "data"=>nil},
-      {"id"=>13, "data"=>"null"},
-      {"id"=>14, "data"=>"true"},
-      {"id"=>15, "data"=>"false"},
-      {"id"=>16, "data"=>"42"},
+      {"id"=>9, "data"=>"52.0"},
+      {"id"=>10, "data"=>"52.13"},
+      {"id"=>11, "data"=>"{\"data\": {\"float\": 32.0, \"quote\": \"'\", \"value\": [1, 12.13]}}"},
+      {"id"=>12, "data"=>"[\"test_data\", \"test_data_2\"]"},
+      {"id"=>13, "data"=>"{}"},
+      {"id"=>14, "data"=>nil},
+      {"id"=>15, "data"=>"null"},
+      {"id"=>16, "data"=>"true"},
+      {"id"=>17, "data"=>"false"},
+      {"id"=>18, "data"=>"42"},
+      {"id"=>19, "data"=>"52.0"},
+      {"id"=>20, "data"=>"52.13"},
     ]
 
     res = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME} ORDER BY id ASC")
@@ -194,15 +199,17 @@ class TypesTest < GhostferryTestCase
       loop do
         sleep 0.1
         res = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
-        if res.first["cnt"] == 8
+        if res.first["cnt"] == 10
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{EMPTY_JSON}' WHERE id = 1")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_ARRAY}' WHERE id = 2")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = NULL WHERE id = 3")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_OBJ}' WHERE id = 4")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_TRUE}' WHERE id = 5")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_FALSE}' WHERE id = 6")
-          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_NUMBER}' WHERE id = 7")
+          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_FLOATING_POINT_WITH_ZERO_FRACTIONAL_PART}' WHERE id = 7")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_NULL}' WHERE id = 8")
+          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_NUMBER}' WHERE id = 9")
+          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_FLOATING_POINT_WITH_NON_ZERO_FRACTIONAL_PART}' WHERE id = 10")
           break
         end
 
@@ -217,17 +224,19 @@ class TypesTest < GhostferryTestCase
     refute timedout, "failed due to time out while waiting for the 4 insert binlogs to be written to the target"
 
     res = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
-    assert_equal 8, res.first["cnt"]
+    assert_equal 10, res.first["cnt"]
 
     expected = [
       {"id"=>1, "data"=>"{}"},
       {"id"=>2, "data"=>"[\"test_data\", \"test_data_2\"]"},
       {"id"=>3, "data"=>nil},
-      {"id"=>4, "data"=>"{\"data\": {\"quote\": \"'\", \"value\": [1]}}"},
+      {"id"=>4, "data"=>"{\"data\": {\"float\": 32.0, \"quote\": \"'\", \"value\": [1, 12.13]}}"},
       {"id"=>5, "data"=>"true"},
       {"id"=>6, "data"=>"false"},
-      {"id"=>7, "data"=>"42"},
+      {"id"=>7, "data"=>"52.0"},
       {"id"=>8, "data"=>"null"},
+      {"id"=>9, "data"=>"42"},
+      {"id"=>10, "data"=>"52.13"},
     ]
 
     res = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME} ORDER BY id ASC")
@@ -319,7 +328,7 @@ class TypesTest < GhostferryTestCase
 
   def test_copy_data_in_fixed_size_binary_column__value_completely_filled
     # Also see: https://github.com/Shopify/ghostferry/pull/159#issuecomment-597769258
-    # 
+    #
     # NOTE: This test is interesting (beyond what is covered above already),
     # because it seems the server strips the trailing 0-bytes before sending
     # them to the binlog even when the trailing 0-bytes are inserted by the user.
@@ -334,7 +343,7 @@ class TypesTest < GhostferryTestCase
 
   def test_copy_data_in_fixed_size_binary_column__value_is_empty_and_length_is_1
     # Also see: https://github.com/Shopify/ghostferry/pull/159#issuecomment-597769258
-    # 
+    #
     # slight variation to cover the corner-case where there is no data in the
     # column at all and the entire value is 0-padded (here, only 1 byte)
     execute_copy_data_in_fixed_size_binary_column(
@@ -393,8 +402,6 @@ class TypesTest < GhostferryTestCase
     end
   end
 
-
-
   private
 
   def insert_json_on_source
@@ -406,6 +413,8 @@ class TypesTest < GhostferryTestCase
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_TRUE}')")
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_FALSE}')")
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_NUMBER}')")
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_FLOATING_POINT_WITH_ZERO_FRACTIONAL_PART}')")
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_FLOATING_POINT_WITH_NON_ZERO_FRACTIONAL_PART}')")
   end
 
   def execute_copy_data_in_fixed_size_binary_column(column_size:, inserted_data:, expected_inserted_data:, updated_data:)
