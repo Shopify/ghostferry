@@ -49,12 +49,9 @@ type FloatWithTrailingZero float64
 
 func (f FloatWithTrailingZero) MarshalJSON() ([]byte, error) {
 	if float64(f) == float64(int(f)) {
-		fmt.Println("MarshalJSON", float64(f), int(f))
-		fmt.Println("number", strconv.FormatFloat(float64(f), 'f', 1, 32))
 		return []byte(strconv.FormatFloat(float64(f), 'f', 1, 32)), nil
 	}
 
-	fmt.Println("number2", strconv.FormatFloat(float64(f), 'f', -1, 32))
 	return []byte(strconv.FormatFloat(float64(f), 'f', -1, 32)), nil
 }
 
