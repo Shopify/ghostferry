@@ -106,7 +106,7 @@ class TypesTest < GhostferryTestCase
     # with a JSON column is broken on 5.7.
     # See: https://bugs.mysql.com/bug.php?id=87847
     res = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
-    assert_equal ENV["MYSQL_VERSION"] == "8.0" ? 22 : 18, res.first["cnt"] # 22 rows with trailing zero data, 18 without trailing zero
+    assert_equal 22, res.first["cnt"]
 
     expected = [
       {"id"=>1, "data"=>"{\"data\": {\"quote\": \"'\", \"value\": [1, 12.13]}}"},
@@ -117,13 +117,10 @@ class TypesTest < GhostferryTestCase
       {"id"=>6, "data"=>"true"},
       {"id"=>7, "data"=>"false"},
       {"id"=>8, "data"=>"42"},
-      {"id"=>9, "data"=>"52.13"}
+      {"id"=>9, "data"=>"52.13"},
+      {"id" => 10, "data" => format_float_based_on_mysql_version("52.0")},
+      {"id" => 11, "data" => "{\"data\": {\"float\": #{format_float_based_on_mysql_version("32.0")}}}"}
     ]
-
-    expected += [
-      {"id" => 10, "data" => "52.0"},
-      {"id" => 11, "data" => "{\"data\": {\"float\": 32.0}}"}
-    ] if ENV["MYSQL_VERSION"] == "8.0"
 
     expected_length = expected.length
     expected_for_second_insert = Marshal.load(Marshal.dump(expected)) # makes deep copy of the original array
@@ -160,8 +157,8 @@ class TypesTest < GhostferryTestCase
       loop do
         sleep 0.1
         res = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
-        if res.first["cnt"] == (ENV["MYSQL_VERSION"] == "8.0" ? 11 : 9)
-          1.upto(ENV["MYSQL_VERSION"] == "8.0" ? 11 : 9) do |i|
+        if res.first["cnt"] == 11
+          1.upto(11) do |i|
             source_db.query("DELETE FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{i}")
           end
           break
@@ -202,21 +199,18 @@ class TypesTest < GhostferryTestCase
       loop do
         sleep 0.1
         res = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
-        if res.first["cnt"] == (ENV["MYSQL_VERSION"] == "8.0" ? 11 : 9)
+        if res.first["cnt"] == 11
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{EMPTY_JSON}' WHERE id = 1")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_ARRAY}' WHERE id = 2")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = NULL WHERE id = 3")
-          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{ENV["MYSQL_VERSION"] == "8.0" ? JSON_OBJ_WITH_TRAILING_ZERO : JSON_OBJ}' WHERE id = 4")
+          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_OBJ_WITH_TRAILING_ZERO}' WHERE id = 4")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_TRUE}' WHERE id = 5")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_FALSE}' WHERE id = 6")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_NULL}' WHERE id = 7")
-          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{ENV["MYSQL_VERSION"] == "8.0" ? JSON_FLOATING_POINT_WITH_ZERO_FRACTIONAL_PART : JSON_NUMBER}' WHERE id = 8")
+          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_FLOATING_POINT_WITH_ZERO_FRACTIONAL_PART}' WHERE id = 8")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_FLOATING_POINT_WITH_NON_ZERO_FRACTIONAL_PART}' WHERE id = 9")
-
-          if ENV["MYSQL_VERSION"] == "8.0"
-            source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_NUMBER}' WHERE id = 10")
-            source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_OBJ}' WHERE id = 11")
-          end
+          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_NUMBER}' WHERE id = 10")
+          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_OBJ}' WHERE id = 11")
           break
         end
 
@@ -231,36 +225,21 @@ class TypesTest < GhostferryTestCase
     refute timedout, "failed due to time out while waiting for the 4 insert binlogs to be written to the target"
 
     res = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
-    assert_equal (ENV["MYSQL_VERSION"] == "8.0" ? 11 : 9), res.first["cnt"]
+    assert_equal 11, res.first["cnt"]
 
-    expected_mysql_5_7 = [
+    expected = [
       {"id"=>1, "data"=>"{}"},
       {"id"=>2, "data"=>"[\"test_data\", \"test_data_2\"]"},
       {"id"=>3, "data"=>nil},
-      {"id"=>4, "data"=>"{\"data\": {\"quote\": \"'\", \"value\": [1, 12.13]}}"},
+      {"id"=>4, "data"=>"{\"data\": {\"float\": #{format_float_based_on_mysql_version("32.0")}}}"},
       {"id"=>5, "data"=>"true"},
       {"id"=>6, "data"=>"false"},
       {"id"=>7, "data"=>"null"},
-      {"id"=>8, "data"=>"42"},
+      {"id"=>8, "data"=>format_float_based_on_mysql_version("52.0")},
       {"id"=>9, "data"=>"52.13"},
+      {"id" => 10, "data" => "42"},
+      {"id" => 11, "data" => "{\"data\": {\"quote\": \"'\", \"value\": [1, 12.13]}}"},
     ]
-
-    expected_mysql_8_0 = []
-    if ENV["MYSQL_VERSION"] == "8.0"
-      expected_mysql_8_0 = expected_mysql_5_7.map do |row|
-        if row["id"] == 4
-          row["data"] = "{\"data\": {\"float\": 32.0}}"
-        elsif row["id"] == 8
-          row["data"] = "52.0"
-        end
-        row
-      end + [
-        {"id" => 10, "data" => "42"},
-        {"id" => 11, "data" => "{\"data\": {\"quote\": \"'\", \"value\": [1, 12.13]}}"},
-      ]
-    end
-
-    expected = ENV["MYSQL_VERSION"] == "8.0" ? expected_mysql_8_0 : expected_mysql_5_7
 
     res = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME} ORDER BY id ASC")
     res.zip(expected).each do |row, expected_row|
@@ -427,9 +406,9 @@ class TypesTest < GhostferryTestCase
 
   private
 
-  def insert_json_with_trailing_zero_on_source
-    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_FLOATING_POINT_WITH_ZERO_FRACTIONAL_PART}')")
-    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_OBJ_WITH_TRAILING_ZERO}')")
+  def format_float_based_on_mysql_version(value)
+    # mysql 5.7 removes the trailing zeros when `cast...as json` is used
+    ENV["MYSQL_VERSION"] == "8.0" ? value.to_s : value.to_i.to_s
   end
 
   def insert_json_on_source
@@ -442,7 +421,8 @@ class TypesTest < GhostferryTestCase
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_FALSE}')")
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_NUMBER}')")
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_FLOATING_POINT_WITH_NON_ZERO_FRACTIONAL_PART}')")
-    insert_json_with_trailing_zero_on_source if ENV["MYSQL_VERSION"] == "8.0"
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_FLOATING_POINT_WITH_ZERO_FRACTIONAL_PART}')")
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_OBJ_WITH_TRAILING_ZERO}')")
   end
 
   def execute_copy_data_in_fixed_size_binary_column(column_size:, inserted_data:, expected_inserted_data:, updated_data:)
