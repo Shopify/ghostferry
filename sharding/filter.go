@@ -162,11 +162,39 @@ func (f *ShardedCopyFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, er
 
 			oldShardingValue, oldExists, err := parseShardingValue(oldValues, idx)
 			if err != nil {
+
+				sql, sqlErr := event.AsSQLString(event.Database(), event.Table())
+				if sqlErr != nil {
+					sql = ""
+				}
+
+				log.WithFields(log.Fields{
+					"tag":          "sharding",
+					"table":        event.Table(),
+					"position":     event.BinlogPosition(),
+					"sqlStatement": sql,
+					"event":        fmt.Sprintf("%T", event),
+				}).WithError(err).Error("parsing old sharding key failed")
+
 				return false, fmt.Errorf("parsing old sharding key: %s", err)
 			}
 
 			newShardingValue, newExists, err := parseShardingValue(newValues, idx)
 			if err != nil {
+
+				sql, sqlErr := event.AsSQLString(event.Database(), event.Table())
+				if sqlErr != nil {
+					sql = ""
+				}
+
+				log.WithFields(log.Fields{
+					"tag":          "sharding",
+					"table":        event.Table(),
+					"position":     event.BinlogPosition(),
+					"sqlStatement": sql,
+					"event":        fmt.Sprintf("%T", event),
+				}).WithError(err).Error("parsing new sharding key failed")
+
 				return false, fmt.Errorf("parsing new sharding key: %s", err)
 			}
 
@@ -215,7 +243,7 @@ func (s *ShardedTableFilter) ApplicableDatabases(dbs []string) ([]string, error)
 
 func (s *ShardedTableFilter) ApplicableTables(tables []*ghostferry.TableSchema) (applicable []*ghostferry.TableSchema, err error) {
 	for _, table := range tables {
-		if ((s.isIgnoreFilter() && s.isPresent(table)) || (s.isIncludeFilter() && !s.isPresent(table))) {
+		if (s.isIgnoreFilter() && s.isPresent(table)) || (s.isIncludeFilter() && !s.isPresent(table)) {
 			continue
 		}
 
