@@ -101,6 +101,7 @@ func (s *BinlogStreamer) createBinlogSyncer() error {
 		Password:                s.DBConfig.Pass,
 		TLSConfig:               tlsConfig,
 		UseDecimal:              true,
+		KeepFloatTrailingZero:   true,
 		TimestampStringLocation: time.UTC,
 	}
 

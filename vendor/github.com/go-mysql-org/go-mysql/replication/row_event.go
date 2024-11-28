@@ -855,6 +855,7 @@ type RowsEvent struct {
 	timestampStringLocation *time.Location
 	useDecimal              bool
 	ignoreJSONDecodeErr     bool
+	keepFloatTrailingZero   bool
 }
 
 func (e *RowsEvent) Decode(data []byte) (err2 error) {
@@ -1153,6 +1154,7 @@ func (e *RowsEvent) decodeValue(data []byte, tp byte, meta uint16) (v interface{
 		n = length + int(meta)
 		var d []byte
 		d, err = e.decodeJsonBinary(data[meta:n])
+
 		if err == nil {
 			v = hack.String(d)
 		}
