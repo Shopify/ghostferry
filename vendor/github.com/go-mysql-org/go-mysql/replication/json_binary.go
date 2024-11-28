@@ -88,8 +88,9 @@ func (e *RowsEvent) decodeJsonBinary(data []byte) ([]byte, error) {
 		return []byte{}, nil
 	}
 	d := jsonBinaryDecoder{
-		useDecimal:      e.useDecimal,
-		ignoreDecodeErr: e.ignoreJSONDecodeErr,
+		keepFloatTrailingZero: e.keepFloatTrailingZero,
+		useDecimal:            e.useDecimal,
+		ignoreDecodeErr:       e.ignoreJSONDecodeErr,
 	}
 
 	if d.isDataShort(data, 1) {
@@ -105,9 +106,10 @@ func (e *RowsEvent) decodeJsonBinary(data []byte) ([]byte, error) {
 }
 
 type jsonBinaryDecoder struct {
-	useDecimal      bool
-	ignoreDecodeErr bool
-	err             error
+	keepFloatTrailingZero bool
+	useDecimal            bool
+	ignoreDecodeErr       bool
+	err                   error
 }
 
 func (d *jsonBinaryDecoder) decodeValue(tp byte, data []byte) interface{} {
@@ -139,7 +141,11 @@ func (d *jsonBinaryDecoder) decodeValue(tp byte, data []byte) interface{} {
 	case JSONB_UINT64:
 		return d.decodeUint64(data)
 	case JSONB_DOUBLE:
-		return d.decodeDoubleWithTrailingZero(data)
+		if d.keepFloatTrailingZero {
+			return d.decodeDoubleWithTrailingZero(data)
+		}
+
+		return d.decodeDouble(data)
 	case JSONB_STRING:
 		return d.decodeString(data)
 	case JSONB_OPAQUE:
