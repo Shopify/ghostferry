@@ -65,10 +65,10 @@ module DataWriterHelper
 
             until @stop_requested do
               write_data(connection, &on_write)
-              n += 1
               # Kind of makes the following race condition a bit better...
               # https://github.com/Shopify/ghostferry/issues/280
-              sleep(0.03)
+              sleep(0.03) if n > 10
+              n += 1
             end
           ensure
             connection.close
