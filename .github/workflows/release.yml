@@ -37,7 +37,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: debs-${{ github.sha }}-*
-+         merge-multiple: true
+          merge-multiple: true
       - name: shasum
         shell: bash
         run: |
