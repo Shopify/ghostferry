@@ -25,6 +25,7 @@ GEM
     pry-byebug (3.10.1)
       byebug (~> 11.0)
       pry (>= 0.13, < 0.15)
+    rake (13.2.1)
     ruby-progressbar (1.13.0)
     tqdm (0.4.1)
     webrick (1.8.1)
@@ -40,6 +41,7 @@ DEPENDENCIES
   minitest-retry
   mysql2
   pry-byebug
+  rake
   tqdm
   webrick
 

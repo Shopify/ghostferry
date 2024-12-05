@@ -17,7 +17,6 @@ bin/
 .vagrant/
 build/
 .bundle/
-.vscode/
 .idea
 
 .ipynb_checkpoints

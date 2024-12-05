@@ -67,4 +67,4 @@ Kindly take note of following options:
 
 Example:
 
-`DEBUG=1 ruby test/main.rb -v -n "TrivialIntegrationTests#test_logged_query_omits_columns"`
+`DEBUG=1 rake test -v -n "TrivialIntegrationTests#test_logged_query_omits_columns"`

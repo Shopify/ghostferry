@@ -1,14 +1,36 @@
 require "stringio"
 require "logger"
-
+require "minitest"
+require "minitest/autorun"
+require "minitest/reporters"
+require "minitest/retry"
+require "minitest/fail_fast"
+require "minitest/hooks/test"
 require "pry-byebug" unless ENV["CI"]
 
 GO_CODE_PATH = File.join(File.absolute_path(File.dirname(__FILE__)), "lib", "go")
 FIXTURE_PATH = File.join(File.absolute_path(File.dirname(__FILE__)), "fixtures")
 
+# TODO: simplify the load paths???
+test_path        = File.expand_path(File.dirname(__FILE__))
+test_lib_path    = File.join(test_path, "lib")
+lib_path         = File.expand_path(File.join(test_path, "..", "lib"))
+helpers_path     = File.join(test_path, "helpers")
+$LOAD_PATH.unshift(test_path) unless $LOAD_PATH.include?(test_path)
+$LOAD_PATH.unshift(test_lib_path) unless $LOAD_PATH.include?(test_lib_path)
+$LOAD_PATH.unshift(lib_path) unless $LOAD_PATH.include?(lib_path)
+$LOAD_PATH.unshift(helpers_path) unless $LOAD_PATH.include?(helpers_path)
+
 require "db_helper"
 require "ghostferry_helper"
 require "data_writer_helper"
+
+Minitest::Reporters.use! Minitest::Reporters::SpecReporter.new
+Minitest::Retry.use!(exceptions_to_retry: [GhostferryHelper::Ghostferry::TimeoutError])
+
+at_exit do
+  GhostferryHelper.remove_all_binaries
+end
 
 class LogCapturer
   attr_reader :logger
