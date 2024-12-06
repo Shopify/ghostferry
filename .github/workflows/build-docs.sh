@@ -4,7 +4,11 @@ set -xe
 
 sudo apt-get update
 sudo apt-get install -y python3-pip
-sudo pip3 install sphinx==1.8.5
+
+python3 -m venv ./venv
+source venv/bin/activate
+
+pip3 install sphinx==8.1.3
 cd docs
 make html
 
