@@ -96,7 +96,7 @@ cases are possible.
        algorithm to enumerate the table and tail the binlogs.
 
 IterativeVerifier (Deprecated)
------------------
+------------------------------
 
 **NOTE! This is a deprecated verifier. Use the InlineVerifier instead.**
 
