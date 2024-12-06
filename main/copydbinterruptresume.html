@@ -1,19 +1,17 @@
+<!DOCTYPE html>
 
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
-  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-
-<html xmlns="http://www.w3.org/1999/xhtml">
+<html lang="en" data-content_root="./">
   <head>
-    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
     <title>Interrupt and resuming ghostferry-copydb &#8212; Ghostferry 1.0.0 documentation</title>
-    <link rel="stylesheet" href="_static/alabaster.css" type="text/css" />
-    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
-    <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
-    <script type="text/javascript" src="_static/jquery.js"></script>
-    <script type="text/javascript" src="_static/underscore.js"></script>
-    <script type="text/javascript" src="_static/doctools.js"></script>
-    <script type="text/javascript" src="_static/language_data.js"></script>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=fa44fd50" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=686e5160" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=712fa57f" />
+    <script src="_static/documentation_options.js?v=8d563738"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="Verifiers" href="verifiers.html" />
@@ -21,8 +19,9 @@
    
   <link rel="stylesheet" href="_static/custom.css" type="text/css" />
   
+
   
-  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+  
 
   </head><body>
   
@@ -34,8 +33,8 @@
 
           <div class="body" role="main">
             
-  <div class="section" id="interrupt-and-resuming-ghostferry-copydb">
-<span id="copydbinterruptresume"></span><h1>Interrupt and resuming <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code><a class="headerlink" href="#interrupt-and-resuming-ghostferry-copydb" title="Permalink to this headline">¶</a></h1>
+  <section id="interrupt-and-resuming-ghostferry-copydb">
+<span id="copydbinterruptresume"></span><h1>Interrupt and resuming <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code><a class="headerlink" href="#interrupt-and-resuming-ghostferry-copydb" title="Link to this heading">¶</a></h1>
 <p><em>Note that this is a new and experimental feature. Please ensure you test it
 thoroughly in your environment to ensure there are no data loss. See the bottom
 of this page for important information on caveats of using this feature.</em></p>
@@ -44,76 +43,76 @@ configuration given to copydb must have the entry <code class="docutils literal 
 <span class="pre">true</span></code>. Once this is configured, any time the process panics, which can be
 caused by both SIGTERM/SIGINT or due to an error within Ghostferry, the run
 state will be dumped to stdout with JSON. An example of this can be seen below:</p>
-<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span><span class="w"></span>
-<span class="w">  </span><span class="nt">&quot;GhostferryVersion&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1.1.0+20190311205252+88a1c5c&quot;</span><span class="p">,</span><span class="w"></span>
-<span class="w">  </span><span class="nt">&quot;LastKnownTableSchemaCache&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
-<span class="w">    </span><span class="nt">&quot;abc.table1&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
-<span class="w">      </span><span class="nt">&quot;Schema&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;abc&quot;</span><span class="p">,</span><span class="w"></span>
-<span class="w">      </span><span class="nt">&quot;Name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;table1&quot;</span><span class="p">,</span><span class="w"></span>
-<span class="w">      </span><span class="nt">&quot;Columns&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
-<span class="w">        </span><span class="p">{</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;Name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;id&quot;</span><span class="p">,</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;Type&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;Collation&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;RawType&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;bigint(20)&quot;</span><span class="p">,</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;IsAuto&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;IsUnsigned&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;EnumValues&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;SetValues&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="w"></span>
-<span class="w">        </span><span class="p">},</span><span class="w"></span>
-<span class="w">        </span><span class="p">{</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;Name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;data&quot;</span><span class="p">,</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;Type&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;Collation&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;utf8mb4_unicode_ci&quot;</span><span class="p">,</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;RawType&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;varchar(16)&quot;</span><span class="p">,</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;IsAuto&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;IsUnsigned&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;EnumValues&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;SetValues&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="w"></span>
-<span class="w">        </span><span class="p">}</span><span class="w"></span>
-<span class="w">      </span><span class="p">],</span><span class="w"></span>
-<span class="w">      </span><span class="nt">&quot;Indexes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
-<span class="w">        </span><span class="p">{</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;Name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;PRIMARY&quot;</span><span class="p">,</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;Columns&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
-<span class="w">            </span><span class="s2">&quot;id&quot;</span><span class="w"></span>
-<span class="w">          </span><span class="p">],</span><span class="w"></span>
-<span class="w">          </span><span class="nt">&quot;Cardinality&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
-<span class="w">            </span><span class="mi">1</span><span class="w"></span>
-<span class="w">          </span><span class="p">]</span><span class="w"></span>
-<span class="w">        </span><span class="p">}</span><span class="w"></span>
-<span class="w">      </span><span class="p">],</span><span class="w"></span>
-<span class="w">      </span><span class="nt">&quot;PKColumns&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w"></span>
-<span class="w">        </span><span class="mi">0</span><span class="w"></span>
-<span class="w">      </span><span class="p">],</span><span class="w"></span>
-<span class="w">      </span><span class="nt">&quot;UnsignedColumns&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="w"></span>
-<span class="w">    </span><span class="p">}</span><span class="w"></span>
-<span class="w">  </span><span class="p">},</span><span class="w"></span>
-<span class="w">  </span><span class="nt">&quot;CurrentStage&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;COPY&quot;</span><span class="p">,</span><span class="w"></span>
-<span class="w">  </span><span class="nt">&quot;CopyStage&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
-<span class="w">    </span><span class="nt">&quot;LastProcessedBinlogPosition&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
-<span class="w">      </span><span class="nt">&quot;Name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mysql-bin.000008&quot;</span><span class="p">,</span><span class="w"></span>
-<span class="w">      </span><span class="nt">&quot;Pos&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">193989</span><span class="w"></span>
-<span class="w">    </span><span class="p">},</span><span class="w"></span>
-<span class="w">    </span><span class="nt">&quot;LastSuccessfulPaginationKeys&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
-<span class="w">      </span><span class="nt">&quot;abc.table1&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span><span class="w"></span>
-<span class="w">    </span><span class="p">},</span><span class="w"></span>
-<span class="w">    </span><span class="nt">&quot;CompletedTables&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span><span class="w"></span>
-<span class="w">  </span><span class="p">},</span><span class="w"></span>
-<span class="w">  </span><span class="nt">&quot;VerifierStage&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="w"></span>
-<span class="p">}</span><span class="w"></span>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;GhostferryVersion&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;1.1.0+20190311205252+88a1c5c&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;LastKnownTableSchemaCache&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;abc.table1&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;Schema&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;abc&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;Name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;table1&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;Columns&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;Name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;id&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;Type&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;Collation&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;RawType&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;bigint(20)&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;IsAuto&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;IsUnsigned&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;EnumValues&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;SetValues&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;Name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;data&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;Type&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;Collation&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;utf8mb4_unicode_ci&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;RawType&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;varchar(16)&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;IsAuto&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;IsUnsigned&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;EnumValues&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;SetValues&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;Indexes&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;Name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;PRIMARY&quot;</span><span class="p">,</span>
+<span class="w">          </span><span class="nt">&quot;Columns&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">            </span><span class="s2">&quot;id&quot;</span>
+<span class="w">          </span><span class="p">],</span>
+<span class="w">          </span><span class="nt">&quot;Cardinality&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">            </span><span class="mi">1</span>
+<span class="w">          </span><span class="p">]</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;PKColumns&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">        </span><span class="mi">0</span>
+<span class="w">      </span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;UnsignedColumns&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;CurrentStage&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;COPY&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;CopyStage&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;LastProcessedBinlogPosition&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;Name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;mysql-bin.000008&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;Pos&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">193989</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;LastSuccessfulPaginationKeys&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;abc.table1&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">200</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;CompletedTables&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{}</span>
+<span class="w">  </span><span class="p">},</span>
+<span class="w">  </span><span class="nt">&quot;VerifierStage&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span>
+<span class="p">}</span>
 </pre></div>
 </div>
 <p>To resume, you first need to save this JSON into a file. Alternatively, you
 could pipe the stdout of <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> directly into a file via:</p>
-<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>ghostferry-copydb -verbose conf.json &gt;state-dump.json <span class="m">2</span>&gt;ghostferry.log
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>ghostferry-copydb<span class="w"> </span>-verbose<span class="w"> </span>conf.json<span class="w"> </span>&gt;state-dump.json<span class="w"> </span><span class="m">2</span>&gt;ghostferry.log
 </pre></div>
 </div>
 <p>Theoretically, <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code> should write only the state dump json into
 stdout and all logs in stderr. However, check the files to make sure this is
 true. If not, file a bug report.</p>
 <p>To resume, pass <code class="docutils literal notranslate"><span class="pre">state-dump.json</span></code> as a flag back to <code class="docutils literal notranslate"><span class="pre">ghostferry-copydb</span></code>:</p>
-<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>ghostferry-copydb -verbose -resumestate state-dump.json conf.json
+<div class="highlight-shell-session notranslate"><div class="highlight"><pre><span></span><span class="gp">$ </span>ghostferry-copydb<span class="w"> </span>-verbose<span class="w"> </span>-resumestate<span class="w"> </span>state-dump.json<span class="w"> </span>conf.json
 </pre></div>
 </div>
 <p><strong>Note: if you interrupt Ghostferry for a period of time longer than your
@@ -122,30 +121,31 @@ the binlog at the position recorded in the state dump is available when
 resuming Ghostferry.</strong></p>
 <p>Some other considerations/notes:</p>
 <ul class="simple">
-<li>While Ghostferry will dump the state when it encounters an unrecoverable
+<li><p>While Ghostferry will dump the state when it encounters an unrecoverable
 error (such as a network issue to the databases), the only tested use case
-for now is due to an interrupt with SIGTERM/SIGINT.<ul>
-<li>Errored runs <em>should</em> be theoretically safe to resume, but this is not
+for now is due to an interrupt with SIGTERM/SIGINT.</p>
+<ul>
+<li><p>Errored runs <em>should</em> be theoretically safe to resume, but this is not
 validated in any form.  If you resume an errored run, it is recommended to
-validate the correctness of the data using the CHECKSUM TABLE verifier.</li>
-<li>As the project develops, we want to validate the safety of resuming errored
-runs.</li>
-<li>To test resuming errored runs further, see <a class="reference internal" href="copydbinprod.html#prodtesting"><span class="std std-ref">Testing Ghostferry with Production Data</span></a>.</li>
+validate the correctness of the data using the CHECKSUM TABLE verifier.</p></li>
+<li><p>As the project develops, we want to validate the safety of resuming errored
+runs.</p></li>
+<li><p>To test resuming errored runs further, see <a class="reference internal" href="copydbinprod.html#prodtesting"><span class="std std-ref">Testing Ghostferry with Production Data</span></a>.</p></li>
 </ul>
 </li>
-<li>Verifiers are not resumable, including the IterativeVerifier. This may change
-in the future.</li>
-<li>While we are confident the algorithm is correct, this is still a
-highly experimental feature. USE AT YOUR OWN RISK.</li>
+<li><p>Verifiers are not resumable, including the IterativeVerifier. This may change
+in the future.</p></li>
+<li><p>While we are confident the algorithm is correct, this is still a
+highly experimental feature. USE AT YOUR OWN RISK.</p></li>
 </ul>
-</div>
+</section>
 
 
           </div>
           
         </div>
       </div>
-      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
         <div class="sphinxsidebarwrapper">
 <h1 class="logo"><a href="index.html">Ghostferry</a></h1>
 
@@ -166,7 +166,7 @@ highly experimental feature. USE AT YOUR OWN RISK.</li>
 
 
 <h3>Navigation</h3>
-<p class="caption"><span class="caption-text">Contents:</span></p>
+<p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="introduction.html">Introduction to Ghostferry</a></li>
 <li class="toctree-l1"><a class="reference internal" href="technicaloverview.html">Technical Overview</a></li>
@@ -186,18 +186,16 @@ highly experimental feature. USE AT YOUR OWN RISK.</li>
   </ul></li>
 </ul>
 </div>
-<div id="searchbox" style="display: none" role="search">
-  <h3>Quick search</h3>
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
     <div class="searchformwrapper">
     <form class="search" action="search.html" method="get">
-      <input type="text" name="q" />
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
       <input type="submit" value="Go" />
-      <input type="hidden" name="check_keywords" value="yes" />
-      <input type="hidden" name="area" value="default" />
     </form>
     </div>
-</div>
-<script type="text/javascript">$('#searchbox').show(0);</script>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
 
 
 
@@ -211,11 +209,11 @@ highly experimental feature. USE AT YOUR OWN RISK.</li>
       <div class="clearer"></div>
     </div>
     <div class="footer">
-      &copy;2017, Shopify.
+      &#169;2017-2024, Shopify.
       
       |
-      Powered by <a href="http://sphinx-doc.org/">Sphinx 1.8.5</a>
-      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.13</a>
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.1.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
       
       |
       <a href="_sources/copydbinterruptresume.rst.txt"
