@@ -11,15 +11,16 @@ require "pry-byebug" unless ENV["CI"]
 GO_CODE_PATH = File.join(File.absolute_path(File.dirname(__FILE__)), "lib", "go")
 FIXTURE_PATH = File.join(File.absolute_path(File.dirname(__FILE__)), "fixtures")
 
-# TODO: simplify the load paths???
-test_path        = File.expand_path(File.dirname(__FILE__))
-test_lib_path    = File.join(test_path, "lib")
-lib_path         = File.expand_path(File.join(test_path, "..", "lib"))
-helpers_path     = File.join(test_path, "helpers")
-$LOAD_PATH.unshift(test_path) unless $LOAD_PATH.include?(test_path)
-$LOAD_PATH.unshift(test_lib_path) unless $LOAD_PATH.include?(test_lib_path)
-$LOAD_PATH.unshift(lib_path) unless $LOAD_PATH.include?(lib_path)
-$LOAD_PATH.unshift(helpers_path) unless $LOAD_PATH.include?(helpers_path)
+def add_to_load_path(path)
+  $LOAD_PATH.unshift(path) unless $LOAD_PATH.include?(path)
+end
+
+test_path      = File.expand_path(File.dirname(__FILE__))
+test_lib_path  = File.join(test_path, "lib")
+lib_path       = File.expand_path(File.join(test_path, "..", "lib"))
+helpers_path   = File.join(test_path, "helpers")
+
+[test_path, test_lib_path, lib_path, helpers_path].each { add_to_load_path(_1) }
 
 require "db_helper"
 require "ghostferry_helper"

@@ -1,6 +1,6 @@
 require "test_helper"
 
-class TrivialIntegrationTests < GhostferryTestCase
+class TrivialIntegrationTest < GhostferryTestCase
   def test_copy_data_without_any_writes_to_source
     seed_simple_database_with_single_table
 

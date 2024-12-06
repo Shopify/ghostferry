@@ -5,16 +5,10 @@
     "version": "0.2.0",
     "configurations": [
       {
-        "name": "Minitest - current line",
-        "type": "ruby_lsp",
-        "request": "launch",
-        "program": "rake test ${file}:${lineNumber}"
-      },
-      {
         "name": "Minitest - current file",
         "type": "ruby_lsp",
         "request": "launch",
-        "program": "rake test ${file}"
+        "program": "rake test TEST=${file}"
       }
     ]
   }
