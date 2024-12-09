@@ -45,6 +45,10 @@ module DataWriterHelper
       @started = false
       @stop_requested = false
 
+      @start_cmd = Queue.new
+      @started_callback_cmd = Queue.new
+      start_synchronized_datawriter_threads
+
       @logger = logger
       if @logger.nil?
         @logger = Logger.new(STDOUT)
@@ -54,29 +58,10 @@ module DataWriterHelper
 
     def start(&on_write)
       raise "Cannot start DataWriter multiple times. Use a new instance instead " if @started
+
+      @number_of_writers.times { @start_cmd << on_write }
+      @started_callback_cmd.pop
       @started = true
-      @number_of_writers.times do |i|
-        @threads << Thread.new do
-          @logger.info("starting data writer thread #{i}")
-
-          n = 0
-          begin
-            connection = Mysql2::Client.new(@db_config)
-
-            until @stop_requested do
-              write_data(connection, &on_write)
-              # Kind of makes the following race condition a bit better...
-              # https://github.com/Shopify/ghostferry/issues/280
-              sleep(0.03) if n > 10
-              n += 1
-            end
-          ensure
-            connection.close
-          end
-
-          @logger.info("stopped data writer thread #{i} with a total of #{n} data writes")
-        end
-      end
     end
 
     def stop_and_join
@@ -142,6 +127,35 @@ module DataWriterHelper
       result = connection.query("SELECT id FROM #{table} ORDER BY RAND() LIMIT 1")
       raise "No rows in the database?" if result.first.nil?
       result.first["id"]
+    end
+
+    private
+
+    def start_synchronized_datawriter_threads
+      @number_of_writers.times do |i|
+        @threads << Thread.new do
+          @logger.info("data writer thread in wait mode #{i}")
+          connection = Mysql2::Client.new(@db_config)
+          on_write = @start_cmd.pop
+          @logger.info("starting data writer thread #{i}")
+
+          n = 0
+          begin
+            until @stop_requested do
+              write_data(connection, &on_write)
+              @started_callback_cmd << n unless @started
+              n += 1
+              # Kind of makes the following race condition a bit better...
+              # https://github.com/Shopify/ghostferry/issues/280
+              sleep(0.03)
+            end
+          ensure
+            connection.close
+          end
+
+          @logger.info("stopped data writer thread #{i} with a total of #{n} data writes")
+        end
+      end
     end
   end
 end
