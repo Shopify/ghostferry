@@ -2,21 +2,22 @@ package test
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/suite"
 	"sync"
 	"testing"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
+	"github.com/stretchr/testify/suite"
 )
 
 type DataIteratorTestSuite struct {
 	*testhelpers.GhostferryUnitTestSuite
 
-	di           *ghostferry.DataIterator
-	wg           *sync.WaitGroup
-	tables       []*ghostferry.TableSchema
-	receivedRows map[string][]ghostferry.RowData
+	di                *ghostferry.DataIterator
+	wg                *sync.WaitGroup
+	tables            []*ghostferry.TableSchema
+	receivedRows      map[string][]ghostferry.RowData
+	receivedRowsMutex sync.Mutex
 }
 
 func (this *DataIteratorTestSuite) SetupTest() {
@@ -61,6 +62,9 @@ func (this *DataIteratorTestSuite) SetupTest() {
 	this.receivedRows = make(map[string][]ghostferry.RowData, 0)
 
 	this.di.AddBatchListener(func(ev *ghostferry.RowBatch) error {
+		this.receivedRowsMutex.Lock()
+		defer this.receivedRowsMutex.Unlock()
+
 		this.receivedRows[ev.TableSchema().Name] = append(this.receivedRows[ev.TableSchema().Name], ev.Values()...)
 		return nil
 	})
