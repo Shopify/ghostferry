@@ -150,6 +150,7 @@ module DataWriterHelper
               sleep(0.03)
             end
           ensure
+            @started_callback_cmd << n unless @started # if #stop_and_join is called before first write
             connection.close
           end
 
