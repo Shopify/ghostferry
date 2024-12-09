@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 
 	. "github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/pingcap/errors"
@@ -43,6 +44,16 @@ const (
 	jsonbValueEntrySizeSmall = 1 + jsonbSmallOffsetSize
 	jsonbValueEntrySizeLarge = 1 + jsonbLargeOffsetSize
 )
+
+type FloatWithTrailingZero float64
+
+func (f FloatWithTrailingZero) MarshalJSON() ([]byte, error) {
+	if float64(f) == float64(int(f)) {
+		return []byte(strconv.FormatFloat(float64(f), 'f', 1, 32)), nil
+	}
+
+	return []byte(strconv.FormatFloat(float64(f), 'f', -1, 32)), nil
+}
 
 func jsonbGetOffsetSize(isSmall bool) int {
 	if isSmall {
@@ -128,7 +139,7 @@ func (d *jsonBinaryDecoder) decodeValue(tp byte, data []byte) interface{} {
 	case JSONB_UINT64:
 		return d.decodeUint64(data)
 	case JSONB_DOUBLE:
-		return d.decodeDouble(data)
+		return d.decodeDoubleWithTrailingZero(data)
 	case JSONB_STRING:
 		return d.decodeString(data)
 	case JSONB_OPAQUE:
@@ -346,6 +357,11 @@ func (d *jsonBinaryDecoder) decodeDouble(data []byte) float64 {
 
 	v := ParseBinaryFloat64(data[0:8])
 	return v
+}
+
+func (d *jsonBinaryDecoder) decodeDoubleWithTrailingZero(data []byte) FloatWithTrailingZero {
+	v := d.decodeDouble(data)
+	return FloatWithTrailingZero(v)
 }
 
 func (d *jsonBinaryDecoder) decodeString(data []byte) string {
