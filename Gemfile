@@ -2,6 +2,7 @@ source "https://rubygems.org"
 
 group :test do
   gem "minitest"
+  gem "rake"
   gem "mysql2"
   gem "webrick"
 

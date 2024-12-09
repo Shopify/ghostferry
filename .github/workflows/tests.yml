@@ -85,7 +85,7 @@ jobs:
         run: .github/workflows/start-mysql.sh
 
       - name: Running Ruby tests
-        run: bundle exec ruby test/main.rb
+        run: bundle exec rake test
 
   build-debs:
     strategy:
