@@ -134,27 +134,25 @@ module DataWriterHelper
     def start_synchronized_datawriter_threads
       @number_of_writers.times do |i|
         @threads << Thread.new do
-          @logger.info("data writer thread in wait mode #{i}")
           connection = Mysql2::Client.new(@db_config)
+          @logger.info("data writer thread in wait mode #{i}")
           on_write = @start_cmd.pop
           @logger.info("starting data writer thread #{i}")
 
           n = 0
-          begin
-            until @stop_requested do
-              write_data(connection, &on_write)
-              @started_callback_cmd << n unless @started
-              n += 1
-              # Kind of makes the following race condition a bit better...
-              # https://github.com/Shopify/ghostferry/issues/280
-              sleep(0.03)
-            end
-          ensure
-            @started_callback_cmd << n unless @started # if #stop_and_join is called before first write
-            connection.close
+          until @stop_requested do
+            write_data(connection, &on_write)
+            @started_callback_cmd << n unless @started
+            n += 1
+            # Kind of makes the following race condition a bit better...
+            # https://github.com/Shopify/ghostferry/issues/280
+            sleep(0.03)
           end
 
           @logger.info("stopped data writer thread #{i} with a total of #{n} data writes")
+        ensure
+          @started_callback_cmd << n unless @started # if #stop_and_join is called before first write
+          connection&.close
         end
       end
     end
