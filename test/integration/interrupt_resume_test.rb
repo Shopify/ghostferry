@@ -130,7 +130,7 @@ class InterruptResumeTest < GhostferryTestCase
     batches_written = 0
     ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
       batches_written += 1
-      if batches_written >= 2
+      if batches_written >= 5
         ghostferry.term_and_wait_for_exit
       end
     end
