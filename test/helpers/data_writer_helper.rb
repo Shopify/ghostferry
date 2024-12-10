@@ -46,7 +46,6 @@ module DataWriterHelper
       @stop_requested = false
 
       @start_cmd = Queue.new
-      @started_callback_cmd = Queue.new
       start_synchronized_datawriter_threads
 
       @logger = logger
@@ -60,7 +59,6 @@ module DataWriterHelper
       raise "Cannot start DataWriter multiple times. Use a new instance instead " if @started
 
       @number_of_writers.times { @start_cmd << on_write }
-      @started_callback_cmd.pop
       @started = true
     end
 
@@ -142,7 +140,6 @@ module DataWriterHelper
           n = 0
           until @stop_requested do
             write_data(connection, &on_write)
-            @started_callback_cmd << n unless @started
             n += 1
             # Kind of makes the following race condition a bit better...
             # https://github.com/Shopify/ghostferry/issues/280
@@ -151,7 +148,6 @@ module DataWriterHelper
 
           @logger.info("stopped data writer thread #{i} with a total of #{n} data writes")
         ensure
-          @started_callback_cmd << n unless @started # if #stop_and_join is called before first write
           connection&.close
         end
       end
