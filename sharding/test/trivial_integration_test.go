@@ -12,7 +12,7 @@ import (
 )
 
 func setupSingleTableDatabase(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
-	testhelpers.SeedInitialData(sourceDB, "gftest", "table1", 100)
+	testhelpers.SeedInitialData(sourceDB, "gftest", "table1", 1000)
 	testhelpers.SeedInitialData(targetDB, "gftest", "table1", 0)
 
 	testhelpers.AddTenantID(sourceDB, "gftest", "table1", 3)
@@ -51,7 +51,7 @@ func TestSelectiveCopyDataWithoutAnyWritesToSource(t *testing.T) {
 	assert.Equal(t, 0, count)
 
 	rows := testcase.AssertQueriesHaveEqualResult("SELECT * FROM gftest.table1 WHERE tenant_id = 2")
-	assert.Equal(t, 33, len(rows))
+	assert.Equal(t, 333, len(rows))
 }
 
 func TestSelectiveCopyDataWithInsertLoadOnOtherTenants(t *testing.T) {
@@ -79,7 +79,7 @@ func TestSelectiveCopyDataWithInsertLoadOnOtherTenants(t *testing.T) {
 	assert.Equal(t, 0, count)
 
 	rows := testcase.AssertQueriesHaveEqualResult("SELECT * FROM gftest.table1 WHERE tenant_id = 2")
-	assert.Equal(t, 33, len(rows))
+	assert.Equal(t, 333, len(rows))
 }
 
 func TestSelectiveCopyDataWithInsertLoadOnAllTenants(t *testing.T) {
@@ -107,7 +107,7 @@ func TestSelectiveCopyDataWithInsertLoadOnAllTenants(t *testing.T) {
 	assert.Equal(t, 0, count)
 
 	rows := testcase.AssertQueriesHaveEqualResult("SELECT * FROM gftest.table1 WHERE tenant_id = 2")
-	assert.True(t, len(rows) > 33)
+	assert.True(t, len(rows) > 333)
 }
 
 type ChangeShardingKeyDataWriter struct {
