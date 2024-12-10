@@ -5,9 +5,8 @@ import (
 	"math/rand"
 	"sync"
 
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
-
 	sq "github.com/Masterminds/squirrel"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 )
 
 var dataletters = []rune("abcdefghijklmnopqrstuvwxyz")
