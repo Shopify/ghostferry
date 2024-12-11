@@ -65,6 +65,20 @@ Kindly take note of following options:
 - `DEBUG=1`: To see more detailed debug output by `Ghostferry` live, as opposed
   to only when the test fails. This is helpful for debugging hanging test.
 
-Example:
+Examples:
 
-`DEBUG=1 ruby test/main.rb -v -n "TrivialIntegrationTests#test_logged_query_omits_columns"`
+Run all tests
+
+`rake test`
+
+Run a single file
+
+`rake test TEST=test/integration/trivial_test.rb`
+
+or
+
+`ruby -Itest test/integration/trivial_test.rb`
+
+Run a specific test
+
+`DEBUG=1 ruby -Itest test/integration/trivial_test.rb -n "TrivialIntegrationTest#test_logged_query_omits_columns"`
