@@ -111,6 +111,7 @@ func (f *Ferry) NewDataIterator() *DataIterator {
 			ReadRetries:               f.Config.DBReadRetries,
 		},
 		StateTracker: f.StateTracker,
+		TargetPaginationKeys: &sync.Map{},
 	}
 
 	if f.CopyFilter != nil {
@@ -993,7 +994,7 @@ func (f *Ferry) Progress() *Progress {
 
 	s.Tables = make(map[string]TableProgress)
 	targetPaginationKeys := make(map[string]uint64)
-	f.DataIterator.targetPaginationKeys.Range(func(k, v interface{}) bool {
+	f.DataIterator.TargetPaginationKeys.Range(func(k, v interface{}) bool {
 		targetPaginationKeys[k.(string)] = v.(uint64)
 		return true
 	})

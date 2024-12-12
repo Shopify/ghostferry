@@ -20,7 +20,7 @@ type DataIterator struct {
 	StateTracker *StateTracker
 	TableSorter  DataIteratorSorter
 
-	targetPaginationKeys *sync.Map
+	TargetPaginationKeys *sync.Map
 	batchListeners       []func(*RowBatch) error
 	doneListeners        []func() error
 	logger               *logrus.Entry
@@ -33,7 +33,6 @@ type TableMaxPaginationKey struct {
 
 func (d *DataIterator) Run(tables []*TableSchema) {
 	d.logger = logrus.WithField("tag", "data_iterator")
-	d.targetPaginationKeys = &sync.Map{}
 
 	// If a state tracker is not provided, then the caller doesn't care about
 	// tracking state. However, some methods are still useful so we initialize
@@ -59,7 +58,7 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 			// We don't need to reiterate those tables as it has already been done.
 			delete(tablesWithData, table)
 		} else {
-			d.targetPaginationKeys.Store(tableName, maxPaginationKey)
+			d.TargetPaginationKeys.Store(tableName, maxPaginationKey)
 		}
 	}
 
@@ -79,9 +78,9 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 
 				logger := d.logger.WithField("table", table.String())
 
-				targetPaginationKeyInterface, found := d.targetPaginationKeys.Load(table.String())
+				targetPaginationKeyInterface, found := d.TargetPaginationKeys.Load(table.String())
 				if !found {
-					err := fmt.Errorf("%s not found in targetPaginationKeys, this is likely a programmer error", table.String())
+					err := fmt.Errorf("%s not found in TargetPaginationKeys, this is likely a programmer error", table.String())
 					logger.WithError(err).Error("this is definitely a bug")
 					d.ErrorHandler.Fatal("data_iterator", err)
 					return

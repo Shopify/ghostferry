@@ -3,6 +3,7 @@ package test
 import (
 	"fmt"
 	"sort"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -58,6 +59,7 @@ func (t *DataIteratorSorterTestSuite) SetupTest() {
 	t.dataIterator = &ghostferry.DataIterator{
 		DB:          t.Ferry.SourceDB,
 		ErrorHandler: t.Ferry.ErrorHandler,
+		TargetPaginationKeys: &sync.Map{},
 	}
 }
 
