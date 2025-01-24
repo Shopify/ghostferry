@@ -3,6 +3,7 @@ require "test_helper"
 class TypesTest < GhostferryTestCase
   JSON_OBJ = '{"data": {"quote": "\\\'", "value": [1, 12.13]}}'
   JSON_OBJ_WITH_TRAILING_ZERO = '{"data": {"float": 32.0}}'
+  JSON_OBJ_LAT_LONG = '{ "lat": 43.72437629996218, "long": -79.45382688031805 }'
   EMPTY_JSON = '{}'
   JSON_ARRAY = '[\"test_data\", \"test_data_2\"]'
   JSON_NULL = 'null'
@@ -199,7 +200,7 @@ class TypesTest < GhostferryTestCase
       loop do
         sleep 0.1
         res = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
-        if res.first["cnt"] == 11
+        if res.first["cnt"] == 12
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{EMPTY_JSON}' WHERE id = 1")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_ARRAY}' WHERE id = 2")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = NULL WHERE id = 3")
@@ -210,7 +211,8 @@ class TypesTest < GhostferryTestCase
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_FLOATING_POINT_WITH_ZERO_FRACTIONAL_PART}' WHERE id = 8")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_FLOATING_POINT_WITH_NON_ZERO_FRACTIONAL_PART}' WHERE id = 9")
           source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_NUMBER}' WHERE id = 10")
-          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_OBJ}' WHERE id = 11")
+          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_OBJ_LAT_LONG}' WHERE id = 11")
+          source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = '#{JSON_OBJ}' WHERE id = 12")
           break
         end
 
@@ -225,7 +227,7 @@ class TypesTest < GhostferryTestCase
     refute timedout, "failed due to time out while waiting for the 4 insert binlogs to be written to the target"
 
     res = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
-    assert_equal 11, res.first["cnt"]
+    assert_equal 12, res.first["cnt"]
 
     expected = [
       {"id"=>1, "data"=>"{}"},
@@ -238,7 +240,8 @@ class TypesTest < GhostferryTestCase
       {"id"=>8, "data"=>format_float_based_on_mysql_version("52.0")},
       {"id"=>9, "data"=>"52.13"},
       {"id" => 10, "data" => "42"},
-      {"id" => 11, "data" => "{\"data\": {\"quote\": \"'\", \"value\": [1, 12.13]}}"},
+      {"id" => 11, "data" => "{\"lat\": 43.72437629996218, \"long\": -79.45382688031805}"},
+      {"id" => 12, "data" => "{\"data\": {\"quote\": \"'\", \"value\": [1, 12.13]}}"},
     ]
 
     res = target_db.query("SELECT * FROM #{DEFAULT_FULL_TABLE_NAME} ORDER BY id ASC")
@@ -423,6 +426,7 @@ class TypesTest < GhostferryTestCase
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_FLOATING_POINT_WITH_NON_ZERO_FRACTIONAL_PART}')")
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_FLOATING_POINT_WITH_ZERO_FRACTIONAL_PART}')")
     source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_OBJ_WITH_TRAILING_ZERO}')")
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (data) VALUES ('#{JSON_OBJ_LAT_LONG}')")
   end
 
   def execute_copy_data_in_fixed_size_binary_column(column_size:, inserted_data:, expected_inserted_data:, updated_data:)
