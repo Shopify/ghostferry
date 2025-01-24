@@ -107,7 +107,7 @@ class TypesTest < GhostferryTestCase
     # with a JSON column is broken on 5.7.
     # See: https://bugs.mysql.com/bug.php?id=87847
     res = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
-    assert_equal 22, res.first["cnt"]
+    assert_equal 24, res.first["cnt"]
 
     expected = [
       {"id"=>1, "data"=>"{\"data\": {\"quote\": \"'\", \"value\": [1, 12.13]}}"},
@@ -120,7 +120,8 @@ class TypesTest < GhostferryTestCase
       {"id"=>8, "data"=>"42"},
       {"id"=>9, "data"=>"52.13"},
       {"id" => 10, "data" => format_float_based_on_mysql_version("52.0")},
-      {"id" => 11, "data" => "{\"data\": {\"float\": #{format_float_based_on_mysql_version("32.0")}}}"}
+      {"id" => 11, "data" => "{\"data\": {\"float\": #{format_float_based_on_mysql_version("32.0")}}}"},
+      {"id" => 12, "data" => "{\"lat\": 43.72437629996218, \"long\": -79.45382688031805}"}
     ]
 
     expected_length = expected.length
@@ -158,8 +159,8 @@ class TypesTest < GhostferryTestCase
       loop do
         sleep 0.1
         res = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
-        if res.first["cnt"] == 11
-          1.upto(11) do |i|
+        if res.first["cnt"] == 12
+          1.upto(12) do |i|
             source_db.query("DELETE FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{i}")
           end
           break
