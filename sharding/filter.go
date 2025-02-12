@@ -16,11 +16,19 @@ type JoinTable struct {
 	TableName, JoinColumn string
 }
 
+type IndexConfigPerTable struct {
+	IndexHint string
+	IndexName string
+}
+
 type ShardedCopyFilter struct {
 	ShardingKey      string
 	ShardingValue    interface{}
 	JoinedTables     map[string][]JoinTable
 	PrimaryKeyTables map[string]struct{}
+
+	IndexHint           string
+	IndexConfigPerTable map[string]IndexConfigPerTable
 
 	missingShardingKeyIndexLogged sync.Map
 }
@@ -61,8 +69,23 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 		//
 		// i.e. load the primary keys first, then load the rest of the columns.
 
-		selectPaginationKeys := "SELECT " + quotedPaginationKey + " FROM " + quotedTable + " " + f.shardingKeyIndexHint(table) +
-			" WHERE " + quotedShardingKey + " = ? AND " + quotedPaginationKey + " > ?" +
+		indexHint := f.IndexHint
+
+		if tableSpecificIndexConfig, exists := f.IndexConfigPerTable[table.Name]; exists {
+			if tableSpecificIndexConfig.IndexHint != "" {
+				indexHint = tableSpecificIndexConfig.IndexHint
+			}
+		}
+
+		indexHint = strings.ToLower(indexHint)
+
+		selectPaginationKeys := "SELECT " + quotedPaginationKey + " FROM " + quotedTable
+
+		if indexHint != "none" {
+			selectPaginationKeys += " " + f.shardingKeyIndexHint(table, indexHint)
+		}
+
+		selectPaginationKeys += " WHERE " + quotedShardingKey + " = ? AND " + quotedPaginationKey + " > ?" +
 			" ORDER BY " + quotedPaginationKey + " LIMIT " + strconv.Itoa(int(batchSize))
 
 		return sq.Select(columns...).
@@ -117,8 +140,14 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 		OrderBy(quotedPaginationKey), nil // LIMIT comes from the subquery.
 }
 
-func (f *ShardedCopyFilter) shardingKeyIndexHint(table *ghostferry.TableSchema) string {
-	if indexName := f.shardingKeyIndexName(table); indexName != "" {
+func (f *ShardedCopyFilter) shardingKeyIndexHint(table *ghostferry.TableSchema, indexHint string) string {
+	indexName := f.shardingKeyIndexName(table)
+
+	if indexName != "" {
+		if indexHint == "force" {
+			return "FORCE INDEX (`" + indexName + "`)"
+		}
+
 		return "USE INDEX (`" + indexName + "`)"
 	} else {
 		if _, logged := f.missingShardingKeyIndexLogged.Load(table.Name); !logged {
@@ -131,7 +160,22 @@ func (f *ShardedCopyFilter) shardingKeyIndexHint(table *ghostferry.TableSchema) 
 }
 
 func (f *ShardedCopyFilter) shardingKeyIndexName(table *ghostferry.TableSchema) string {
+	if tableSpecificIndexConfig, exists := f.IndexConfigPerTable[table.Name]; exists {
+		if tableSpecificIndexConfig.IndexName != "" {
+			for _, x := range table.Indexes {
+				// ignore the index name passed in via config if it doesn't exist on the table
+				if strings.EqualFold(x.Name, tableSpecificIndexConfig.IndexName) {
+					return tableSpecificIndexConfig.IndexName
+				}
+			}
+
+			log.WithFields(log.Fields{"tag": "sharding", "table": table.Name}).
+				Warnf("index name %s not found on table %s", tableSpecificIndexConfig.IndexName, table.Name)
+		}
+	}
+
 	indexName := ""
+
 	paginationKeyName := table.GetPaginationColumn().Name
 
 	for _, x := range table.Indexes {
