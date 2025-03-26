@@ -344,11 +344,22 @@ func (ta *Table) fetchIndexesViaSqlDB(conn *sql.DB) error {
 		var indexName, colName string
 		var noneUnique uint64
 		var cardinality interface{}
+		visible := "YES"
 		cols, err := r.Columns()
 		if err != nil {
 			return errors.Trace(err)
 		}
 		values := make([]interface{}, len(cols))
+
+		// Check if there's a column named "Visible"
+		hasVisibleColumn := false
+		for _, col := range cols {
+			if strings.EqualFold(col, "Visible") {
+				hasVisibleColumn = true
+				break
+			}
+		}
+
 		for i := 0; i < len(cols); i++ {
 			switch i {
 			case 1:
@@ -359,6 +370,12 @@ func (ta *Table) fetchIndexesViaSqlDB(conn *sql.DB) error {
 				values[i] = &colName
 			case 6:
 				values[i] = &cardinality
+			case 13:
+				if hasVisibleColumn {
+					values[i] = &visible
+				} else {
+					values[i] = &unusedVal
+				}
 			default:
 				values[i] = &unusedVal
 			}
@@ -368,7 +385,7 @@ func (ta *Table) fetchIndexesViaSqlDB(conn *sql.DB) error {
 			return errors.Trace(err)
 		}
 
-		if currentName != indexName {
+		if currentName != indexName && visible == "YES" {
 			currentIndex = ta.AddIndex(indexName)
 			currentName = indexName
 		}
