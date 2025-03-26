@@ -2,7 +2,9 @@ package test
 
 import (
 	"fmt"
+	"os"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/Shopify/ghostferry"
@@ -455,6 +457,43 @@ func (this *TableSchemaCacheTestSuite) TestTargetToSourceRewritesErrorsOnDuplica
 
 	_, err = ghostferry.TargetToSourceRewrites(dupRewrites)
 	this.Require().Equal(err.Error(), "duplicate target to source rewrite detected")
+}
+
+func (suite *TableSchemaCacheTestSuite) TestLoadTablesLoadsVisibleIndexes() {
+	mysql8 := strings.HasPrefix(os.Getenv("MYSQL_VERSION"), "8.")
+	invisibleSql := ""
+	if mysql8 {
+		invisibleSql = "INVISIBLE"
+	}
+	_, err := suite.Ferry.SourceDB.Exec(fmt.Sprintf(`
+		ALTER TABLE %s.%s
+		ADD COLUMN name VARCHAR(255),
+		ADD COLUMN surname VARCHAR(255),
+		ADD INDEX index_on_name_visible(name),
+		ADD INDEX index_on_name_surname_invisible(name, surname) %s
+	`, testhelpers.TestSchemaName, "test_table_1", invisibleSql))
+	suite.Require().Nil(err)
+
+	tables, err := ghostferry.LoadTables(
+		suite.Ferry.SourceDB,
+		&testhelpers.TestTableFilter{
+			DbsFunc:    testhelpers.DbApplicabilityFilter([]string{"gftest"}),
+			TablesFunc: nil,
+		},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	suite.Require().Nil(err)
+	requiredIndexLen := 3
+	if mysql8 {
+		requiredIndexLen -= 1
+	}
+	suite.Require().Equal(requiredIndexLen, len(tables["gftest.test_table_1"].Indexes))
+	suite.Require().Equal("PRIMARY", tables["gftest.test_table_1"].Indexes[0].Name)
+	suite.Require().Equal("index_on_name_visible", tables["gftest.test_table_1"].Indexes[1].Name)
 }
 
 func TestTableSchemaCache(t *testing.T) {
