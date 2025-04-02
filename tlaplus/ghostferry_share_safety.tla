@@ -1,7 +1,7 @@
 ----------------------------- MODULE ghostferry_share_safety -----------------------------
 EXTENDS Integers, Sequences, FiniteSets, TLC
 
-CONSTANTS 
+CONSTANTS
     Records,          \* Set of possible records that can be in the database
     TableCapacity,    \* Maximum size of the table
     LockMode,        \* Either "FOR_UPDATE" or "FOR_SHARE_NOWAIT"
@@ -11,7 +11,7 @@ ASSUME /\ LockMode \in {"FOR_UPDATE", "FOR_SHARE_NOWAIT"}
        /\ NoRecordHere \notin Records
 
 \* Process identifiers
-CONSTANTS 
+CONSTANTS
     TableIterator,    \* Process that copies data
     Application       \* Process that writes data
 
@@ -28,7 +28,7 @@ CanAcquireLock(row, proc, owners) ==
         \/ owners[row] = {}
         \/ ~(\E owner \in owners[row]: owner = Application)
 
-VARIABLES 
+VARIABLES
     SourceTable,      \* Source database table
     TargetTable,      \* Target database table
     lockOwners,       \* Map from row -> set of processes that own the lock
@@ -37,10 +37,10 @@ VARIABLES
     rowToModify,      \* Row that Application is trying to modify
     newValue          \* New value for the row
 
-vars == << SourceTable, TargetTable, lockOwners, copyComplete, 
+vars == << SourceTable, TargetTable, lockOwners, copyComplete,
           currentRow, rowToModify, newValue >>
 
-Init == 
+Init ==
     /\ SourceTable \in [PrimaryKeys -> PossibleRecords]
     /\ TargetTable = [k \in PrimaryKeys |-> NoRecordHere]
     /\ lockOwners = [r \in PrimaryKeys |-> {}]
@@ -50,26 +50,31 @@ Init ==
     /\ newValue \in Records
 
 \* TableIterator tries to copy a row
-CopyRow ==
+LockRowToCopy ==
     /\ ~copyComplete
     /\ currentRow <= TableCapacity
     /\ CanAcquireLock(currentRow, TableIterator, lockOwners)
     /\ lockOwners' = [lockOwners EXCEPT ![currentRow] = @ \cup {TableIterator}]
-    /\ IF SourceTable[currentRow] # NoRecordHere
-        THEN TargetTable' = [TargetTable EXCEPT ![currentRow] = SourceTable[currentRow]]
-        ELSE UNCHANGED TargetTable
-    /\ lockOwners' = [lockOwners' EXCEPT ![currentRow] = @ \ {TableIterator}]
-    /\ currentRow' = currentRow + 1
-    /\ UNCHANGED << SourceTable, copyComplete, rowToModify, newValue >>
+    /\ UNCHANGED << SourceTable, TargetTable, copyComplete, currentRow, rowToModify, newValue >>
 
-\* TableIterator skips a row when it can't get a lock (FOR_SHARE_NOWAIT)
-SkipLockedRow ==
+\* TableIterator errors on a cursor batch when it can't get a lock on any row (FOR_SHARE_NOWAIT)
+FailOnLockedRow ==
     /\ ~copyComplete
     /\ currentRow <= TableCapacity
     /\ LockMode = "FOR_SHARE_NOWAIT"
     /\ ~CanAcquireLock(currentRow, TableIterator, lockOwners)
+    /\ UNCHANGED << SourceTable, TargetTable, lockOwners, currentRow, copyComplete, rowToModify, newValue >>
+
+\* TableIterator tries copies
+CopyRow ==
+    /\ ~copyComplete
+    /\ currentRow <= TableCapacity
+    /\ lockOwners' = [lockOwners EXCEPT ![currentRow] = @ \ {TableIterator}]
+    /\ IF SourceTable[currentRow] # NoRecordHere
+        THEN TargetTable' = [TargetTable EXCEPT ![currentRow] = SourceTable[currentRow]]
+        ELSE UNCHANGED TargetTable
     /\ currentRow' = currentRow + 1
-    /\ UNCHANGED << SourceTable, TargetTable, lockOwners, copyComplete, rowToModify, newValue >>
+    /\ UNCHANGED << SourceTable, copyComplete, rowToModify, newValue >>
 
 \* TableIterator waits for a row (FOR_UPDATE)
 WaitForRow ==
@@ -87,12 +92,19 @@ CompleteCopy ==
     /\ UNCHANGED << SourceTable, TargetTable, lockOwners, currentRow, rowToModify, newValue >>
 
 \* Application modifies a row
+LockRowToModify ==
+    /\ ~copyComplete
+    /\ lockOwners[rowToModify] = {} \* No locks on the row (in any mode, it's a FOR UPDATE by Application)
+    /\ lockOwners' = [lockOwners EXCEPT ![rowToModify] = @ \cup {Application}]
+    /\ UNCHANGED << SourceTable, TargetTable, copyComplete, rowToModify, currentRow, newValue >>
+
 ModifyRow ==
     /\ ~copyComplete
-    /\ CanAcquireLock(rowToModify, Application, lockOwners)
-    /\ lockOwners' = [lockOwners EXCEPT ![rowToModify] = @ \cup {Application}]
     /\ SourceTable' = [SourceTable EXCEPT ![rowToModify] = newValue]
-    /\ lockOwners' = [lockOwners' EXCEPT ![rowToModify] = @ \ {Application}]
+    /\ IF TargetTable[rowToModify] # NoRecordHere \* Simulate a streaming-like update to TargetTable too, if row exists
+        THEN TargetTable' = [TargetTable EXCEPT ![rowToModify] = newValue]
+        ELSE UNCHANGED TargetTable
+    /\ lockOwners' = [lockOwners EXCEPT ![rowToModify] = @ \ {Application}]
     /\ \E r \in PrimaryKeys, v \in Records:
         /\ rowToModify' = r
         /\ newValue' = v
@@ -116,20 +128,24 @@ Done ==
 Stutter ==
     UNCHANGED vars
 
-Next == 
-    \/ CopyRow 
-    \/ SkipLockedRow 
+Next ==
+    \/ LockRowToCopy
+    \/ CopyRow
+    \/ FailOnLockedRow
     \/ WaitForRow
-    \/ CompleteCopy 
-    \/ ModifyRow 
-    \/ PickNewRow 
+    \/ CompleteCopy
+    \/ LockRowToModify
+    \/ ModifyRow
+    \/ PickNewRow
     \/ Done
     \/ Stutter
 
 Spec == /\ Init /\ [][Next]_vars
+        /\ WF_vars(LockRowToCopy)
         /\ WF_vars(CopyRow)
-        /\ WF_vars(SkipLockedRow)
+        /\ WF_vars(FailOnLockedRow)
         /\ WF_vars(CompleteCopy)
+        /\ WF_vars(LockRowToModify)
         /\ WF_vars(ModifyRow)
         /\ WF_vars(PickNewRow)
         \* No fairness for WaitForRow or Stutter
@@ -145,7 +161,7 @@ TypeOK ==
 LockSafety ==
     \A row \in PrimaryKeys:
         \/ lockOwners[row] = {}  \* No locks
-        \/ /\ LockMode = "FOR_UPDATE"  
+        \/ /\ LockMode = "FOR_UPDATE"
            /\ Cardinality(lockOwners[row]) = 1  \* Exclusive lock
         \/ /\ LockMode = "FOR_SHARE_NOWAIT"
            /\ ~(\E owner1, owner2 \in lockOwners[row]:  \* No writer conflicts
@@ -157,21 +173,21 @@ DataConsistency ==
         TargetTable[k] # NoRecordHere => TargetTable[k] = SourceTable[k]
 
 FinalConsistency ==
-    copyComplete => (\A k \in PrimaryKeys: 
+    copyComplete => (\A k \in PrimaryKeys:
                       SourceTable[k] # NoRecordHere => TargetTable[k] = SourceTable[k])
 
 \* Liveness Properties
-CopyEventuallyCompletes == 
+CopyEventuallyCompletes ==
     LockMode = "FOR_SHARE_NOWAIT" => <>(copyComplete \/ ENABLED Stutter)
 
 ModificationProgress ==
-    []<>(\A k \in PrimaryKeys: 
+    []<>(\A k \in PrimaryKeys:
         \/ copyComplete
         \/ CanAcquireLock(k, Application, lockOwners)
         \/ ENABLED Stutter)
 
 \* State Constraints
-StateConstraint == 
+StateConstraint ==
     /\ Cardinality(DOMAIN SourceTable) <= TableCapacity
     /\ Cardinality(DOMAIN TargetTable) <= TableCapacity
 
