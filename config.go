@@ -835,7 +835,7 @@ func (c *Config) ValidateConfig() error {
 		return fmt.Errorf("control_server: %s", err)
 	}
 
-		if c.DBWriteRetries == 0 {
+	if c.DBWriteRetries == 0 {
 		c.DBWriteRetries = 5
 	}
 
@@ -856,7 +856,7 @@ func (c *Config) ValidateConfig() error {
 	}
 
 	if c.DBReadRetries == 0 {
-		c.DBReadRetries = 5
+		c.DBReadRetries = 60
 	}
 
 	if c.MaxCutoverRetries == 0 {
