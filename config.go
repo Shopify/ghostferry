@@ -290,7 +290,7 @@ type ControlServerConfig struct {
 	ServerBindAddr string
 
 	// Path to `web` base dir
-	WebBasedir     string
+	WebBasedir string
 
 	// TODO: refactor control server config out of the base ferry at some point
 	// This adds optional buttons in the web ui that runs a script located at the
@@ -319,7 +319,8 @@ func (c *ControlServerConfig) Validate() error {
 
 // SchemaName => TableName => ColumnName => CompressionAlgorithm
 // Example: blog1 => articles => body => snappy
-//          (SELECT body FROM blog1.articles => returns compressed blob)
+//
+//	(SELECT body FROM blog1.articles => returns compressed blob)
 type ColumnCompressionConfig map[string]map[string]map[string]string
 
 func (c ColumnCompressionConfig) CompressedColumnsFor(schemaName, tableName string) map[string]string {
@@ -870,7 +871,7 @@ func (c *Config) ValidateConfig() error {
 	return nil
 }
 
-func (c *Config) checkForDeprecatedConfig()  {
+func (c *Config) checkForDeprecatedConfig() {
 	if c.DataIterationBatchSize != 0 {
 		c.logDeprecated("DataIterationBatchSize", "UpdatableConfig.DataIterationBatchSize")
 		c.UpdatableConfig.DataIterationBatchSize = c.DataIterationBatchSize
@@ -888,11 +889,11 @@ func (c *Config) checkForDeprecatedConfig()  {
 
 	if len(c.ControlServerCustomScripts) != 0 {
 		c.logDeprecated("ControlServerCustomScripts", "ControlServerConfig.CustomScripts")
-		c.ControlServerConfig.CustomScripts= c.ControlServerCustomScripts
+		c.ControlServerConfig.CustomScripts = c.ControlServerCustomScripts
 	}
 }
 
-func (c *Config) logDeprecated(deprecatedConfig string, newConfig string)  {
+func (c *Config) logDeprecated(deprecatedConfig string, newConfig string) {
 	logrus.Warnf("Config.%s is deprecated in favour of Config.%s", deprecatedConfig, newConfig)
 }
 
