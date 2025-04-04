@@ -174,7 +174,15 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos uint64
 	}
 
 	if c.RowLock {
-		selectBuilder = selectBuilder.Suffix("FOR SHARE NOWAIT")
+		mySqlVersion, err := c.DB.QueryMySQLVersion()
+		if err != nil {
+			return nil, 0, err
+		}
+		if strings.HasPrefix(mySqlVersion, "8.") {
+			selectBuilder = selectBuilder.Suffix("FOR SHARE NOWAIT")
+		} else {
+			selectBuilder = selectBuilder.Suffix("LOCK IN SHARE MODE")
+		}
 	}
 
 	query, args, err := selectBuilder.ToSql()
