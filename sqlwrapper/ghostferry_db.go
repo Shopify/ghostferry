@@ -58,6 +58,15 @@ func (db DB) Begin() (*Tx, error) {
 	return &Tx{tx, db.Marginalia}, err
 }
 
+func (db DB) QueryMySQLVersion() (string, error) {
+	var version string
+	err := db.QueryRow("SELECT @@version").Scan(&version)
+	if err != nil {
+		return "", fmt.Errorf("failed to get MySQL version: %v", err)
+	}
+	return version, nil
+}
+
 func (tx Tx) ExecContext(ctx context.Context, query string, args ...interface{}) (sqlorig.Result, error) {
 	return tx.Tx.ExecContext(ctx, AnnotateStmt(query, tx.marginalia), args...)
 }
