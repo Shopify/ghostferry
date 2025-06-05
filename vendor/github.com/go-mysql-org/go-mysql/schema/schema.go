@@ -183,8 +183,21 @@ func (ta *Table) FindColumn(name string) int {
 	return -1
 }
 
+// Get TableColumn by column index of primary key.
 func (ta *Table) GetPKColumn(index int) *TableColumn {
+	if index >= len(ta.PKColumns) {
+		return nil
+	}
 	return &ta.Columns[ta.PKColumns[index]]
+}
+
+func (ta *Table) IsPrimaryKey(colIndex int) bool {
+	for _, i := range ta.PKColumns {
+		if i == colIndex {
+			return true
+		}
+	}
+	return false
 }
 
 func (ta *Table) AddIndex(name string) (index *Index) {
@@ -341,25 +354,15 @@ func (ta *Table) fetchIndexesViaSqlDB(conn *sql.DB) error {
 	var unusedVal interface{}
 
 	for r.Next() {
-		var indexName, colName string
+		var indexName string
+		var colName sql.NullString
 		var noneUnique uint64
 		var cardinality interface{}
-		visible := "YES"
 		cols, err := r.Columns()
 		if err != nil {
 			return errors.Trace(err)
 		}
 		values := make([]interface{}, len(cols))
-
-		// Check if there's a column named "Visible"
-		hasVisibleColumn := false
-		for _, col := range cols {
-			if strings.EqualFold(col, "Visible") {
-				hasVisibleColumn = true
-				break
-			}
-		}
-
 		for i := 0; i < len(cols); i++ {
 			switch i {
 			case 1:
@@ -370,12 +373,6 @@ func (ta *Table) fetchIndexesViaSqlDB(conn *sql.DB) error {
 				values[i] = &colName
 			case 6:
 				values[i] = &cardinality
-			case 13:
-				if hasVisibleColumn {
-					values[i] = &visible
-				} else {
-					values[i] = &unusedVal
-				}
 			default:
 				values[i] = &unusedVal
 			}
@@ -385,13 +382,18 @@ func (ta *Table) fetchIndexesViaSqlDB(conn *sql.DB) error {
 			return errors.Trace(err)
 		}
 
-		if currentName != indexName && visible == "YES" {
+		if currentName != indexName {
 			currentIndex = ta.AddIndex(indexName)
 			currentName = indexName
 		}
 
 		c := toUint64(cardinality)
-		currentIndex.AddColumn(colName, c)
+		// If colName is a null string, switch to ""
+		if colName.Valid {
+			currentIndex.AddColumn(colName.String, c)
+		} else {
+			currentIndex.AddColumn("", c)
+		}
 		currentIndex.NoneUnique = noneUnique
 	}
 
@@ -430,6 +432,7 @@ func (ta *Table) fetchPrimaryKeyColumns() error {
 		return nil
 	}
 
+	// Primary key must be the first index?
 	pkIndex := ta.Indexes[0]
 	if pkIndex.Name != "PRIMARY" {
 		return nil
