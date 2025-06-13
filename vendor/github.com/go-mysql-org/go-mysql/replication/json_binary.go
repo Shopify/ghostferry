@@ -1,14 +1,14 @@
 package replication
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
 
-	. "github.com/go-mysql-org/go-mysql/mysql"
+	"github.com/go-mysql-org/go-mysql/mysql"
+	"github.com/go-mysql-org/go-mysql/utils"
+	"github.com/goccy/go-json"
 	"github.com/pingcap/errors"
-	"github.com/siddontang/go/hack"
 )
 
 const (
@@ -45,7 +45,59 @@ const (
 	jsonbValueEntrySizeLarge = 1 + jsonbLargeOffsetSize
 )
 
+var ErrCorruptedJSONDiff = fmt.Errorf("corrupted JSON diff") // ER_CORRUPTED_JSON_DIFF
+
+type (
+	// JsonDiffOperation is an enum that describes what kind of operation a JsonDiff object represents.
+	// https://github.com/mysql/mysql-server/blob/8.0/sql/json_diff.h
+	JsonDiffOperation byte
+)
+
 type FloatWithTrailingZero float64
+
+const (
+	// The JSON value in the given path is replaced with a new value.
+	//
+	// It has the same effect as `JSON_REPLACE(col, path, value)`.
+	JsonDiffOperationReplace = JsonDiffOperation(iota)
+
+	// Add a new element at the given path.
+	//
+	//  If the path specifies an array element, it has the same effect as `JSON_ARRAY_INSERT(col, path, value)`.
+	//
+	//  If the path specifies an object member, it has the same effect as `JSON_INSERT(col, path, value)`.
+	JsonDiffOperationInsert
+
+	// The JSON value at the given path is removed from an array or object.
+	//
+	// It has the same effect as `JSON_REMOVE(col, path)`.
+	JsonDiffOperationRemove
+)
+
+type (
+	JsonDiff struct {
+		Op    JsonDiffOperation
+		Path  string
+		Value string
+	}
+)
+
+func (op JsonDiffOperation) String() string {
+	switch op {
+	case JsonDiffOperationReplace:
+		return "Replace"
+	case JsonDiffOperationInsert:
+		return "Insert"
+	case JsonDiffOperationRemove:
+		return "Remove"
+	default:
+		return fmt.Sprintf("Unknown(%d)", op)
+	}
+}
+
+func (jd *JsonDiff) String() string {
+	return fmt.Sprintf("json_diff(op:%s path:%s value:%s)", jd.Op, jd.Path, jd.Value)
+}
 
 func (f FloatWithTrailingZero) MarshalJSON() ([]byte, error) {
 	if float64(f) == float64(int(f)) {
@@ -82,14 +134,10 @@ func jsonbGetValueEntrySize(isSmall bool) int {
 // decodeJsonBinary decodes the JSON binary encoding data and returns
 // the common JSON encoding data.
 func (e *RowsEvent) decodeJsonBinary(data []byte) ([]byte, error) {
-	// Sometimes, we can insert a NULL JSON even we set the JSON field as NOT NULL.
-	// If we meet this case, we can return an empty slice.
-	if len(data) == 0 {
-		return []byte{}, nil
-	}
 	d := jsonBinaryDecoder{
-		useDecimal:      e.useDecimal,
-		ignoreDecodeErr: e.ignoreJSONDecodeErr,
+		useDecimal:               e.useDecimal,
+		useFloatWithTrailingZero: e.useFloatWithTrailingZero,
+		ignoreDecodeErr:          e.ignoreJSONDecodeErr,
 	}
 
 	if d.isDataShort(data, 1) {
@@ -105,9 +153,10 @@ func (e *RowsEvent) decodeJsonBinary(data []byte) ([]byte, error) {
 }
 
 type jsonBinaryDecoder struct {
-	useDecimal      bool
-	ignoreDecodeErr bool
-	err             error
+	useDecimal               bool
+	useFloatWithTrailingZero bool
+	ignoreDecodeErr          bool
+	err                      error
 }
 
 func (d *jsonBinaryDecoder) decodeValue(tp byte, data []byte) interface{} {
@@ -139,7 +188,10 @@ func (d *jsonBinaryDecoder) decodeValue(tp byte, data []byte) interface{} {
 	case JSONB_UINT64:
 		return d.decodeUint64(data)
 	case JSONB_DOUBLE:
-		return d.decodeDoubleWithTrailingZero(data)
+		if d.useFloatWithTrailingZero {
+			return d.decodeDoubleWithTrailingZero(data)
+		}
+		return d.decodeDouble(data)
 	case JSONB_STRING:
 		return d.decodeString(data)
 	case JSONB_OPAQUE:
@@ -204,7 +256,7 @@ func (d *jsonBinaryDecoder) decodeObjectOrArray(data []byte, isSmall bool, isObj
 				return nil
 			}
 
-			keys[i] = hack.String(data[keyOffset : keyOffset+keyLength])
+			keys[i] = utils.ByteSliceToString(data[keyOffset : keyOffset+keyLength])
 		}
 	}
 
@@ -301,7 +353,7 @@ func (d *jsonBinaryDecoder) decodeInt16(data []byte) int16 {
 		return 0
 	}
 
-	v := ParseBinaryInt16(data[0:2])
+	v := mysql.ParseBinaryInt16(data[0:2])
 	return v
 }
 
@@ -310,7 +362,7 @@ func (d *jsonBinaryDecoder) decodeUint16(data []byte) uint16 {
 		return 0
 	}
 
-	v := ParseBinaryUint16(data[0:2])
+	v := mysql.ParseBinaryUint16(data[0:2])
 	return v
 }
 
@@ -319,7 +371,7 @@ func (d *jsonBinaryDecoder) decodeInt32(data []byte) int32 {
 		return 0
 	}
 
-	v := ParseBinaryInt32(data[0:4])
+	v := mysql.ParseBinaryInt32(data[0:4])
 	return v
 }
 
@@ -328,7 +380,7 @@ func (d *jsonBinaryDecoder) decodeUint32(data []byte) uint32 {
 		return 0
 	}
 
-	v := ParseBinaryUint32(data[0:4])
+	v := mysql.ParseBinaryUint32(data[0:4])
 	return v
 }
 
@@ -337,7 +389,7 @@ func (d *jsonBinaryDecoder) decodeInt64(data []byte) int64 {
 		return 0
 	}
 
-	v := ParseBinaryInt64(data[0:8])
+	v := mysql.ParseBinaryInt64(data[0:8])
 	return v
 }
 
@@ -346,7 +398,7 @@ func (d *jsonBinaryDecoder) decodeUint64(data []byte) uint64 {
 		return 0
 	}
 
-	v := ParseBinaryUint64(data[0:8])
+	v := mysql.ParseBinaryUint64(data[0:8])
 	return v
 }
 
@@ -355,7 +407,7 @@ func (d *jsonBinaryDecoder) decodeDouble(data []byte) float64 {
 		return 0
 	}
 
-	v := ParseBinaryFloat64(data[0:8])
+	v := mysql.ParseBinaryFloat64(data[0:8])
 	return v
 }
 
@@ -377,7 +429,7 @@ func (d *jsonBinaryDecoder) decodeString(data []byte) string {
 
 	data = data[n:]
 
-	v := hack.String(data[0:l])
+	v := utils.ByteSliceToString(data[0:l])
 	return v
 }
 
@@ -398,17 +450,15 @@ func (d *jsonBinaryDecoder) decodeOpaque(data []byte) interface{} {
 	data = data[n : l+n]
 
 	switch tp {
-	case MYSQL_TYPE_NEWDECIMAL:
+	case mysql.MYSQL_TYPE_NEWDECIMAL:
 		return d.decodeDecimal(data)
-	case MYSQL_TYPE_TIME:
+	case mysql.MYSQL_TYPE_TIME:
 		return d.decodeTime(data)
-	case MYSQL_TYPE_DATE, MYSQL_TYPE_DATETIME, MYSQL_TYPE_TIMESTAMP:
+	case mysql.MYSQL_TYPE_DATE, mysql.MYSQL_TYPE_DATETIME, mysql.MYSQL_TYPE_TIMESTAMP:
 		return d.decodeDateTime(data)
 	default:
-		return hack.String(data)
+		return utils.ByteSliceToString(data)
 	}
-
-	return nil
 }
 
 func (d *jsonBinaryDecoder) decodeDecimal(data []byte) interface{} {
@@ -462,7 +512,7 @@ func (d *jsonBinaryDecoder) decodeDateTime(data []byte) interface{} {
 	year := ym / 13
 	month := ym % 13
 	day := ymd % (1 << 5)
-	hour := (hms >> 12)
+	hour := hms >> 12
 	minute := (hms >> 6) % (1 << 6)
 	second := hms % (1 << 6)
 	frac := v % (1 << 24)
@@ -508,4 +558,44 @@ func (d *jsonBinaryDecoder) decodeVariableLength(data []byte) (int, int) {
 	d.err = errors.New("decode variable length failed")
 
 	return 0, 0
+}
+
+func (e *RowsEvent) decodeJsonPartialBinary(data []byte) (*JsonDiff, error) {
+	// see Json_diff_vector::read_binary() in mysql-server/sql/json_diff.cc
+	operationNumber := JsonDiffOperation(data[0])
+	switch operationNumber {
+	case JsonDiffOperationReplace:
+	case JsonDiffOperationInsert:
+	case JsonDiffOperationRemove:
+	default:
+		return nil, ErrCorruptedJSONDiff
+	}
+	data = data[1:]
+
+	pathLength, _, n := mysql.LengthEncodedInt(data)
+	data = data[n:]
+
+	path := data[:pathLength]
+	data = data[pathLength:]
+
+	diff := &JsonDiff{
+		Op:   operationNumber,
+		Path: string(path),
+		// Value will be filled below
+	}
+
+	if operationNumber == JsonDiffOperationRemove {
+		return diff, nil
+	}
+
+	valueLength, _, n := mysql.LengthEncodedInt(data)
+	data = data[n:]
+
+	d, err := e.decodeJsonBinary(data[:valueLength])
+	if err != nil {
+		return nil, fmt.Errorf("cannot read json diff for field %q: %w", path, err)
+	}
+	diff.Value = string(d)
+
+	return diff, nil
 }

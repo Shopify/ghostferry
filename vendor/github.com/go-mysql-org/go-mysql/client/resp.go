@@ -6,11 +6,11 @@ import (
 	"crypto/x509"
 	"encoding/binary"
 	"encoding/pem"
+	"fmt"
 
 	"github.com/pingcap/errors"
-	"github.com/siddontang/go/hack"
 
-	. "github.com/go-mysql-org/go-mysql/mysql"
+	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/utils"
 )
 
@@ -19,7 +19,6 @@ func (c *Conn) readUntilEOF() (err error) {
 
 	for {
 		data, err = c.ReadPacket()
-
 		if err != nil {
 			return
 		}
@@ -29,60 +28,59 @@ func (c *Conn) readUntilEOF() (err error) {
 			return
 		}
 	}
-	return
 }
 
 func (c *Conn) isEOFPacket(data []byte) bool {
-	return data[0] == EOF_HEADER && len(data) <= 5
+	return data[0] == mysql.EOF_HEADER && len(data) <= 5
 }
 
-func (c *Conn) handleOKPacket(data []byte) (*Result, error) {
+func (c *Conn) handleOKPacket(data []byte) (*mysql.Result, error) {
 	var n int
-	var pos = 1
+	pos := 1
 
-	r := new(Result)
+	r := mysql.NewResultReserveResultset(0)
 
-	r.AffectedRows, _, n = LengthEncodedInt(data[pos:])
+	r.AffectedRows, _, n = mysql.LengthEncodedInt(data[pos:])
 	pos += n
-	r.InsertId, _, n = LengthEncodedInt(data[pos:])
+	r.InsertId, _, n = mysql.LengthEncodedInt(data[pos:])
 	pos += n
 
-	if c.capability&CLIENT_PROTOCOL_41 > 0 {
+	if c.capability&mysql.CLIENT_PROTOCOL_41 > 0 {
 		r.Status = binary.LittleEndian.Uint16(data[pos:])
 		c.status = r.Status
 		pos += 2
 
 		//todo:strict_mode, check warnings as error
 		r.Warnings = binary.LittleEndian.Uint16(data[pos:])
-		pos += 2
-	} else if c.capability&CLIENT_TRANSACTIONS > 0 {
+		// pos += 2
+	} else if c.capability&mysql.CLIENT_TRANSACTIONS > 0 {
 		r.Status = binary.LittleEndian.Uint16(data[pos:])
 		c.status = r.Status
-		pos += 2
+		// pos += 2
 	}
 
-	//new ok package will check CLIENT_SESSION_TRACK too, but I don't support it now.
+	// new ok package will check CLIENT_SESSION_TRACK too, but I don't support it now.
 
-	//skip info
+	// skip info
 	return r, nil
 }
 
 func (c *Conn) handleErrorPacket(data []byte) error {
-	e := new(MyError)
+	e := new(mysql.MyError)
 
-	var pos = 1
+	pos := 1
 
 	e.Code = binary.LittleEndian.Uint16(data[pos:])
 	pos += 2
 
-	if c.capability&CLIENT_PROTOCOL_41 > 0 {
-		//skip '#'
+	if c.capability&mysql.CLIENT_PROTOCOL_41 > 0 {
+		// skip '#'
 		pos++
-		e.State = hack.String(data[pos : pos+5])
+		e.State = utils.ByteSliceToString(data[pos : pos+5])
 		pos += 5
 	}
 
-	e.Message = hack.String(data[pos:])
+	e.Message = utils.ByteSliceToString(data[pos:])
 
 	return e
 }
@@ -90,11 +88,11 @@ func (c *Conn) handleErrorPacket(data []byte) error {
 func (c *Conn) handleAuthResult() error {
 	data, switchToPlugin, err := c.readAuthResult()
 	if err != nil {
-		return err
+		return fmt.Errorf("readAuthResult: %w", err)
 	}
 	// handle auth switch, only support 'sha256_password', and 'caching_sha2_password'
 	if switchToPlugin != "" {
-		//fmt.Printf("now switching auth plugin to '%s'\n", switchToPlugin)
+		// fmt.Printf("now switching auth plugin to '%s'\n", switchToPlugin)
 		if data == nil {
 			data = c.salt
 		} else {
@@ -123,14 +121,16 @@ func (c *Conn) handleAuthResult() error {
 	}
 
 	// handle caching_sha2_password
-	if c.authPluginName == AUTH_CACHING_SHA2_PASSWORD {
+	switch c.authPluginName {
+	case mysql.AUTH_CACHING_SHA2_PASSWORD:
 		if data == nil {
 			return nil // auth already succeeded
 		}
-		if data[0] == CACHE_SHA2_FAST_AUTH {
+		switch data[0] {
+		case mysql.CACHE_SHA2_FAST_AUTH:
 			_, err = c.readOK()
 			return err
-		} else if data[0] == CACHE_SHA2_FULL_AUTH {
+		case mysql.CACHE_SHA2_FULL_AUTH:
 			// need full authentication
 			if c.tlsConfig != nil || c.proto == "unix" {
 				if err = c.WriteClearAuthPacket(c.password); err != nil {
@@ -143,10 +143,10 @@ func (c *Conn) handleAuthResult() error {
 			}
 			_, err = c.readOK()
 			return err
-		} else {
+		default:
 			return errors.Errorf("invalid packet %x", data[0])
 		}
-	} else if c.authPluginName == AUTH_SHA256_PASSWORD {
+	case mysql.AUTH_SHA256_PASSWORD:
 		if len(data) == 0 {
 			return nil // auth already succeeded
 		}
@@ -169,24 +169,24 @@ func (c *Conn) handleAuthResult() error {
 func (c *Conn) readAuthResult() ([]byte, string, error) {
 	data, err := c.ReadPacket()
 	if err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("ReadPacket: %w", err)
 	}
 
 	// see: https://insidemysql.com/preparing-your-community-connector-for-mysql-8-part-2-sha256/
 	// packet indicator
 	switch data[0] {
-	case OK_HEADER:
+	case mysql.OK_HEADER:
 		_, err := c.handleOKPacket(data)
 		return nil, "", err
 
-	case MORE_DATE_HEADER:
+	case mysql.MORE_DATE_HEADER:
 		return data[1:], "", err
 
-	case EOF_HEADER:
+	case mysql.EOF_HEADER:
 		// server wants to switch auth
 		if len(data) < 1 {
 			// https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::OldAuthSwitchRequest
-			return nil, AUTH_MYSQL_OLD_PASSWORD, nil
+			return nil, mysql.AUTH_MYSQL_OLD_PASSWORD, nil
 		}
 		pluginEndIndex := bytes.IndexByte(data, 0x00)
 		if pluginEndIndex < 0 {
@@ -201,54 +201,59 @@ func (c *Conn) readAuthResult() ([]byte, string, error) {
 	}
 }
 
-func (c *Conn) readOK() (*Result, error) {
+func (c *Conn) readOK() (*mysql.Result, error) {
 	data, err := c.ReadPacket()
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
 
-	if data[0] == OK_HEADER {
+	switch data[0] {
+	case mysql.OK_HEADER:
 		return c.handleOKPacket(data)
-	} else if data[0] == ERR_HEADER {
+	case mysql.ERR_HEADER:
 		return nil, c.handleErrorPacket(data)
-	} else {
+	default:
 		return nil, errors.New("invalid ok packet")
 	}
 }
 
-func (c *Conn) readResult(binary bool) (*Result, error) {
-	firstPkgBuf, err := c.ReadPacketReuseMem(utils.ByteSliceGet(16)[:0])
-	defer utils.ByteSlicePut(firstPkgBuf)
-
+func (c *Conn) readResult(binary bool) (*mysql.Result, error) {
+	bs := utils.ByteSliceGet(16)
+	defer utils.ByteSlicePut(bs)
+	var err error
+	bs.B, err = c.ReadPacketReuseMem(bs.B[:0])
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
 
-	if firstPkgBuf[0] == OK_HEADER {
-		return c.handleOKPacket(firstPkgBuf)
-	} else if firstPkgBuf[0] == ERR_HEADER {
-		return nil, c.handleErrorPacket(append([]byte{}, firstPkgBuf...))
-	} else if firstPkgBuf[0] == LocalInFile_HEADER {
-		return nil, ErrMalformPacket
+	switch bs.B[0] {
+	case mysql.OK_HEADER:
+		return c.handleOKPacket(bs.B)
+	case mysql.ERR_HEADER:
+		return nil, c.handleErrorPacket(bytes.Repeat(bs.B, 1))
+	case mysql.LocalInFile_HEADER:
+		return nil, mysql.ErrMalformPacket
+	default:
+		return c.readResultset(bs.B, binary)
 	}
-
-	return c.readResultset(firstPkgBuf, binary)
 }
 
-func (c *Conn) readResultStreaming(binary bool, result *Result, perRowCb SelectPerRowCallback, perResCb SelectPerResultCallback) error {
-	firstPkgBuf, err := c.ReadPacketReuseMem(utils.ByteSliceGet(16)[:0])
-	defer utils.ByteSlicePut(firstPkgBuf)
-
+func (c *Conn) readResultStreaming(binary bool, result *mysql.Result, perRowCb SelectPerRowCallback, perResCb SelectPerResultCallback) error {
+	bs := utils.ByteSliceGet(16)
+	defer utils.ByteSlicePut(bs)
+	var err error
+	bs.B, err = c.ReadPacketReuseMem(bs.B[:0])
 	if err != nil {
 		return errors.Trace(err)
 	}
 
-	if firstPkgBuf[0] == OK_HEADER {
+	switch bs.B[0] {
+	case mysql.OK_HEADER:
 		// https://dev.mysql.com/doc/internals/en/com-query-response.html
 		// 14.6.4.1 COM_QUERY Response
 		// If the number of columns in the resultset is 0, this is a OK_Packet.
 
-		okResult, err := c.handleOKPacket(firstPkgBuf)
+		okResult, err := c.handleOKPacket(bs.B)
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -258,31 +263,29 @@ func (c *Conn) readResultStreaming(binary bool, result *Result, perRowCb SelectP
 		result.InsertId = okResult.InsertId
 		result.Warnings = okResult.Warnings
 		if result.Resultset == nil {
-			result.Resultset = NewResultset(0)
+			result.Resultset = mysql.NewResultset(0)
 		} else {
 			result.Reset(0)
 		}
 		return nil
-	} else if firstPkgBuf[0] == ERR_HEADER {
-		return c.handleErrorPacket(append([]byte{}, firstPkgBuf...))
-	} else if firstPkgBuf[0] == LocalInFile_HEADER {
-		return ErrMalformPacket
+	case mysql.ERR_HEADER:
+		return c.handleErrorPacket(bytes.Repeat(bs.B, 1))
+	case mysql.LocalInFile_HEADER:
+		return mysql.ErrMalformPacket
+	default:
+		return c.readResultsetStreaming(bs.B, binary, result, perRowCb, perResCb)
 	}
-
-	return c.readResultsetStreaming(firstPkgBuf, binary, result, perRowCb, perResCb)
 }
 
-func (c *Conn) readResultset(data []byte, binary bool) (*Result, error) {
+func (c *Conn) readResultset(data []byte, binary bool) (*mysql.Result, error) {
 	// column count
-	count, _, n := LengthEncodedInt(data)
+	count, _, n := mysql.LengthEncodedInt(data)
 
 	if n-len(data) != 0 {
-		return nil, ErrMalformPacket
+		return nil, mysql.ErrMalformPacket
 	}
 
-	result := &Result{
-		Resultset: NewResultset(int(count)),
-	}
+	result := mysql.NewResultReserveResultset(int(count))
 
 	if err := c.readResultColumns(result); err != nil {
 		return nil, errors.Trace(err)
@@ -295,22 +298,22 @@ func (c *Conn) readResultset(data []byte, binary bool) (*Result, error) {
 	return result, nil
 }
 
-func (c *Conn) readResultsetStreaming(data []byte, binary bool, result *Result, perRowCb SelectPerRowCallback, perResCb SelectPerResultCallback) error {
-	columnCount, _, n := LengthEncodedInt(data)
+func (c *Conn) readResultsetStreaming(data []byte, binary bool, result *mysql.Result, perRowCb SelectPerRowCallback, perResCb SelectPerResultCallback) error {
+	columnCount, _, n := mysql.LengthEncodedInt(data)
 
 	if n-len(data) != 0 {
-		return ErrMalformPacket
+		return mysql.ErrMalformPacket
 	}
 
 	if result.Resultset == nil {
-		result.Resultset = NewResultset(int(columnCount))
+		result.Resultset = mysql.NewResultset(int(columnCount))
 	} else {
 		// Reuse memory if can
 		result.Reset(int(columnCount))
 	}
 
 	// this is a streaming resultset
-	result.Resultset.Streaming = true
+	result.Streaming = mysql.StreamingSelect
 
 	if err := c.readResultColumns(result); err != nil {
 		return errors.Trace(err)
@@ -327,115 +330,67 @@ func (c *Conn) readResultsetStreaming(data []byte, binary bool, result *Result, 
 	}
 
 	// this resultset is done streaming
-	result.Resultset.StreamingDone = true
+	result.StreamingDone = true
 
 	return nil
 }
 
-func (c *Conn) readResultColumns(result *Result) (err error) {
-	var i int = 0
+func (c *Conn) readResultColumns(result *mysql.Result) (err error) {
+	i := 0
 	var data []byte
 
 	for {
 		rawPkgLen := len(result.RawPkg)
 		result.RawPkg, err = c.ReadPacketReuseMem(result.RawPkg)
 		if err != nil {
-			return
+			return err
 		}
 		data = result.RawPkg[rawPkgLen:]
 
 		// EOF Packet
 		if c.isEOFPacket(data) {
-			if c.capability&CLIENT_PROTOCOL_41 > 0 {
+			if c.capability&mysql.CLIENT_PROTOCOL_41 > 0 {
 				result.Warnings = binary.LittleEndian.Uint16(data[1:])
-				//todo add strict_mode, warning will be treat as error
+				// todo add strict_mode, warning will be treat as error
 				result.Status = binary.LittleEndian.Uint16(data[3:])
 				c.status = result.Status
 			}
 
 			if i != len(result.Fields) {
-				err = ErrMalformPacket
+				err = mysql.ErrMalformPacket
 			}
 
-			return
+			return err
 		}
 
 		if result.Fields[i] == nil {
-			result.Fields[i] = &Field{}
+			result.Fields[i] = &mysql.Field{}
 		}
 		err = result.Fields[i].Parse(data)
 		if err != nil {
-			return
+			return err
 		}
 
-		result.FieldNames[hack.String(result.Fields[i].Name)] = i
+		result.FieldNames[utils.ByteSliceToString(result.Fields[i].Name)] = i
 
 		i++
 	}
 }
 
-func (c *Conn) readResultRows(result *Result, isBinary bool) (err error) {
+func (c *Conn) readResultRows(result *mysql.Result, isBinary bool) (err error) {
 	var data []byte
 
 	for {
 		rawPkgLen := len(result.RawPkg)
 		result.RawPkg, err = c.ReadPacketReuseMem(result.RawPkg)
 		if err != nil {
-			return
+			return err
 		}
 		data = result.RawPkg[rawPkgLen:]
 
 		// EOF Packet
 		if c.isEOFPacket(data) {
-			if c.capability&CLIENT_PROTOCOL_41 > 0 {
-				result.Warnings = binary.LittleEndian.Uint16(data[1:])
-				//todo add strict_mode, warning will be treat as error
-				result.Status = binary.LittleEndian.Uint16(data[3:])
-				c.status = result.Status
-			}
-
-			break
-		}
-
-		if data[0] == ERR_HEADER {
-			return c.handleErrorPacket(data)
-		}
-
-		result.RowDatas = append(result.RowDatas, data)
-	}
-
-	if cap(result.Values) < len(result.RowDatas) {
-		result.Values = make([][]FieldValue, len(result.RowDatas))
-	} else {
-		result.Values = result.Values[:len(result.RowDatas)]
-	}
-
-	for i := range result.Values {
-		result.Values[i], err = result.RowDatas[i].Parse(result.Fields, isBinary, result.Values[i])
-
-		if err != nil {
-			return errors.Trace(err)
-		}
-	}
-
-	return nil
-}
-
-func (c *Conn) readResultRowsStreaming(result *Result, isBinary bool, perRowCb SelectPerRowCallback) (err error) {
-	var (
-		data []byte
-		row  []FieldValue
-	)
-
-	for {
-		data, err = c.ReadPacketReuseMem(data[:0])
-		if err != nil {
-			return
-		}
-
-		// EOF Packet
-		if c.isEOFPacket(data) {
-			if c.capability&CLIENT_PROTOCOL_41 > 0 {
+			if c.capability&mysql.CLIENT_PROTOCOL_41 > 0 {
 				result.Warnings = binary.LittleEndian.Uint16(data[1:])
 				// todo add strict_mode, warning will be treat as error
 				result.Status = binary.LittleEndian.Uint16(data[3:])
@@ -445,12 +400,59 @@ func (c *Conn) readResultRowsStreaming(result *Result, isBinary bool, perRowCb S
 			break
 		}
 
-		if data[0] == ERR_HEADER {
+		if data[0] == mysql.ERR_HEADER {
+			return c.handleErrorPacket(data)
+		}
+
+		result.RowDatas = append(result.RowDatas, data)
+	}
+
+	if cap(result.Values) < len(result.RowDatas) {
+		result.Values = make([][]mysql.FieldValue, len(result.RowDatas))
+	} else {
+		result.Values = result.Values[:len(result.RowDatas)]
+	}
+
+	for i := range result.Values {
+		result.Values[i], err = result.RowDatas[i].Parse(result.Fields, isBinary, result.Values[i])
+		if err != nil {
+			return errors.Trace(err)
+		}
+	}
+
+	return nil
+}
+
+func (c *Conn) readResultRowsStreaming(result *mysql.Result, isBinary bool, perRowCb SelectPerRowCallback) (err error) {
+	var (
+		data []byte
+		row  []mysql.FieldValue
+	)
+
+	for {
+		data, err = c.ReadPacketReuseMem(data[:0])
+		if err != nil {
+			return err
+		}
+
+		// EOF Packet
+		if c.isEOFPacket(data) {
+			if c.capability&mysql.CLIENT_PROTOCOL_41 > 0 {
+				result.Warnings = binary.LittleEndian.Uint16(data[1:])
+				// todo add strict_mode, warning will be treat as error
+				result.Status = binary.LittleEndian.Uint16(data[3:])
+				c.status = result.Status
+			}
+
+			break
+		}
+
+		if data[0] == mysql.ERR_HEADER {
 			return c.handleErrorPacket(data)
 		}
 
 		// Parse this row
-		row, err = RowData(data).Parse(result.Fields, isBinary, row)
+		row, err = mysql.RowData(data).Parse(result.Fields, isBinary, row)
 		if err != nil {
 			return errors.Trace(err)
 		}
