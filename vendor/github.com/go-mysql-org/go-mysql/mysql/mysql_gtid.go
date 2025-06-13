@@ -5,13 +5,14 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/go-mysql-org/go-mysql/utils"
+	"github.com/google/uuid"
 	"github.com/pingcap/errors"
-	uuid "github.com/satori/go.uuid"
-	"github.com/siddontang/go/hack"
 )
 
 // Like MySQL GTID Interval struct, [start, stop), left closed and right open
@@ -110,6 +111,48 @@ func (s IntervalSlice) Normalize() IntervalSlice {
 	return n
 }
 
+func min(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func (s *IntervalSlice) InsertInterval(interval Interval) {
+	var (
+		count int
+		i     int
+	)
+
+	*s = append(*s, interval)
+	total := len(*s)
+	for i = total - 1; i > 0; i-- {
+		if (*s)[i].Stop < (*s)[i-1].Start {
+			(*s)[i], (*s)[i-1] = (*s)[i-1], (*s)[i]
+		} else if (*s)[i].Start > (*s)[i-1].Stop {
+			break
+		} else {
+			(*s)[i-1].Start = min((*s)[i-1].Start, (*s)[i].Start)
+			(*s)[i-1].Stop = max((*s)[i-1].Stop, (*s)[i].Stop)
+			count++
+		}
+	}
+	if count > 0 {
+		i++
+		if i+count < total {
+			copy((*s)[i:], (*s)[i+count:])
+		}
+		*s = (*s)[:total-count]
+	}
+}
+
 // Contain returns true if sub in s
 func (s IntervalSlice) Contain(sub IntervalSlice) bool {
 	j := 0
@@ -173,7 +216,7 @@ func ParseUUIDSet(str string) (*UUIDSet, error) {
 
 	var err error
 	s := new(UUIDSet)
-	if s.SID, err = uuid.FromString(sep[0]); err != nil {
+	if s.SID, err = uuid.Parse(sep[0]); err != nil {
 		return nil, errors.Trace(err)
 	}
 
@@ -202,7 +245,7 @@ func NewUUIDSet(sid uuid.UUID, in ...Interval) *UUIDSet {
 }
 
 func (s *UUIDSet) Contain(sub *UUIDSet) bool {
-	if !bytes.Equal(s.SID.Bytes(), sub.SID.Bytes()) {
+	if s.SID != sub.SID {
 		return false
 	}
 
@@ -234,11 +277,15 @@ func (s *UUIDSet) MinusInterval(in IntervalSlice) {
 	i, j := 0, 0
 	var minuend Interval
 	var subtrahend Interval
-	for j < len(in) && i < len(s.Intervals) {
+	for i < len(s.Intervals) {
 		if minuend.Stop != s.Intervals[i].Stop { // `i` changed?
 			minuend = s.Intervals[i]
 		}
-		subtrahend = in[j]
+		if j < len(in) {
+			subtrahend = in[j]
+		} else {
+			subtrahend = Interval{math.MaxInt64, math.MaxInt64}
+		}
 
 		if minuend.Stop <= subtrahend.Start {
 			// no overlapping
@@ -248,30 +295,22 @@ func (s *UUIDSet) MinusInterval(in IntervalSlice) {
 			// no overlapping
 			j++
 		} else {
-			if minuend.Start < subtrahend.Start && minuend.Stop < subtrahend.Stop {
+			if minuend.Start < subtrahend.Start && minuend.Stop <= subtrahend.Stop {
 				n = append(n, Interval{minuend.Start, subtrahend.Start})
 				i++
-			} else if minuend.Start > subtrahend.Start && minuend.Stop > subtrahend.Stop {
+			} else if minuend.Start >= subtrahend.Start && minuend.Stop > subtrahend.Stop {
 				minuend = Interval{subtrahend.Stop, minuend.Stop}
 				j++
 			} else if minuend.Start >= subtrahend.Start && minuend.Stop <= subtrahend.Stop {
 				// minuend is completely removed
 				i++
-			} else {
+			} else if minuend.Start < subtrahend.Start && minuend.Stop > subtrahend.Stop {
 				n = append(n, Interval{minuend.Start, subtrahend.Start})
 				minuend = Interval{subtrahend.Stop, minuend.Stop}
 				j++
+			} else {
+				panic("should never be here")
 			}
-		}
-	}
-
-	lastSub := in[len(in)-1]
-	for ; i < len(s.Intervals); i++ {
-		minuend = s.Intervals[i]
-		if minuend.Start < lastSub.Stop {
-			n = append(n, Interval{lastSub.Stop, minuend.Stop})
-		} else {
-			n = append(n, s.Intervals[i])
 		}
 	}
 
@@ -279,11 +318,13 @@ func (s *UUIDSet) MinusInterval(in IntervalSlice) {
 }
 
 func (s *UUIDSet) String() string {
-	return hack.String(s.Bytes())
+	return utils.ByteSliceToString(s.Bytes())
 }
 
 func (s *UUIDSet) encode(w io.Writer) {
-	_, _ = w.Write(s.SID.Bytes())
+	b, _ := s.SID.MarshalBinary()
+
+	_, _ = w.Write(b)
 	n := int64(len(s.Intervals))
 
 	_ = binary.Write(w, binary.LittleEndian, n)
@@ -344,10 +385,9 @@ func (s *UUIDSet) Decode(data []byte) error {
 
 func (s *UUIDSet) Clone() *UUIDSet {
 	clone := new(UUIDSet)
-
-	copy(clone.SID[:], s.SID[:])
-	clone.Intervals = s.Intervals.Normalize()
-
+	clone.SID = s.SID
+	clone.Intervals = make([]Interval, len(s.Intervals))
+	copy(clone.Intervals, s.Intervals)
 	return clone
 }
 
@@ -366,7 +406,7 @@ func ParseMysqlGTIDSet(str string) (GTIDSet, error) {
 
 	sp := strings.Split(str, ",")
 
-	//todo, handle redundant same uuid
+	// todo, handle redundant same uuid
 	for i := 0; i < len(sp); i++ {
 		if set, err := ParseUUIDSet(sp[i]); err != nil {
 			return nil, errors.Trace(err)
@@ -438,6 +478,16 @@ func (s *MysqlGTIDSet) Update(GTIDStr string) error {
 		s.AddSet(uuidSet)
 	}
 	return nil
+}
+
+func (s *MysqlGTIDSet) AddGTID(uuid uuid.UUID, gno int64) {
+	sid := uuid.String()
+	o, ok := s.Sets[sid]
+	if ok {
+		o.Intervals.InsertInterval(Interval{gno, gno + 1})
+	} else {
+		s.Sets[sid] = &UUIDSet{uuid, IntervalSlice{Interval{gno, gno + 1}}}
+	}
 }
 
 func (s *MysqlGTIDSet) Add(addend MysqlGTIDSet) error {
@@ -521,7 +571,7 @@ func (s *MysqlGTIDSet) String() string {
 		sep = ","
 	}
 
-	return hack.String(buf.Bytes())
+	return utils.ByteSliceToString(buf.Bytes())
 }
 
 func (s *MysqlGTIDSet) Encode() []byte {
@@ -545,4 +595,8 @@ func (gtid *MysqlGTIDSet) Clone() GTIDSet {
 	}
 
 	return clone
+}
+
+func (s *MysqlGTIDSet) IsEmpty() bool {
+	return len(s.Sets) == 0
 }
