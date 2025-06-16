@@ -37,10 +37,10 @@ func (t *CopyFilterTestSuite) SetupTest() {
 			Columns:   columns,
 			PKColumns: []int{0},
 			Indexes: []*schema.Index{
-				{Name: "unrelated_index", Columns: []string{"tenant_id", "data"}},
-				{Name: "less_good_sharding_index", Columns: []string{"tenant_id"}},
-				{Name: "good_sharding_index", Columns: []string{"tenant_id", "id"}},
-				{Name: "unrelated_index2", Columns: []string{"data"}},
+				{Name: "unrelated_index", Columns: []string{"tenant_id", "data"}, Visible: true},
+				{Name: "less_good_sharding_index", Columns: []string{"tenant_id"}, Visible: true},
+				{Name: "good_sharding_index", Columns: []string{"tenant_id", "id"}, Visible: true},
+				{Name: "unrelated_index2", Columns: []string{"data"}, Visible: true},
 			},
 		},
 		PaginationKeyColumn: &columns[0],
@@ -54,7 +54,7 @@ func (t *CopyFilterTestSuite) SetupTest() {
 			Columns:   columns,
 			PKColumns: []int{0},
 			Indexes: []*schema.Index{
-				{Name: "good_sharding_index", Columns: []string{"tenant_id", "id"}},
+				{Name: "good_sharding_index", Columns: []string{"tenant_id", "id"}, Visible: true},
 			},
 		},
 		PaginationKeyColumn: &columns[0],
@@ -282,6 +282,18 @@ func (t *CopyFilterTestSuite) TestSelectsPrimaryKeyTables() {
 	sql, args, err := selectBuilder.ToSql()
 	t.Require().Nil(err)
 	t.Require().Equal("SELECT * FROM `shard_1`.`pkTable` USE INDEX (PRIMARY) WHERE `tenant_id` = ? AND `tenant_id` > ?", sql)
+	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor}, args)
+}
+
+func (t *CopyFilterTestSuite) TestSkipsInvisibleIndexes() {
+	// Make the good index invisible, should fall back to less good index
+	t.normalTable.Indexes[2].Visible = false
+	selectBuilder, err := t.filter.BuildSelect([]string{"*"}, t.normalTable, t.paginationKeyCursor, 1024)
+	t.Require().Nil(err)
+
+	sql, args, err := selectBuilder.ToSql()
+	t.Require().Nil(err)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` USE INDEX (`less_good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor}, args)
 }
 

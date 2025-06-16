@@ -179,6 +179,9 @@ func (f *ShardedCopyFilter) shardingKeyIndexName(table *ghostferry.TableSchema) 
 	paginationKeyName := table.GetPaginationColumn().Name
 
 	for _, x := range table.Indexes {
+		if !x.Visible {
+			continue
+		}
 		if x.Columns[0] == f.ShardingKey {
 			if len(x.Columns) == 1 {
 				// This index will work in InnoDB, but there may be a more specific one to prefer.
