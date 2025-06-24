@@ -189,10 +189,20 @@ func (c *StmtCache) getStmt(query string) (*sqlorig.Stmt, bool) {
 }
 
 func ShowMasterStatusBinlogPosition(db *sql.DB) (mysql.Position, error) {
-	rows, err := db.Query("SHOW MASTER STATUS")
+	// SHOW MASTER STATUS is deprecated as of MySQL 8.0.22, so fallback to a compatible query on newer servers.
+	// See https://dev.mysql.com/doc/refman/8.4/en/show-master-status.html for details.
+	var rows *sqlorig.Rows
+	var err error
+	for _, q := range []string{"SHOW MASTER STATUS", "SHOW BINARY LOG STATUS"} {
+		rows, err = db.Query(q)
+		if err == nil {
+			break
+		}
+	}
 	if err != nil {
 		return NewMysqlPosition("", 0, err)
 	}
+
 	defer rows.Close()
 	var file string
 	var position uint32
