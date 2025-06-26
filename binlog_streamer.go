@@ -499,7 +499,16 @@ func idExistsOnServer(id uint32, db *sql.DB) (bool, error) {
 }
 
 func idsOnServer(db *sql.DB) ([]uint32, error) {
-	rows, err := db.Query("SHOW SLAVE HOSTS")
+	// SHOW SLAVE HOSTS is deprecated as of MySQL 8.0.22, so fallback to a compatible query on newer servers.
+	// See https://dev.mysql.com/doc/refman/8.0/en/show-slave-hosts.html for details.
+	var rows *sqlorig.Rows
+	var err error
+	for _, q := range []string{"SHOW SLAVE HOSTS", "SHOW REPLICAS"} {
+		rows, err = db.Query(q)
+		if err == nil {
+			break
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("could not get slave hosts: %s", err)
 	}
