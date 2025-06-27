@@ -9,6 +9,7 @@ import (
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
+	"github.com/Shopify/ghostferry/utils"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
@@ -499,9 +500,18 @@ func idExistsOnServer(id uint32, db *sql.DB) (bool, error) {
 }
 
 func idsOnServer(db *sql.DB) ([]uint32, error) {
-	rows, err := db.Query("SHOW SLAVE HOSTS")
+	var query string
+	var errorMsg string
+	if utils.isVersionAtLeast(db.GetVersion(), "8.4.0") {
+		query = "SHOW REPLICAS"
+		errorMsg = "replicas"
+	} else {
+		query = "SHOW SLAVE HOSTS"
+		errorMsg = "slave hosts"
+	}
+	rows, err := db.Query(query)
 	if err != nil {
-		return nil, fmt.Errorf("could not get slave hosts: %s", err)
+		return nil, fmt.Errorf("could not get %s: %s", errorMsg, err)
 	}
 	defer rows.Close()
 
@@ -517,16 +527,16 @@ func idsOnServer(db *sql.DB) ([]uint32, error) {
 		// i.e MySQL/Percona have 5 columns as it includes slave_uuid for MariaDB slave_uuid is omitted
 		// since all other values are not used check for the amount of columns and gather only what is possible
 		if err != nil {
-			return nil, fmt.Errorf("could not get columns from slave hosts: %v", err)
+			return nil, fmt.Errorf("could not get columns from %s: %v", errorMsg, err)
 		} else if len(columns) == 5 {
 			err = rows.Scan(&server_id, &host, &port, &master_id, &slave_uuid)
 		} else if len(columns) == 4 {
 			err = rows.Scan(&server_id, &host, &port, &master_id)
 		} else {
-			return nil, fmt.Errorf("could not scan SHOW SLAVE HOSTS row, err: unknown result set with %d columns: %v", len(columns), columns)
+			return nil, fmt.Errorf("could not scan %s row, err: unknown result set with %d columns: %v", query, len(columns), columns)
 		}
 		if err != nil {
-			return nil, fmt.Errorf("could not scan SHOW SLAVE HOSTS row, err: %s", err.Error())
+			return nil, fmt.Errorf("could not scan %s row, err: %s", query, err.Error())
 		}
 
 		server_ids = append(server_ids, server_id)
