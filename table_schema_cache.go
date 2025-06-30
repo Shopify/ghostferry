@@ -93,7 +93,7 @@ func (t *TableSchema) RowMd5Query() string {
 		_, isCompressed := t.CompressedColumnsForVerification[column.Name]
 		_, isIgnored := t.IgnoredColumnsForVerification[column.Name]
 
-		if isCompressed || isIgnored {
+		if isCompressed || isIgnored || column.IsVirtual {
 			continue
 		}
 
