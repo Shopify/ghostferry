@@ -1,0 +1,68 @@
+version: "3"
+services:
+  mysql-1:
+    image: docker.io/mysql/mysql-server:8.4
+    command: --server-id=1
+      --log-bin=mysql-bin
+      --max-binlog-size=4096
+      --binlog-format=ROW
+      --sync-binlog=1
+      --log-replica-updates=ON
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --max-connections=1000
+      --read-only=OFF
+      --binlog-rows-query-log-events=ON
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_ROOT_HOST: "%"
+    volumes:
+      - /var/lib/mysql
+    ports:
+      - "29291:3306"
+
+  mysql-2:
+    image: docker.io/mysql/mysql-server:8.0
+    command: --server-id=2
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --max-binlog-size=4096
+      --sync-binlog=1
+      --log-replica-updates=ON
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --max-connections=1000
+      --binlog-rows-query-log-events=ON
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_ROOT_HOST: "%"
+    volumes:
+      - /var/lib/mysql
+    ports:
+      - "29292:3306"
+
+  mysql-3:
+    image: docker.io/mysql/mysql-server:8.0
+    command: --server-id=3
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --max-binlog-size=4096
+      --sync-binlog=1
+      --log-replica-updates=ON
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --max-connections=1000
+      --binlog-rows-query-log-events=ON
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_ROOT_HOST: "%"
+    volumes:
+      - /var/lib/mysql
+    ports:
+      - "29293:3306"

@@ -311,8 +311,9 @@ class InterruptResumeTest < GhostferryTestCase
   # originally taken from @kolbitsch-lastline in https://github.com/Shopify/ghostferry/pull/160
   def test_interrupt_resume_between_consecutive_rows_events
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
-
-    start_binlog_status = source_db.query('SHOW MASTER STATUS').first
+    version, _ = source_db.query("SELECT @@version").first["@@version"]
+    query =  version < "8.4.0" ? "SHOW MASTER STATUS" : "SHOW BINARY LOG STATUS"
+    start_binlog_status = source_db.query(query).first
 
     # create a series of rows-events that do not have interleaved table-map
     # events. This is the case when multiple rows are affected in a single

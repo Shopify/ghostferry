@@ -3,6 +3,8 @@ set -xe
 
 if [ "$MYSQL_VERSION" == "8.0" ]; then
   docker compose -f docker-compose_8.0.yml up -d mysql-1 mysql-2
+elif [ "$MYSQL_VERSION" == "8.4" ]; then
+  docker compose -f docker-compose_8.4.yml up -d mysql-1 mysql-2
 else
   docker compose up -d mysql-1 mysql-2
 fi
