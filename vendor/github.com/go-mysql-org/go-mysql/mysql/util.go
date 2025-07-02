@@ -1,7 +1,6 @@
 package mysql
 
 import (
-	"cmp"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
@@ -11,6 +10,7 @@ import (
 	"io"
 	mrand "math/rand"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -418,7 +418,14 @@ func compareSubVersion(typ, a, b, aFull, bFull string) (int, error) {
 		return 0, fmt.Errorf("cannot parse %s version %s of %s", typ, b, bFull)
 	}
 
-	return cmp.Compare(aNum, bNum), nil
+	switch {
+	case aNum < bNum:
+		return -1, nil
+	case aNum > bNum:
+		return 1, nil
+	default:
+		return 0, nil
+	}
 }
 
 // Compares version triplet strings, ignoring anything past `-` in version.

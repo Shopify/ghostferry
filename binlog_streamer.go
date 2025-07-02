@@ -9,7 +9,6 @@ import (
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
-	"github.com/Shopify/ghostferry/utils"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
@@ -502,7 +501,8 @@ func idExistsOnServer(id uint32, db *sql.DB) (bool, error) {
 func idsOnServer(db *sql.DB) ([]uint32, error) {
 	var query string
 	var errorMsg string
-	if utils.isVersionAtLeast(db.GetVersion(), "8.4.0") {
+	version, _ := db.QueryMySQLVersion()
+	if isVersionAtLeast(version, "8.4.0") {
 		query = "SHOW REPLICAS"
 		errorMsg = "replicas"
 	} else {

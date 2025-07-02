@@ -14,7 +14,6 @@ import (
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
-	"github.com/go-mysql-org/go-mysql/mysql/util"
 	"github.com/go-mysql-org/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
@@ -191,11 +190,16 @@ func (c *StmtCache) getStmt(query string) (*sqlorig.Stmt, bool) {
 }
 
 func isVersionAtLeast(version string, targetVersion string) bool {
-	return mysql.CompareServerVersions(version, targetVersion) >= 0
+	result, err := mysql.CompareServerVersions(version, targetVersion)
+	if err != nil {
+		return false
+	}
+	return result >= 0
 }
 
 func getBinlogStatusCommand(db *sql.DB) string {
-	if isVersionAtLeast(db.GetVersion(), "8.4.0") {
+	version, _ := db.QueryMySQLVersion()
+	if isVersionAtLeast(version, "8.4.0") {
 		return "SHOW BINARY LOG STATUS"
 	} else {
 		return "SHOW MASTER STATUS"
