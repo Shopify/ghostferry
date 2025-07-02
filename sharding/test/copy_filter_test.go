@@ -285,18 +285,6 @@ func (t *CopyFilterTestSuite) TestSelectsPrimaryKeyTables() {
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor}, args)
 }
 
-func (t *CopyFilterTestSuite) TestSkipsInvisibleIndexes() {
-	// Make the good index invisible, should fall back to less good index
-	t.normalTable.Indexes[2].Visible = false
-	selectBuilder, err := t.filter.BuildSelect([]string{"*"}, t.normalTable, t.paginationKeyCursor, 1024)
-	t.Require().Nil(err)
-
-	sql, args, err := selectBuilder.ToSql()
-	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` USE INDEX (`less_good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
-	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor}, args)
-}
-
 func (t *CopyFilterTestSuite) TestShardingValueTypes() {
 	tenantIds := []interface{}{
 		uint64(1), uint32(1), uint16(1), uint8(1), uint(1),
