@@ -1,7 +1,7 @@
 version: "3"
 services:
   mysql-1:
-    image: docker.io/mysql/mysql-server:8.4
+    image: percona/percona-server:8.4.4-4.1
     command: --server-id=1
       --log-bin=mysql-bin
       --max-binlog-size=4096
@@ -24,7 +24,7 @@ services:
       - "29291:3306"
 
   mysql-2:
-    image: docker.io/mysql/mysql-server:8.0
+    image: percona/percona-server:8.4.4-4.1
     command: --server-id=2
       --log-bin=mysql-bin
       --binlog-format=ROW
@@ -46,7 +46,7 @@ services:
       - "29292:3306"
 
   mysql-3:
-    image: docker.io/mysql/mysql-server:8.0
+    image: percona/percona-server:8.4.4-4.1
     command: --server-id=3
       --log-bin=mysql-bin
       --binlog-format=ROW

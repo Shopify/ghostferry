@@ -10,7 +10,7 @@ jobs:
   gh-285:
     strategy:
       matrix:
-        mysql: ["5.7", "8.0"]
+        mysql: ["5.7", "8.0", "8.4"]
 
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -35,7 +35,7 @@ jobs:
   go-test:
     strategy:
       matrix:
-        mysql: ["5.7", "8.0"]
+        mysql: ["5.7", "8.0", "8.4"]
 
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -60,7 +60,7 @@ jobs:
   ruby-test:
     strategy:
       matrix:
-        mysql: ["5.7", "8.0"]
+        mysql: ["5.7", "8.0", "8.4"]
 
     runs-on: ubuntu-latest
     timeout-minutes: 15
