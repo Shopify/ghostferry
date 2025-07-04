@@ -140,7 +140,7 @@ func (t *CopydbTestSuite) TestCreateDatabaseCopiesTheRightCollation() {
 	err = row.Scan(&characterSet, &collation)
 	t.Require().Nil(err)
 
-	if os.Getenv("MYSQL_VERSION") == "8.0" {
+	if os.Getenv("MYSQL_VERSION") == "8.0" || os.Getenv("MYSQL_VERSION") == "8.4" {
 		t.Require().Equal(characterSet, "utf8mb3")
 		t.Require().Equal(collation, "utf8mb3_general_ci")
 	} else {
