@@ -6,6 +6,7 @@ import (
 	sqlorig "database/sql"
 	"encoding/binary"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -188,10 +189,28 @@ func (c *StmtCache) getStmt(query string) (*sqlorig.Stmt, bool) {
 	return stmt, exists
 }
 
-func ShowMasterStatusBinlogPosition(db *sql.DB) (mysql.Position, error) {
-	rows, err := db.Query("SHOW MASTER STATUS")
+func isVersionAtLeast(version string, targetVersion string) bool {
+	result, err := mysql.CompareServerVersions(version, targetVersion)
 	if err != nil {
-		return NewMysqlPosition("", 0, err)
+		return false
+	}
+	return result >= 0
+}
+
+func getBinlogStatusCommand(db *sql.DB) string {
+	version, _ := db.QueryMySQLVersion()
+	if isVersionAtLeast(version, "8.4.0") {
+		return "SHOW BINARY LOG STATUS"
+	} else {
+		return "SHOW MASTER STATUS"
+	}
+}
+
+func ShowMasterStatusBinlogPosition(db *sql.DB) (mysql.Position, error) {
+	query := getBinlogStatusCommand(db)
+	rows, err := db.Query(query)
+	if err != nil {
+		return NewMysqlPosition("", 0, err, db)
 	}
 	defer rows.Close()
 	var file string
@@ -201,7 +220,7 @@ func ShowMasterStatusBinlogPosition(db *sql.DB) (mysql.Position, error) {
 	if rows.Next() {
 		cols, err = rows.Columns()
 		if err != nil {
-			return NewMysqlPosition(file, position, err)
+			return NewMysqlPosition(file, position, err, db)
 		}
 		switch len(cols) {
 		case 4:
@@ -210,18 +229,20 @@ func ShowMasterStatusBinlogPosition(db *sql.DB) (mysql.Position, error) {
 			err = rows.Scan(&file, &position, &binlog_do_db, &binlog_ignore_db, &executed_gtid_set)
 		}
 	}
-	return NewMysqlPosition(file, position, err)
+	return NewMysqlPosition(file, position, err, db)
 }
 
-func NewMysqlPosition(file string, position uint32, err error) (mysql.Position, error) {
+func NewMysqlPosition(file string, position uint32, err error, db *sql.DB) (mysql.Position, error) {
+	var binlogStatusCmd string
+	binlogStatusCmd = getBinlogStatusCommand(db)
 	switch {
 	case err == sqlorig.ErrNoRows:
-		return mysql.Position{}, fmt.Errorf("no results from show master status")
+		return mysql.Position{}, fmt.Errorf("no results from %s", strings.ToLower(binlogStatusCmd))
 	case err != nil:
 		return mysql.Position{}, err
 	default:
 		if file == "" {
-			return mysql.Position{}, fmt.Errorf("show master status does not show a file")
+			return mysql.Position{}, fmt.Errorf("%s does not show a file", strings.ToLower(binlogStatusCmd))
 		}
 
 		return mysql.Position{

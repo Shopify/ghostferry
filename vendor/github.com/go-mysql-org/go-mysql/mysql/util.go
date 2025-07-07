@@ -10,6 +10,7 @@ import (
 	"io"
 	mrand "math/rand"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -400,4 +401,53 @@ func init() {
 			EncodeMap[byte(i)] = to
 		}
 	}
+}
+
+func compareSubVersion(typ, a, b, aFull, bFull string) (int, error) {
+	if a == "" || b == "" {
+		return 0, nil
+	}
+
+	var aNum, bNum int
+	var err error
+
+	if aNum, err = strconv.Atoi(a); err != nil {
+		return 0, fmt.Errorf("cannot parse %s version %s of %s", typ, a, aFull)
+	}
+	if bNum, err = strconv.Atoi(b); err != nil {
+		return 0, fmt.Errorf("cannot parse %s version %s of %s", typ, b, bFull)
+	}
+
+	switch {
+	case aNum < bNum:
+		return -1, nil
+	case aNum > bNum:
+		return 1, nil
+	default:
+		return 0, nil
+	}
+}
+
+// Compares version triplet strings, ignoring anything past `-` in version.
+// A version string like 8.0 will compare as if third triplet were a wildcard.
+// A version string like 8 will compare as if second & third triplets were wildcards.
+func CompareServerVersions(a, b string) (int, error) {
+	aNumbers, _, _ := strings.Cut(a, "-")
+	bNumbers, _, _ := strings.Cut(b, "-")
+
+	aMajor, aRest, _ := strings.Cut(aNumbers, ".")
+	bMajor, bRest, _ := strings.Cut(bNumbers, ".")
+
+	if majorCompare, err := compareSubVersion("major", aMajor, bMajor, a, b); err != nil || majorCompare != 0 {
+		return majorCompare, err
+	}
+
+	aMinor, aPatch, _ := strings.Cut(aRest, ".")
+	bMinor, bPatch, _ := strings.Cut(bRest, ".")
+
+	if minorCompare, err := compareSubVersion("minor", aMinor, bMinor, a, b); err != nil || minorCompare != 0 {
+		return minorCompare, err
+	}
+
+	return compareSubVersion("patch", aPatch, bPatch, a, b)
 }

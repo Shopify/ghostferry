@@ -590,7 +590,7 @@ class InlineVerifierTest < GhostferryTestCase
   # https://github.com/Shopify/ghostferry/pull/328#discussion_r791197939
   def test_utfmb4_data_from_utfmb4_to_utfmb3
     run_collation_test(UTF8MB4DATA, "utf8mb4", "utf8mb3", identical: false)
-  end unless ENV['MYSQL_VERSION'] == '8.0'
+  end unless ENV['MYSQL_VERSION'] == '8.0' || ENV['MYSQL_VERSION'] == '8.4'
 
   private
 

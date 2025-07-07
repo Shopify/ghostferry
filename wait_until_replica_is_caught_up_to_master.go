@@ -39,7 +39,7 @@ func (r ReplicatedMasterPositionViaCustomQuery) Current(replicaDB *sql.DB) (mysq
 	row := replicaDB.QueryRow(r.Query)
 	err := row.Scan(&file, &pos)
 
-	return NewMysqlPosition(file, pos, err)
+	return NewMysqlPosition(file, pos, err, replicaDB)
 }
 
 // Only set the MasterDB and ReplicatedMasterPosition options in your code as

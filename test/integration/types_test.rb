@@ -412,7 +412,7 @@ class TypesTest < GhostferryTestCase
 
   def format_float_based_on_mysql_version(value)
     # mysql 5.7 removes the trailing zeros when `cast...as json` is used
-    ENV["MYSQL_VERSION"] == "8.0" ? value.to_s : value.to_i.to_s
+    ENV["MYSQL_VERSION"] == "8.0" || ENV["MYSQL_VERSION"] == "8.4" ? value.to_s : value.to_i.to_s
   end
 
   def insert_json_on_source
