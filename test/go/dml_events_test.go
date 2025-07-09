@@ -72,11 +72,11 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventGeneratesInsertQuery() {
 
 	q1, err := dmlEvents[0].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().Nil(err)
-	this.Require().Equal("INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col2`,`col3`) VALUES (1000,CAST('val1' AS JSON),1)", q1)
+	this.Require().Equal("INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col2`,`col3`) VALUES (1000,_binary'val1',1)", q1)
 
 	q2, err := dmlEvents[1].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().Nil(err)
-	this.Require().Equal("INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col2`,`col3`) VALUES (1001,CAST('val2' AS JSON),0)", q2)
+	this.Require().Equal("INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col2`,`col3`) VALUES (1001,_binary'val2',0)", q2)
 
 	q3, err := dmlEvents[2].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().Nil(err)
@@ -133,11 +133,11 @@ func (this *DMLEventsTestSuite) TestBinlogUpdateEventGeneratesUpdateQuery() {
 
 	q1, err := dmlEvents[0].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().Nil(err)
-	this.Require().Equal("UPDATE `target_schema`.`target_table` SET `col1`=1000,`col2`=CAST('val2' AS JSON),`col3`=0 WHERE `col1`=1000 AND `col2`=CAST('val1' AS JSON) AND `col3`=1", q1)
+	this.Require().Equal("UPDATE `target_schema`.`target_table` SET `col1`=1000,`col2`=_binary'val2',`col3`=0 WHERE `col1`=1000 AND `col2`=_binary'val1' AND `col3`=1", q1)
 
 	q2, err := dmlEvents[1].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().Nil(err)
-	this.Require().Equal("UPDATE `target_schema`.`target_table` SET `col1`=1001,`col2`=CAST('val4' AS JSON),`col3`=1 WHERE `col1`=1001 AND `col2`=CAST('val3' AS JSON) AND `col3`=0", q2)
+	this.Require().Equal("UPDATE `target_schema`.`target_table` SET `col1`=1001,`col2`=_binary'val4',`col3`=1 WHERE `col1`=1001 AND `col2`=_binary'val3' AND `col3`=0", q2)
 
 	q3, err := dmlEvents[2].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().Nil(err)
@@ -174,7 +174,7 @@ func (this *DMLEventsTestSuite) TestBinlogUpdateEventWithNull() {
 
 	q1, err := dmlEvents[0].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().Nil(err)
-	this.Require().Equal("UPDATE `target_schema`.`target_table` SET `col1`=1000,`col2`=CAST('val2' AS JSON),`col3`=NULL WHERE `col1`=1000 AND `col2`=CAST('val1' AS JSON) AND `col3` IS NULL", q1)
+	this.Require().Equal("UPDATE `target_schema`.`target_table` SET `col1`=1000,`col2`=_binary'val2',`col3`=NULL WHERE `col1`=1000 AND `col2`=_binary'val1' AND `col3` IS NULL", q1)
 }
 
 func (this *DMLEventsTestSuite) TestBinlogUpdateEventMetadata() {
@@ -208,11 +208,11 @@ func (this *DMLEventsTestSuite) TestBinlogDeleteEventGeneratesDeleteQuery() {
 
 	q1, err := dmlEvents[0].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().Nil(err)
-	this.Require().Equal("DELETE FROM `target_schema`.`target_table` WHERE `col1`=1000 AND `col2`=CAST('val1' AS JSON) AND `col3`=1", q1)
+	this.Require().Equal("DELETE FROM `target_schema`.`target_table` WHERE `col1`=1000 AND `col2`=_binary'val1' AND `col3`=1", q1)
 
 	q2, err := dmlEvents[1].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().Nil(err)
-	this.Require().Equal("DELETE FROM `target_schema`.`target_table` WHERE `col1`=1001 AND `col2`=CAST('val2' AS JSON) AND `col3`=0", q2)
+	this.Require().Equal("DELETE FROM `target_schema`.`target_table` WHERE `col1`=1001 AND `col2`=_binary'val2' AND `col3`=0", q2)
 }
 
 func (this *DMLEventsTestSuite) TestBinlogDeleteEventWithNull() {
@@ -229,7 +229,7 @@ func (this *DMLEventsTestSuite) TestBinlogDeleteEventWithNull() {
 
 	q1, err := dmlEvents[0].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().Nil(err)
-	this.Require().Equal("DELETE FROM `target_schema`.`target_table` WHERE `col1`=1000 AND `col2`=CAST('val1' AS JSON) AND `col3` IS NULL", q1)
+	this.Require().Equal("DELETE FROM `target_schema`.`target_table` WHERE `col1`=1000 AND `col2`=_binary'val1' AND `col3` IS NULL", q1)
 }
 
 func (this *DMLEventsTestSuite) TestBinlogDeleteEventWithWrongColumnsReturnsError() {
