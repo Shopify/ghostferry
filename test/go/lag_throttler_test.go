@@ -143,10 +143,10 @@ func TestThrottlerRunErrors(t *testing.T) {
 
 	err = throttler.Run(ctx)
 	assert.NotNil(t, err)
-	expectedError := "Error 1146: Table 'meta.lag_table' doesn't exist"
+	expectedError := "Error 1146 (42S02): Table 'meta.lag_table' doesn't exist"
 
 	if os.Getenv("MYSQL_VERSION") == "8.0" || os.Getenv("MYSQL_VERSION") == "8.4" {
-		expectedError = "Error 1049: Unknown database 'meta'"
+		expectedError = "Error 1049 (42000): Unknown database 'meta'"
 	}
 
 	validError := (err.Error() == expectedError)

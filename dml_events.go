@@ -436,6 +436,9 @@ func appendEscapedValue(buffer []byte, value interface{}, column schema.TableCol
 
 		return appendEscapedString(buffer, v, rightPadLengthForBinaryColumn)
 	case []byte:
+		if column.Type == schema.TYPE_JSON {
+			return appendEscapedBuffer(buffer, v, true)
+		}
 		// schema type cannot be JSON at this point because all JSON results are strings
 		return appendEscapedBuffer(buffer, v, false)
 	case bool:

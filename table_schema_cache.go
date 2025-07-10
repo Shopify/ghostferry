@@ -189,6 +189,15 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 				return tableSchemaCache, err
 			}
 
+			// Filter out invisible indexes
+			visibleIndexes := make([]*schema.Index, 0, len(tableSchema.Indexes))
+			for _, index := range tableSchema.Indexes {
+				if index.Visible {
+					visibleIndexes = append(visibleIndexes, index)
+				}
+			}
+			tableSchema.Indexes = visibleIndexes
+
 			tableSchemas = append(tableSchemas, &TableSchema{
 				Table:                            tableSchema,
 				CompressedColumnsForVerification: columnCompressionConfig.CompressedColumnsFor(dbname, table),

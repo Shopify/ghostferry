@@ -37,10 +37,10 @@ func (t *CopyFilterTestSuite) SetupTest() {
 			Columns:   columns,
 			PKColumns: []int{0},
 			Indexes: []*schema.Index{
-				{Name: "unrelated_index", Columns: []string{"tenant_id", "data"}},
-				{Name: "less_good_sharding_index", Columns: []string{"tenant_id"}},
-				{Name: "good_sharding_index", Columns: []string{"tenant_id", "id"}},
-				{Name: "unrelated_index2", Columns: []string{"data"}},
+				{Name: "unrelated_index", Columns: []string{"tenant_id", "data"}, Visible: true},
+				{Name: "less_good_sharding_index", Columns: []string{"tenant_id"}, Visible: true},
+				{Name: "good_sharding_index", Columns: []string{"tenant_id", "id"}, Visible: true},
+				{Name: "unrelated_index2", Columns: []string{"data"}, Visible: true},
 			},
 		},
 		PaginationKeyColumn: &columns[0],
@@ -54,7 +54,7 @@ func (t *CopyFilterTestSuite) SetupTest() {
 			Columns:   columns,
 			PKColumns: []int{0},
 			Indexes: []*schema.Index{
-				{Name: "good_sharding_index", Columns: []string{"tenant_id", "id"}},
+				{Name: "good_sharding_index", Columns: []string{"tenant_id", "id"}, Visible: true},
 			},
 		},
 		PaginationKeyColumn: &columns[0],
