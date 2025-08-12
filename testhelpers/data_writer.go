@@ -89,6 +89,7 @@ func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows int) {
 func AddTenantID(db *sql.DB, dbName, tableName string, numberOfTenants int) {
 	query := "ALTER TABLE %s.%s ADD tenant_id bigint(20)"
 	query = fmt.Sprintf(query, dbName, tableName)
+	fmt.Printf("query: %v\n", query)
 	_, err := db.Exec(query)
 	PanicIfError(err)
 

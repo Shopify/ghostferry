@@ -15,11 +15,12 @@ services:
       --max-connections=1000
       --read-only=OFF
       --binlog-rows-query-log-events=ON
+      --mysql-native-password
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
       MYSQL_ROOT_HOST: "%"
     volumes:
-      - /var/lib/mysql
+      - ./mysql-1:/var/lib/mysql
     ports:
       - "29291:3306"
 
@@ -37,11 +38,12 @@ services:
       --collation-server=utf8mb4_unicode_ci
       --max-connections=1000
       --binlog-rows-query-log-events=ON
+      --mysql-native-password
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
       MYSQL_ROOT_HOST: "%"
     volumes:
-      - /var/lib/mysql
+      - ./mysql-2:/var/lib/mysql
     ports:
       - "29292:3306"
 
@@ -59,6 +61,7 @@ services:
       --collation-server=utf8mb4_unicode_ci
       --max-connections=1000
       --binlog-rows-query-log-events=ON
+      --mysql-native-password
     environment:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
       MYSQL_ROOT_HOST: "%"

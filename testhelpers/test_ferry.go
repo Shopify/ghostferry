@@ -31,8 +31,8 @@ func NewTestConfig() *ghostferry.Config {
 		Source: &ghostferry.DatabaseConfig{
 			Host:      "127.0.0.1",
 			Port:      uint16(TestSourcePort),
-			User:      "root",
-			Pass:      "",
+			User:      "role_app_shopmover_ro",
+			Pass:      "secret",
 			Collation: "utf8mb4_unicode_ci",
 			Params: map[string]string{
 				"charset": "utf8mb4",

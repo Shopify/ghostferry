@@ -1,6 +1,7 @@
 package test
 
 import (
+	"fmt"
 	"math/rand"
 	"testing"
 
@@ -12,10 +13,14 @@ import (
 )
 
 func setupSingleTableDatabase(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+	fmt.Println("test.setupSingleTableDatabase()")
+	fmt.Println("test.setupSingleTableDatabase() seeding data")
 	testhelpers.SeedInitialData(sourceDB, "gftest", "table1", 1000)
 	testhelpers.SeedInitialData(targetDB, "gftest", "table1", 0)
+	fmt.Println("test.setupSingleTableDatabase() adding tenant ids to source db")
 
 	testhelpers.AddTenantID(sourceDB, "gftest", "table1", 3)
+	fmt.Println("test.setupSingleTableDatabase() adding tenant ids to target db")
 	testhelpers.AddTenantID(targetDB, "gftest", "table1", 3)
 }
 

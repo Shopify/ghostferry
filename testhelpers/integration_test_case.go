@@ -2,6 +2,7 @@ package testhelpers
 
 import (
 	"fmt"
+	"log"
 	"sync"
 	"testing"
 
@@ -25,6 +26,7 @@ type IntegrationTestCase struct {
 
 	SourceDB   *sql.DB
 	TargetDB   *sql.DB
+	AdminDB    *sql.DB
 	DataWriter DataWriter
 	Ferry      *TestFerry
 	Verifier   *ghostferry.ChecksumTableVerifier
@@ -42,7 +44,7 @@ func (this *IntegrationTestCase) CopyData() {
 	this.Setup()
 	this.StartFerryAndDataWriter()
 	this.WaitUntilRowCopyIsComplete()
-	this.SetReadonlyOnSourceDbAndStopDataWriter()
+	//this.SetReadonlyOnSourceDbAndStopDataWriter()
 	this.StopStreamingAndWaitForGhostferryFinish()
 }
 
@@ -55,6 +57,25 @@ func (this *IntegrationTestCase) Setup() {
 
 	this.TargetDB, err = this.Ferry.Target.SqlDB(nil)
 	PanicIfError(err)
+
+	adminConfig := &ghostferry.DatabaseConfig{
+		Host:      "127.0.0.1",
+		Net:       "tcp",
+		Port:      uint16(TestSourcePort),
+		User:      "root",
+		Pass:      "",
+		Collation: "utf8mb4_unicode_ci",
+		Params: map[string]string{
+			"charset": "utf8mb4",
+		},
+	}
+	this.AdminDB, err = adminConfig.SqlDB(nil)
+	PanicIfError(err)
+	err = this.AdminDB.Ping()
+	if err != nil {
+		log.Printf("got error %v", err)
+		log.Fatal(err)
+	}
 
 	this.callCustomAction(this.SetupAction)
 	PanicIfError(this.Ferry.Initialize())
@@ -72,7 +93,7 @@ func (this *IntegrationTestCase) StartFerryAndDataWriter() {
 	this.callCustomAction(this.AfterStartBinlogStreaming)
 
 	if this.DataWriter != nil {
-		this.DataWriter.SetDB(this.Ferry.SourceDB)
+		this.DataWriter.SetDB(this.AdminDB)
 		go this.DataWriter.Run()
 	}
 
@@ -137,13 +158,13 @@ func (this *IntegrationTestCase) Teardown() {
 		logrus.Error("you might see an unrelated panic as we delete the db, if there are background processes operating on the db")
 	}
 
-	_, err := this.SourceDB.Exec("SET GLOBAL read_only = OFF")
+	_, err := this.AdminDB.Exec("SET GLOBAL read_only = OFF")
 	if err != nil {
 		logrus.WithError(err).Error("cannot set global read_only = OFF at the source db")
 	}
 
 	for _, dbname := range ApplicableTestDbs {
-		_, err = this.SourceDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbname))
+		_, err = this.TargetDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbname))
 		if err != nil {
 			logrus.WithError(err).Errorf("failed to drop database %s on the source db as a part of the test cleanup", dbname)
 		}
@@ -160,6 +181,7 @@ func (this *IntegrationTestCase) Teardown() {
 
 	this.SourceDB.Close()
 	this.TargetDB.Close()
+	this.AdminDB.Close()
 }
 
 func (this *IntegrationTestCase) verifyTableChecksum() (ghostferry.VerificationResult, error) {
@@ -167,8 +189,9 @@ func (this *IntegrationTestCase) verifyTableChecksum() (ghostferry.VerificationR
 }
 
 func (this *IntegrationTestCase) callCustomAction(f func(*TestFerry, *sql.DB, *sql.DB)) {
+	fmt.Println("testhelpers.callCustomAction")
 	if f != nil {
-		f(this.Ferry, this.SourceDB, this.TargetDB)
+		f(this.Ferry, this.AdminDB, this.TargetDB)
 	}
 }
 
