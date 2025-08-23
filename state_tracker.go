@@ -34,7 +34,12 @@ type SerializableState struct {
 	GhostferryVersion         string
 	LastKnownTableSchemaCache TableSchemaCache
 
+	// Single column pagination (backward compatibility)
 	LastSuccessfulPaginationKeys              map[string]uint64
+	
+	// Composite pagination support
+	LastSuccessfulCompositePaginationKeys     map[string][]interface{}
+	
 	CompletedTables                           map[string]bool
 	LastWrittenBinlogPosition                 mysql.Position
 	BinlogVerifyStore                         BinlogVerifySerializedStore
@@ -92,7 +97,12 @@ type StateTracker struct {
 	lastStoredBinlogPositionForInlineVerifier mysql.Position
 	lastStoredBinlogPositionForTargetVerifier mysql.Position
 
+	// Single column pagination (backward compatibility)
 	lastSuccessfulPaginationKeys map[string]uint64
+	
+	// Composite pagination support
+	lastSuccessfulCompositePaginationKeys map[string][]interface{}
+	
 	completedTables              map[string]bool
 
 	// TODO: Performance tracking should be refactored out of the state tracker,
@@ -106,10 +116,11 @@ func NewStateTracker(speedLogCount int) *StateTracker {
 		BinlogRWMutex: &sync.RWMutex{},
 		CopyRWMutex:   &sync.RWMutex{},
 
-		lastSuccessfulPaginationKeys: make(map[string]uint64),
-		completedTables:              make(map[string]bool),
-		iterationSpeedLog:            newSpeedLogRing(speedLogCount),
-		rowStatsWrittenPerTable:      make(map[string]RowStats),
+		lastSuccessfulPaginationKeys:          make(map[string]uint64),
+		lastSuccessfulCompositePaginationKeys: make(map[string][]interface{}),
+		completedTables:                       make(map[string]bool),
+		iterationSpeedLog:                     newSpeedLogRing(speedLogCount),
+		rowStatsWrittenPerTable:               make(map[string]RowStats),
 	}
 }
 
@@ -118,6 +129,9 @@ func NewStateTracker(speedLogCount int) *StateTracker {
 func NewStateTrackerFromSerializedState(speedLogCount int, serializedState *SerializableState) *StateTracker {
 	s := NewStateTracker(speedLogCount)
 	s.lastSuccessfulPaginationKeys = serializedState.LastSuccessfulPaginationKeys
+	if serializedState.LastSuccessfulCompositePaginationKeys != nil {
+		s.lastSuccessfulCompositePaginationKeys = serializedState.LastSuccessfulCompositePaginationKeys
+	}
 	s.completedTables = serializedState.CompletedTables
 	s.lastWrittenBinlogPosition = serializedState.LastWrittenBinlogPosition
 	s.lastStoredBinlogPositionForInlineVerifier = serializedState.LastStoredBinlogPositionForInlineVerifier
@@ -162,6 +176,25 @@ func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginatio
 	s.updateSpeedLog(deltaPaginationKey)
 }
 
+// UpdateLastSuccessfulCompositePaginationKey updates composite pagination key progress
+func (s *StateTracker) UpdateLastSuccessfulCompositePaginationKey(table string, keys []interface{}, rowStats RowStats) {
+	s.CopyRWMutex.Lock()
+	defer s.CopyRWMutex.Unlock()
+
+	s.lastSuccessfulCompositePaginationKeys[table] = keys
+	
+	// Also update single key for backward compatibility if first key is uint64
+	if len(keys) > 0 {
+		if firstKey, ok := keys[0].(uint64); ok {
+			deltaPaginationKey := firstKey - s.lastSuccessfulPaginationKeys[table]
+			s.lastSuccessfulPaginationKeys[table] = firstKey
+			s.updateSpeedLog(deltaPaginationKey)
+		}
+	}
+	
+	s.updateRowStatsForTable(table, rowStats)
+}
+
 func (s *StateTracker) RowStatsWrittenPerTable() map[string]RowStats {
 	s.CopyRWMutex.RLock()
 	defer s.CopyRWMutex.RUnlock()
@@ -189,6 +222,20 @@ func (s *StateTracker) LastSuccessfulPaginationKey(table string) uint64 {
 	}
 
 	return paginationKey
+}
+
+// LastSuccessfulCompositePaginationKey gets the last successful composite pagination key
+func (s *StateTracker) LastSuccessfulCompositePaginationKey(table string) ([]interface{}, bool) {
+	s.CopyRWMutex.RLock()
+	defer s.CopyRWMutex.RUnlock()
+
+	_, found := s.completedTables[table]
+	if found {
+		return nil, false
+	}
+
+	keys, found := s.lastSuccessfulCompositePaginationKeys[table]
+	return keys, found
 }
 
 func (s *StateTracker) MarkTableAsCompleted(table string) {
@@ -264,6 +311,7 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, bin
 		GhostferryVersion:                         VersionString,
 		LastKnownTableSchemaCache:                 lastKnownTableSchemaCache,
 		LastSuccessfulPaginationKeys:              make(map[string]uint64),
+		LastSuccessfulCompositePaginationKeys:     make(map[string][]interface{}),
 		CompletedTables:                           make(map[string]bool),
 		LastWrittenBinlogPosition:                 s.lastWrittenBinlogPosition,
 		LastStoredBinlogPositionForInlineVerifier: s.lastStoredBinlogPositionForInlineVerifier,
@@ -279,6 +327,11 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, bin
 	// Serialize is called.
 	for k, v := range s.lastSuccessfulPaginationKeys {
 		state.LastSuccessfulPaginationKeys[k] = v
+	}
+	
+	// Copy composite pagination keys
+	for k, v := range s.lastSuccessfulCompositePaginationKeys {
+		state.LastSuccessfulCompositePaginationKeys[k] = v
 	}
 
 	for k, v := range s.completedTables {

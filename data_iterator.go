@@ -42,7 +42,7 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 	}
 
 	d.logger.WithField("tablesCount", len(tables)).Info("starting data iterator run")
-	tablesWithData, emptyTables, err := MaxPaginationKeys(d.DB, tables, d.logger)
+	paginationData, emptyTables, err := MaxPaginationKeysWithComposite(d.DB, tables, d.logger)
 	if err != nil {
 		d.ErrorHandler.Fatal("data_iterator", err)
 	}
@@ -51,6 +51,7 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 		d.StateTracker.MarkTableAsCompleted(table.String())
 	}
 
+	tablesWithData := paginationData.SingleKeys
 	for table, maxPaginationKey := range tablesWithData {
 		tableName := table.String()
 		if d.StateTracker.IsTableComplete(tableName) {
@@ -59,6 +60,11 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 			delete(tablesWithData, table)
 		} else {
 			d.TargetPaginationKeys.Store(tableName, maxPaginationKey)
+			
+			// Store composite keys if present
+			if compositeKeys, found := paginationData.CompositeKeys[table]; found {
+				d.TargetPaginationKeys.Store(tableName+"_composite", NewCompositeKey(compositeKeys...))
+			}
 		}
 	}
 
@@ -86,15 +92,48 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 					return
 				}
 
-				startPaginationKey := d.StateTracker.LastSuccessfulPaginationKey(table.String())
-				if startPaginationKey == math.MaxUint64 {
-					err := fmt.Errorf("%v has been marked as completed but a table iterator has been spawned, this is likely a programmer error which resulted in the inconsistent starting state", table.String())
-					logger.WithError(err).Error("this is definitely a bug")
-					d.ErrorHandler.Fatal("data_iterator", err)
-					return
-				}
+				var cursor *Cursor
+				
+				// Check if this table uses composite pagination
+				if table.IsCompositePagination {
+					// Get composite pagination keys
+					startKeys, found := d.StateTracker.LastSuccessfulCompositePaginationKey(table.String())
+					if !found {
+						// Initialize with zero values for each column
+						startKeys = make([]interface{}, len(table.CompositePaginationColumns))
+						for i, col := range table.CompositePaginationColumns {
+							if col.Type == schema.TYPE_STRING {
+								startKeys[i] = ""
+							} else {
+								startKeys[i] = uint64(0)
+							}
+						}
+					}
+					
+					// Get max composite keys from TargetPaginationKeys
+					maxKeysInterface, found := d.TargetPaginationKeys.Load(table.String() + "_composite")
+					if !found {
+						err := fmt.Errorf("%s composite keys not found in TargetPaginationKeys", table.String())
+						logger.WithError(err).Error("composite pagination keys missing")
+						d.ErrorHandler.Fatal("data_iterator", err)
+						return
+					}
+					
+					cursor = d.CursorConfig.NewCompositeCursor(table, 
+						NewCompositeKey(startKeys...), 
+						maxKeysInterface.(CompositeKey))
+				} else {
+					// Single column pagination
+					startPaginationKey := d.StateTracker.LastSuccessfulPaginationKey(table.String())
+					if startPaginationKey == math.MaxUint64 {
+						err := fmt.Errorf("%v has been marked as completed but a table iterator has been spawned, this is likely a programmer error which resulted in the inconsistent starting state", table.String())
+						logger.WithError(err).Error("this is definitely a bug")
+						d.ErrorHandler.Fatal("data_iterator", err)
+						return
+					}
 
-				cursor := d.CursorConfig.NewCursor(table, startPaginationKey, targetPaginationKeyInterface.(uint64))
+					cursor = d.CursorConfig.NewCursor(table, startPaginationKey, targetPaginationKeyInterface.(uint64))
+				}
 				if d.SelectFingerprint {
 					if len(cursor.ColumnsToSelect) == 0 {
 						cursor.ColumnsToSelect = []string{"*"}
