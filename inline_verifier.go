@@ -28,6 +28,7 @@ type BinlogVerifyStore struct {
 
 	mutex *sync.Mutex
 	// db => table => paginationKey => number of times it changed.
+	// For composite keys, we use a string representation of the keys
 	//
 	// We need to store the number of times the row has changed because of the
 	// following series of events:
@@ -101,6 +102,19 @@ type BinlogVerifyBatch struct {
 	SchemaName     string
 	TableName      string
 	PaginationKeys []uint64
+	
+	// Composite key support
+	IsComposite          bool
+	CompositePaginationKeys []CompositeKey
+}
+
+// Helper function to create composite key string for map storage
+func compositeKeyString(keys []interface{}) string {
+	parts := make([]string, len(keys))
+	for i, k := range keys {
+		parts[i] = fmt.Sprintf("%v", k)
+	}
+	return strings.Join(parts, ":")
 }
 
 func NewBinlogVerifyStore() *BinlogVerifyStore {
