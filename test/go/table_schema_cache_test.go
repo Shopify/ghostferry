@@ -86,18 +86,18 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesWithoutFiltering() {
 	}
 }
 
-func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutNumericPK() {
+func (this *TableSchemaCacheTestSuite) TestLoadTablesAcceptTablesWithVarcharPK() {
 	table := "test_table_4"
 	paginationColumn := "id"
 	query := fmt.Sprintf("CREATE TABLE %s.%s (%s varchar(20) not null, data TEXT, primary key(%s))", testhelpers.TestSchemaName, table, paginationColumn, paginationColumn)
 	_, err := this.Ferry.SourceDB.Exec(query)
 	this.Require().Nil(err)
 
-	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
+	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
 
-	this.Require().NotNil(err)
-	this.Require().EqualError(err, ghostferry.NonNumericPaginationKeyError(testhelpers.TestSchemaName, table, paginationColumn).Error())
-	this.Require().Contains(err.Error(), table)
+	this.Require().Nil(err)
+	this.Require().Contains(tableSchemaCache, testhelpers.TestSchemaName+"."+table)
+	this.Require().Equal(paginationColumn, tableSchemaCache[testhelpers.TestSchemaName+"."+table].GetPaginationColumn().Name)
 }
 func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutNumericPKWithMediumInt() {
 	table := "pagination_by_column_medium_int_pk"

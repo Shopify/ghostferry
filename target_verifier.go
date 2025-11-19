@@ -42,7 +42,7 @@ func (t *TargetVerifier) BinlogEventListener(evs []DMLEvent) error {
 			if err != nil {
 				return err
 			}
-			return fmt.Errorf("row data with paginationKey %d on `%s`.`%s` has been corrupted by a change directly performed in the target at binlog file: %s and position: %d", paginationKey, ev.Database(), ev.Table(), ev.BinlogPosition().Name, ev.BinlogPosition().Pos)
+			return fmt.Errorf("row data with paginationKey %s on `%s`.`%s` has been corrupted by a change directly performed in the target at binlog file: %s and position: %d", paginationKey, ev.Database(), ev.Table(), ev.BinlogPosition().Name, ev.BinlogPosition().Pos)
 		}
 	}
 

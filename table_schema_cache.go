@@ -126,8 +126,8 @@ func QuotedTableNameFromString(database, table string) string {
 	return fmt.Sprintf("`%s`.`%s`", database, table)
 }
 
-func MaxPaginationKeys(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) (map[*TableSchema]uint64, []*TableSchema, error) {
-	tablesWithData := make(map[*TableSchema]uint64)
+func MaxPaginationKeys(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) (map[*TableSchema]PaginationKey, []*TableSchema, error) {
+	tablesWithData := make(map[*TableSchema]PaginationKey)
 	emptyTables := make([]*TableSchema, 0, len(tables))
 
 	for _, table := range tables {
@@ -277,8 +277,14 @@ func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *Casca
 		err = NonExistingPaginationKeyError(t.Schema, t.Name)
 	}
 
-	if paginationKeyColumn != nil && paginationKeyColumn.Type != schema.TYPE_NUMBER && paginationKeyColumn.Type != schema.TYPE_MEDIUM_INT {
-		return nil, -1, NonNumericPaginationKeyError(t.Schema, t.Name, paginationKeyColumn.Name)
+	if paginationKeyColumn != nil {
+		isNumber := paginationKeyColumn.Type == schema.TYPE_NUMBER || paginationKeyColumn.Type == schema.TYPE_MEDIUM_INT
+		isBinary := paginationKeyColumn.Type == schema.TYPE_BINARY ||
+			paginationKeyColumn.Type == schema.TYPE_STRING
+
+		if !isNumber && !isBinary {
+			return nil, -1, NonNumericPaginationKeyError(t.Schema, t.Name, paginationKeyColumn.Name)
+		}
 	}
 
 	return paginationKeyColumn, paginationKeyIndex, err
@@ -398,7 +404,7 @@ func showTablesFrom(c *sql.DB, dbname string) ([]string, error) {
 	return tables, nil
 }
 
-func maxPaginationKey(db *sql.DB, table *TableSchema) (uint64, bool, error) {
+func maxPaginationKey(db *sql.DB, table *TableSchema) (PaginationKey, bool, error) {
 	primaryKeyColumn := table.GetPaginationColumn()
 	paginationKeyName := QuoteField(primaryKeyColumn.Name)
 	query, args, err := sq.
@@ -409,18 +415,51 @@ func maxPaginationKey(db *sql.DB, table *TableSchema) (uint64, bool, error) {
 		ToSql()
 
 	if err != nil {
-		return 0, false, err
+		return nil, false, err
 	}
 
-	var maxPaginationKey uint64
-	err = db.QueryRow(query, args...).Scan(&maxPaginationKey)
+	var result PaginationKey
+	switch primaryKeyColumn.Type {
+	case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+		var value uint64
+		err = db.QueryRow(query, args...).Scan(&value)
+		result = NewUint64Key(value)
+
+	case schema.TYPE_BINARY, schema.TYPE_STRING:
+		// Scan into interface{} to handle both []byte and string from driver
+		var val interface{}
+		err = db.QueryRow(query, args...).Scan(&val)
+		if err != nil {
+			break
+		}
+		
+		var binValue []byte
+		switch v := val.(type) {
+		case []byte:
+			binValue = v
+		case string:
+			binValue = []byte(v)
+		default:
+			err = fmt.Errorf("expected binary/string for max key, got %T", val)
+		}
+		
+		if err == nil {
+			result = NewBinaryKey(binValue)
+		}
+
+	default:
+		// Fallback
+		var value uint64
+		err = db.QueryRow(query, args...).Scan(&value)
+		result = NewUint64Key(value)
+	}
 
 	switch {
 	case err == sqlorig.ErrNoRows:
-		return 0, false, nil
+		return nil, false, nil
 	case err != nil:
-		return 0, false, err
+		return nil, false, err
 	default:
-		return maxPaginationKey, true, nil
+		return result, true, nil
 	}
 }

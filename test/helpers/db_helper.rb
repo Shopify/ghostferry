@@ -1,5 +1,6 @@
 require "logger"
 require "mysql2"
+require "securerandom"
 
 module DbHelper
   ALPHANUMERICS = ("0".."9").to_a + ("a".."z").to_a + ("A".."Z").to_a
@@ -9,6 +10,7 @@ module DbHelper
 
   DEFAULT_DB = "gftest"
   DEFAULT_TABLE = "test_table_1"
+  UUID_TABLE = "test_uuid_table"
 
   class Mysql2::Client
     alias_method :query_without_maginalia, :query
@@ -42,6 +44,7 @@ module DbHelper
   end
 
   DEFAULT_FULL_TABLE_NAME = full_table_name(DEFAULT_DB, DEFAULT_TABLE)
+  UUID_FULL_TABLE_NAME = full_table_name(DEFAULT_DB, UUID_TABLE)
 
   def full_table_name(db, table)
     DbHelper.full_table_name(db, table)
@@ -160,6 +163,50 @@ module DbHelper
     seed_random_data(target_db, number_of_rows: 0)
   end
 
+  def generate_uuid_bytes
+    uuid_string = SecureRandom.uuid
+    uuid_string.gsub("-", "").scan(/../).map { |x| x.hex.chr }.join
+  end
+
+  def seed_uuid_data(connection, database_name: DEFAULT_DB, table_name: UUID_TABLE, number_of_rows: 1111)
+    dbtable = full_table_name(database_name, table_name)
+
+    connection.query("CREATE DATABASE IF NOT EXISTS #{database_name}")
+    connection.query("CREATE TABLE IF NOT EXISTS #{dbtable} (id VARBINARY(16) NOT NULL, data TEXT, PRIMARY KEY(id))")
+
+    return if number_of_rows == 0
+
+    transaction(connection) do
+      number_of_rows.times do
+        uuid_bytes = generate_uuid_bytes
+        data = rand_data
+        insert_statement = connection.prepare("INSERT INTO #{dbtable} (id, data) VALUES (?, ?)")
+        insert_statement.execute(uuid_bytes, data)
+      end
+    end
+  end
+
+  def seed_simple_database_with_uuid_table
+    max_rows = 1111
+    seed_uuid_data(source_db, number_of_rows: max_rows)
+
+    num_holes = 140
+    result = source_db.query("SELECT id FROM #{UUID_FULL_TABLE_NAME} ORDER BY id LIMIT #{num_holes}")
+
+    holes_ids = []
+    result.each do |row|
+      holes_ids << row["id"]
+    end
+
+    unless holes_ids.empty?
+      sqlargs = (["?"]*holes_ids.length).join(",")
+      delete_statement = source_db.prepare("DELETE FROM #{UUID_FULL_TABLE_NAME} WHERE id IN (#{sqlargs})")
+      delete_statement.execute(*holes_ids)
+    end
+
+    seed_uuid_data(target_db, number_of_rows: 0)
+  end
+
   # Get some overall metrics like CHECKSUM, row count, sample row from tables.
   # Generally used for test validation.
   def source_and_target_table_metrics(tables: [DEFAULT_FULL_TABLE_NAME])
@@ -186,7 +233,12 @@ module DbHelper
       result = conn.query("SELECT * FROM #{table} ORDER BY RAND() LIMIT 1")
       metrics[:sample_row] = result.first
     else
-      result = conn.query("SELECT * FROM #{table} WHERE id = #{sample_id} LIMIT 1")
+      if sample_id.is_a?(String) && sample_id.encoding == Encoding::ASCII_8BIT
+        stmt = conn.prepare("SELECT * FROM #{table} WHERE id = ? LIMIT 1")
+        result = stmt.execute(sample_id)
+      else
+        result = conn.query("SELECT * FROM #{table} WHERE id = #{sample_id} LIMIT 1")
+      end
       metrics[:sample_row] = result.first
     end
 

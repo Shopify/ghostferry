@@ -32,7 +32,7 @@ var DBTableMap = map[string]string{
 type DataIteratorSorterTestSuite struct {
 	*testhelpers.GhostferryUnitTestSuite
 
-	unsortedTables map[*ghostferry.TableSchema]uint64
+	unsortedTables map[*ghostferry.TableSchema]ghostferry.PaginationKey
 	dataIterator *ghostferry.DataIterator
 }
 
@@ -48,11 +48,11 @@ func (t *DataIteratorSorterTestSuite) SetupTest() {
 	}
 	tables, _ := ghostferry.LoadTables(t.Ferry.SourceDB, tableFilter, nil, nil, nil, nil)
 
-	t.unsortedTables = make(map[*ghostferry.TableSchema]uint64, len(tables))
+	t.unsortedTables = make(map[*ghostferry.TableSchema]ghostferry.PaginationKey, len(tables))
 	i := 0
 	for _,f := range tables.AsSlice() {
 		maxPaginationKey := uint64(100_000 - i)
-		t.unsortedTables[f] = maxPaginationKey
+		t.unsortedTables[f] = ghostferry.NewUint64Key(maxPaginationKey)
 		i++
 	}
 
@@ -83,7 +83,7 @@ func (t *DataIteratorSorterTestSuite) TestOrderMaxPaginationKeys() {
 	copy(expectedTables, sortedTables)
 
 	sort.Slice(expectedTables, func(i, j int) bool {
-		return sortedTables[i].MaxPaginationKey > sortedTables[j].MaxPaginationKey
+		return sortedTables[i].MaxPaginationKey.Compare(sortedTables[j].MaxPaginationKey) > 0
 	})
 
 	t.Require().Equal(len(t.unsortedTables), len(sortedTables))

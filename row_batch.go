@@ -9,7 +9,7 @@ type RowBatch struct {
 	values             []RowData
 	paginationKeyIndex int
 	table              *TableSchema
-	fingerprints       map[uint64][]byte
+	fingerprints       map[string][]byte
 	columns            []string
 }
 
@@ -55,7 +55,7 @@ func (e *RowBatch) TableSchema() *TableSchema {
 	return e.table
 }
 
-func (e *RowBatch) Fingerprints() map[uint64][]byte {
+func (e *RowBatch) Fingerprints() map[string][]byte {
 	return e.fingerprints
 }
 
