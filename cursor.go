@@ -38,7 +38,7 @@ type CursorConfig struct {
 	Throttler Throttler
 
 	ColumnsToSelect []string
-	BuildSelect     func([]string, *TableSchema, uint64, uint64) (squirrel.SelectBuilder, error)
+	BuildSelect     func([]string, *TableSchema, PaginationKey, uint64) (squirrel.SelectBuilder, error)
 	// BatchSize is a pointer to the BatchSize in Config.UpdatableConfig which can be independently updated from this code.
 	// Having it as a pointer allows the updated value to be read without needing additional code to copy the batch size value into the cursor config for each cursor we create.
 	BatchSize                 *uint64
@@ -47,7 +47,7 @@ type CursorConfig struct {
 }
 
 // returns a new Cursor with an embedded copy of itself
-func (c *CursorConfig) NewCursor(table *TableSchema, startPaginationKey, maxPaginationKey uint64) *Cursor {
+func (c *CursorConfig) NewCursor(table *TableSchema, startPaginationKey, maxPaginationKey PaginationKey) *Cursor {
 	return &Cursor{
 		CursorConfig:                *c,
 		Table:                       table,
@@ -58,7 +58,7 @@ func (c *CursorConfig) NewCursor(table *TableSchema, startPaginationKey, maxPagi
 }
 
 // returns a new Cursor with an embedded copy of itself
-func (c *CursorConfig) NewCursorWithoutRowLock(table *TableSchema, startPaginationKey, maxPaginationKey uint64) *Cursor {
+func (c *CursorConfig) NewCursorWithoutRowLock(table *TableSchema, startPaginationKey, maxPaginationKey PaginationKey) *Cursor {
 	cursor := c.NewCursor(table, startPaginationKey, maxPaginationKey)
 	cursor.RowLock = false
 	return cursor
@@ -77,11 +77,11 @@ type Cursor struct {
 	CursorConfig
 
 	Table            *TableSchema
-	MaxPaginationKey uint64
+	MaxPaginationKey PaginationKey
 	RowLock          bool
 
 	paginationKeyColumn         *schema.TableColumn
-	lastSuccessfulPaginationKey uint64
+	lastSuccessfulPaginationKey PaginationKey
 	logger                      *logrus.Entry
 }
 
@@ -96,10 +96,10 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 		c.ColumnsToSelect = []string{"*"}
 	}
 
-	for c.lastSuccessfulPaginationKey < c.MaxPaginationKey {
+	for c.lastSuccessfulPaginationKey.Compare(c.MaxPaginationKey) < 0 {
 		var tx SqlPreparerAndRollbacker
 		var batch *RowBatch
-		var paginationKeypos uint64
+		var paginationKeypos PaginationKey
 
 		err := WithRetries(c.ReadRetries, 1*time.Second, c.logger, "fetch rows", func() (err error) {
 			if c.Throttler != nil {
@@ -137,9 +137,9 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 			break
 		}
 
-		if paginationKeypos <= c.lastSuccessfulPaginationKey {
+		if paginationKeypos.Compare(c.lastSuccessfulPaginationKey) <= 0 {
 			tx.Rollback()
-			err = fmt.Errorf("new paginationKeypos %d <= lastSuccessfulPaginationKey %d", paginationKeypos, c.lastSuccessfulPaginationKey)
+			err = fmt.Errorf("new paginationKeypos %s <= lastSuccessfulPaginationKey %s", paginationKeypos.String(), c.lastSuccessfulPaginationKey.String())
 			c.logger.WithError(err).Errorf("last successful paginationKey position did not advance")
 			return err
 		}
@@ -159,7 +159,7 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 	return nil
 }
 
-func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos uint64, err error) {
+func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos PaginationKey, err error) {
 	var selectBuilder squirrel.SelectBuilder
 	batchSize := c.CursorConfig.GetBatchSize(c.Table.Schema, c.Table.Name)
 
@@ -176,7 +176,7 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos uint64
 	if c.RowLock {
 		mySqlVersion, err := c.DB.QueryMySQLVersion()
 		if err != nil {
-			return nil, 0, err
+			return nil, NewUint64Key(0), err
 		}
 		if strings.HasPrefix(mySqlVersion, "8.") {
 			selectBuilder = selectBuilder.Suffix("FOR SHARE NOWAIT")
@@ -261,10 +261,44 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos uint64
 	}
 
 	if len(batchData) > 0 {
-		paginationKeypos, err = batchData[len(batchData)-1].GetUint64(paginationKeyIndex)
-		if err != nil {
-			logger.WithError(err).Error("failed to get uint64 paginationKey value")
-			return
+		lastRowData := batchData[len(batchData)-1]
+		
+		switch c.paginationKeyColumn.Type {
+		case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+			var value uint64
+			value, err = lastRowData.GetUint64(paginationKeyIndex)
+			if err != nil {
+				logger.WithError(err).Error("failed to get uint64 paginationKey value")
+				return
+			}
+			paginationKeypos = NewUint64Key(value)
+
+		case schema.TYPE_BINARY, schema.TYPE_STRING:
+			valueInterface := lastRowData[paginationKeyIndex]
+			
+			var valueBytes []byte
+			switch v := valueInterface.(type) {
+			case []byte:
+				valueBytes = v
+			case string:
+				valueBytes = []byte(v)
+			default:
+				err = fmt.Errorf("expected binary pagination key to be []byte or string, got %T", valueInterface)
+				logger.WithError(err).Error("failed to get binary paginationKey value")
+				return
+			}
+			
+			paginationKeypos = NewBinaryKey(valueBytes)
+
+		default:
+			// Fallback for other integer types
+			var value uint64
+			value, err = lastRowData.GetUint64(paginationKeyIndex)
+			if err != nil {
+				logger.WithError(err).Error("failed to get uint64 paginationKey value")
+				return
+			}
+			paginationKeypos = NewUint64Key(value)
 		}
 	}
 
@@ -304,12 +338,12 @@ func ScanByteRow(rows *sqlorig.Rows, columnCount int) ([][]byte, error) {
 	return values, err
 }
 
-func DefaultBuildSelect(columns []string, table *TableSchema, lastPaginationKey, batchSize uint64) squirrel.SelectBuilder {
+func DefaultBuildSelect(columns []string, table *TableSchema, lastPaginationKey PaginationKey, batchSize uint64) squirrel.SelectBuilder {
 	quotedPaginationKey := QuoteField(table.GetPaginationColumn().Name)
 
 	return squirrel.Select(columns...).
 		From(QuotedTableName(table)).
-		Where(squirrel.Gt{quotedPaginationKey: lastPaginationKey}).
+		Where(squirrel.Gt{quotedPaginationKey: lastPaginationKey.SQLValue()}).
 		Limit(batchSize).
 		OrderBy(quotedPaginationKey)
 }

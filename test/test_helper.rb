@@ -92,8 +92,8 @@ class GhostferryTestCase < Minitest::Test
     g
   end
 
-  def new_source_datawriter(*args)
-    dw = DataWriter.new(source_db_config, *args, logger: @log_capturer.logger)
+  def new_source_datawriter(*args, **kwargs)
+    dw = DataWriter.new(source_db_config, *args, **kwargs, logger: @log_capturer.logger)
     @datawriter_instances << dw
     dw
   end
@@ -175,6 +175,25 @@ class GhostferryTestCase < Minitest::Test
     assert_equal(
       source[DEFAULT_FULL_TABLE_NAME][:checksum],
       target[DEFAULT_FULL_TABLE_NAME][:checksum],
+      "source and target checksum don't match",
+    )
+  end
+
+  def assert_uuid_table_is_identical
+    source, target = source_and_target_table_metrics(tables: [UUID_FULL_TABLE_NAME])
+
+    assert source[UUID_FULL_TABLE_NAME][:row_count] > 0
+    assert target[UUID_FULL_TABLE_NAME][:row_count] > 0
+
+    assert_equal(
+      source[UUID_FULL_TABLE_NAME][:row_count],
+      target[UUID_FULL_TABLE_NAME][:row_count],
+      "source and target row count don't match",
+    )
+
+    assert_equal(
+      source[UUID_FULL_TABLE_NAME][:checksum],
+      target[UUID_FULL_TABLE_NAME][:checksum],
       "source and target checksum don't match",
     )
   end

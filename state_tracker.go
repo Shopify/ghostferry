@@ -2,7 +2,7 @@ package ghostferry
 
 import (
 	"container/ring"
-	"math"
+	"encoding/json"
 	"sync"
 	"time"
 
@@ -34,12 +34,59 @@ type SerializableState struct {
 	GhostferryVersion         string
 	LastKnownTableSchemaCache TableSchemaCache
 
-	LastSuccessfulPaginationKeys              map[string]uint64
+	LastSuccessfulPaginationKeys              map[string]PaginationKey
 	CompletedTables                           map[string]bool
 	LastWrittenBinlogPosition                 mysql.Position
 	BinlogVerifyStore                         BinlogVerifySerializedStore
 	LastStoredBinlogPositionForInlineVerifier mysql.Position
 	LastStoredBinlogPositionForTargetVerifier mysql.Position
+}
+
+func (s *SerializableState) MarshalJSON() ([]byte, error) {
+	// Create an alias to avoid infinite recursion, but change the map type
+	type Alias SerializableState
+	aux := &struct {
+		LastSuccessfulPaginationKeys map[string]json.RawMessage
+		*Alias
+	}{
+		Alias: (*Alias)(s),
+		LastSuccessfulPaginationKeys: make(map[string]json.RawMessage),
+	}
+
+	for k, v := range s.LastSuccessfulPaginationKeys {
+		b, err := MarshalPaginationKey(v)
+		if err != nil {
+			return nil, err
+		}
+		aux.LastSuccessfulPaginationKeys[k] = b
+	}
+
+	return json.Marshal(aux)
+}
+
+func (s *SerializableState) UnmarshalJSON(data []byte) error {
+	type Alias SerializableState
+	aux := &struct {
+		LastSuccessfulPaginationKeys map[string]json.RawMessage
+		*Alias
+	}{
+		Alias: (*Alias)(s),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	s.LastSuccessfulPaginationKeys = make(map[string]PaginationKey)
+	for k, v := range aux.LastSuccessfulPaginationKeys {
+		pk, err := UnmarshalPaginationKey(v)
+		if err != nil {
+			return err
+		}
+		s.LastSuccessfulPaginationKeys[k] = pk
+	}
+
+	return nil
 }
 
 func (s *SerializableState) MinSourceBinlogPosition() mysql.Position {
@@ -61,7 +108,7 @@ func (s *SerializableState) MinSourceBinlogPosition() mysql.Position {
 
 // For tracking the speed of the copy
 type PaginationKeyPositionLog struct {
-	Position uint64
+	Position float64
 	At       time.Time
 }
 
@@ -92,7 +139,7 @@ type StateTracker struct {
 	lastStoredBinlogPositionForInlineVerifier mysql.Position
 	lastStoredBinlogPositionForTargetVerifier mysql.Position
 
-	lastSuccessfulPaginationKeys map[string]uint64
+	lastSuccessfulPaginationKeys map[string]PaginationKey
 	completedTables              map[string]bool
 
 	// TODO: Performance tracking should be refactored out of the state tracker,
@@ -106,7 +153,7 @@ func NewStateTracker(speedLogCount int) *StateTracker {
 		BinlogRWMutex: &sync.RWMutex{},
 		CopyRWMutex:   &sync.RWMutex{},
 
-		lastSuccessfulPaginationKeys: make(map[string]uint64),
+		lastSuccessfulPaginationKeys: make(map[string]PaginationKey),
 		completedTables:              make(map[string]bool),
 		iterationSpeedLog:            newSpeedLogRing(speedLogCount),
 		rowStatsWrittenPerTable:      make(map[string]RowStats),
@@ -146,11 +193,16 @@ func (s *StateTracker) UpdateLastResumableBinlogPositionForTargetVerifier(pos my
 	s.lastStoredBinlogPositionForTargetVerifier = pos
 }
 
-func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginationKey uint64, rowStats RowStats) {
+func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginationKey PaginationKey, rowStats RowStats) {
 	s.CopyRWMutex.Lock()
 	defer s.CopyRWMutex.Unlock()
 
-	deltaPaginationKey := paginationKey - s.lastSuccessfulPaginationKeys[table]
+	var deltaPaginationKey float64
+	if lastKey, exists := s.lastSuccessfulPaginationKeys[table]; exists {
+		deltaPaginationKey = paginationKey.NumericPosition() - lastKey.NumericPosition()
+	} else {
+		deltaPaginationKey = paginationKey.NumericPosition()
+	}
 	s.lastSuccessfulPaginationKeys[table] = paginationKey
 
 	// TODO: this code is intentionally left here so it is kind of crappy and
@@ -174,18 +226,18 @@ func (s *StateTracker) RowStatsWrittenPerTable() map[string]RowStats {
 	return d
 }
 
-func (s *StateTracker) LastSuccessfulPaginationKey(table string) uint64 {
+func (s *StateTracker) LastSuccessfulPaginationKey(table string, tableSchema *TableSchema) PaginationKey {
 	s.CopyRWMutex.RLock()
 	defer s.CopyRWMutex.RUnlock()
 
 	_, found := s.completedTables[table]
 	if found {
-		return math.MaxUint64
+		return MaxPaginationKey(tableSchema.GetPaginationColumn())
 	}
 
 	paginationKey, found := s.lastSuccessfulPaginationKeys[table]
 	if !found {
-		return 0
+		return MinPaginationKey(tableSchema.GetPaginationColumn())
 	}
 
 	return paginationKey
@@ -240,7 +292,7 @@ func (s *StateTracker) updateRowStatsForTable(table string, rowStats RowStats) {
 	}
 }
 
-func (s *StateTracker) updateSpeedLog(deltaPaginationKey uint64) {
+func (s *StateTracker) updateSpeedLog(deltaPaginationKey float64) {
 	if s.iterationSpeedLog == nil {
 		return
 	}
@@ -263,7 +315,7 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, bin
 	state := &SerializableState{
 		GhostferryVersion:                         VersionString,
 		LastKnownTableSchemaCache:                 lastKnownTableSchemaCache,
-		LastSuccessfulPaginationKeys:              make(map[string]uint64),
+		LastSuccessfulPaginationKeys:              make(map[string]PaginationKey),
 		CompletedTables:                           make(map[string]bool),
 		LastWrittenBinlogPosition:                 s.lastWrittenBinlogPosition,
 		LastStoredBinlogPositionForInlineVerifier: s.lastStoredBinlogPositionForInlineVerifier,

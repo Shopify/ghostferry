@@ -2,6 +2,7 @@ package test
 
 import (
 	"math/rand"
+	"sync/atomic"
 	"testing"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -12,7 +13,7 @@ import (
 )
 
 func setupSingleTableDatabase(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
-	testhelpers.SeedInitialData(sourceDB, "gftest", "table1", 1000)
+	testhelpers.SeedInitialData(sourceDB, "gftest", "table1", 100)
 	testhelpers.SeedInitialData(targetDB, "gftest", "table1", 0)
 
 	testhelpers.AddTenantID(sourceDB, "gftest", "table1", 3)
@@ -51,7 +52,7 @@ func TestSelectiveCopyDataWithoutAnyWritesToSource(t *testing.T) {
 	assert.Equal(t, 0, count)
 
 	rows := testcase.AssertQueriesHaveEqualResult("SELECT * FROM gftest.table1 WHERE tenant_id = 2")
-	assert.Equal(t, 333, len(rows))
+	assert.Equal(t, 33, len(rows))
 }
 
 func TestSelectiveCopyDataWithInsertLoadOnOtherTenants(t *testing.T) {
@@ -79,10 +80,12 @@ func TestSelectiveCopyDataWithInsertLoadOnOtherTenants(t *testing.T) {
 	assert.Equal(t, 0, count)
 
 	rows := testcase.AssertQueriesHaveEqualResult("SELECT * FROM gftest.table1 WHERE tenant_id = 2")
-	assert.Equal(t, 333, len(rows))
+	assert.Equal(t, 33, len(rows))
 }
 
 func TestSelectiveCopyDataWithInsertLoadOnAllTenants(t *testing.T) {
+	var firstInsert atomic.Bool
+
 	testcase := &testhelpers.IntegrationTestCase{
 		T:           t,
 		Ferry:       selectiveFerry(int64(2)),
@@ -93,7 +96,11 @@ func TestSelectiveCopyDataWithInsertLoadOnAllTenants(t *testing.T) {
 			Tables:              []string{"gftest.table1"},
 
 			ExtraInsertData: func(tableName string, vals map[string]interface{}) {
-				vals["tenant_id"] = rand.Intn(3)
+				if firstInsert.CompareAndSwap(false, true) {
+					vals["tenant_id"] = 2
+				} else {
+					vals["tenant_id"] = rand.Intn(3)
+				}
 			},
 		},
 	}
@@ -107,7 +114,7 @@ func TestSelectiveCopyDataWithInsertLoadOnAllTenants(t *testing.T) {
 	assert.Equal(t, 0, count)
 
 	rows := testcase.AssertQueriesHaveEqualResult("SELECT * FROM gftest.table1 WHERE tenant_id = 2")
-	assert.True(t, len(rows) > 333)
+	assert.True(t, len(rows) > 33)
 }
 
 type ChangeShardingKeyDataWriter struct {

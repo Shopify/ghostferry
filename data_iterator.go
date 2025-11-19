@@ -2,11 +2,11 @@ package ghostferry
 
 import (
 	"fmt"
-	"math"
 	"sync"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
+	"github.com/go-mysql-org/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -28,7 +28,7 @@ type DataIterator struct {
 
 type TableMaxPaginationKey struct {
 	Table            *TableSchema
-	MaxPaginationKey uint64
+	MaxPaginationKey PaginationKey
 }
 
 func (d *DataIterator) Run(tables []*TableSchema) {
@@ -86,15 +86,15 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 					return
 				}
 
-				startPaginationKey := d.StateTracker.LastSuccessfulPaginationKey(table.String())
-				if startPaginationKey == math.MaxUint64 {
+				startPaginationKey := d.StateTracker.LastSuccessfulPaginationKey(table.String(), table)
+				if startPaginationKey.IsMax() {
 					err := fmt.Errorf("%v has been marked as completed but a table iterator has been spawned, this is likely a programmer error which resulted in the inconsistent starting state", table.String())
 					logger.WithError(err).Error("this is definitely a bug")
 					d.ErrorHandler.Fatal("data_iterator", err)
 					return
 				}
 
-				cursor := d.CursorConfig.NewCursor(table, startPaginationKey, targetPaginationKeyInterface.(uint64))
+				cursor := d.CursorConfig.NewCursor(table, startPaginationKey, targetPaginationKeyInterface.(PaginationKey))
 				if d.SelectFingerprint {
 					if len(cursor.ColumnsToSelect) == 0 {
 						cursor.ColumnsToSelect = []string{"*"}
@@ -110,17 +110,45 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 					}, 1.0)
 
 					if d.SelectFingerprint {
-						fingerprints := make(map[uint64][]byte)
+						fingerprints := make(map[string][]byte)
 						rows := make([]RowData, batch.Size())
+						paginationColumn := table.GetPaginationColumn()
 
 						for i, rowData := range batch.Values() {
-							paginationKey, err := rowData.GetUint64(batch.PaginationKeyIndex())
-							if err != nil {
-								logger.WithError(err).Error("failed to get paginationKey data")
-								return err
+							var paginationKeyStr string
+
+							switch paginationColumn.Type {
+							case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+								paginationKeyUint, err := rowData.GetUint64(batch.PaginationKeyIndex())
+								if err != nil {
+									logger.WithError(err).Error("failed to get uint64 paginationKey data")
+									return err
+								}
+								paginationKeyStr = NewUint64Key(paginationKeyUint).String()
+
+							case schema.TYPE_BINARY, schema.TYPE_STRING:
+								paginationKeyInterface := rowData[batch.PaginationKeyIndex()]
+								var paginationKeyBytes []byte
+								switch v := paginationKeyInterface.(type) {
+								case []byte:
+									paginationKeyBytes = v
+								case string:
+									paginationKeyBytes = []byte(v)
+								default:
+									return fmt.Errorf("expected binary/string pagination key, got %T", paginationKeyInterface)
+								}
+								paginationKeyStr = NewBinaryKey(paginationKeyBytes).String()
+
+							default:
+								paginationKeyUint, err := rowData.GetUint64(batch.PaginationKeyIndex())
+								if err != nil {
+									logger.WithError(err).Error("failed to get paginationKey data")
+									return err
+								}
+								paginationKeyStr = NewUint64Key(paginationKeyUint).String()
 							}
 
-							fingerprints[paginationKey] = rowData[len(rowData)-1].([]byte)
+							fingerprints[paginationKeyStr] = rowData[len(rowData)-1].([]byte)
 							rows[i] = rowData[:len(rowData)-1]
 						}
 

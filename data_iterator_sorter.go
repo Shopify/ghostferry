@@ -8,13 +8,13 @@ import (
 
 // DataIteratorSorter is an interface for the DataIterator to choose which order it will process table
 type DataIteratorSorter interface {
-	Sort(unorderedTables map[*TableSchema]uint64) ([]TableMaxPaginationKey, error)
+	Sort(unorderedTables map[*TableSchema]PaginationKey) ([]TableMaxPaginationKey, error)
 }
 
 // MaxPaginationKeySorter arranges table based on the MaxPaginationKey in DESC order
 type MaxPaginationKeySorter struct{}
 
-func (s *MaxPaginationKeySorter) Sort(unorderedTables map[*TableSchema]uint64) ([]TableMaxPaginationKey, error) {
+func (s *MaxPaginationKeySorter) Sort(unorderedTables map[*TableSchema]PaginationKey) ([]TableMaxPaginationKey, error) {
 	orderedTables := make([]TableMaxPaginationKey, len(unorderedTables))
 	i := 0
 
@@ -24,7 +24,7 @@ func (s *MaxPaginationKeySorter) Sort(unorderedTables map[*TableSchema]uint64) (
 	}
 
 	sort.Slice(orderedTables, func(i, j int) bool {
-		return orderedTables[i].MaxPaginationKey > orderedTables[j].MaxPaginationKey
+		return orderedTables[i].MaxPaginationKey.Compare(orderedTables[j].MaxPaginationKey) > 0
 	})
 
 	return orderedTables, nil
@@ -35,7 +35,7 @@ type MaxTableSizeSorter struct {
 	DataIterator *DataIterator
 }
 
-func (s *MaxTableSizeSorter) Sort(unorderedTables map[*TableSchema]uint64) ([]TableMaxPaginationKey, error) {
+func (s *MaxTableSizeSorter) Sort(unorderedTables map[*TableSchema]PaginationKey) ([]TableMaxPaginationKey, error) {
 	orderedTables := []TableMaxPaginationKey{}
 	tableNames := []string{}
 	databaseSchemasSet := map[string]struct{}{}
