@@ -49,7 +49,7 @@ func (s *SerializableState) MarshalJSON() ([]byte, error) {
 		LastSuccessfulPaginationKeys map[string]json.RawMessage
 		*Alias
 	}{
-		Alias: (*Alias)(s),
+		Alias:                        (*Alias)(s),
 		LastSuccessfulPaginationKeys: make(map[string]json.RawMessage),
 	}
 
@@ -232,12 +232,12 @@ func (s *StateTracker) LastSuccessfulPaginationKey(table string, tableSchema *Ta
 
 	_, found := s.completedTables[table]
 	if found {
-		return MaxPaginationKey(tableSchema.GetPaginationColumn())
+		return MaxPaginationKey(tableSchema.GetPaginationColumns())
 	}
 
 	paginationKey, found := s.lastSuccessfulPaginationKeys[table]
 	if !found {
-		return MinPaginationKey(tableSchema.GetPaginationColumn())
+		return MinPaginationKey(tableSchema.GetPaginationColumns())
 	}
 
 	return paginationKey

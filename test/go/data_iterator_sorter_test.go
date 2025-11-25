@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/go-mysql-org/go-mysql/schema"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/Shopify/ghostferry"
@@ -13,12 +14,12 @@ import (
 )
 
 const (
-	TestDB1 				= "gftest2"
-	TestDB2 				= "gftest3"
-	TestDB3					= "gftest4"
-	TestTableDB1	 	= "test_db_2"
-	TestTableDB2 		= "test_db_3"
-	TestTableDB3 		= "test_db_4"
+	TestDB1      = "gftest2"
+	TestDB2      = "gftest3"
+	TestDB3      = "gftest4"
+	TestTableDB1 = "test_db_2"
+	TestTableDB2 = "test_db_3"
+	TestTableDB3 = "test_db_4"
 )
 
 var TestDBs = []string{TestDB1, TestDB2, TestDB3}
@@ -33,7 +34,7 @@ type DataIteratorSorterTestSuite struct {
 	*testhelpers.GhostferryUnitTestSuite
 
 	unsortedTables map[*ghostferry.TableSchema]ghostferry.PaginationKey
-	dataIterator *ghostferry.DataIterator
+	dataIterator   *ghostferry.DataIterator
 }
 
 func (t *DataIteratorSorterTestSuite) SetupTest() {
@@ -50,15 +51,15 @@ func (t *DataIteratorSorterTestSuite) SetupTest() {
 
 	t.unsortedTables = make(map[*ghostferry.TableSchema]ghostferry.PaginationKey, len(tables))
 	i := 0
-	for _,f := range tables.AsSlice() {
+	for _, f := range tables.AsSlice() {
 		maxPaginationKey := uint64(100_000 - i)
 		t.unsortedTables[f] = ghostferry.NewUint64Key(maxPaginationKey)
 		i++
 	}
 
 	t.dataIterator = &ghostferry.DataIterator{
-		DB:          t.Ferry.SourceDB,
-		ErrorHandler: t.Ferry.ErrorHandler,
+		DB:                   t.Ferry.SourceDB,
+		ErrorHandler:         t.Ferry.ErrorHandler,
 		TargetPaginationKeys: &sync.Map{},
 	}
 }
@@ -89,6 +90,31 @@ func (t *DataIteratorSorterTestSuite) TestOrderMaxPaginationKeys() {
 	t.Require().Equal(len(t.unsortedTables), len(sortedTables))
 	t.Require().EqualValues(expectedTables, sortedTables)
 
+}
+
+func (t *DataIteratorSorterTestSuite) TestOrderMaxPaginationKeysMixedTypes() {
+	sorter := ghostferry.MaxPaginationKeySorter{}
+
+	// Create a mix of keys: Uint64Key, BinaryKey, CompositeKey
+	mixedTables := map[*ghostferry.TableSchema]ghostferry.PaginationKey{
+		{Table: &schema.Table{Schema: "test", Name: "uint_table"}}:      ghostferry.NewUint64Key(100),
+		{Table: &schema.Table{Schema: "test", Name: "binary_table"}}:    ghostferry.NewBinaryKey([]byte("abc")),
+		{Table: &schema.Table{Schema: "test", Name: "composite_table"}}: ghostferry.CompositeKey{ghostferry.NewUint64Key(1)},
+	}
+
+	// This should not panic
+	sortedTables, err := sorter.Sort(mixedTables)
+	t.Require().Nil(err)
+	t.Require().Equal(3, len(sortedTables))
+
+	// Verify we have one of each
+	typesSeen := make(map[string]bool)
+	for _, item := range sortedTables {
+		typesSeen[fmt.Sprintf("%T", item.MaxPaginationKey)] = true
+	}
+	t.Require().True(typesSeen["ghostferry.Uint64Key"])
+	t.Require().True(typesSeen["ghostferry.BinaryKey"])
+	t.Require().True(typesSeen["ghostferry.CompositeKey"])
 }
 
 func (t *DataIteratorSorterTestSuite) TestOrderByInformationSchemaTableSize() {

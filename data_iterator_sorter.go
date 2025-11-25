@@ -24,7 +24,17 @@ func (s *MaxPaginationKeySorter) Sort(unorderedTables map[*TableSchema]Paginatio
 	}
 
 	sort.Slice(orderedTables, func(i, j int) bool {
-		return orderedTables[i].MaxPaginationKey.Compare(orderedTables[j].MaxPaginationKey) > 0
+		keyI := orderedTables[i].MaxPaginationKey
+		keyJ := orderedTables[j].MaxPaginationKey
+
+		// Handle mixed types by sorting by type string first to prevent panics in Compare
+		typeI := fmt.Sprintf("%T", keyI)
+		typeJ := fmt.Sprintf("%T", keyJ)
+		if typeI != typeJ {
+			return typeI > typeJ
+		}
+
+		return keyI.Compare(keyJ) > 0
 	})
 
 	return orderedTables, nil

@@ -19,7 +19,7 @@ func TestHashesSql(t *testing.T) {
 		paginationKeysInterface[i] = pk
 	}
 
-	sql, args, err := ghostferry.GetMd5HashesSql("gftest", "test_table", "id", columns, paginationKeysInterface)
+	sql, args, err := ghostferry.GetMd5HashesSql("gftest", "test_table", []*schema.TableColumn{&columns[0]}, columns, paginationKeysInterface)
 
 	assert.Nil(t, err)
 	assert.Equal(t, "SELECT `id`, MD5(CONCAT(MD5(COALESCE(`id`, 'NULL')),MD5(COALESCE(`data`, 'NULL')),MD5(COALESCE((if (`float_col` = '-0', 0, `float_col`)), 'NULL')))) "+
@@ -295,4 +295,106 @@ func deleteTestRowsToTriggerFailure(ferry *testhelpers.TestFerry) {
 
 	_, err = ferry.Ferry.TargetDB.Exec("DELETE FROM gftest.table1 WHERE id = \"43\"")
 	testhelpers.PanicIfError(err)
+}
+
+func TestHashesSqlWithCompositeKey(t *testing.T) {
+	columns := []schema.TableColumn{
+		{Name: "tenant_id", Type: schema.TYPE_NUMBER},
+		{Name: "id", Type: schema.TYPE_NUMBER},
+		{Name: "data"},
+	}
+	// Composite keys as comma-separated strings: "1,10", "2,20"
+	paginationKeysInterface := []interface{}{"1,10", "2,20"}
+
+	sql, args, err := ghostferry.GetMd5HashesSql(
+		"gftest", "test_table",
+		[]*schema.TableColumn{&columns[0], &columns[1]},
+		columns,
+		paginationKeysInterface,
+	)
+
+	assert.Nil(t, err)
+	assert.Equal(t,
+		"SELECT `tenant_id`, `id`, MD5(CONCAT(MD5(COALESCE(`tenant_id`, 'NULL')),MD5(COALESCE(`id`, 'NULL')),MD5(COALESCE(`data`, 'NULL')))) "+
+			"AS row_fingerprint FROM `gftest`.`test_table` WHERE (`tenant_id`, `id`) IN ((?, ?), (?, ?)) ORDER BY `tenant_id`, `id`",
+		sql)
+	assert.Equal(t, []interface{}{uint64(1), uint64(10), uint64(2), uint64(20)}, args)
+}
+
+func TestHashesSqlWithThreeColumnCompositeKey(t *testing.T) {
+	columns := []schema.TableColumn{
+		{Name: "region_id", Type: schema.TYPE_NUMBER},
+		{Name: "tenant_id", Type: schema.TYPE_NUMBER},
+		{Name: "id", Type: schema.TYPE_NUMBER},
+		{Name: "data"},
+	}
+	// Composite keys as comma-separated strings: "1,2,10", "1,3,20"
+	paginationKeysInterface := []interface{}{"1,2,10", "1,3,20"}
+
+	sql, args, err := ghostferry.GetMd5HashesSql(
+		"gftest", "test_table",
+		[]*schema.TableColumn{&columns[0], &columns[1], &columns[2]},
+		columns,
+		paginationKeysInterface,
+	)
+
+	assert.Nil(t, err)
+	assert.Equal(t,
+		"SELECT `region_id`, `tenant_id`, `id`, MD5(CONCAT(MD5(COALESCE(`region_id`, 'NULL')),MD5(COALESCE(`tenant_id`, 'NULL')),MD5(COALESCE(`id`, 'NULL')),MD5(COALESCE(`data`, 'NULL')))) "+
+			"AS row_fingerprint FROM `gftest`.`test_table` WHERE (`region_id`, `tenant_id`, `id`) IN ((?, ?, ?), (?, ?, ?)) ORDER BY `region_id`, `tenant_id`, `id`",
+		sql)
+	assert.Equal(t, []interface{}{uint64(1), uint64(2), uint64(10), uint64(1), uint64(3), uint64(20)}, args)
+}
+
+func TestVerificationWithCompositeKeyDetectsMismatch(t *testing.T) {
+	ferry := testhelpers.NewTestFerry()
+	// Filter to only composite_table_2 to avoid mixing key types with table1
+	ferry.Config.TableFilter = &testhelpers.TestTableFilter{
+		DbsFunc: testhelpers.DbApplicabilityFilter([]string{"gftest"}),
+		TablesFunc: func(tables []*ghostferry.TableSchema) []*ghostferry.TableSchema {
+			for _, t := range tables {
+				if t.Name == "composite_table_2" {
+					return []*ghostferry.TableSchema{t}
+				}
+			}
+			return nil
+		},
+	}
+
+	iterativeVerifier := &ghostferry.IterativeVerifier{}
+	ran := false
+
+	testcase := &testhelpers.IntegrationTestCase{
+		T:           t,
+		SetupAction: setupCompositeKeyTableDatabase(2),
+		AfterRowCopyIsComplete: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+			setupIterativeVerifierFromFerry(iterativeVerifier, ferry.Ferry)
+
+			err := iterativeVerifier.Initialize()
+			testhelpers.PanicIfError(err)
+
+			err = iterativeVerifier.VerifyBeforeCutover()
+			testhelpers.PanicIfError(err)
+		},
+		BeforeStoppingBinlogStreaming: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+			_, err := sourceDB.Exec("INSERT INTO gftest.composite_table_2 VALUES (1, 1, 'test') ON DUPLICATE KEY UPDATE data = 'reverify'")
+			testhelpers.PanicIfError(err)
+		},
+		AfterStoppedBinlogStreaming: func(ferry *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+			// Modify target data to create mismatch
+			_, err := targetDB.Exec("UPDATE gftest.composite_table_2 SET data = 'MISMATCH' WHERE k1 = 1 AND k2 = 1")
+			testhelpers.PanicIfError(err)
+
+			result, err := iterativeVerifier.VerifyDuringCutover()
+			assert.Nil(t, err)
+			assert.False(t, result.DataCorrect)
+			assert.Contains(t, result.Message, "composite_table_2")
+			ran = true
+		},
+		Ferry:                   ferry,
+		DisableChecksumVerifier: true,
+	}
+
+	testcase.Run()
+	assert.True(t, ran)
 }

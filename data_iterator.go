@@ -112,53 +112,63 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 					if d.SelectFingerprint {
 						fingerprints := make(map[string][]byte)
 						rows := make([]RowData, batch.Size())
-						paginationColumn := table.GetPaginationColumn()
+						paginationColumns := table.GetPaginationColumns()
+						paginationKeyIndexes := batch.PaginationKeyIndexes()
 
 						for i, rowData := range batch.Values() {
 							var paginationKeyStr string
+							keys := make([]PaginationKey, len(paginationColumns))
 
-							switch paginationColumn.Type {
-							case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-								paginationKeyUint, err := rowData.GetUint64(batch.PaginationKeyIndex())
-								if err != nil {
-									logger.WithError(err).Error("failed to get uint64 paginationKey data")
-									return err
-								}
-								paginationKeyStr = NewUint64Key(paginationKeyUint).String()
+							for k, col := range paginationColumns {
+								idx := paginationKeyIndexes[k]
+								switch col.Type {
+								case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+									paginationKeyUint, err := rowData.GetUint64(idx)
+									if err != nil {
+										logger.WithError(err).Error("failed to get uint64 paginationKey data")
+										return err
+									}
+									keys[k] = NewUint64Key(paginationKeyUint)
 
-							case schema.TYPE_BINARY, schema.TYPE_STRING:
-								paginationKeyInterface := rowData[batch.PaginationKeyIndex()]
-								var paginationKeyBytes []byte
-								switch v := paginationKeyInterface.(type) {
-								case []byte:
-									paginationKeyBytes = v
-								case string:
-									paginationKeyBytes = []byte(v)
+								case schema.TYPE_BINARY, schema.TYPE_STRING:
+									paginationKeyInterface := rowData[idx]
+									var paginationKeyBytes []byte
+									switch v := paginationKeyInterface.(type) {
+									case []byte:
+										paginationKeyBytes = v
+									case string:
+										paginationKeyBytes = []byte(v)
+									default:
+										return fmt.Errorf("expected binary/string pagination key, got %T", paginationKeyInterface)
+									}
+									keys[k] = NewBinaryKey(paginationKeyBytes)
+
 								default:
-									return fmt.Errorf("expected binary/string pagination key, got %T", paginationKeyInterface)
+									paginationKeyUint, err := rowData.GetUint64(idx)
+									if err != nil {
+										logger.WithError(err).Error("failed to get paginationKey data")
+										return err
+									}
+									keys[k] = NewUint64Key(paginationKeyUint)
 								}
-								paginationKeyStr = NewBinaryKey(paginationKeyBytes).String()
+							}
 
-							default:
-								paginationKeyUint, err := rowData.GetUint64(batch.PaginationKeyIndex())
-								if err != nil {
-									logger.WithError(err).Error("failed to get paginationKey data")
-									return err
-								}
-								paginationKeyStr = NewUint64Key(paginationKeyUint).String()
+							if len(keys) == 1 {
+								paginationKeyStr = keys[0].String()
+							} else {
+								paginationKeyStr = CompositeKey(keys).String()
 							}
 
 							fingerprints[paginationKeyStr] = rowData[len(rowData)-1].([]byte)
 							rows[i] = rowData[:len(rowData)-1]
 						}
 
-						batch = &RowBatch{
-							values:             rows,
-							paginationKeyIndex: batch.PaginationKeyIndex(),
-							table:              table,
-							fingerprints:       fingerprints,
-							columns:            batch.columns[:len(batch.columns)-1],
-						}
+						batch = NewRowBatchWithIndexes(
+							table,
+							rows,
+							batch.PaginationKeyIndexes(),
+						)
+						batch.fingerprints = fingerprints
 					}
 
 					for _, listener := range d.batchListeners {

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/go-mysql-org/go-mysql/schema"
 )
@@ -116,6 +117,76 @@ func (k BinaryKey) MarshalJSON() ([]byte, error) {
 	return json.Marshal(hex.EncodeToString(k))
 }
 
+type CompositeKey []PaginationKey
+
+func (k CompositeKey) SQLValue() interface{} {
+	values := make([]interface{}, len(k))
+	for i, subKey := range k {
+		values[i] = subKey.SQLValue()
+	}
+	return values
+}
+
+func (k CompositeKey) Compare(other PaginationKey) int {
+	otherKey, ok := other.(CompositeKey)
+	if !ok {
+		panic(fmt.Sprintf("type mismatch: cannot compare CompositeKey with %T", other))
+	}
+
+	if len(k) != len(otherKey) {
+		panic(fmt.Sprintf("length mismatch: %d vs %d", len(k), len(otherKey)))
+	}
+
+	for i := range k {
+		cmp := k[i].Compare(otherKey[i])
+		if cmp != 0 {
+			return cmp
+		}
+	}
+
+	return 0
+}
+
+func (k CompositeKey) NumericPosition() float64 {
+	if len(k) == 0 {
+		return 0.0
+	}
+	// Use the first key's position as a heuristic
+	return k[0].NumericPosition()
+}
+
+func (k CompositeKey) String() string {
+	parts := make([]string, len(k))
+	for i, subKey := range k {
+		parts[i] = subKey.String()
+	}
+	return strings.Join(parts, ",")
+}
+
+func (k CompositeKey) IsMax() bool {
+	if len(k) == 0 {
+		return false
+	}
+	for _, subKey := range k {
+		if !subKey.IsMax() {
+			return false
+		}
+	}
+	return true
+}
+
+func (k CompositeKey) MarshalJSON() ([]byte, error) {
+	encoded := make([]json.RawMessage, len(k))
+	for i, subKey := range k {
+		b, err := MarshalPaginationKey(subKey)
+		if err != nil {
+			return nil, err
+		}
+		encoded[i] = b
+	}
+	return json.Marshal(encoded)
+}
+
 type encodedKey struct {
 	Type  string          `json:"type"`
 	Value json.RawMessage `json:"value"`
@@ -132,6 +203,9 @@ func MarshalPaginationKey(k PaginationKey) ([]byte, error) {
 		valBytes, err = t.MarshalJSON()
 	case BinaryKey:
 		typeName = "binary"
+		valBytes, err = t.MarshalJSON()
+	case CompositeKey:
+		typeName = "composite"
 		valBytes, err = t.MarshalJSON()
 	default:
 		return nil, fmt.Errorf("unknown pagination key type: %T", k)
@@ -170,12 +244,27 @@ func UnmarshalPaginationKey(data []byte) (PaginationKey, error) {
 			return nil, err
 		}
 		return NewBinaryKey(b), nil
+	case "composite":
+		var parts []json.RawMessage
+		if err := json.Unmarshal(wrapper.Value, &parts); err != nil {
+			return nil, err
+		}
+		keys := make([]PaginationKey, len(parts))
+		for i, part := range parts {
+			pk, err := UnmarshalPaginationKey(part)
+			if err != nil {
+				return nil, err
+			}
+			keys[i] = pk
+		}
+		return CompositeKey(keys), nil
 	default:
 		return nil, fmt.Errorf("unknown key type: %s", wrapper.Type)
 	}
 }
 
-func MinPaginationKey(column *schema.TableColumn) PaginationKey {
+// minPaginationKeyForColumn returns the minimum pagination key for a single column.
+func minPaginationKeyForColumn(column *schema.TableColumn) PaginationKey {
 	switch column.Type {
 	case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
 		return NewUint64Key(0)
@@ -189,7 +278,8 @@ func MinPaginationKey(column *schema.TableColumn) PaginationKey {
 	}
 }
 
-func MaxPaginationKey(column *schema.TableColumn) PaginationKey {
+// maxPaginationKeyForColumn returns the maximum pagination key for a single column.
+func maxPaginationKeyForColumn(column *schema.TableColumn) PaginationKey {
 	switch column.Type {
 	case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
 		return NewUint64Key(math.MaxUint64)
@@ -200,7 +290,6 @@ func MaxPaginationKey(column *schema.TableColumn) PaginationKey {
 		if size > 4096 {
 			size = 4096
 		}
-		
 		maxBytes := make([]byte, size)
 		for i := range maxBytes {
 			maxBytes[i] = 0xFF
@@ -209,4 +298,36 @@ func MaxPaginationKey(column *schema.TableColumn) PaginationKey {
 	default:
 		return NewUint64Key(math.MaxUint64)
 	}
+}
+
+// MinPaginationKey creates a minimum pagination key for the given columns.
+// For single-column keys, returns a simple key type. For multi-column keys, returns a CompositeKey.
+func MinPaginationKey(columns []*schema.TableColumn) PaginationKey {
+	if len(columns) == 0 {
+		return NewUint64Key(0)
+	}
+	if len(columns) == 1 {
+		return minPaginationKeyForColumn(columns[0])
+	}
+	keys := make([]PaginationKey, len(columns))
+	for i, col := range columns {
+		keys[i] = minPaginationKeyForColumn(col)
+	}
+	return CompositeKey(keys)
+}
+
+// MaxPaginationKey creates a maximum pagination key for the given columns.
+// For single-column keys, returns a simple key type. For multi-column keys, returns a CompositeKey.
+func MaxPaginationKey(columns []*schema.TableColumn) PaginationKey {
+	if len(columns) == 0 {
+		return NewUint64Key(math.MaxUint64)
+	}
+	if len(columns) == 1 {
+		return maxPaginationKeyForColumn(columns[0])
+	}
+	keys := make([]PaginationKey, len(columns))
+	for i, col := range columns {
+		keys[i] = maxPaginationKeyForColumn(col)
+	}
+	return CompositeKey(keys)
 }

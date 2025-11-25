@@ -81,6 +81,7 @@ type Cursor struct {
 	RowLock          bool
 
 	paginationKeyColumn         *schema.TableColumn
+	paginationKeyColumns        []*schema.TableColumn
 	lastSuccessfulPaginationKey PaginationKey
 	logger                      *logrus.Entry
 }
@@ -91,6 +92,7 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 		"tag":   "cursor",
 	})
 	c.paginationKeyColumn = c.Table.GetPaginationColumn()
+	c.paginationKeyColumns = c.Table.GetPaginationColumns()
 
 	if len(c.ColumnsToSelect) == 0 {
 		c.ColumnsToSelect = []string{"*"}
@@ -228,18 +230,21 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos Pagina
 		return
 	}
 
-	var paginationKeyIndex int = -1
-	for idx, col := range columns {
-		if col == c.paginationKeyColumn.Name {
-			paginationKeyIndex = idx
-			break
+	paginationKeyIndexes := make([]int, len(c.paginationKeyColumns))
+	for i, pkCol := range c.paginationKeyColumns {
+		found := false
+		for idx, col := range columns {
+			if col == pkCol.Name {
+				paginationKeyIndexes[i] = idx
+				found = true
+				break
+			}
 		}
-	}
-
-	if paginationKeyIndex < 0 {
-		err = fmt.Errorf("paginationKey is not found during iteration with columns: %v", columns)
-		logger.WithError(err).Error("failed to get paginationKey index")
-		return
+		if !found {
+			err = fmt.Errorf("paginationKey column %s is not found during iteration with columns: %v", pkCol.Name, columns)
+			logger.WithError(err).Error("failed to get paginationKey index")
+			return
+		}
 	}
 
 	var rowData RowData
@@ -263,52 +268,57 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos Pagina
 	if len(batchData) > 0 {
 		lastRowData := batchData[len(batchData)-1]
 		
-		switch c.paginationKeyColumn.Type {
-		case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-			var value uint64
-			value, err = lastRowData.GetUint64(paginationKeyIndex)
-			if err != nil {
-				logger.WithError(err).Error("failed to get uint64 paginationKey value")
-				return
-			}
-			paginationKeypos = NewUint64Key(value)
-
-		case schema.TYPE_BINARY, schema.TYPE_STRING:
-			valueInterface := lastRowData[paginationKeyIndex]
+		// Construct paginationKeypos
+		keys := make([]PaginationKey, len(c.paginationKeyColumns))
+		for i, idx := range paginationKeyIndexes {
+			col := c.paginationKeyColumns[i]
 			
-			var valueBytes []byte
-			switch v := valueInterface.(type) {
-			case []byte:
-				valueBytes = v
-			case string:
-				valueBytes = []byte(v)
+			switch col.Type {
+			case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+				var value uint64
+				value, err = lastRowData.GetUint64(idx)
+				if err != nil {
+					logger.WithError(err).Errorf("failed to get uint64 paginationKey value for column %s", col.Name)
+					return
+				}
+				keys[i] = NewUint64Key(value)
+
+			case schema.TYPE_BINARY, schema.TYPE_STRING:
+				valueInterface := lastRowData[idx]
+				var valueBytes []byte
+				switch v := valueInterface.(type) {
+				case []byte:
+					valueBytes = v
+				case string:
+					valueBytes = []byte(v)
+				default:
+					err = fmt.Errorf("expected binary pagination key to be []byte or string, got %T", valueInterface)
+					logger.WithError(err).Errorf("failed to get binary paginationKey value for column %s", col.Name)
+					return
+				}
+				keys[i] = NewBinaryKey(valueBytes)
+
 			default:
-				err = fmt.Errorf("expected binary pagination key to be []byte or string, got %T", valueInterface)
-				logger.WithError(err).Error("failed to get binary paginationKey value")
-				return
+				// Fallback
+				var value uint64
+				value, err = lastRowData.GetUint64(idx)
+				if err != nil {
+					logger.WithError(err).Errorf("failed to get uint64 paginationKey value for column %s", col.Name)
+					return
+				}
+				keys[i] = NewUint64Key(value)
 			}
-			
-			paginationKeypos = NewBinaryKey(valueBytes)
-
-		default:
-			// Fallback for other integer types
-			var value uint64
-			value, err = lastRowData.GetUint64(paginationKeyIndex)
-			if err != nil {
-				logger.WithError(err).Error("failed to get uint64 paginationKey value")
-				return
-			}
-			paginationKeypos = NewUint64Key(value)
+		}
+		
+		if len(keys) == 1 {
+			paginationKeypos = keys[0]
+		} else {
+			paginationKeypos = CompositeKey(keys)
 		}
 	}
 
-	batch = &RowBatch{
-		values:             batchData,
-		paginationKeyIndex: paginationKeyIndex,
-		table:              c.Table,
-		columns:            columns,
-	}
-
+	batch = NewRowBatchWithIndexes(c.Table, batchData, paginationKeyIndexes)
+	
 	logger.Debugf("found %d rows", batch.Size())
 
 	return
@@ -339,11 +349,39 @@ func ScanByteRow(rows *sqlorig.Rows, columnCount int) ([][]byte, error) {
 }
 
 func DefaultBuildSelect(columns []string, table *TableSchema, lastPaginationKey PaginationKey, batchSize uint64) squirrel.SelectBuilder {
-	quotedPaginationKey := QuoteField(table.GetPaginationColumn().Name)
+	pkCols := table.GetPaginationColumns()
+	quotedPKCols := make([]string, len(pkCols))
+	for i, col := range pkCols {
+		quotedPKCols[i] = QuoteField(col.Name)
+	}
 
-	return squirrel.Select(columns...).
+	builder := squirrel.Select(columns...).
 		From(QuotedTableName(table)).
-		Where(squirrel.Gt{quotedPaginationKey: lastPaginationKey.SQLValue()}).
-		Limit(batchSize).
-		OrderBy(quotedPaginationKey)
+		Limit(batchSize)
+		
+	// Add OrderBy
+	orderBy := make([]string, len(quotedPKCols))
+	for i, colName := range quotedPKCols {
+		orderBy[i] = colName
+	}
+	builder = builder.OrderBy(strings.Join(orderBy, ", "))
+
+	// Add Where
+	if len(pkCols) == 1 {
+		builder = builder.Where(squirrel.Gt{quotedPKCols[0]: lastPaginationKey.SQLValue()})
+	} else {
+		// Composite key: (k1, k2) > (v1, v2)
+		tuple := fmt.Sprintf("(%s)", strings.Join(quotedPKCols, ", "))
+		
+		placeholders := make([]string, len(quotedPKCols))
+		for i := range placeholders {
+			placeholders[i] = "?"
+		}
+		tuplePlaceholders := fmt.Sprintf("(%s)", strings.Join(placeholders, ", "))
+		
+		vals := lastPaginationKey.SQLValue().([]interface{})
+		builder = builder.Where(fmt.Sprintf("%s > %s", tuple, tuplePlaceholders), vals...)
+	}
+
+	return builder
 }

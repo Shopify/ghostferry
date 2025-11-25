@@ -68,44 +68,58 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schemaName, tableN
 
 	tableCompression := c.tableColumnCompressions[tableName]
 
+	table := c.TableSchemaCache.Get(schemaName, tableName)
+	if table == nil {
+		return nil, fmt.Errorf("table %s.%s not found in schema cache", schemaName, tableName)
+	}
+	paginationColumns := table.GetPaginationColumns()
+
 	// Extract the raw rows using SQL to be decompressed
-	rows, err := getRows(db, schemaName, tableName, paginationKeyColumn, columns, paginationKeys)
+	rows, err := getRows(db, schemaName, tableName, paginationColumns, columns, paginationKeys)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	table := c.TableSchemaCache.Get(schemaName, tableName)
-	if table == nil {
-		return nil, fmt.Errorf("table %s.%s not found in schema cache", schemaName, tableName)
-	}
-	paginationColumn := table.GetPaginationColumn()
 	resultSet := make(map[string][]byte)
+	numPaginationCols := len(paginationColumns)
 
 	for rows.Next() {
-		rowData, err := ScanByteRow(rows, len(columns)+1)
+		// Scan: pagination_col1, pagination_col2, ..., data_cols...
+		rowData, err := ScanByteRow(rows, len(columns)+numPaginationCols)
 		if err != nil {
 			return nil, err
 		}
 
+		// Build pagination key from columns (works for both single and composite keys)
+		keys := make([]PaginationKey, len(paginationColumns))
+		for i, paginationColumn := range paginationColumns {
+			switch paginationColumn.Type {
+			case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+				paginationKeyUint, err := strconv.ParseUint(string(rowData[i]), 10, 64)
+				if err != nil {
+					return nil, err
+				}
+				keys[i] = NewUint64Key(paginationKeyUint)
+
+			case schema.TYPE_BINARY, schema.TYPE_STRING:
+				keys[i] = NewBinaryKey(rowData[i])
+
+			default:
+				paginationKeyUint, err := strconv.ParseUint(string(rowData[i]), 10, 64)
+				if err != nil {
+					return nil, err
+				}
+				keys[i] = NewUint64Key(paginationKeyUint)
+			}
+		}
+		
+		// For single column, use the key directly; for composite, wrap in CompositeKey
 		var paginationKeyStr string
-		switch paginationColumn.Type {
-		case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-			paginationKeyUint, err := strconv.ParseUint(string(rowData[0]), 10, 64)
-			if err != nil {
-				return nil, err
-			}
-			paginationKeyStr = NewUint64Key(paginationKeyUint).String()
-
-		case schema.TYPE_BINARY, schema.TYPE_STRING:
-			paginationKeyStr = NewBinaryKey(rowData[0]).String()
-
-		default:
-			paginationKeyUint, err := strconv.ParseUint(string(rowData[0]), 10, 64)
-			if err != nil {
-				return nil, err
-			}
-			paginationKeyStr = NewUint64Key(paginationKeyUint).String()
+		if len(keys) == 1 {
+			paginationKeyStr = keys[0].String()
+		} else {
+			paginationKeyStr = CompositeKey(keys).String()
 		}
 
 		// Decompress the applicable columns and then hash them together
@@ -115,14 +129,14 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schemaName, tableN
 		decompressedRowData := [][]byte{}
 		for idx, column := range columns {
 			if algorithm, ok := tableCompression[column.Name]; ok {
-				// rowData contains the result of "SELECT paginationKeyColumn, * FROM ...", so idx+1 to get each column
-				decompressedColData, err := c.Decompress(tableName, column.Name, algorithm, rowData[idx+1])
+				// rowData contains the result of "SELECT paginationKeyCols..., * FROM ...", so idx+numPaginationCols to get each data column
+				decompressedColData, err := c.Decompress(tableName, column.Name, algorithm, rowData[idx+numPaginationCols])
 				if err != nil {
 					return nil, err
 				}
 				decompressedRowData = append(decompressedRowData, decompressedColData)
 			} else {
-				decompressedRowData = append(decompressedRowData, rowData[idx+1])
+				decompressedRowData = append(decompressedRowData, rowData[idx+numPaginationCols])
 			}
 		}
 
@@ -231,14 +245,75 @@ func NewCompressionVerifier(tableColumnCompressions TableColumnCompressionConfig
 	return compressionVerifier, nil
 }
 
-func getRows(db *sql.DB, schema, table, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []interface{}) (*sqlorig.Rows, error) {
-	quotedPaginationKey := QuoteField(paginationKeyColumn)
-	sql, args, err := rowSelector(columns, paginationKeyColumn).
-		From(QuotedTableNameFromString(schema, table)).
-		Where(sq.Eq{quotedPaginationKey: paginationKeys}).
-		OrderBy(quotedPaginationKey).
-		ToSql()
-
+func getRows(db *sql.DB, schemaName, table string, paginationKeyColumns []*schema.TableColumn, columns []schema.TableColumn, paginationKeys []interface{}) (*sqlorig.Rows, error) {
+	builder := rowSelector(columns, paginationKeyColumns).
+		From(QuotedTableNameFromString(schemaName, table))
+	
+	if len(paginationKeyColumns) == 1 {
+		// Single column WHERE clause
+		quotedPaginationKey := QuoteField(paginationKeyColumns[0].Name)
+		builder = builder.Where(sq.Eq{quotedPaginationKey: paginationKeys})
+		builder = builder.OrderBy(quotedPaginationKey)
+	} else {
+		// Composite key WHERE clause: (col1, col2) IN ((?, ?), (?, ?), ...)
+		quotedPKCols := make([]string, len(paginationKeyColumns))
+		for i, col := range paginationKeyColumns {
+			quotedPKCols[i] = QuoteField(col.Name)
+		}
+		tuple := fmt.Sprintf("(%s)", strings.Join(quotedPKCols, ", "))
+		
+		// Build placeholder tuples for each pagination key string
+		placeholderTuples := make([]string, len(paginationKeys))
+		args := make([]interface{}, 0, len(paginationKeys)*len(paginationKeyColumns))
+		
+		for i, pkInterface := range paginationKeys {
+			pkStr, ok := pkInterface.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string pagination key for composite key, got %T", pkInterface)
+			}
+			
+			// Parse the composite key string (comma-separated)
+			parts := strings.Split(pkStr, ",")
+			if len(parts) != len(paginationKeyColumns) {
+				return nil, fmt.Errorf("pagination key has %d parts but expected %d", len(parts), len(paginationKeyColumns))
+			}
+			
+			placeholders := make([]string, len(parts))
+			for j, part := range parts {
+				placeholders[j] = "?"
+				// Convert string representation back to appropriate type
+				col := paginationKeyColumns[j]
+				switch col.Type {
+				case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+					val, err := strconv.ParseUint(part, 10, 64)
+					if err != nil {
+						return nil, fmt.Errorf("failed to parse pagination key part %q as uint64: %w", part, err)
+					}
+					args = append(args, val)
+				case schema.TYPE_BINARY, schema.TYPE_STRING:
+					// For binary keys, the string is hex-encoded
+					decoded, err := hex.DecodeString(part)
+					if err != nil {
+						return nil, fmt.Errorf("failed to decode pagination key part %q: %w", part, err)
+					}
+					args = append(args, decoded)
+				default:
+					val, err := strconv.ParseUint(part, 10, 64)
+					if err != nil {
+						return nil, fmt.Errorf("failed to parse pagination key part %q: %w", part, err)
+					}
+					args = append(args, val)
+				}
+			}
+			placeholderTuples[i] = fmt.Sprintf("(%s)", strings.Join(placeholders, ", "))
+		}
+		
+		whereClause := fmt.Sprintf("%s IN (%s)", tuple, strings.Join(placeholderTuples, ", "))
+		builder = builder.Where(whereClause, args...)
+		builder = builder.OrderBy(strings.Join(quotedPKCols, ", "))
+	}
+	
+	sql, args, err := builder.ToSql()
 	if err != nil {
 		return nil, err
 	}
@@ -260,11 +335,17 @@ func getRows(db *sql.DB, schema, table, paginationKeyColumn string, columns []sc
 	return rows, nil
 }
 
-func rowSelector(columns []schema.TableColumn, paginationKeyColumn string) sq.SelectBuilder {
+func rowSelector(columns []schema.TableColumn, paginationKeyColumns []*schema.TableColumn) sq.SelectBuilder {
+	// Select all pagination key columns first
+	selectParts := make([]string, len(paginationKeyColumns))
+	for i, col := range paginationKeyColumns {
+		selectParts[i] = QuoteField(col.Name)
+	}
+	
 	columnStrs := make([]string, len(columns))
 	for idx, column := range columns {
 		columnStrs[idx] = column.Name
 	}
 
-	return sq.Select(fmt.Sprintf("%s, %s", QuoteField(paginationKeyColumn), strings.Join(columnStrs, ",")))
+	return sq.Select(fmt.Sprintf("%s, %s", strings.Join(selectParts, ", "), strings.Join(columnStrs, ",")))
 }

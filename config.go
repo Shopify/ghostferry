@@ -382,11 +382,13 @@ func (c ForceIndexConfig) IndexFor(schemaName, tableName string) string {
 // ensure the column has a unique constraint to prevent data loss during migration.
 type CascadingPaginationColumnConfig struct {
 	// PerTable has greatest specificity and takes precedence over the other options
-	PerTable map[string]map[string]string // SchemaName => TableName => ColumnName
+	// For composite keys, specify comma-separated column names (e.g., "tenant_id,user_id")
+	PerTable map[string]map[string]string // SchemaName => TableName => "col1,col2,..."
 
 	// FallbackColumn is a global default to fallback to and is less specific than the
 	// default, which is the Primary Key.
-	// This column MUST have unique values (ideally a unique constraint) for data integrity.
+	// For composite keys, specify comma-separated column names (e.g., "tenant_id,user_id")
+	// These columns MUST have unique values together (ideally a unique constraint) for data integrity.
 	FallbackColumn string
 }
 
@@ -732,15 +734,19 @@ type Config struct {
 	//
 	ForceIndexForVerification ForceIndexConfig
 
-	// Ghostferry requires a single numeric or binary column to paginate over tables. Inferring that column is done in the following exact order:
-	// 1. Use the PerTable pagination column, if configured for a table. Fail if we cannot find this column in the table.
-	// 2. Use the table's primary key column as the pagination column. Fail if the primary key is not numeric/binary or is a composite key without a FallbackColumn specified.
-	// 3. Use the FallbackColumn pagination column, if configured. Fail if we cannot find this column in the table.
+	// Ghostferry requires one or more numeric/binary columns to paginate over tables. Inferring columns is done in the following exact order:
+	// 1. Use the PerTable pagination column(s), if configured for a table. Fail if we cannot find these columns in the table.
+	// 2. Use the table's primary key column(s) as the pagination column(s). This now supports composite primary keys.
+	// 3. Use the FallbackColumn pagination column(s), if configured. Fail if we cannot find these columns in the table.
 	//
-	// IMPORTANT: The pagination column MUST contain unique values for data integrity.
-	// When using a FallbackColumn (typically "id") for tables with composite primary keys, this column must have a unique constraint.
-	// The pagination algorithm uses WHERE pagination_key > last_key ORDER BY pagination_key LIMIT batch_size.
-	// If duplicate values exist, rows may be skipped during iteration, resulting in data loss during the migration.
+	// IMPORTANT: The pagination column(s) MUST contain unique values together for data integrity.
+	// For composite keys (e.g., "tenant_id,user_id"), the combination must be unique (ideally a unique constraint or primary key).
+	// The pagination algorithm uses WHERE (col1, col2) > (last_val1, last_val2) ORDER BY col1, col2 LIMIT batch_size.
+	// If duplicate value combinations exist, rows may be skipped during iteration, resulting in data loss during the migration.
+	//
+	// Examples:
+	//   Single column: "id"
+	//   Composite key: "tenant_id,user_id" (comma-separated, no spaces recommended)
 	CascadingPaginationColumnConfig *CascadingPaginationColumnConfig
 
 	// SkipTargetVerification is used to enable or disable target verification during moves.

@@ -576,35 +576,44 @@ func paginationKeyFromEventData(table *TableSchema, rowData RowData) (string, er
 		return "", err
 	}
 
-	paginationColumn := table.GetPaginationColumn()
-	paginationKeyIndex := table.GetPaginationKeyIndex()
+	paginationColumns := table.GetPaginationColumns()
+	paginationKeyIndexes := table.GetPaginationKeyIndexes()
+	keys := make([]PaginationKey, len(paginationColumns))
 
-	switch paginationColumn.Type {
-	case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-		paginationKeyUint, err := rowData.GetUint64(paginationKeyIndex)
-		if err != nil {
-			return "", err
-		}
-		return NewUint64Key(paginationKeyUint).String(), nil
+	for i, col := range paginationColumns {
+		idx := paginationKeyIndexes[i]
+		switch col.Type {
+		case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+			paginationKeyUint, err := rowData.GetUint64(idx)
+			if err != nil {
+				return "", err
+			}
+			keys[i] = NewUint64Key(paginationKeyUint)
 
-	case schema.TYPE_BINARY, schema.TYPE_STRING:
-		paginationKeyInterface := rowData[paginationKeyIndex]
-		var paginationKeyBytes []byte
-		switch v := paginationKeyInterface.(type) {
-		case []byte:
-			paginationKeyBytes = v
-		case string:
-			paginationKeyBytes = []byte(v)
+		case schema.TYPE_BINARY, schema.TYPE_STRING:
+			paginationKeyInterface := rowData[idx]
+			var paginationKeyBytes []byte
+			switch v := paginationKeyInterface.(type) {
+			case []byte:
+				paginationKeyBytes = v
+			case string:
+				paginationKeyBytes = []byte(v)
+			default:
+				return "", fmt.Errorf("expected binary/string pagination key, got %T", paginationKeyInterface)
+			}
+			keys[i] = NewBinaryKey(paginationKeyBytes)
+
 		default:
-			return "", fmt.Errorf("expected binary/string pagination key, got %T", paginationKeyInterface)
+			paginationKeyUint, err := rowData.GetUint64(idx)
+			if err != nil {
+				return "", err
+			}
+			keys[i] = NewUint64Key(paginationKeyUint)
 		}
-		return NewBinaryKey(paginationKeyBytes).String(), nil
-
-	default:
-		paginationKeyUint, err := rowData.GetUint64(paginationKeyIndex)
-		if err != nil {
-			return "", err
-		}
-		return NewUint64Key(paginationKeyUint).String(), nil
 	}
+
+	if len(keys) == 1 {
+		return keys[0].String(), nil
+	}
+	return CompositeKey(keys).String(), nil
 }
