@@ -96,7 +96,7 @@ github.com/shopspring/decimal
 ## explicit
 github.com/siddontang/go-log/log
 github.com/siddontang/go-log/loggers
-# github.com/sirupsen/logrus v1.8.1
+# github.com/sirupsen/logrus v1.8.3
 ## explicit; go 1.13
 github.com/sirupsen/logrus
 # github.com/stretchr/testify v1.8.4
@@ -123,8 +123,8 @@ go.uber.org/zap/internal/stacktrace
 go.uber.org/zap/internal/ztest
 go.uber.org/zap/zapcore
 go.uber.org/zap/zaptest
-# golang.org/x/sys v0.0.0-20210426230700-d19ff857e887
-## explicit; go 1.12
+# golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8
+## explicit; go 1.17
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
