@@ -80,7 +80,14 @@ func (k BinaryKey) Compare(other PaginationKey) int {
 	return bytes.Compare(k, otherKey)
 }
 
-// NumericPosition calculates a rough float position.
+// NumericPosition calculates a rough float position for progress tracking.
+//
+// Note: This method only uses the first 8 bytes of the binary key for progress calculation.
+// This works well for timestamp-based keys like UUID v7 (where the first 48 bits are a timestamp),
+// but progress may appear frozen when processing rows that differ only in bytes 9+.
+// For random binary keys (like UUID v4), progress will be unpredictable.
+//
+// The core pagination algorithm (using Compare()) is unaffected and works correctly with any binary data.
 func (k BinaryKey) NumericPosition() float64 {
 	if len(k) == 0 {
 		return 0.0
