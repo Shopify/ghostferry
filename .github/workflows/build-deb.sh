@@ -9,7 +9,7 @@ sudo apt-get install -y make
 # package, and between different arch builds
 DATETIME=$(date -u +%Y%m%d)
 COMMIT_SHA=$(git rev-parse --short HEAD)
-PROJECT_BIN_TAG="_$COMMIT_SHA"
+PROJECT_BIN_TAG="-$COMMIT_SHA"
 
 git status
 
