@@ -257,6 +257,11 @@ func NonNumericPaginationKeyError(schema, table, paginationKey string) error {
 	return fmt.Errorf("Pagination Key `%s` for %s is non-numeric", paginationKey, QuotedTableNameFromString(schema, table))
 }
 
+// NonBinaryCollationError exported to facilitate black box testing
+func NonBinaryCollationError(schema, table, paginationKey, collation string) error {
+	return fmt.Errorf("Pagination Key `%s` for %s has non-binary collation '%s'. Binary columns (BINARY, VARBINARY) or string columns with binary collation (e.g., utf8mb4_bin) are required to ensure consistent ordering between MySQL and Ghostferry", paginationKey, QuotedTableNameFromString(schema, table), collation)
+}
+
 func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (*schema.TableColumn, int, error) {
 	var err error
 	var paginationKeyColumn *schema.TableColumn
@@ -284,6 +289,17 @@ func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *Casca
 
 		if !isNumber && !isBinary {
 			return nil, -1, NonNumericPaginationKeyError(t.Schema, t.Name, paginationKeyColumn.Name)
+		}
+
+		// For string types (VARCHAR, CHAR), validate that the collation is binary
+		// BINARY and VARBINARY types don't have collations and are always binary-safe
+		// Related PR comment with integration test proof: https://github.com/Shopify/ghostferry/pull/417#discussion_r2619684805
+		if paginationKeyColumn.Type == schema.TYPE_STRING && paginationKeyColumn.Collation != "" {
+			// Binary collations end with "_bin" (e.g., utf8mb4_bin, latin1_bin)
+			// BINARY type has empty collation and is handled above
+			if !strings.HasSuffix(paginationKeyColumn.Collation, "_bin") {
+				return nil, -1, NonBinaryCollationError(t.Schema, t.Name, paginationKeyColumn.Name, paginationKeyColumn.Collation)
+			}
 		}
 	}
 
