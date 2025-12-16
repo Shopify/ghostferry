@@ -8,7 +8,8 @@ ifndef IGNORE_DIRTY_TREE
 DIRTY_TREE      := $(shell git diff-index --quiet HEAD -- || echo '+dirty')
 endif
 
-COMMIT          := $(addsuffix $(DIRTY_TREE),$(shell git rev-parse --short HEAD))
+COMMIT_SHA      ?= $(shell git rev-parse --short HEAD)
+COMMIT          := $(addsuffix $(DIRTY_TREE),$(COMMIT_SHA))
 VERSION_STR     := $(VERSION)+$(DATETIME)+$(COMMIT)
 
 # Flags
@@ -32,7 +33,7 @@ GOTESTSUM_URL   := "https://github.com/gotestyourself/gotestsum/releases/downloa
 
 # Target specific variable, set proj to have a valid value.
 PROJECT_PKG      = ./$(proj)/cmd
-PROJECT_BIN      = ghostferry-$(proj)
+PROJECT_BIN      = ghostferry-$(proj)$(PROJECT_BIN_TAG)
 BIN_TARGET       = $(GOBIN)/$(PROJECT_BIN)
 DEB_TARGET       = $(BUILD_DIR)/$(PROJECT_BIN)_$(VERSION_STR)_$(ARCH).deb
 

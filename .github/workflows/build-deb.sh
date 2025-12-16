@@ -8,11 +8,18 @@ sudo apt-get install -y make
 # We set this here, so it's the same between the copydb and sharding debian
 # package, and between different arch builds
 DATETIME=$(date -u +%Y%m%d)
+COMMIT_SHA=$(git rev-parse --short HEAD)
+PROJECT_BIN_TAG="_$COMMIT_SHA"
 
 git status
 
-make copydb-deb DATETIME=${DATETIME}
-make sharding-deb DATETIME=${DATETIME}
+if [[ "$1" != "--tagged-only" ]] ; then
+	make copydb-deb DATETIME=$DATETIME COMMIT_SHA=$COMMIT_SHA
+	make sharding-deb DATETIME=$DATETIME COMMIT_SHA=$COMMIT_SHA
+fi
+
+make copydb-deb DATETIME=$DATETIME COMMIT_SHA=$COMMIT_SHA PROJECT_BIN_TAG=$PROJECT_BIN_TAG
+make sharding-deb DATETIME=$DATETIME COMMIT_SHA=$COMMIT_SHA PROJECT_BIN_TAG=$PROJECT_BIN_TAG
 
 cd build
 set +x
