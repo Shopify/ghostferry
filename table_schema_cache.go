@@ -293,6 +293,7 @@ func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *Casca
 
 		// For string types (VARCHAR, CHAR), validate that the collation is binary
 		// BINARY and VARBINARY types don't have collations and are always binary-safe
+		// Related PR comment with integration test proof: https://github.com/Shopify/ghostferry/pull/417#discussion_r2619684805
 		if paginationKeyColumn.Type == schema.TYPE_STRING && paginationKeyColumn.Collation != "" {
 			// Binary collations end with "_bin" (e.g., utf8mb4_bin, latin1_bin)
 			// BINARY type has empty collation and is handled above
