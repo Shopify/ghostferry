@@ -47,7 +47,7 @@ $(PROJECTS): $(GOBIN)
 $(PROJECT_DEBS): LDFLAGS += -X github.com/Shopify/ghostferry.WebUiBasedir=/$(SHARE_DIR)
 $(PROJECT_DEBS): reset-deb-dir
 	$(eval proj := $(subst -deb,,$@))
-	sed -e "s/{version}/$(VERSION_STR)/" -e "s/{arch}/$(ARCH)/" $(proj)/debian/control > $(DEB_PREFIX)/DEBIAN/control
+	sed -e "s/{version}/$(VERSION_STR)/" -e "s/{arch}/$(ARCH)/" -e "s/{project}/$(PROJECT_BIN)/" $(proj)/debian/control > $(DEB_PREFIX)/DEBIAN/control
 	cp $(proj)/debian/copyright $(DEB_PREFIX)/DEBIAN/copyright
 	go build -ldflags "$(LDFLAGS)" -o $(DEB_PREFIX)/$(BIN_DIR)/$(PROJECT_BIN) $(PROJECT_PKG)
 	cp -ar webui $(DEB_PREFIX)/$(SHARE_DIR)

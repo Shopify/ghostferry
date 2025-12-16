@@ -1,4 +1,4 @@
-Package: ghostferry-copydb
+Package: {project}
 Version: {version}-1
 Section: misc
 Priority: optional
