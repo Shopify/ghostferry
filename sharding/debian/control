@@ -1,4 +1,4 @@
-Package: ghostferry-sharding
+Package: {project}
 Version: {version}
 Section: misc
 Priority: optional
