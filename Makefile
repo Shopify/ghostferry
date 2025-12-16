@@ -20,7 +20,7 @@ FIRSTGOPATH     := $(firstword $(subst :, ,$(GOPATH)))
 GOBIN           := $(FIRSTGOPATH)/bin
 BUILD_DIR       := build
 DEB_PREFIX      := $(BUILD_DIR)/debian
-SHARE_DIR       := usr/share/ghostferry
+SHARE_DIR       := usr/share/ghostferry$(PROJECT_BIN_TAG)
 BIN_DIR         := usr/bin
 
 # Targets
