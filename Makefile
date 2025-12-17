@@ -8,7 +8,8 @@ ifndef IGNORE_DIRTY_TREE
 DIRTY_TREE      := $(shell git diff-index --quiet HEAD -- || echo '+dirty')
 endif
 
-COMMIT          := $(addsuffix $(DIRTY_TREE),$(shell git rev-parse --short HEAD))
+COMMIT_SHA      ?= $(shell git rev-parse --short HEAD)
+COMMIT          := $(addsuffix $(DIRTY_TREE),$(COMMIT_SHA))
 VERSION_STR     := $(VERSION)+$(DATETIME)+$(COMMIT)
 
 # Flags
@@ -19,7 +20,7 @@ FIRSTGOPATH     := $(firstword $(subst :, ,$(GOPATH)))
 GOBIN           := $(FIRSTGOPATH)/bin
 BUILD_DIR       := build
 DEB_PREFIX      := $(BUILD_DIR)/debian
-SHARE_DIR       := usr/share/ghostferry
+SHARE_DIR       := usr/share/ghostferry$(PROJECT_BIN_TAG)
 BIN_DIR         := usr/bin
 
 # Targets
@@ -32,7 +33,7 @@ GOTESTSUM_URL   := "https://github.com/gotestyourself/gotestsum/releases/downloa
 
 # Target specific variable, set proj to have a valid value.
 PROJECT_PKG      = ./$(proj)/cmd
-PROJECT_BIN      = ghostferry-$(proj)
+PROJECT_BIN      = ghostferry-$(proj)$(PROJECT_BIN_TAG)
 BIN_TARGET       = $(GOBIN)/$(PROJECT_BIN)
 DEB_TARGET       = $(BUILD_DIR)/$(PROJECT_BIN)_$(VERSION_STR)_$(ARCH).deb
 
@@ -46,7 +47,7 @@ $(PROJECTS): $(GOBIN)
 $(PROJECT_DEBS): LDFLAGS += -X github.com/Shopify/ghostferry.WebUiBasedir=/$(SHARE_DIR)
 $(PROJECT_DEBS): reset-deb-dir
 	$(eval proj := $(subst -deb,,$@))
-	sed -e "s/{version}/$(VERSION_STR)/" -e "s/{arch}/$(ARCH)/" $(proj)/debian/control > $(DEB_PREFIX)/DEBIAN/control
+	sed -e "s/{version}/$(VERSION_STR)/" -e "s/{arch}/$(ARCH)/" -e "s/{project}/$(PROJECT_BIN)/" $(proj)/debian/control > $(DEB_PREFIX)/DEBIAN/control
 	cp $(proj)/debian/copyright $(DEB_PREFIX)/DEBIAN/copyright
 	go build -ldflags "$(LDFLAGS)" -o $(DEB_PREFIX)/$(BIN_DIR)/$(PROJECT_BIN) $(PROJECT_PKG)
 	cp -ar webui $(DEB_PREFIX)/$(SHARE_DIR)
