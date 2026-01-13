@@ -262,43 +262,10 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos Pagina
 
 	if len(batchData) > 0 {
 		lastRowData := batchData[len(batchData)-1]
-		
-		switch c.paginationKeyColumn.Type {
-		case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-			var value uint64
-			value, err = lastRowData.GetUint64(paginationKeyIndex)
-			if err != nil {
-				logger.WithError(err).Error("failed to get uint64 paginationKey value")
-				return
-			}
-			paginationKeypos = NewUint64Key(value)
-
-		case schema.TYPE_BINARY, schema.TYPE_STRING:
-			valueInterface := lastRowData[paginationKeyIndex]
-			
-			var valueBytes []byte
-			switch v := valueInterface.(type) {
-			case []byte:
-				valueBytes = v
-			case string:
-				valueBytes = []byte(v)
-			default:
-				err = fmt.Errorf("expected binary pagination key to be []byte or string, got %T", valueInterface)
-				logger.WithError(err).Error("failed to get binary paginationKey value")
-				return
-			}
-			
-			paginationKeypos = NewBinaryKey(valueBytes)
-
-		default:
-			// Fallback for other integer types
-			var value uint64
-			value, err = lastRowData.GetUint64(paginationKeyIndex)
-			if err != nil {
-				logger.WithError(err).Error("failed to get uint64 paginationKey value")
-				return
-			}
-			paginationKeypos = NewUint64Key(value)
+		paginationKeypos, err = NewPaginationKeyFromRow(lastRowData, paginationKeyIndex, c.paginationKeyColumn)
+		if err != nil {
+			logger.WithError(err).Error("failed to get paginationKey value")
+			return
 		}
 	}
 

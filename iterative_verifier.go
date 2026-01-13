@@ -320,31 +320,12 @@ func (v *IterativeVerifier) GetHashes(db *sql.DB, schemaName, tableName, paginat
 			return nil, err
 		}
 
-		var paginationKeyStr string
-		switch paginationColumn.Type {
-		case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-			paginationKeyUint, err := rowData.GetUint64(0)
-			if err != nil {
-				return nil, err
-			}
-			paginationKeyStr = NewUint64Key(paginationKeyUint).String()
-
-		case schema.TYPE_BINARY, schema.TYPE_STRING:
-			paginationKeyBytes, ok := rowData[0].([]byte)
-			if !ok {
-				return nil, fmt.Errorf("expected []byte for binary pagination key, got %T", rowData[0])
-			}
-			paginationKeyStr = NewBinaryKey(paginationKeyBytes).String()
-
-		default:
-			paginationKeyUint, err := rowData.GetUint64(0)
-			if err != nil {
-				return nil, err
-			}
-			paginationKeyStr = NewUint64Key(paginationKeyUint).String()
+		paginationKey, err := NewPaginationKeyFromRow(rowData, 0, paginationColumn)
+		if err != nil {
+			return nil, err
 		}
 
-		resultSet[paginationKeyStr] = rowData[1].([]byte)
+		resultSet[paginationKey.String()] = rowData[1].([]byte)
 	}
 	return resultSet, nil
 }
@@ -422,34 +403,11 @@ func (v *IterativeVerifier) iterateTableFingerprints(table *TableSchema, mismatc
 		paginationColumn := table.GetPaginationColumn()
 
 		for _, rowData := range batch.Values() {
-			switch paginationColumn.Type {
-			case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-				paginationKeyUint, err := rowData.GetUint64(batch.PaginationKeyIndex())
-				if err != nil {
-					return err
-				}
-				paginationKeys = append(paginationKeys, paginationKeyUint)
-
-			case schema.TYPE_BINARY, schema.TYPE_STRING:
-				paginationKeyInterface := rowData[batch.PaginationKeyIndex()]
-				var paginationKeyBytes []byte
-				switch v := paginationKeyInterface.(type) {
-				case []byte:
-					paginationKeyBytes = v
-				case string:
-					paginationKeyBytes = []byte(v)
-				default:
-					return fmt.Errorf("expected binary/string pagination key, got %T", paginationKeyInterface)
-				}
-				paginationKeys = append(paginationKeys, paginationKeyBytes)
-
-			default:
-				paginationKeyUint, err := rowData.GetUint64(batch.PaginationKeyIndex())
-				if err != nil {
-					return err
-				}
-				paginationKeys = append(paginationKeys, paginationKeyUint)
+			paginationKey, err := NewPaginationKeyFromRow(rowData, batch.PaginationKeyIndex(), paginationColumn)
+			if err != nil {
+				return err
 			}
+			paginationKeys = append(paginationKeys, paginationKey.SQLValue())
 		}
 
 		mismatchedPaginationKeys, err := v.compareFingerprints(paginationKeys, batch.TableSchema())
