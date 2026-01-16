@@ -82,3 +82,23 @@ or
 Run a specific test
 
 `DEBUG=1 ruby -Itest test/integration/trivial_test.rb -n "TrivialIntegrationTest#test_logged_query_omits_columns"`
+
+Releasing new version
+---------------------
+
+### Canary
+
+Tag your commit with `canary/*` and push, i.e.
+
+```bash
+git tag --sign --message="Initial support for UUIDs as pagination keys" canary/v1.1.2-uuid-pagination-keys-alpha-1
+git push origin --tags
+```
+
+This will create the release named by tag.
+
+### Production
+
+Final releases are created automatically on merge to `main` branch, they will end up with `release-SHA` name.
+
+Remember to update version prior to bigger releases in `Makefile` along with updating the `CHANGELOG.md`.
