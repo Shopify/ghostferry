@@ -2,6 +2,7 @@ package test
 
 import (
 	"math/rand"
+	"sync/atomic"
 	"testing"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -83,6 +84,8 @@ func TestSelectiveCopyDataWithInsertLoadOnOtherTenants(t *testing.T) {
 }
 
 func TestSelectiveCopyDataWithInsertLoadOnAllTenants(t *testing.T) {
+	var firstInsert atomic.Bool
+
 	testcase := &testhelpers.IntegrationTestCase{
 		T:           t,
 		Ferry:       selectiveFerry(int64(2)),
@@ -93,7 +96,11 @@ func TestSelectiveCopyDataWithInsertLoadOnAllTenants(t *testing.T) {
 			Tables:              []string{"gftest.table1"},
 
 			ExtraInsertData: func(tableName string, vals map[string]interface{}) {
-				vals["tenant_id"] = rand.Intn(3)
+				if firstInsert.CompareAndSwap(false, true) {
+					vals["tenant_id"] = 2
+				} else {
+					vals["tenant_id"] = rand.Intn(3)
+				}
 			},
 		},
 	}

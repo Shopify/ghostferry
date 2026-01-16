@@ -3,6 +3,7 @@ package test
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -31,7 +32,7 @@ func (t *IterativeVerifierTestSuite) SetupTest() {
 	tableCompressions[testhelpers.TestCompressedTable1Name] = make(map[string]string)
 	tableCompressions[testhelpers.TestCompressedTable1Name][testhelpers.TestCompressedColumn1Name] = ghostferry.CompressionSnappy
 
-	compressionVerifier, err := ghostferry.NewCompressionVerifier(tableCompressions)
+	compressionVerifier, err := ghostferry.NewCompressionVerifier(tableCompressions, t.Ferry.Tables)
 	if err != nil {
 		t.FailNow(err.Error())
 	}
@@ -223,13 +224,13 @@ func (t *IterativeVerifierTestSuite) TestChangingDataChangesHash() {
 func (t *IterativeVerifierTestSuite) TestDeduplicatesHashes() {
 	t.InsertRow(42, "foo")
 
-	hashes, err := t.verifier.GetHashes(t.db, t.table.Schema, t.table.Name, t.table.GetPaginationColumn().Name, t.table.Columns, []uint64{42, 42})
+	hashes, err := t.verifier.GetHashes(t.db, t.table.Schema, t.table.Name, t.table.GetPaginationColumn().Name, t.table.Columns, []interface{}{uint64(42), uint64(42)})
 	t.Require().Nil(err)
 	t.Require().Equal(1, len(hashes))
 }
 
 func (t *IterativeVerifierTestSuite) TestDoesntReturnHashIfRecordDoesntExist() {
-	hashes, err := t.verifier.GetHashes(t.db, t.table.Schema, t.table.Name, t.table.GetPaginationColumn().Name, t.table.Columns, []uint64{42, 42})
+	hashes, err := t.verifier.GetHashes(t.db, t.table.Schema, t.table.Name, t.table.GetPaginationColumn().Name, t.table.Columns, []interface{}{uint64(42), uint64(42)})
 	t.Require().Nil(err)
 	t.Require().Equal(0, len(hashes))
 }
@@ -347,14 +348,20 @@ func (t *IterativeVerifierTestSuite) DeleteRow(id int) {
 }
 
 func (t *IterativeVerifierTestSuite) GetHashes(ids []uint64) []string {
-	hashes, err := t.verifier.GetHashes(t.db, t.table.Schema, t.table.Name, t.table.GetPaginationColumn().Name, t.table.Columns, ids)
+	paginationKeys := make([]interface{}, len(ids))
+	for i, id := range ids {
+		paginationKeys[i] = id
+	}
+
+	hashes, err := t.verifier.GetHashes(t.db, t.table.Schema, t.table.Name, t.table.GetPaginationColumn().Name, t.table.Columns, paginationKeys)
 	t.Require().Nil(err)
 	t.Require().Equal(len(hashes), len(ids))
 
 	res := make([]string, len(ids))
 
 	for idx, id := range ids {
-		hash, ok := hashes[id]
+		paginationKeyStr := ghostferry.NewUint64Key(id).String()
+		hash, ok := hashes[paginationKeyStr]
 		t.Require().True(ok)
 		t.Require().True(len(hash) > 0)
 
@@ -376,6 +383,9 @@ func (t *IterativeVerifierTestSuite) reloadTables() {
 	t.Ferry.Tables = tables
 	t.verifier.Tables = tables.AsSlice()
 	t.verifier.TableSchemaCache = tables
+	if t.verifier.CompressionVerifier != nil {
+		t.verifier.CompressionVerifier.TableSchemaCache = tables
+	}
 
 	t.table = tables.Get(testhelpers.TestSchemaName, testhelpers.TestTable1Name)
 	t.Require().NotNil(t.table)
@@ -394,19 +404,21 @@ func (t *ReverifyStoreTestSuite) SetupTest() {
 func (t *ReverifyStoreTestSuite) TestAddEntryIntoReverifyStoreWillDeduplicate() {
 	paginationKey1 := uint64(100)
 	paginationKey2 := uint64(101)
+	paginationKey1Str := ghostferry.NewUint64Key(paginationKey1).String()
+	paginationKey2Str := ghostferry.NewUint64Key(paginationKey2).String()
 	table1 := &ghostferry.TableSchema{Table: &schema.Table{Schema: "gftest", Name: "table1"}}
-	t.store.Add(ghostferry.ReverifyEntry{PaginationKey: paginationKey1, Table: table1})
-	t.store.Add(ghostferry.ReverifyEntry{PaginationKey: paginationKey1, Table: table1})
-	t.store.Add(ghostferry.ReverifyEntry{PaginationKey: paginationKey1, Table: table1})
-	t.store.Add(ghostferry.ReverifyEntry{PaginationKey: paginationKey2, Table: table1})
-	t.store.Add(ghostferry.ReverifyEntry{PaginationKey: paginationKey2, Table: table1})
+	t.store.Add(ghostferry.ReverifyEntry{PaginationKey: paginationKey1Str, Table: table1})
+	t.store.Add(ghostferry.ReverifyEntry{PaginationKey: paginationKey1Str, Table: table1})
+	t.store.Add(ghostferry.ReverifyEntry{PaginationKey: paginationKey1Str, Table: table1})
+	t.store.Add(ghostferry.ReverifyEntry{PaginationKey: paginationKey2Str, Table: table1})
+	t.store.Add(ghostferry.ReverifyEntry{PaginationKey: paginationKey2Str, Table: table1})
 
 	t.Require().Equal(uint64(2), t.store.RowCount)
 	t.Require().Equal(1, len(t.store.MapStore))
 	t.Require().Equal(
-		map[uint64]struct{}{
-			paginationKey1: struct{}{},
-			paginationKey2: struct{}{},
+		map[string]struct{}{
+			paginationKey1Str: struct{}{},
+			paginationKey2Str: struct{}{},
 		},
 		t.store.MapStore[ghostferry.TableIdentifier{"gftest", "table1"}],
 	)
@@ -417,13 +429,15 @@ func (t *ReverifyStoreTestSuite) TestFlushAndBatchByTableWillCreateReverifyBatch
 	table1 := &ghostferry.TableSchema{Table: &schema.Table{Schema: "gftest", Name: "table1"}}
 	table2 := &ghostferry.TableSchema{Table: &schema.Table{Schema: "gftest", Name: "table2"}}
 	for i := uint64(100); i < 155; i++ {
-		t.store.Add(ghostferry.ReverifyEntry{PaginationKey: i, Table: table1})
+		paginationKeyStr := ghostferry.NewUint64Key(i).String()
+		t.store.Add(ghostferry.ReverifyEntry{PaginationKey: paginationKeyStr, Table: table1})
 		expectedTable1PaginationKeys = append(expectedTable1PaginationKeys, i)
 	}
 
 	expectedTable2PaginationKeys := make([]uint64, 0, 45)
 	for i := uint64(200); i < 245; i++ {
-		t.store.Add(ghostferry.ReverifyEntry{PaginationKey: i, Table: table2})
+		paginationKeyStr := ghostferry.NewUint64Key(i).String()
+		t.store.Add(ghostferry.ReverifyEntry{PaginationKey: paginationKeyStr, Table: table2})
 		expectedTable2PaginationKeys = append(expectedTable2PaginationKeys, i)
 	}
 
@@ -446,8 +460,11 @@ func (t *ReverifyStoreTestSuite) TestFlushAndBatchByTableWillCreateReverifyBatch
 
 	actualTable1PaginationKeys := make([]uint64, 0)
 	for _, batch := range table1Batches {
-		for _, paginationKey := range batch.PaginationKeys {
-			actualTable1PaginationKeys = append(actualTable1PaginationKeys, paginationKey)
+		for _, paginationKeyInterface := range batch.PaginationKeys {
+			paginationKeyStr := paginationKeyInterface.(string)
+			paginationKeyUint, err := strconv.ParseUint(paginationKeyStr, 10, 64)
+			t.Require().Nil(err)
+			actualTable1PaginationKeys = append(actualTable1PaginationKeys, paginationKeyUint)
 		}
 	}
 
@@ -456,8 +473,11 @@ func (t *ReverifyStoreTestSuite) TestFlushAndBatchByTableWillCreateReverifyBatch
 
 	actualTable2PaginationKeys := make([]uint64, 0)
 	for _, batch := range table2Batches {
-		for _, paginationKey := range batch.PaginationKeys {
-			actualTable2PaginationKeys = append(actualTable2PaginationKeys, paginationKey)
+		for _, paginationKeyInterface := range batch.PaginationKeys {
+			paginationKeyStr := paginationKeyInterface.(string)
+			paginationKeyUint, err := strconv.ParseUint(paginationKeyStr, 10, 64)
+			t.Require().Nil(err)
+			actualTable2PaginationKeys = append(actualTable2PaginationKeys, paginationKeyUint)
 		}
 	}
 

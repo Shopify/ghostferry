@@ -7,31 +7,31 @@ import (
 )
 
 func TestCompareDecompressedDataNoDifference(t *testing.T) {
-	source := map[uint64]map[string][]byte{
-		31: {"name": []byte("Leszek")},
+	source := map[string]map[string][]byte{
+		"31": {"name": []byte("Leszek")},
 	}
-	target := map[uint64]map[string][]byte{
-		31: {"name": []byte("Leszek")},
+	target := map[string]map[string][]byte{
+		"31": {"name": []byte("Leszek")},
 	}
 
 	result := compareDecompressedData(source, target)
 
-	assert.Equal(t, map[uint64]InlineVerifierMismatches{}, result)
+	assert.Equal(t, map[string]InlineVerifierMismatches{}, result)
 }
 
 func TestCompareDecompressedDataContentDifference(t *testing.T) {
-	source := map[uint64]map[string][]byte{
-		1: {"name": []byte("Leszek")},
+	source := map[string]map[string][]byte{
+		"1": {"name": []byte("Leszek")},
 	}
-	target := map[uint64]map[string][]byte{
-		1: {"name": []byte("Steve")},
+	target := map[string]map[string][]byte{
+		"1": {"name": []byte("Steve")},
 	}
 
 	result := compareDecompressedData(source, target)
 
-	assert.Equal(t, map[uint64]InlineVerifierMismatches{
-		1: {
-			Pk:             1,
+	assert.Equal(t, map[string]InlineVerifierMismatches{
+		"1": {
+			Pk:             "1",
 			MismatchType:   MismatchColumnValueDifference,
 			MismatchColumn: "name",
 			SourceChecksum: "e356a972989f87a1531252cfa2152797",
@@ -41,25 +41,25 @@ func TestCompareDecompressedDataContentDifference(t *testing.T) {
 }
 
 func TestCompareDecompressedDataMissingTarget(t *testing.T) {
-	source := map[uint64]map[string][]byte{
-		1: {"name": []byte("Leszek")},
+	source := map[string]map[string][]byte{
+		"1": {"name": []byte("Leszek")},
 	}
-	target := map[uint64]map[string][]byte{}
+	target := map[string]map[string][]byte{}
 
 	result := compareDecompressedData(source, target)
 
-	assert.Equal(t, map[uint64]InlineVerifierMismatches{1: {Pk: 1, MismatchType: MismatchRowMissingOnTarget}}, result)
+	assert.Equal(t, map[string]InlineVerifierMismatches{"1": {Pk: "1", MismatchType: MismatchRowMissingOnTarget}}, result)
 }
 
 func TestCompareDecompressedDataMissingSource(t *testing.T) {
-	source := map[uint64]map[string][]byte{}
-	target := map[uint64]map[string][]byte{
-		3: {"name": []byte("Leszek")},
+	source := map[string]map[string][]byte{}
+	target := map[string]map[string][]byte{
+		"3": {"name": []byte("Leszek")},
 	}
 
 	result := compareDecompressedData(source, target)
 
-	assert.Equal(t, map[uint64]InlineVerifierMismatches{3: {Pk: 3, MismatchType: MismatchRowMissingOnSource}}, result)
+	assert.Equal(t, map[string]InlineVerifierMismatches{"3": {Pk: "3", MismatchType: MismatchRowMissingOnSource}}, result)
 }
 
 func TestFormatMismatch(t *testing.T) {
@@ -67,7 +67,7 @@ func TestFormatMismatch(t *testing.T) {
 		"default": {
 			"users": {
 				InlineVerifierMismatches{
-					Pk:           1,
+					Pk:           "1",
 					MismatchType: MismatchRowMissingOnSource,
 				},
 			},
@@ -84,17 +84,17 @@ func TestFormatMismatches(t *testing.T) {
 		"default": {
 			"users": {
 				InlineVerifierMismatches{
-					Pk:           1,
+					Pk:           "1",
 					MismatchType: MismatchRowMissingOnSource,
 				},
 				InlineVerifierMismatches{
-					Pk:           5,
+					Pk:           "5",
 					MismatchType: MismatchRowMissingOnTarget,
 				},
 			},
 			"posts": {
 				InlineVerifierMismatches{
-					Pk:             9,
+					Pk:             "9",
 					MismatchType:   MismatchColumnValueDifference,
 					MismatchColumn: string("title"),
 					SourceChecksum: "boo",
@@ -103,7 +103,7 @@ func TestFormatMismatches(t *testing.T) {
 			},
 			"attachments": {
 				InlineVerifierMismatches{
-					Pk:             7,
+					Pk:             "7",
 					MismatchType:   MismatchColumnValueDifference,
 					MismatchColumn: string("name"),
 					SourceChecksum: "boo",

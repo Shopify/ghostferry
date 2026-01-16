@@ -76,7 +76,7 @@ type DMLEvent interface {
 	AsSQLString(string, string) (string, error)
 	OldValues() RowData
 	NewValues() RowData
-	PaginationKey() (uint64, error)
+	PaginationKey() (string, error)
 	BinlogPosition() mysql.Position
 	ResumableBinlogPosition() mysql.Position
 	Annotation() (string, error)
@@ -180,7 +180,7 @@ func (e *BinlogInsertEvent) AsSQLString(schemaName, tableName string) (string, e
 	return query, nil
 }
 
-func (e *BinlogInsertEvent) PaginationKey() (uint64, error) {
+func (e *BinlogInsertEvent) PaginationKey() (string, error) {
 	return paginationKeyFromEventData(e.table, e.newValues)
 }
 
@@ -233,7 +233,7 @@ func (e *BinlogUpdateEvent) AsSQLString(schemaName, tableName string) (string, e
 	return query, nil
 }
 
-func (e *BinlogUpdateEvent) PaginationKey() (uint64, error) {
+func (e *BinlogUpdateEvent) PaginationKey() (string, error) {
 	return paginationKeyFromEventData(e.table, e.newValues)
 }
 
@@ -274,7 +274,7 @@ func (e *BinlogDeleteEvent) AsSQLString(schemaName, tableName string) (string, e
 	return query, nil
 }
 
-func (e *BinlogDeleteEvent) PaginationKey() (uint64, error) {
+func (e *BinlogDeleteEvent) PaginationKey() (string, error) {
 	return paginationKeyFromEventData(e.table, e.oldValues)
 }
 
@@ -571,10 +571,40 @@ func appendEscapedBuffer(buffer, value []byte, isJSON bool) []byte {
 	return buffer
 }
 
-func paginationKeyFromEventData(table *TableSchema, rowData RowData) (uint64, error) {
+func paginationKeyFromEventData(table *TableSchema, rowData RowData) (string, error) {
 	if err := verifyValuesHasTheSameLengthAsColumns(table, rowData); err != nil {
-		return 0, err
+		return "", err
 	}
 
-	return rowData.GetUint64(table.GetPaginationKeyIndex())
+	paginationColumn := table.GetPaginationColumn()
+	paginationKeyIndex := table.GetPaginationKeyIndex()
+
+	switch paginationColumn.Type {
+	case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+		paginationKeyUint, err := rowData.GetUint64(paginationKeyIndex)
+		if err != nil {
+			return "", err
+		}
+		return NewUint64Key(paginationKeyUint).String(), nil
+
+	case schema.TYPE_BINARY, schema.TYPE_STRING:
+		paginationKeyInterface := rowData[paginationKeyIndex]
+		var paginationKeyBytes []byte
+		switch v := paginationKeyInterface.(type) {
+		case []byte:
+			paginationKeyBytes = v
+		case string:
+			paginationKeyBytes = []byte(v)
+		default:
+			return "", fmt.Errorf("expected binary/string pagination key, got %T", paginationKeyInterface)
+		}
+		return NewBinaryKey(paginationKeyBytes).String(), nil
+
+	default:
+		paginationKeyUint, err := rowData.GetUint64(paginationKeyIndex)
+		if err != nil {
+			return "", err
+		}
+		return NewUint64Key(paginationKeyUint).String(), nil
+	}
 }

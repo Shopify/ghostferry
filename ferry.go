@@ -288,7 +288,7 @@ func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
 
 	var compressionVerifier *CompressionVerifier
 	if config.TableColumnCompression != nil {
-		compressionVerifier, err = NewCompressionVerifier(config.TableColumnCompression)
+		compressionVerifier, err = NewCompressionVerifier(config.TableColumnCompression, f.Tables)
 		if err != nil {
 			return nil, err
 		}
@@ -995,7 +995,7 @@ func (f *Ferry) Progress() *Progress {
 	s.Tables = make(map[string]TableProgress)
 	targetPaginationKeys := make(map[string]uint64)
 	f.DataIterator.TargetPaginationKeys.Range(func(k, v interface{}) bool {
-		targetPaginationKeys[k.(string)] = v.(uint64)
+		targetPaginationKeys[k.(string)] = uint64(v.(PaginationKey).NumericPosition())
 		return true
 	})
 
@@ -1009,7 +1009,7 @@ func (f *Ferry) Progress() *Progress {
 	for _, table := range tables {
 		var currentAction string
 		tableName := table.String()
-		lastSuccessfulPaginationKey, foundInProgress := serializedState.LastSuccessfulPaginationKeys[tableName]
+		lastSuccessfulPaginationKeyInterface, foundInProgress := serializedState.LastSuccessfulPaginationKeys[tableName]
 
 		if serializedState.CompletedTables[tableName] {
 			currentAction = TableActionCompleted
@@ -1021,6 +1021,11 @@ func (f *Ferry) Progress() *Progress {
 		}
 
 		rowWrittenStats, _ := rowStatsWrittenPerTable[tableName]
+
+		var lastSuccessfulPaginationKey uint64
+		if lastSuccessfulPaginationKeyInterface != nil {
+			lastSuccessfulPaginationKey = uint64(lastSuccessfulPaginationKeyInterface.NumericPosition())
+		}
 
 		s.Tables[tableName] = TableProgress{
 			LastSuccessfulPaginationKey: lastSuccessfulPaginationKey,
@@ -1041,7 +1046,7 @@ func (f *Ferry) Progress() *Progress {
 	}
 
 	for _, completedPaginationKey := range serializedState.LastSuccessfulPaginationKeys {
-		completedPaginationKeys += completedPaginationKey
+		completedPaginationKeys += uint64(completedPaginationKey.NumericPosition())
 	}
 	var remainingPaginationKeys float64 = 0
 

@@ -49,6 +49,7 @@ func (e UnsupportedCompressionError) Error() string {
 type CompressionVerifier struct {
 	logger *logrus.Entry
 
+	TableSchemaCache        TableSchemaCache
 	supportedAlgorithms     map[string]struct{}
 	tableColumnCompressions TableColumnCompressionConfig
 }
@@ -59,32 +60,52 @@ type CompressionVerifier struct {
 // The GetCompressedHashes method checks if the existing table contains compressed data
 // and will apply the decompression algorithm to the applicable columns if necessary.
 // After the columns are decompressed, the hashes of the data are used to verify equality
-func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []uint64) (map[uint64][]byte, error) {
+func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schemaName, tableName, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []interface{}) (map[string][]byte, error) {
 	c.logger.WithFields(logrus.Fields{
 		"tag":   "compression_verifier",
-		"table": table,
+		"table": tableName,
 	}).Info("decompressing table data before verification")
 
-	tableCompression := c.tableColumnCompressions[table]
+	tableCompression := c.tableColumnCompressions[tableName]
 
 	// Extract the raw rows using SQL to be decompressed
-	rows, err := getRows(db, schema, table, paginationKeyColumn, columns, paginationKeys)
+	rows, err := getRows(db, schemaName, tableName, paginationKeyColumn, columns, paginationKeys)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	// Decompress applicable columns and hash the resulting column values for comparison
-	resultSet := make(map[uint64][]byte)
+	table := c.TableSchemaCache.Get(schemaName, tableName)
+	if table == nil {
+		return nil, fmt.Errorf("table %s.%s not found in schema cache", schemaName, tableName)
+	}
+	paginationColumn := table.GetPaginationColumn()
+	resultSet := make(map[string][]byte)
+
 	for rows.Next() {
 		rowData, err := ScanByteRow(rows, len(columns)+1)
 		if err != nil {
 			return nil, err
 		}
 
-		paginationKey, err := strconv.ParseUint(string(rowData[0]), 10, 64)
-		if err != nil {
-			return nil, err
+		var paginationKeyStr string
+		switch paginationColumn.Type {
+		case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+			paginationKeyUint, err := strconv.ParseUint(string(rowData[0]), 10, 64)
+			if err != nil {
+				return nil, err
+			}
+			paginationKeyStr = NewUint64Key(paginationKeyUint).String()
+
+		case schema.TYPE_BINARY, schema.TYPE_STRING:
+			paginationKeyStr = NewBinaryKey(rowData[0]).String()
+
+		default:
+			paginationKeyUint, err := strconv.ParseUint(string(rowData[0]), 10, 64)
+			if err != nil {
+				return nil, err
+			}
+			paginationKeyStr = NewUint64Key(paginationKeyUint).String()
 		}
 
 		// Decompress the applicable columns and then hash them together
@@ -95,7 +116,7 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pag
 		for idx, column := range columns {
 			if algorithm, ok := tableCompression[column.Name]; ok {
 				// rowData contains the result of "SELECT paginationKeyColumn, * FROM ...", so idx+1 to get each column
-				decompressedColData, err := c.Decompress(table, column.Name, algorithm, rowData[idx+1])
+				decompressedColData, err := c.Decompress(tableName, column.Name, algorithm, rowData[idx+1])
 				if err != nil {
 					return nil, err
 				}
@@ -111,20 +132,20 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schema, table, pag
 			return nil, err
 		}
 
-		resultSet[paginationKey] = decompressedRowHash
+		resultSet[paginationKeyStr] = decompressedRowHash
 	}
 
 	metrics.Gauge(
 		"compression_verifier_decompress_rows",
 		float64(len(resultSet)),
-		[]MetricTag{{"table", table}},
+		[]MetricTag{{"table", tableName}},
 		1.0,
 	)
 
 	logrus.WithFields(logrus.Fields{
 		"tag":   "compression_verifier",
 		"rows":  len(resultSet),
-		"table": table,
+		"table": tableName,
 	}).Debug("decompressed rows will be compared")
 
 	return resultSet, nil
@@ -192,12 +213,13 @@ func (c *CompressionVerifier) verifyConfiguredCompression(tableColumnCompression
 
 // NewCompressionVerifier first checks the map for supported compression algorithms before
 // initializing and returning the initialized instance.
-func NewCompressionVerifier(tableColumnCompressions TableColumnCompressionConfig) (*CompressionVerifier, error) {
+func NewCompressionVerifier(tableColumnCompressions TableColumnCompressionConfig, tableSchemaCache TableSchemaCache) (*CompressionVerifier, error) {
 	supportedAlgorithms := make(map[string]struct{})
 	supportedAlgorithms[CompressionSnappy] = struct{}{}
 
 	compressionVerifier := &CompressionVerifier{
 		logger:                  logrus.WithField("tag", "compression_verifier"),
+		TableSchemaCache:        tableSchemaCache,
 		supportedAlgorithms:     supportedAlgorithms,
 		tableColumnCompressions: tableColumnCompressions,
 	}
@@ -209,7 +231,7 @@ func NewCompressionVerifier(tableColumnCompressions TableColumnCompressionConfig
 	return compressionVerifier, nil
 }
 
-func getRows(db *sql.DB, schema, table, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []uint64) (*sqlorig.Rows, error) {
+func getRows(db *sql.DB, schema, table, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []interface{}) (*sqlorig.Rows, error) {
 	quotedPaginationKey := QuoteField(paginationKeyColumn)
 	sql, args, err := rowSelector(columns, paginationKeyColumn).
 		From(QuotedTableNameFromString(schema, table)).
