@@ -576,35 +576,9 @@ func paginationKeyFromEventData(table *TableSchema, rowData RowData) (string, er
 		return "", err
 	}
 
-	paginationColumn := table.GetPaginationColumn()
-	paginationKeyIndex := table.GetPaginationKeyIndex()
-
-	switch paginationColumn.Type {
-	case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-		paginationKeyUint, err := rowData.GetUint64(paginationKeyIndex)
-		if err != nil {
-			return "", err
-		}
-		return NewUint64Key(paginationKeyUint).String(), nil
-
-	case schema.TYPE_BINARY, schema.TYPE_STRING:
-		paginationKeyInterface := rowData[paginationKeyIndex]
-		var paginationKeyBytes []byte
-		switch v := paginationKeyInterface.(type) {
-		case []byte:
-			paginationKeyBytes = v
-		case string:
-			paginationKeyBytes = []byte(v)
-		default:
-			return "", fmt.Errorf("expected binary/string pagination key, got %T", paginationKeyInterface)
-		}
-		return NewBinaryKey(paginationKeyBytes).String(), nil
-
-	default:
-		paginationKeyUint, err := rowData.GetUint64(paginationKeyIndex)
-		if err != nil {
-			return "", err
-		}
-		return NewUint64Key(paginationKeyUint).String(), nil
+	paginationKey, err := NewPaginationKeyFromRow(rowData, table.GetPaginationKeyIndex(), table.GetPaginationColumn())
+	if err != nil {
+		return "", err
 	}
+	return paginationKey.String(), nil
 }

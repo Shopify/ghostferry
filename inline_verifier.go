@@ -335,34 +335,11 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, target
 
 	paginationKeys := make([]interface{}, len(sourceBatch.Values()))
 	for i, row := range sourceBatch.Values() {
-		switch paginationColumn.Type {
-		case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-			paginationKeyUint, err := row.GetUint64(sourceBatch.PaginationKeyIndex())
-			if err != nil {
-				return nil, err
-			}
-			paginationKeys[i] = paginationKeyUint
-
-		case schema.TYPE_BINARY, schema.TYPE_STRING:
-			paginationKeyInterface := row[sourceBatch.PaginationKeyIndex()]
-			var paginationKeyBytes []byte
-			switch v := paginationKeyInterface.(type) {
-			case []byte:
-				paginationKeyBytes = v
-			case string:
-				paginationKeyBytes = []byte(v)
-			default:
-				return nil, fmt.Errorf("expected binary/string pagination key, got %T", paginationKeyInterface)
-			}
-			paginationKeys[i] = paginationKeyBytes
-
-		default:
-			paginationKeyUint, err := row.GetUint64(sourceBatch.PaginationKeyIndex())
-			if err != nil {
-				return nil, err
-			}
-			paginationKeys[i] = paginationKeyUint
+		paginationKey, err := NewPaginationKeyFromRow(row, sourceBatch.PaginationKeyIndex(), paginationColumn)
+		if err != nil {
+			return nil, err
 		}
+		paginationKeys[i] = paginationKey.SQLValue()
 	}
 
 	// Fetch target data
@@ -376,36 +353,11 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, target
 	sourceDecompressedData := make(map[string]map[string][]byte)
 
 	for _, rowData := range sourceBatch.Values() {
-		var paginationKeyStr string
-
-		switch paginationColumn.Type {
-		case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-			paginationKeyUint, err := rowData.GetUint64(sourceBatch.PaginationKeyIndex())
-			if err != nil {
-				return nil, err
-			}
-			paginationKeyStr = NewUint64Key(paginationKeyUint).String()
-
-		case schema.TYPE_BINARY, schema.TYPE_STRING:
-			paginationKeyInterface := rowData[sourceBatch.PaginationKeyIndex()]
-			var paginationKeyBytes []byte
-			switch v := paginationKeyInterface.(type) {
-			case []byte:
-				paginationKeyBytes = v
-			case string:
-				paginationKeyBytes = []byte(v)
-			default:
-				return nil, fmt.Errorf("expected binary/string pagination key, got %T", paginationKeyInterface)
-			}
-			paginationKeyStr = NewBinaryKey(paginationKeyBytes).String()
-
-		default:
-			paginationKeyUint, err := rowData.GetUint64(sourceBatch.PaginationKeyIndex())
-			if err != nil {
-				return nil, err
-			}
-			paginationKeyStr = NewUint64Key(paginationKeyUint).String()
+		paginationKey, err := NewPaginationKeyFromRow(rowData, sourceBatch.PaginationKeyIndex(), paginationColumn)
+		if err != nil {
+			return nil, err
 		}
+		paginationKeyStr := paginationKey.String()
 
 		sourceDecompressedData[paginationKeyStr] = make(map[string][]byte)
 		for idx, col := range table.Columns {

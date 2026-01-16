@@ -6,7 +6,6 @@ import (
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
-	"github.com/go-mysql-org/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -115,40 +114,13 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 						paginationColumn := table.GetPaginationColumn()
 
 						for i, rowData := range batch.Values() {
-							var paginationKeyStr string
-
-							switch paginationColumn.Type {
-							case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-								paginationKeyUint, err := rowData.GetUint64(batch.PaginationKeyIndex())
-								if err != nil {
-									logger.WithError(err).Error("failed to get uint64 paginationKey data")
-									return err
-								}
-								paginationKeyStr = NewUint64Key(paginationKeyUint).String()
-
-							case schema.TYPE_BINARY, schema.TYPE_STRING:
-								paginationKeyInterface := rowData[batch.PaginationKeyIndex()]
-								var paginationKeyBytes []byte
-								switch v := paginationKeyInterface.(type) {
-								case []byte:
-									paginationKeyBytes = v
-								case string:
-									paginationKeyBytes = []byte(v)
-								default:
-									return fmt.Errorf("expected binary/string pagination key, got %T", paginationKeyInterface)
-								}
-								paginationKeyStr = NewBinaryKey(paginationKeyBytes).String()
-
-							default:
-								paginationKeyUint, err := rowData.GetUint64(batch.PaginationKeyIndex())
-								if err != nil {
-									logger.WithError(err).Error("failed to get paginationKey data")
-									return err
-								}
-								paginationKeyStr = NewUint64Key(paginationKeyUint).String()
+							paginationKey, err := NewPaginationKeyFromRow(rowData, batch.PaginationKeyIndex(), paginationColumn)
+							if err != nil {
+								logger.WithError(err).Error("failed to get paginationKey data")
+								return err
 							}
 
-							fingerprints[paginationKeyStr] = rowData[len(rowData)-1].([]byte)
+							fingerprints[paginationKey.String()] = rowData[len(rowData)-1].([]byte)
 							rows[i] = rowData[:len(rowData)-1]
 						}
 
