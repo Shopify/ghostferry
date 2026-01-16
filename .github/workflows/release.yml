@@ -48,13 +48,13 @@ jobs:
           cat ghostferry-$GITHUB_SHA.sha256sum
 
       - name: Releasing production Ghostferry
-        if: ${{ github.ref_type == "branch" && github.ref_name == "main" }}
+        if: ${{ github.ref_type == 'branch' && github.ref_name == 'main' }}
         run: gh release create release-${GITHUB_SHA::7} --target ${{ github.ref_name }} --prerelease ghostferry*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Releasing canary Ghostferry
-        if: ${{ github.ref_type == "tag" && startsWith(github.ref_name, "canary/") }}
+        if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'canary/') }}
         run: gh release create ${{github.ref_name}} --prerelease --verify-tag --notes-from-tag --latest=false ghostferry*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
