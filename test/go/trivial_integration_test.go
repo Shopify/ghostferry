@@ -4,6 +4,7 @@ import (
 	sqlorig "database/sql"
 	"fmt"
 	"math/rand"
+	"strings"
 	"testing"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -154,6 +155,18 @@ func TestCopyDataWithNullInColumn(t *testing.T) {
 	testcase.Run()
 }
 
+func TestCopyDataWithThreeColumnCompositeKey(t *testing.T) {
+	ferry := testhelpers.NewTestFerry()
+
+	testcase := &testhelpers.IntegrationTestCase{
+		T:           t,
+		SetupAction: setupCompositeKeyTableDatabase(3),
+		Ferry:       ferry,
+	}
+
+	testcase.Run()
+}
+
 // ====================
 // Helper methods below
 // ====================
@@ -179,4 +192,37 @@ func setupSingleTableDatabaseWithExtraNullColumn(f *testhelpers.TestFerry, sourc
 
 	_, err := sourceDB.Exec("UPDATE gftest.table1 SET tenant_id = NULL")
 	testhelpers.PanicIfError(err)
+}
+
+// setupCompositeKeyTableDatabase returns a setup function for a composite key table with numColumns key columns.
+func setupCompositeKeyTableDatabase(numColumns int) func(*testhelpers.TestFerry, *sql.DB, *sql.DB) {
+	return func(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+		tableName := fmt.Sprintf("composite_table_%d", numColumns)
+		// 10^(numColumns-1) rows gives us a good spread across all key columns
+		maxRows := 1
+		for i := 0; i < numColumns; i++ {
+			maxRows *= 10
+		}
+		if maxRows > 100 {
+			maxRows = 100 // Cap at 100 rows for reasonable test speed
+		}
+
+		testhelpers.SeedInitialDataCompositeKey(sourceDB, "gftest", tableName, maxRows, numColumns)
+
+		// Delete a few random rows
+		for i := 0; i < 4; i++ {
+			args := make([]interface{}, numColumns)
+			var whereClauses []string
+			remaining := rand.Intn(maxRows)
+			for col := numColumns - 1; col >= 0; col-- {
+				args[col] = (remaining % 10) + 1
+				remaining /= 10
+				whereClauses = append([]string{fmt.Sprintf("k%d = ?", col+1)}, whereClauses...)
+			}
+			query := fmt.Sprintf("DELETE FROM gftest.%s WHERE %s", tableName, strings.Join(whereClauses, " AND "))
+			sourceDB.Exec(query, args...) // Ignore errors for non-existent rows
+		}
+
+		testhelpers.SeedInitialDataCompositeKey(targetDB, "gftest", tableName, 0, numColumns)
+	}
 }

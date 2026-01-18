@@ -3,6 +3,7 @@ package testhelpers
 import (
 	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
 	"time"
 
@@ -80,6 +81,66 @@ func SeedInitialData(db *sql.DB, dbname, tablename string, numberOfRows int) {
 		query = fmt.Sprintf(query, dbname, tablename)
 
 		_, err = tx.Exec(query, nil, RandData())
+		PanicIfError(err)
+	}
+
+	PanicIfError(tx.Commit())
+}
+
+// SeedInitialDataCompositeKey seeds a table with an n-column composite primary key.
+// numColumns specifies how many key columns (k1, k2, ..., kN) to create.
+func SeedInitialDataCompositeKey(db *sql.DB, dbname, tablename string, numberOfRows, numColumns int) {
+	if numColumns < 2 {
+		panic("SeedInitialDataCompositeKey fails: number of columns must be at least 2")
+	}
+
+	var err error
+
+	query := fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", dbname)
+	_, err = db.Exec(query)
+	PanicIfError(err)
+
+	// Build column definitions: k1 int, k2 int, ..., kN int
+	var colDefs, colNames, placeholders, pkCols []string
+	for i := 1; i <= numColumns; i++ {
+		colName := fmt.Sprintf("k%d", i)
+		colDefs = append(colDefs, colName+" int")
+		colNames = append(colNames, colName)
+		placeholders = append(placeholders, "?")
+		pkCols = append(pkCols, colName)
+	}
+	colDefs = append(colDefs, "data TEXT")
+	colNames = append(colNames, "data")
+	placeholders = append(placeholders, "?")
+
+	createQuery := fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s.%s (%s, PRIMARY KEY (%s))",
+		dbname, tablename,
+		strings.Join(colDefs, ", "),
+		strings.Join(pkCols, ", "))
+	_, err = db.Exec(createQuery)
+	PanicIfError(err)
+
+	tx, err := db.Begin()
+	PanicIfError(err)
+
+	insertQuery := fmt.Sprintf("INSERT INTO %s.%s (%s) VALUES (%s)",
+		dbname, tablename,
+		strings.Join(colNames, ", "),
+		strings.Join(placeholders, ", "))
+
+	// Generate unique composite keys by treating i as a base-10 number
+	// where each digit (1-10) corresponds to a key column value
+	for i := 0; i < numberOfRows; i++ {
+		args := make([]interface{}, numColumns+1)
+		remaining := i
+		// Calculate key values from least significant to most significant
+		for col := numColumns - 1; col >= 0; col-- {
+			args[col] = (remaining % 10) + 1
+			remaining /= 10
+		}
+		args[numColumns] = RandData()
+
+		_, err = tx.Exec(insertQuery, args...)
 		PanicIfError(err)
 	}
 

@@ -56,7 +56,7 @@ func (this *DataIteratorTestSuite) SetupTest() {
 			BatchSizePerTableOverride: config.DataIterationBatchSizePerTableOverride,
 			ReadRetries:               config.DBReadRetries,
 		},
-		StateTracker: ghostferry.NewStateTracker(config.DataIterationConcurrency * 10),
+		StateTracker:         ghostferry.NewStateTracker(config.DataIterationConcurrency * 10),
 		TargetPaginationKeys: &sync.Map{},
 	}
 
@@ -270,6 +270,246 @@ func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverrideCal
 	for rowSize, expectedBatchSize := range expectedResults {
 		batchSize := this.Ferry.DataIterationBatchSizePerTableOverride.CalculateBatchSize(rowSize)
 		this.Require().Equal(batchSize, expectedBatchSize)
+	}
+}
+
+func (this *DataIteratorTestSuite) TestCompositeKeyIterationOrder() {
+	// Create a table with a composite primary key (tenant_id, id)
+	// We use this structure to test that iteration respects the lexicographical order
+	// i.e., (1, 100) < (2, 1)
+	dbName := testhelpers.TestSchemaName
+	tableName := "composite_key_test"
+
+	// Drop if exists
+	_, err := this.Ferry.SourceDB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", dbName, tableName))
+	this.Require().Nil(err)
+
+	// Create table
+	query := fmt.Sprintf("CREATE TABLE %s.%s (tenant_id int, id int, data varchar(255), PRIMARY KEY (tenant_id, id))", dbName, tableName)
+	_, err = this.Ferry.SourceDB.Exec(query)
+	this.Require().Nil(err)
+
+	// Insert data in a scrambled order to ensure the DB returns them sorted by PK during iteration
+	values := []struct {
+		tenant_id int
+		id        int
+		data      string
+	}{
+		{2, 1, "t2-id1"},
+		{1, 10, "t1-id10"},
+		{1, 1, "t1-id1"},
+		{3, 1, "t3-id1"},
+		{1, 2, "t1-id2"},
+		{2, 5, "t2-id5"},
+	}
+
+	for _, v := range values {
+		_, err = this.Ferry.SourceDB.Exec(fmt.Sprintf("INSERT INTO %s.%s (tenant_id, id, data) VALUES (?, ?, ?)", dbName, tableName), v.tenant_id, v.id, v.data)
+		this.Require().Nil(err)
+	}
+
+	// Configure Ghostferry to use this table
+	filter := &testhelpers.TestTableFilter{
+		DbsFunc:    testhelpers.DbApplicabilityFilter([]string{dbName}),
+		TablesFunc: nil,
+	}
+
+	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, filter, nil, nil, nil, nil)
+	this.Require().Nil(err)
+
+	targetTable := tables.Get(dbName, tableName)
+	this.Require().NotNil(targetTable)
+	this.Require().Equal(2, len(targetTable.GetPaginationColumns()))
+
+	// Setup DataIterator with a batch size of 2 to force multiple batches and pagination logic
+	batchSize := uint64(2)
+	dataIterator := &ghostferry.DataIterator{
+		DB:           this.Ferry.SourceDB,
+		Concurrency:  1,
+		ErrorHandler: this.Ferry.ErrorHandler,
+		CursorConfig: &ghostferry.CursorConfig{
+			DB:        this.Ferry.SourceDB,
+			BatchSize: &batchSize,
+		},
+		StateTracker:         ghostferry.NewStateTracker(10),
+		TargetPaginationKeys: &sync.Map{},
+	}
+
+	// Collect rows
+	var collectedRows []struct{ t, i int }
+	dataIterator.AddBatchListener(func(batch *ghostferry.RowBatch) error {
+		vals := batch.Values()
+		for _, row := range vals {
+			tID, _ := row.GetUint64(0)
+			id, _ := row.GetUint64(1)
+			collectedRows = append(collectedRows, struct{ t, i int }{int(tID), int(id)})
+		}
+		return nil
+	})
+
+	// Run iterator
+	dataIterator.Run([]*ghostferry.TableSchema{targetTable})
+
+	// Verify order: (1,1), (1,2), (1,10), (2,1), (2,5), (3,1)
+	expected := []struct{ t, i int }{
+		{1, 1},
+		{1, 2},
+		{1, 10},
+		{2, 1},
+		{2, 5},
+		{3, 1},
+	}
+
+	this.Require().Equal(len(expected), len(collectedRows))
+	for i := range expected {
+		this.Require().Equal(expected[i], collectedRows[i], "Mismatch at index %d", i)
+	}
+}
+
+func (this *DataIteratorTestSuite) TestCompositeKeyWithBinaryType() {
+	// Test mixing types: (tenant_id int, uuid varbinary(16))
+	dbName := testhelpers.TestSchemaName
+	tableName := "composite_binary_test"
+
+	_, err := this.Ferry.SourceDB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", dbName, tableName))
+	this.Require().Nil(err)
+
+	query := fmt.Sprintf("CREATE TABLE %s.%s (tenant_id int, uuid varbinary(16), data varchar(255), PRIMARY KEY (tenant_id, uuid))", dbName, tableName)
+	_, err = this.Ferry.SourceDB.Exec(query)
+	this.Require().Nil(err)
+
+	// Insert data: (1, 'A'), (1, 'B'), (2, 'A')
+	_, err = this.Ferry.SourceDB.Exec(fmt.Sprintf("INSERT INTO %s.%s VALUES (1, 'A', 'd1'), (2, 'A', 'd2'), (1, 'B', 'd3')", dbName, tableName))
+	this.Require().Nil(err)
+
+	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB,
+		&testhelpers.TestTableFilter{DbsFunc: testhelpers.DbApplicabilityFilter([]string{dbName})},
+		nil, nil, nil, nil)
+	this.Require().Nil(err)
+	targetTable := tables.Get(dbName, tableName)
+
+	batchSize := uint64(1) // Force batching per row
+	dataIterator := &ghostferry.DataIterator{
+		DB:           this.Ferry.SourceDB,
+		Concurrency:  1,
+		ErrorHandler: this.Ferry.ErrorHandler,
+		CursorConfig: &ghostferry.CursorConfig{
+			DB:        this.Ferry.SourceDB,
+			BatchSize: &batchSize,
+		},
+		StateTracker:         ghostferry.NewStateTracker(10),
+		TargetPaginationKeys: &sync.Map{},
+	}
+
+	var collectedRows []string
+	dataIterator.AddBatchListener(func(batch *ghostferry.RowBatch) error {
+		for _, row := range batch.Values() {
+			tID, _ := row.GetUint64(0)
+			uuid := row[1].([]byte)
+			collectedRows = append(collectedRows, fmt.Sprintf("%d-%s", tID, string(uuid)))
+		}
+		return nil
+	})
+
+	dataIterator.Run([]*ghostferry.TableSchema{targetTable})
+
+	expected := []string{"1-A", "1-B", "2-A"}
+	this.Require().Equal(expected, collectedRows)
+}
+
+func (this *DataIteratorTestSuite) TestThreeColumnCompositeKeyIterationOrder() {
+	// Test iteration with a 3-column composite primary key (region_id, tenant_id, id)
+	dbName := testhelpers.TestSchemaName
+	tableName := "three_col_composite_test"
+
+	// Drop if exists
+	_, err := this.Ferry.SourceDB.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s.%s", dbName, tableName))
+	this.Require().Nil(err)
+
+	// Create table
+	query := fmt.Sprintf("CREATE TABLE %s.%s (region_id int, tenant_id int, id int, data varchar(255), PRIMARY KEY (region_id, tenant_id, id))", dbName, tableName)
+	_, err = this.Ferry.SourceDB.Exec(query)
+	this.Require().Nil(err)
+
+	// Insert data in scrambled order to test sorting
+	values := []struct {
+		region_id int
+		tenant_id int
+		id        int
+		data      string
+	}{
+		{2, 1, 1, "r2-t1-id1"},
+		{1, 2, 3, "r1-t2-id3"},
+		{1, 1, 1, "r1-t1-id1"},
+		{1, 1, 2, "r1-t1-id2"},
+		{1, 2, 1, "r1-t2-id1"},
+		{2, 1, 2, "r2-t1-id2"},
+		{1, 1, 3, "r1-t1-id3"},
+		{2, 2, 1, "r2-t2-id1"},
+	}
+
+	for _, v := range values {
+		_, err = this.Ferry.SourceDB.Exec(fmt.Sprintf("INSERT INTO %s.%s (region_id, tenant_id, id, data) VALUES (?, ?, ?, ?)", dbName, tableName), v.region_id, v.tenant_id, v.id, v.data)
+		this.Require().Nil(err)
+	}
+
+	// Configure Ghostferry
+	filter := &testhelpers.TestTableFilter{
+		DbsFunc:    testhelpers.DbApplicabilityFilter([]string{dbName}),
+		TablesFunc: nil,
+	}
+
+	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, filter, nil, nil, nil, nil)
+	this.Require().Nil(err)
+
+	targetTable := tables.Get(dbName, tableName)
+	this.Require().NotNil(targetTable)
+	this.Require().Equal(3, len(targetTable.GetPaginationColumns()))
+
+	// Setup DataIterator with a batch size of 2
+	batchSize := uint64(2)
+	dataIterator := &ghostferry.DataIterator{
+		DB:           this.Ferry.SourceDB,
+		Concurrency:  1,
+		ErrorHandler: this.Ferry.ErrorHandler,
+		CursorConfig: &ghostferry.CursorConfig{
+			DB:        this.Ferry.SourceDB,
+			BatchSize: &batchSize,
+		},
+		StateTracker:         ghostferry.NewStateTracker(10),
+		TargetPaginationKeys: &sync.Map{},
+	}
+
+	// Collect rows
+	var collectedRows []struct{ r, t, i int }
+	dataIterator.AddBatchListener(func(batch *ghostferry.RowBatch) error {
+		vals := batch.Values()
+		for _, row := range vals {
+			rID, _ := row.GetUint64(0)
+			tID, _ := row.GetUint64(1)
+			id, _ := row.GetUint64(2)
+			collectedRows = append(collectedRows, struct{ r, t, i int }{int(rID), int(tID), int(id)})
+		}
+		return nil
+	})
+
+	dataIterator.Run([]*ghostferry.TableSchema{targetTable})
+
+	// Verify order: (1,1,1), (1,1,2), (1,1,3), (1,2,1), (1,2,3), (2,1,1), (2,1,2), (2,2,1)
+	expected := []struct{ r, t, i int }{
+		{1, 1, 1},
+		{1, 1, 2},
+		{1, 1, 3},
+		{1, 2, 1},
+		{1, 2, 3},
+		{2, 1, 1},
+		{2, 1, 2},
+		{2, 2, 1},
+	}
+
+	this.Require().Equal(len(expected), len(collectedRows))
+	for i := range expected {
+		this.Require().Equal(expected[i], collectedRows[i], "Mismatch at index %d", i)
 	}
 }
 

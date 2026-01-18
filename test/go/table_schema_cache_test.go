@@ -86,18 +86,18 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesWithoutFiltering() {
 	}
 }
 
-func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutNumericPK() {
+func (this *TableSchemaCacheTestSuite) TestLoadTablesAcceptTablesWithVarcharPK() {
 	table := "test_table_4"
 	paginationColumn := "id"
 	query := fmt.Sprintf("CREATE TABLE %s.%s (%s varchar(20) not null, data TEXT, primary key(%s))", testhelpers.TestSchemaName, table, paginationColumn, paginationColumn)
 	_, err := this.Ferry.SourceDB.Exec(query)
 	this.Require().Nil(err)
 
-	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
+	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
 
-	this.Require().NotNil(err)
-	this.Require().EqualError(err, ghostferry.NonNumericPaginationKeyError(testhelpers.TestSchemaName, table, paginationColumn).Error())
-	this.Require().Contains(err.Error(), table)
+	this.Require().Nil(err)
+	this.Require().Contains(tableSchemaCache, testhelpers.TestSchemaName+"."+table)
+	this.Require().Equal(paginationColumn, tableSchemaCache[testhelpers.TestSchemaName+"."+table].GetPaginationColumn().Name)
 }
 func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutNumericPKWithMediumInt() {
 	table := "pagination_by_column_medium_int_pk"
@@ -222,21 +222,35 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutPKColumn
 	this.Require().EqualError(err, ghostferry.NonExistingPaginationKeyError(testhelpers.TestSchemaName, table).Error())
 }
 
-func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithCompositePKButNoAlternateColumnToFallBackTo() {
+func (this *TableSchemaCacheTestSuite) TestLoadTablesAcceptsTablesWithCompositePK() {
 	table := "composite_pk_without_fallback"
 	query := fmt.Sprintf("CREATE TABLE %s.%s (identity bigint(20) not null, other_id bigint(20) not null, data TEXT, primary key(identity, other_id))", testhelpers.TestSchemaName, table)
 	_, err := this.Ferry.SourceDB.Exec(query)
 	this.Require().Nil(err)
 
-	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
+	tables, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
 
-	this.Require().NotNil(err)
-	this.Require().EqualError(err, ghostferry.NonExistingPaginationKeyError(testhelpers.TestSchemaName, table).Error())
+	// Composite PKs are now supported, so this should succeed
+	this.Require().Nil(err)
+	tableSchema := tables.Get(testhelpers.TestSchemaName, table)
+	this.Require().NotNil(tableSchema)
+	// Should use the composite PK
+	this.Require().Equal(2, len(tableSchema.PaginationKeyColumns))
+	this.Require().Equal("identity", tableSchema.PaginationKeyColumns[0].Name)
+	this.Require().Equal("other_id", tableSchema.PaginationKeyColumns[1].Name)
+	// Backward compat: PaginationKeyColumn should be the first column
+	this.Require().Equal("identity", tableSchema.PaginationKeyColumn.Name)
 }
 
-func (this *TableSchemaCacheTestSuite) TestLoadTablesWithCompositePKButIDColumnToFallBackTo() {
+func (this *TableSchemaCacheTestSuite) TestLoadTablesWithCompositePKButIDColumnToOverride() {
 	table := "composite_pk_with_id_fallback"
 	paginationColumn := "id"
+	
+	query := fmt.Sprintf("CREATE TABLE %s.%s (identity bigint(20) not null, id bigint(20) not null, data TEXT, primary key(identity, id))", testhelpers.TestSchemaName, table)
+	_, err := this.Ferry.SourceDB.Exec(query)
+	this.Require().Nil(err)
+
+	// Test 1: PerTable config should override the composite PK
 	cascadingPaginationColumnConfig := &ghostferry.CascadingPaginationColumnConfig{
 		PerTable: map[string]map[string]string{
 			testhelpers.TestSchemaName: map[string]string{
@@ -244,17 +258,20 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesWithCompositePKButIDColumnT
 			},
 		},
 	}
-
-	query := fmt.Sprintf("CREATE TABLE %s.%s (identity bigint(20) not null, id bigint(20) not null, data TEXT, primary key(identity, id))", testhelpers.TestSchemaName, table)
-	_, err := this.Ferry.SourceDB.Exec(query)
-	this.Require().Nil(err)
-
 	this.assertLoadTablesWithCascadingPaginationColumnConfig(table, paginationColumn, cascadingPaginationColumnConfig)
 
+	// Test 2: FallbackColumn is NOT used when table has a PK (including composite)
+	// The composite PK takes precedence
 	cascadingPaginationColumnConfig = &ghostferry.CascadingPaginationColumnConfig{
 		FallbackColumn: paginationColumn,
 	}
-	this.assertLoadTablesWithCascadingPaginationColumnConfig(table, paginationColumn, cascadingPaginationColumnConfig)
+	// With FallbackColumn, it should use the composite PK instead (first column: "identity")
+	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, cascadingPaginationColumnConfig)
+	this.Require().Nil(err)
+	tableSchema := tableSchemaCache.Get(testhelpers.TestSchemaName, table)
+	// Should use composite PK, not fallback
+	this.Require().Equal(2, len(tableSchema.PaginationKeyColumns))
+	this.Require().Equal("identity", tableSchema.PaginationKeyColumn.Name)
 }
 
 func (this *TableSchemaCacheTestSuite) TestAllTableNames() {

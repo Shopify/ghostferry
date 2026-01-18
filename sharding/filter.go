@@ -33,7 +33,7 @@ type ShardedCopyFilter struct {
 	missingShardingKeyIndexLogged sync.Map
 }
 
-func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.TableSchema, lastPaginationKey, batchSize uint64) (sq.SelectBuilder, error) {
+func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.TableSchema, lastPaginationKey ghostferry.PaginationKey, batchSize uint64) (sq.SelectBuilder, error) {
 	quotedPaginationKey := "`" + table.GetPaginationColumn().Name + "`"
 	quotedShardingKey := "`" + f.ShardingKey + "`"
 	quotedTable := ghostferry.QuotedTableName(table)
@@ -49,7 +49,7 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 		return sq.Select(columns...).
 			From(quotedTable + " USE INDEX (PRIMARY)").
 			Where(sq.Eq{quotedPaginationKey: f.ShardingValue}).
-			Where(sq.Gt{quotedPaginationKey: lastPaginationKey}), nil
+			Where(sq.Gt{quotedPaginationKey: lastPaginationKey.SQLValue()}), nil
 	}
 
 	joinTables, exists := f.JoinedTables[table.Name]
@@ -90,7 +90,7 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 
 		return sq.Select(columns...).
 			From(quotedTable).
-			Join("("+selectPaginationKeys+") AS `batch` USING("+quotedPaginationKey+")", f.ShardingValue, lastPaginationKey), nil
+			Join("("+selectPaginationKeys+") AS `batch` USING("+quotedPaginationKey+")", f.ShardingValue, lastPaginationKey.SQLValue()), nil
 	}
 
 	// This is a "joined table". It is the only supported type of table that
@@ -126,7 +126,7 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 		pattern := "SELECT `%s` AS sharding_join_alias FROM `%s`.`%s` WHERE `%s` = ? AND `%s` > ?"
 		sql := fmt.Sprintf(pattern, joinTable.JoinColumn, table.Schema, joinTable.TableName, f.ShardingKey, joinTable.JoinColumn)
 		clauses = append(clauses, sql)
-		args = append(args, f.ShardingValue, lastPaginationKey)
+		args = append(args, f.ShardingValue, lastPaginationKey.SQLValue())
 	}
 
 	subquery := strings.Join(clauses, " UNION DISTINCT ")

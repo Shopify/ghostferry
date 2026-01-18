@@ -7,6 +7,7 @@ import (
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
+	"github.com/go-mysql-org/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -56,14 +57,65 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 			return nil
 		}
 
-		startPaginationKeypos, err := values[0].GetUint64(batch.PaginationKeyIndex())
-		if err != nil {
-			return err
-		}
+		var startPaginationKeypos, endPaginationKeypos PaginationKey
+		var err error
+		
+		paginationColumn := batch.TableSchema().GetPaginationColumn()
 
-		endPaginationKeypos, err := values[len(values)-1].GetUint64(batch.PaginationKeyIndex())
-		if err != nil {
-			return err
+		switch paginationColumn.Type {
+		case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+			var startValue, endValue uint64
+			startValue, err = values[0].GetUint64(batch.PaginationKeyIndex())
+			if err != nil {
+				return err
+			}
+			endValue, err = values[len(values)-1].GetUint64(batch.PaginationKeyIndex())
+			if err != nil {
+				return err
+			}
+			startPaginationKeypos = NewUint64Key(startValue)
+			endPaginationKeypos = NewUint64Key(endValue)
+
+		case schema.TYPE_BINARY, schema.TYPE_STRING:
+			startValueInterface := values[0][batch.PaginationKeyIndex()]
+			endValueInterface := values[len(values)-1][batch.PaginationKeyIndex()]
+
+			getBytes := func(val interface{}) ([]byte, error) {
+				switch v := val.(type) {
+				case []byte:
+					return v, nil
+				case string:
+					return []byte(v), nil
+				default:
+					return nil, fmt.Errorf("expected binary/string pagination key, got %T", val)
+				}
+			}
+
+			startValue, err := getBytes(startValueInterface)
+			if err != nil {
+				return err
+			}
+			
+			endValue, err := getBytes(endValueInterface)
+			if err != nil {
+				return err
+			}
+
+			startPaginationKeypos = NewBinaryKey(startValue)
+			endPaginationKeypos = NewBinaryKey(endValue)
+
+		default:
+			var startValue, endValue uint64
+			startValue, err = values[0].GetUint64(batch.PaginationKeyIndex())
+			if err != nil {
+				return err
+			}
+			endValue, err = values[len(values)-1].GetUint64(batch.PaginationKeyIndex())
+			if err != nil {
+				return err
+			}
+			startPaginationKeypos = NewUint64Key(startValue)
+			endPaginationKeypos = NewUint64Key(endValue)
 		}
 
 		db := batch.TableSchema().Schema
@@ -78,12 +130,12 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 
 		query, args, err := batch.AsSQLQuery(db, table)
 		if err != nil {
-			return fmt.Errorf("during generating sql query at paginationKey %v -> %v: %v", startPaginationKeypos, endPaginationKeypos, err)
+			return fmt.Errorf("during generating sql query at paginationKey %s -> %s: %v", startPaginationKeypos.String(), endPaginationKeypos.String(), err)
 		}
 
 		stmt, err := w.stmtCache.StmtFor(w.DB, query)
 		if err != nil {
-			return fmt.Errorf("during prepare query near paginationKey %v -> %v (%s): %v", startPaginationKeypos, endPaginationKeypos, query, err)
+			return fmt.Errorf("during prepare query near paginationKey %s -> %s (%s): %v", startPaginationKeypos.String(), endPaginationKeypos.String(), query, err)
 		}
 
 		tx, err := w.DB.Begin()
@@ -94,14 +146,14 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 		_, err = tx.Stmt(stmt).Exec(args...)
 		if err != nil {
 			tx.Rollback()
-			return fmt.Errorf("during exec query near paginationKey %v -> %v (%s): %v", startPaginationKeypos, endPaginationKeypos, query, err)
+			return fmt.Errorf("during exec query near paginationKey %s -> %s (%s): %v", startPaginationKeypos.String(), endPaginationKeypos.String(), query, err)
 		}
 
 		if w.InlineVerifier != nil {
 			mismatches, err := w.InlineVerifier.CheckFingerprintInline(tx, db, table, batch, w.EnforceInlineVerification)
 			if err != nil {
 				tx.Rollback()
-				return fmt.Errorf("during fingerprint checking for paginationKey %v -> %v (%s): %v", startPaginationKeypos, endPaginationKeypos, query, err)
+				return fmt.Errorf("during fingerprint checking for paginationKey %s -> %s (%s): %v", startPaginationKeypos.String(), endPaginationKeypos.String(), query, err)
 			}
 
 			if w.EnforceInlineVerification {
@@ -119,7 +171,7 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 		err = tx.Commit()
 		if err != nil {
 			tx.Rollback()
-			return fmt.Errorf("during commit near paginationKey %v -> %v (%s): %v", startPaginationKeypos, endPaginationKeypos, query, err)
+			return fmt.Errorf("during commit near paginationKey %s -> %s (%s): %v", startPaginationKeypos.String(), endPaginationKeypos.String(), query, err)
 		}
 
 		// Note that the state tracker expects us the track based on the original

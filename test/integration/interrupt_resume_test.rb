@@ -24,7 +24,7 @@ class InterruptResumeTest < GhostferryTestCase
     result = target_db.query("SELECT MAX(id) AS max_id FROM #{DEFAULT_FULL_TABLE_NAME}")
     last_successful_id = result.first["max_id"]
     assert last_successful_id > 0
-    assert_equal last_successful_id, dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]
+    assert_equal last_successful_id, dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]["value"]
   end
 
   def test_interrupt_and_resume_without_last_known_schema_cache
@@ -553,7 +553,7 @@ class InterruptResumeTest < GhostferryTestCase
     dumped_state = ghostferry.run_expecting_interrupt
     assert_basic_fields_exist_in_dumped_state(dumped_state)
 
-    last_pk = dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]
+    last_pk = dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]["value"]
     assert last_pk > 200
 
     # We need to rewind the state backwards, and then change that row on the
@@ -573,7 +573,7 @@ class InterruptResumeTest < GhostferryTestCase
     data_changed = source_db.query("SELECT data FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{id_to_change}").first["data"]
     assert_equal "changed", data_changed
 
-    dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"] = id_to_change - 1
+    dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]["value"] = id_to_change - 1
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
     changed_row_copied = false
@@ -623,7 +623,7 @@ class InterruptResumeTest < GhostferryTestCase
     dumped_state = ghostferry.run_expecting_interrupt
     assert_basic_fields_exist_in_dumped_state(dumped_state)
 
-    last_pk = dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]
+    last_pk = dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]["value"]
     assert last_pk > 200
 
     # This should be similar to test_issue_149_correct, except we force the
@@ -641,7 +641,7 @@ class InterruptResumeTest < GhostferryTestCase
     data_corrupted = target_db.query("SELECT data FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{id_to_change}").first["data"]
     assert_equal "corrupted", data_corrupted
 
-    dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"] = id_to_change - 1
+    dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]["value"] = id_to_change - 1
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
     changed_row_copied = false
@@ -679,5 +679,129 @@ class InterruptResumeTest < GhostferryTestCase
     expectation = error_message.start_with?(predicate)
 
     assert expectation, "error message: #{error_message.inspect}, didn't start with #{predicate.inspect}"
+  end
+
+  def test_interrupt_resume_without_writes_to_source_with_uuid_table
+    seed_simple_database_with_uuid_table
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+
+    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      ghostferry.send_signal("TERM")
+    end
+
+    dumped_state = ghostferry.run_expecting_interrupt
+    assert_basic_fields_exist_in_dumped_state(dumped_state)
+
+    result = target_db.query("SELECT COUNT(*) AS cnt FROM #{UUID_FULL_TABLE_NAME}")
+    count = result.first["cnt"]
+    assert_equal 200, count
+
+    result = target_db.query("SELECT MAX(id) AS max_id FROM #{UUID_FULL_TABLE_NAME}")
+    last_successful_id_bytes = result.first["max_id"]
+    assert last_successful_id_bytes.length > 0
+
+    last_key_in_state = dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{UUID_TABLE}"]["value"]
+    assert_equal last_successful_id_bytes.unpack1("H*"), last_key_in_state
+  end
+
+  def test_interrupt_and_resume_without_last_known_schema_cache_with_uuid_table
+    seed_simple_database_with_uuid_table
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+
+    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      ghostferry.send_signal("TERM")
+    end
+
+    dumped_state = ghostferry.run_expecting_interrupt
+    assert_basic_fields_exist_in_dumped_state(dumped_state)
+    dumped_state["LastKnownTableSchemaCache"] = nil
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+
+    ghostferry.run(dumped_state)
+
+    assert_uuid_table_is_identical
+  end
+
+  def test_interrupt_resume_with_writes_to_source_with_uuid_table
+    seed_simple_database_with_uuid_table
+
+    datawriter = new_source_datawriter
+    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY, after_batches_written: 2)
+
+    start_datawriter_with_ghostferry(datawriter, ghostferry)
+
+    dumped_state = ghostferry.run_expecting_interrupt
+    assert_basic_fields_exist_in_dumped_state(dumped_state)
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+
+    stop_datawriter_during_cutover(datawriter, ghostferry)
+
+    ghostferry.run(dumped_state)
+
+    assert_uuid_table_is_identical
+  end
+
+  def test_interrupt_resume_idempotence_with_uuid_table
+    seed_simple_database_with_uuid_table
+
+    ghostferry = new_ghostferry_with_interrupt_after_row_copy(MINIMAL_GHOSTFERRY)
+    dumped_state = ghostferry.run_expecting_interrupt
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+    ghostferry.run_with_logs(dumped_state)
+
+    assert_uuid_table_is_identical
+
+    ghostferry.run_with_logs(dumped_state)
+
+    assert_uuid_table_is_identical
+
+    assert_ghostferry_completed(ghostferry, times: 2)
+  end
+
+  def test_interrupt_resume_inline_verifier_with_uuid_table
+    seed_simple_database_with_single_table
+    seed_simple_database_with_uuid_table
+
+    datawriter = new_source_datawriter
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+
+    start_datawriter_with_ghostferry(datawriter, ghostferry)
+
+    batches_written = 0
+    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      batches_written += 1
+      if batches_written >= 5
+        ghostferry.term_and_wait_for_exit
+      end
+    end
+
+    dumped_state = ghostferry.run_expecting_interrupt
+    assert_basic_fields_exist_in_dumped_state(dumped_state)
+    refute_nil dumped_state["BinlogVerifyStore"]
+    refute_nil dumped_state["BinlogVerifyStore"]["gftest"]
+    refute_nil dumped_state["BinlogVerifyStore"]["gftest"]["test_table_1"]
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
+
+    stop_datawriter_during_cutover(datawriter, ghostferry)
+
+    ghostferry.run(dumped_state)
+
+    assert verification_ran
+    assert_equal 0, incorrect_tables.length
+    assert_test_table_is_identical
+    assert_uuid_table_is_identical
   end
 end

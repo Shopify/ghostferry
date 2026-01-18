@@ -2,9 +2,9 @@ package ghostferry
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,17 +18,17 @@ import (
 )
 
 type ReverifyBatch struct {
-	PaginationKeys []uint64
+	PaginationKeys []interface{}
 	Table          TableIdentifier
 }
 
 type ReverifyEntry struct {
-	PaginationKey uint64
+	PaginationKey string
 	Table         *TableSchema
 }
 
 type ReverifyStore struct {
-	MapStore           map[TableIdentifier]map[uint64]struct{}
+	MapStore           map[TableIdentifier]map[string]struct{}
 	mapStoreMutex      *sync.Mutex
 	BatchStore         []ReverifyBatch
 	RowCount           uint64
@@ -50,13 +50,14 @@ func (r *ReverifyStore) Add(entry ReverifyEntry) {
 	r.mapStoreMutex.Lock()
 	defer r.mapStoreMutex.Unlock()
 
+	paginationKeyStr := entry.PaginationKey
 	tableId := NewTableIdentifierFromSchemaTable(entry.Table)
 	if _, exists := r.MapStore[tableId]; !exists {
-		r.MapStore[tableId] = make(map[uint64]struct{})
+		r.MapStore[tableId] = make(map[string]struct{})
 	}
 
-	if _, exists := r.MapStore[tableId][entry.PaginationKey]; !exists {
-		r.MapStore[tableId][entry.PaginationKey] = struct{}{}
+	if _, exists := r.MapStore[tableId][paginationKeyStr]; !exists {
+		r.MapStore[tableId][paginationKeyStr] = struct{}{}
 		r.RowCount++
 		if r.RowCount%r.EmitLogPerRowCount == 0 {
 			metrics.Gauge("iterative_verifier_store_rows", float64(r.RowCount), []MetricTag{}, 1.0)
@@ -74,16 +75,16 @@ func (r *ReverifyStore) FlushAndBatchByTable(batchsize int) []ReverifyBatch {
 
 	r.BatchStore = make([]ReverifyBatch, 0)
 	for tableId, paginationKeySet := range r.MapStore {
-		paginationKeyBatch := make([]uint64, 0, batchsize)
-		for paginationKey, _ := range paginationKeySet {
-			paginationKeyBatch = append(paginationKeyBatch, paginationKey)
-			delete(paginationKeySet, paginationKey)
+		paginationKeyBatch := make([]interface{}, 0, batchsize)
+		for paginationKeyStr, _ := range paginationKeySet {
+			paginationKeyBatch = append(paginationKeyBatch, paginationKeyStr)
+			delete(paginationKeySet, paginationKeyStr)
 			if len(paginationKeyBatch) >= batchsize {
 				r.BatchStore = append(r.BatchStore, ReverifyBatch{
 					PaginationKeys: paginationKeyBatch,
 					Table:          tableId,
 				})
-				paginationKeyBatch = make([]uint64, 0, batchsize)
+				paginationKeyBatch = make([]interface{}, 0, batchsize)
 			}
 		}
 
@@ -102,7 +103,7 @@ func (r *ReverifyStore) FlushAndBatchByTable(batchsize int) []ReverifyBatch {
 }
 
 func (r *ReverifyStore) flushStore() {
-	r.MapStore = make(map[TableIdentifier]map[uint64]struct{})
+	r.MapStore = make(map[TableIdentifier]map[string]struct{})
 	r.RowCount = 0
 }
 
@@ -184,10 +185,10 @@ func (v *IterativeVerifier) Initialize() error {
 func (v *IterativeVerifier) VerifyOnce() (VerificationResult, error) {
 	v.logger.Info("starting one-off verification of all tables")
 
-	err := v.iterateAllTables(func(paginationKey uint64, tableSchema *TableSchema) error {
+	err := v.iterateAllTables(func(paginationKey string, tableSchema *TableSchema) error {
 		return VerificationResult{
 			DataCorrect:     false,
-			Message:         fmt.Sprintf("verification failed on table: %s for paginationKey: %d", tableSchema.String(), paginationKey),
+			Message:         fmt.Sprintf("verification failed on table: %s for paginationKey: %s", tableSchema.String(), paginationKey),
 			IncorrectTables: []string{tableSchema.String()},
 		}
 	})
@@ -213,7 +214,7 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	v.BinlogStreamer.AddEventListener(v.binlogEventListener)
 
 	v.logger.Debug("verifying all tables")
-	err := v.iterateAllTables(func(paginationKey uint64, tableSchema *TableSchema) error {
+	err := v.iterateAllTables(func(paginationKey string, tableSchema *TableSchema) error {
 		v.reverifyStore.Add(ReverifyEntry{PaginationKey: paginationKey, Table: tableSchema})
 		return nil
 	})
@@ -290,15 +291,15 @@ func (v *IterativeVerifier) Result() (VerificationResultAndStatus, error) {
 	return v.verificationResultAndStatus, v.verificationErr
 }
 
-func (v *IterativeVerifier) GetHashes(db *sql.DB, schema, table, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []uint64) (map[uint64][]byte, error) {
-	sql, args, err := GetMd5HashesSql(schema, table, paginationKeyColumn, columns, paginationKeys)
+func (v *IterativeVerifier) GetHashes(db *sql.DB, schemaName, tableName, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []interface{}) (map[string][]byte, error) {
+	table := v.TableSchemaCache.Get(schemaName, tableName)
+	paginationColumns := table.GetPaginationColumns()
+
+	sql, args, err := GetMd5HashesSql(schemaName, tableName, paginationColumns, columns, paginationKeys)
 	if err != nil {
 		return nil, err
 	}
 
-	// This query must be a prepared query. If it is not, querying will use
-	// MySQL's plain text interface, which will scan all values into []uint8
-	// if we give it []interface{}.
 	stmt, err := db.Prepare(sql)
 	if err != nil {
 		return nil, err
@@ -313,19 +314,52 @@ func (v *IterativeVerifier) GetHashes(db *sql.DB, schema, table, paginationKeyCo
 
 	defer rows.Close()
 
-	resultSet := make(map[uint64][]byte)
+	resultSet := make(map[string][]byte)
+	numPaginationCols := len(paginationColumns)
+
 	for rows.Next() {
-		rowData, err := ScanGenericRow(rows, 2)
+		// Scan: pagination_col1, pagination_col2, ..., row_fingerprint
+		rowData, err := ScanGenericRow(rows, numPaginationCols+1)
 		if err != nil {
 			return nil, err
 		}
 
-		paginationKey, err := rowData.GetUint64(0)
-		if err != nil {
-			return nil, err
+		// Build pagination key from columns (works for both single and composite keys)
+		keys := make([]PaginationKey, len(paginationColumns))
+		for i, paginationColumn := range paginationColumns {
+			switch paginationColumn.Type {
+			case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+				paginationKeyUint, err := rowData.GetUint64(i)
+				if err != nil {
+					return nil, err
+				}
+				keys[i] = NewUint64Key(paginationKeyUint)
+
+			case schema.TYPE_BINARY, schema.TYPE_STRING:
+				paginationKeyBytes, ok := rowData[i].([]byte)
+				if !ok {
+					return nil, fmt.Errorf("expected []byte for binary pagination key, got %T", rowData[i])
+				}
+				keys[i] = NewBinaryKey(paginationKeyBytes)
+
+			default:
+				paginationKeyUint, err := rowData.GetUint64(i)
+				if err != nil {
+					return nil, err
+				}
+				keys[i] = NewUint64Key(paginationKeyUint)
+			}
 		}
 
-		resultSet[paginationKey] = rowData[1].([]byte)
+		// For single column, use the key directly; for composite, wrap in CompositeKey
+		var paginationKeyStr string
+		if len(keys) == 1 {
+			paginationKeyStr = keys[0].String()
+		} else {
+			paginationKeyStr = CompositeKey(keys).String()
+		}
+
+		resultSet[paginationKeyStr] = rowData[numPaginationCols].([]byte)
 	}
 	return resultSet, nil
 }
@@ -363,7 +397,7 @@ func (v *IterativeVerifier) reverifyUntilStoreIsSmallEnough(maxIterations int) e
 	return nil
 }
 
-func (v *IterativeVerifier) iterateAllTables(mismatchedPaginationKeyFunc func(uint64, *TableSchema) error) error {
+func (v *IterativeVerifier) iterateAllTables(mismatchedPaginationKeyFunc func(string, *TableSchema) error) error {
 	pool := &WorkerPool{
 		Concurrency: v.Concurrency,
 		Process: func(tableIndex int) (interface{}, error) {
@@ -386,28 +420,100 @@ func (v *IterativeVerifier) iterateAllTables(mismatchedPaginationKeyFunc func(ui
 	return err
 }
 
-func (v *IterativeVerifier) iterateTableFingerprints(table *TableSchema, mismatchedPaginationKeyFunc func(uint64, *TableSchema) error) error {
+func (v *IterativeVerifier) iterateTableFingerprints(table *TableSchema, mismatchedPaginationKeyFunc func(string, *TableSchema) error) error {
 	// The cursor will stop iterating when it cannot find anymore rows,
-	// so it will not iterate until MaxUint64.
-	cursor := v.CursorConfig.NewCursorWithoutRowLock(table, 0, math.MaxUint64)
+	// so it will not iterate until MaxPaginationKey.
+	paginationColumns := table.GetPaginationColumns()
+	minKey := MinPaginationKey(paginationColumns)
+	maxKey := MaxPaginationKey(paginationColumns)
+
+	cursor := v.CursorConfig.NewCursorWithoutRowLock(table, minKey, maxKey)
 
 	// It only needs the PaginationKeys, not the entire row.
-	cursor.ColumnsToSelect = []string{fmt.Sprintf("`%s`", table.GetPaginationColumn().Name)}
+	columnsToSelect := make([]string, len(paginationColumns))
+	for i, col := range paginationColumns {
+		columnsToSelect[i] = fmt.Sprintf("`%s`", col.Name)
+	}
+	cursor.ColumnsToSelect = columnsToSelect
+
 	return cursor.Each(func(batch *RowBatch) error {
 		metrics.Count("RowEvent", int64(batch.Size()), []MetricTag{
 			MetricTag{"table", table.Name},
 			MetricTag{"source", "iterative_verifier_before_cutover"},
 		}, 1.0)
 
-		paginationKeys := make([]uint64, 0, batch.Size())
+		paginationKeys := make([]interface{}, 0, batch.Size())
+		paginationKeyIndexes := batch.PaginationKeyIndexes()
 
 		for _, rowData := range batch.Values() {
-			paginationKey, err := rowData.GetUint64(batch.PaginationKeyIndex())
-			if err != nil {
-				return err
-			}
+			if len(paginationColumns) == 1 {
+				// Single column - use existing logic
+				paginationColumn := paginationColumns[0]
+				switch paginationColumn.Type {
+				case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+					paginationKeyUint, err := rowData.GetUint64(paginationKeyIndexes[0])
+					if err != nil {
+						return err
+					}
+					paginationKeys = append(paginationKeys, paginationKeyUint)
 
-			paginationKeys = append(paginationKeys, paginationKey)
+				case schema.TYPE_BINARY, schema.TYPE_STRING:
+					paginationKeyInterface := rowData[paginationKeyIndexes[0]]
+					var paginationKeyBytes []byte
+					switch v := paginationKeyInterface.(type) {
+					case []byte:
+						paginationKeyBytes = v
+					case string:
+						paginationKeyBytes = []byte(v)
+					default:
+						return fmt.Errorf("expected binary/string pagination key, got %T", paginationKeyInterface)
+					}
+					paginationKeys = append(paginationKeys, paginationKeyBytes)
+
+				default:
+					paginationKeyUint, err := rowData.GetUint64(paginationKeyIndexes[0])
+					if err != nil {
+						return err
+					}
+					paginationKeys = append(paginationKeys, paginationKeyUint)
+				}
+			} else {
+				// Composite key - append as a string representation
+				keys := make([]PaginationKey, len(paginationColumns))
+				for i, paginationColumn := range paginationColumns {
+					idx := paginationKeyIndexes[i]
+					switch paginationColumn.Type {
+					case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+						paginationKeyUint, err := rowData.GetUint64(idx)
+						if err != nil {
+							return err
+						}
+						keys[i] = NewUint64Key(paginationKeyUint)
+
+					case schema.TYPE_BINARY, schema.TYPE_STRING:
+						paginationKeyInterface := rowData[idx]
+						var paginationKeyBytes []byte
+						switch v := paginationKeyInterface.(type) {
+						case []byte:
+							paginationKeyBytes = v
+						case string:
+							paginationKeyBytes = []byte(v)
+						default:
+							return fmt.Errorf("expected binary/string pagination key, got %T", paginationKeyInterface)
+						}
+						keys[i] = NewBinaryKey(paginationKeyBytes)
+
+					default:
+						paginationKeyUint, err := rowData.GetUint64(idx)
+						if err != nil {
+							return err
+						}
+						keys[i] = NewUint64Key(paginationKeyUint)
+					}
+				}
+				// Store as string for comparison with GetHashes results
+				paginationKeys = append(paginationKeys, CompositeKey(keys).String())
+			}
 		}
 
 		mismatchedPaginationKeys, err := v.compareFingerprints(paginationKeys, batch.TableSchema())
@@ -513,7 +619,7 @@ func (v *IterativeVerifier) verifyStore(sourceTag string, additionalTags []Metri
 	return result, err
 }
 
-func (v *IterativeVerifier) reverifyPaginationKeys(table *TableSchema, paginationKeys []uint64) (VerificationResult, []uint64, error) {
+func (v *IterativeVerifier) reverifyPaginationKeys(table *TableSchema, paginationKeys []interface{}) (VerificationResult, []string, error) {
 	mismatchedPaginationKeys, err := v.compareFingerprints(paginationKeys, table)
 	if err != nil {
 		return VerificationResult{}, mismatchedPaginationKeys, err
@@ -523,14 +629,9 @@ func (v *IterativeVerifier) reverifyPaginationKeys(table *TableSchema, paginatio
 		return NewCorrectVerificationResult(), mismatchedPaginationKeys, nil
 	}
 
-	paginationKeyStrings := make([]string, len(mismatchedPaginationKeys))
-	for idx, paginationKey := range mismatchedPaginationKeys {
-		paginationKeyStrings[idx] = strconv.FormatUint(paginationKey, 10)
-	}
-
 	return VerificationResult{
 		DataCorrect:     false,
-		Message:         fmt.Sprintf("verification failed on table: %s for paginationKeys: %s", table.String(), strings.Join(paginationKeyStrings, ",")),
+		Message:         fmt.Sprintf("verification failed on table: %s for paginationKeys: %s", table.String(), strings.Join(mismatchedPaginationKeys, ",")),
 		IncorrectTables: []string{table.String()},
 	}, mismatchedPaginationKeys, nil
 }
@@ -582,7 +683,7 @@ func (v *IterativeVerifier) columnsToVerify(table *TableSchema) []schema.TableCo
 	return columns
 }
 
-func (v *IterativeVerifier) compareFingerprints(paginationKeys []uint64, table *TableSchema) ([]uint64, error) {
+func (v *IterativeVerifier) compareFingerprints(paginationKeys []interface{}, table *TableSchema) ([]string, error) {
 	targetDb := table.Schema
 	if targetDbName, exists := v.DatabaseRewrites[targetDb]; exists {
 		targetDb = targetDbName
@@ -596,22 +697,24 @@ func (v *IterativeVerifier) compareFingerprints(paginationKeys []uint64, table *
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 
-	var sourceHashes map[uint64][]byte
+	var sourceHashes map[string][]byte
 	var sourceErr error
 	go func() {
 		defer wg.Done()
 		sourceErr = WithRetries(5, 0, v.logger, "get fingerprints from source db", func() (err error) {
-			sourceHashes, err = v.GetHashes(v.SourceDB, table.Schema, table.Name, table.GetPaginationColumn().Name, v.columnsToVerify(table), paginationKeys)
+			// Pass deprecated single column name for backward compatibility (unused in GetHashes now)
+			sourceHashes, err = v.GetHashes(v.SourceDB, table.Schema, table.Name, "", v.columnsToVerify(table), paginationKeys)
 			return
 		})
 	}()
 
-	var targetHashes map[uint64][]byte
+	var targetHashes map[string][]byte
 	var targetErr error
 	go func() {
 		defer wg.Done()
 		targetErr = WithRetries(5, 0, v.logger, "get fingerprints from target db", func() (err error) {
-			targetHashes, err = v.GetHashes(v.TargetDB, targetDb, targetTable, table.GetPaginationColumn().Name, v.columnsToVerify(table), paginationKeys)
+			// Pass deprecated single column name for backward compatibility (unused in GetHashes now)
+			targetHashes, err = v.GetHashes(v.TargetDB, targetDb, targetTable, "", v.columnsToVerify(table), paginationKeys)
 			return
 		})
 	}()
@@ -632,13 +735,14 @@ func (v *IterativeVerifier) compareFingerprints(paginationKeys []uint64, table *
 	return mismatches, nil
 }
 
-func (v *IterativeVerifier) compareCompressedHashes(targetDb, targetTable string, table *TableSchema, paginationKeys []uint64) ([]uint64, error) {
-	sourceHashes, err := v.CompressionVerifier.GetCompressedHashes(v.SourceDB, table.Schema, table.Name, table.GetPaginationColumn().Name, v.columnsToVerify(table), paginationKeys)
+func (v *IterativeVerifier) compareCompressedHashes(targetDb, targetTable string, table *TableSchema, paginationKeys []interface{}) ([]string, error) {
+	// Pass empty string for deprecated paginationKeyColumn parameter (CompressionVerifier will get it from TableSchemaCache)
+	sourceHashes, err := v.CompressionVerifier.GetCompressedHashes(v.SourceDB, table.Schema, table.Name, "", v.columnsToVerify(table), paginationKeys)
 	if err != nil {
 		return nil, err
 	}
 
-	targetHashes, err := v.CompressionVerifier.GetCompressedHashes(v.TargetDB, targetDb, targetTable, table.GetPaginationColumn().Name, v.columnsToVerify(table), paginationKeys)
+	targetHashes, err := v.CompressionVerifier.GetCompressedHashes(v.TargetDB, targetDb, targetTable, "", v.columnsToVerify(table), paginationKeys)
 	if err != nil {
 		return nil, err
 	}
@@ -646,8 +750,8 @@ func (v *IterativeVerifier) compareCompressedHashes(targetDb, targetTable string
 	return compareHashes(sourceHashes, targetHashes), nil
 }
 
-func compareHashes(source, target map[uint64][]byte) []uint64 {
-	mismatchSet := map[uint64]struct{}{}
+func compareHashes(source, target map[string][]byte) []string {
+	mismatchSet := map[string]struct{}{}
 
 	for paginationKey, targetHash := range target {
 		sourceHash, exists := source[paginationKey]
@@ -663,7 +767,7 @@ func compareHashes(source, target map[uint64][]byte) []uint64 {
 		}
 	}
 
-	mismatches := make([]uint64, 0, len(mismatchSet))
+	mismatches := make([]string, 0, len(mismatchSet))
 	for mismatch, _ := range mismatchSet {
 		mismatches = append(mismatches, mismatch)
 	}
@@ -671,17 +775,85 @@ func compareHashes(source, target map[uint64][]byte) []uint64 {
 	return mismatches
 }
 
-func GetMd5HashesSql(schema, table, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []uint64) (string, []interface{}, error) {
-	quotedPaginationKey := QuoteField(paginationKeyColumn)
-	return rowMd5Selector(columns, paginationKeyColumn).
-		From(QuotedTableNameFromString(schema, table)).
-		Where(sq.Eq{quotedPaginationKey: paginationKeys}).
-		OrderBy(quotedPaginationKey).
-		ToSql()
+func GetMd5HashesSql(schemaName, table string, paginationKeyColumns []*schema.TableColumn, columns []schema.TableColumn, paginationKeys []interface{}) (string, []interface{}, error) {
+	builder := rowMd5Selector(columns, paginationKeyColumns).
+		From(QuotedTableNameFromString(schemaName, table))
+
+	if len(paginationKeyColumns) == 1 {
+		// Single column WHERE clause
+		quotedPaginationKey := QuoteField(paginationKeyColumns[0].Name)
+		builder = builder.Where(sq.Eq{quotedPaginationKey: paginationKeys})
+		builder = builder.OrderBy(quotedPaginationKey)
+
+		return builder.ToSql()
+	}
+
+	// Composite key WHERE clause: (col1, col2) IN ((?, ?), (?, ?), ...)
+	quotedPKCols := make([]string, len(paginationKeyColumns))
+	for i, col := range paginationKeyColumns {
+		quotedPKCols[i] = QuoteField(col.Name)
+	}
+	tuple := fmt.Sprintf("(%s)", strings.Join(quotedPKCols, ", "))
+
+	// Build placeholder tuples for each pagination key string
+	placeholderTuples := make([]string, len(paginationKeys))
+	args := make([]interface{}, 0, len(paginationKeys)*len(paginationKeyColumns))
+
+	for i, pkInterface := range paginationKeys {
+		pkStr, ok := pkInterface.(string)
+		if !ok {
+			return "", nil, fmt.Errorf("expected string pagination key for composite key, got %T", pkInterface)
+		}
+
+		// Parse the composite key string (comma-separated)
+		parts := strings.Split(pkStr, ",")
+		if len(parts) != len(paginationKeyColumns) {
+			return "", nil, fmt.Errorf("pagination key has %d parts but expected %d", len(parts), len(paginationKeyColumns))
+		}
+
+		placeholders := make([]string, len(parts))
+		for j, part := range parts {
+			placeholders[j] = "?"
+			// Convert string representation back to appropriate type
+			col := paginationKeyColumns[j]
+			switch col.Type {
+			case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+				val, err := strconv.ParseUint(part, 10, 64)
+				if err != nil {
+					return "", nil, fmt.Errorf("failed to parse pagination key part %q as uint64: %w", part, err)
+				}
+				args = append(args, val)
+			case schema.TYPE_BINARY, schema.TYPE_STRING:
+				// For binary keys, the string is hex-encoded
+				decoded, err := hex.DecodeString(part)
+				if err != nil {
+					return "", nil, fmt.Errorf("failed to decode pagination key part %q: %w", part, err)
+				}
+				args = append(args, decoded)
+			default:
+				val, err := strconv.ParseUint(part, 10, 64)
+				if err != nil {
+					return "", nil, fmt.Errorf("failed to parse pagination key part %q: %w", part, err)
+				}
+				args = append(args, val)
+			}
+		}
+		placeholderTuples[i] = fmt.Sprintf("(%s)", strings.Join(placeholders, ", "))
+	}
+
+	whereClause := fmt.Sprintf("%s IN (%s)", tuple, strings.Join(placeholderTuples, ", "))
+	builder = builder.Where(whereClause, args...)
+	builder = builder.OrderBy(strings.Join(quotedPKCols, ", "))
+
+	return builder.ToSql()
 }
 
-func rowMd5Selector(columns []schema.TableColumn, paginationKeyColumn string) sq.SelectBuilder {
-	quotedPaginationKey := QuoteField(paginationKeyColumn)
+func rowMd5Selector(columns []schema.TableColumn, paginationKeyColumns []*schema.TableColumn) sq.SelectBuilder {
+	// Select all pagination key columns
+	selectParts := make([]string, len(paginationKeyColumns))
+	for i, col := range paginationKeyColumns {
+		selectParts[i] = QuoteField(col.Name)
+	}
 
 	hashStrs := make([]string, len(columns))
 	for idx, column := range columns {
@@ -691,7 +863,7 @@ func rowMd5Selector(columns []schema.TableColumn, paginationKeyColumn string) sq
 
 	return sq.Select(fmt.Sprintf(
 		"%s, MD5(CONCAT(%s)) AS row_fingerprint",
-		quotedPaginationKey,
+		strings.Join(selectParts, ", "),
 		strings.Join(hashStrs, ","),
 	))
 }

@@ -15,6 +15,7 @@ import (
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
+	"github.com/go-mysql-org/go-mysql/schema"
 	"github.com/golang/snappy"
 	"github.com/sirupsen/logrus"
 )
@@ -56,7 +57,7 @@ type BinlogVerifyStore struct {
 	currentRowCount uint64 // The number of rows in store currently.
 }
 
-type BinlogVerifySerializedStore map[string]map[string]map[uint64]int
+type BinlogVerifySerializedStore map[string]map[string]map[string]int
 
 func (s BinlogVerifySerializedStore) RowCount() uint64 {
 	var v uint64 = 0
@@ -85,9 +86,9 @@ func (s BinlogVerifySerializedStore) Copy() BinlogVerifySerializedStore {
 	copyS := make(BinlogVerifySerializedStore)
 
 	for db, _ := range s {
-		copyS[db] = make(map[string]map[uint64]int)
+		copyS[db] = make(map[string]map[string]int)
 		for table, _ := range s[db] {
-			copyS[db][table] = make(map[uint64]int)
+			copyS[db][table] = make(map[string]int)
 			for paginationKey, count := range s[db][table] {
 				copyS[db][table][paginationKey] = count
 			}
@@ -100,14 +101,14 @@ func (s BinlogVerifySerializedStore) Copy() BinlogVerifySerializedStore {
 type BinlogVerifyBatch struct {
 	SchemaName     string
 	TableName      string
-	PaginationKeys []uint64
+	PaginationKeys []interface{}
 }
 
 func NewBinlogVerifyStore() *BinlogVerifyStore {
 	return &BinlogVerifyStore{
-		EmitLogPerRowsAdded: uint64(10000), // TODO: make this configurable
+		EmitLogPerRowsAdded: uint64(10000),
 		mutex:               &sync.Mutex{},
-		store:               make(map[string]map[string]map[uint64]int),
+		store:               make(map[string]map[string]map[string]int),
 		totalRowCount:       uint64(0),
 		currentRowCount:     uint64(0),
 	}
@@ -123,18 +124,18 @@ func NewBinlogVerifyStoreFromSerialized(serialized BinlogVerifySerializedStore) 
 	return s
 }
 
-func (s *BinlogVerifyStore) Add(table *TableSchema, paginationKey uint64) {
+func (s *BinlogVerifyStore) Add(table *TableSchema, paginationKey string) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
 	_, exists := s.store[table.Schema]
 	if !exists {
-		s.store[table.Schema] = make(map[string]map[uint64]int)
+		s.store[table.Schema] = make(map[string]map[string]int)
 	}
 
 	_, exists = s.store[table.Schema][table.Name]
 	if !exists {
-		s.store[table.Schema][table.Name] = make(map[uint64]int)
+		s.store[table.Schema][table.Name] = make(map[string]int)
 	}
 
 	_, exists = s.store[table.Schema][table.Name][paginationKey]
@@ -172,13 +173,15 @@ func (s *BinlogVerifyStore) RemoveVerifiedBatch(batch BinlogVerifyBatch) {
 	}
 
 	for _, paginationKey := range batch.PaginationKeys {
-		if _, exists = tableStore[paginationKey]; exists {
-			if tableStore[paginationKey] <= 1 {
-				// Even though this doesn't save as RAM, it will save space on the
-				// serialized output.
-				delete(tableStore, paginationKey)
+		paginationKeyStr, ok := paginationKey.(string)
+		if !ok {
+			continue
+		}
+		if _, exists = tableStore[paginationKeyStr]; exists {
+			if tableStore[paginationKeyStr] <= 1 {
+				delete(tableStore, paginationKeyStr)
 			} else {
-				tableStore[paginationKey]--
+				tableStore[paginationKeyStr]--
 			}
 			s.currentRowCount--
 		}
@@ -192,17 +195,17 @@ func (s *BinlogVerifyStore) Batches(batchsize int) []BinlogVerifyBatch {
 	batches := make([]BinlogVerifyBatch, 0)
 	for schemaName, _ := range s.store {
 		for tableName, paginationKeySet := range s.store[schemaName] {
-			paginationKeyBatch := make([]uint64, 0, batchsize)
+			paginationKeyBatch := make([]interface{}, 0, batchsize)
 
-			for paginationKey, _ := range paginationKeySet {
-				paginationKeyBatch = append(paginationKeyBatch, paginationKey)
+			for paginationKeyStr, _ := range paginationKeySet {
+				paginationKeyBatch = append(paginationKeyBatch, paginationKeyStr)
 				if len(paginationKeyBatch) >= batchsize {
 					batches = append(batches, BinlogVerifyBatch{
 						SchemaName:     schemaName,
 						TableName:      tableName,
 						PaginationKeys: paginationKeyBatch,
 					})
-					paginationKeyBatch = make([]uint64, 0, batchsize)
+					paginationKeyBatch = make([]interface{}, 0, batchsize)
 				}
 			}
 
@@ -247,7 +250,7 @@ const (
 )
 
 type InlineVerifierMismatches struct {
-	Pk             uint64
+	Pk             string
 	SourceChecksum string
 	TargetChecksum string
 	MismatchColumn string
@@ -328,15 +331,48 @@ func (v *InlineVerifier) Result() (VerificationResultAndStatus, error) {
 
 func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, targetTable string, sourceBatch *RowBatch, enforceInlineVerification bool) ([]InlineVerifierMismatches, error) {
 	table := sourceBatch.TableSchema()
+	paginationColumns := table.GetPaginationColumns()
+	paginationKeyIndexes := sourceBatch.PaginationKeyIndexes()
 
-	paginationKeys := make([]uint64, len(sourceBatch.Values()))
+	paginationKeys := make([]PaginationKey, len(sourceBatch.Values()))
 	for i, row := range sourceBatch.Values() {
-		paginationKey, err := row.GetUint64(sourceBatch.PaginationKeyIndex())
-		if err != nil {
-			return nil, err
-		}
+		keys := make([]PaginationKey, len(paginationColumns))
+		for k, col := range paginationColumns {
+			idx := paginationKeyIndexes[k]
+			switch col.Type {
+			case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+				paginationKeyUint, err := row.GetUint64(idx)
+				if err != nil {
+					return nil, err
+				}
+				keys[k] = NewUint64Key(paginationKeyUint)
 
-		paginationKeys[i] = paginationKey
+			case schema.TYPE_BINARY, schema.TYPE_STRING:
+				paginationKeyInterface := row[idx]
+				var paginationKeyBytes []byte
+				switch v := paginationKeyInterface.(type) {
+				case []byte:
+					paginationKeyBytes = v
+				case string:
+					paginationKeyBytes = []byte(v)
+				default:
+					return nil, fmt.Errorf("expected binary/string pagination key, got %T", paginationKeyInterface)
+				}
+				keys[k] = NewBinaryKey(paginationKeyBytes)
+
+			default:
+				paginationKeyUint, err := row.GetUint64(idx)
+				if err != nil {
+					return nil, err
+				}
+				keys[k] = NewUint64Key(paginationKeyUint)
+			}
+		}
+		if len(keys) == 1 {
+			paginationKeys[i] = keys[0]
+		} else {
+			paginationKeys[i] = CompositeKey(keys)
+		}
 	}
 
 	// Fetch target data
@@ -347,15 +383,12 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, target
 
 	// Fetch source data
 	sourceFingerprints := sourceBatch.Fingerprints()
-	sourceDecompressedData := make(map[uint64]map[string][]byte)
+	sourceDecompressedData := make(map[string]map[string][]byte)
 
-	for _, rowData := range sourceBatch.Values() {
-		paginationKey, err := rowData.GetUint64(sourceBatch.PaginationKeyIndex())
-		if err != nil {
-			return nil, err
-		}
+	for i, rowData := range sourceBatch.Values() {
+		paginationKeyStr := paginationKeys[i].String()
 
-		sourceDecompressedData[paginationKey] = make(map[string][]byte)
+		sourceDecompressedData[paginationKeyStr] = make(map[string][]byte)
 		for idx, col := range table.Columns {
 			var compressedData []byte
 			var ok bool
@@ -368,7 +401,7 @@ func (v *InlineVerifier) CheckFingerprintInline(tx *sql.Tx, targetSchema, target
 				return nil, fmt.Errorf("cannot convert column %v to []byte", col.Name)
 			}
 
-			sourceDecompressedData[paginationKey][col.Name], err = v.decompressData(table, col.Name, compressedData)
+			sourceDecompressedData[paginationKeyStr][col.Name], err = v.decompressData(table, col.Name, compressedData)
 		}
 	}
 
@@ -468,7 +501,7 @@ func formatMismatches(mismatches map[string]map[string][]InlineVerifierMismatche
 			messageBuf.WriteString(tableNameWithSchema)
 			messageBuf.WriteString(" [PKs: ")
 			for _, mismatch := range mismatches[schemaName][tableName] {
-				messageBuf.WriteString(strconv.FormatUint(mismatch.Pk, 10))
+				messageBuf.WriteString(mismatch.Pk)
 				messageBuf.WriteString(" (type: ")
 				messageBuf.WriteString(string(mismatch.MismatchType))
 				if mismatch.SourceChecksum != "" {
@@ -521,15 +554,15 @@ func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	}, nil
 }
 
-func (v *InlineVerifier) getFingerprintDataFromSourceDb(schemaName, tableName string, tx *sql.Tx, table *TableSchema, paginationKeys []uint64) (map[uint64][]byte, map[uint64]map[string][]byte, error) {
+func (v *InlineVerifier) getFingerprintDataFromSourceDb(schemaName, tableName string, tx *sql.Tx, table *TableSchema, paginationKeys []PaginationKey) (map[string][]byte, map[string]map[string][]byte, error) {
 	return v.getFingerprintDataFromDb(v.SourceDB, v.sourceStmtCache, schemaName, tableName, tx, table, paginationKeys)
 }
 
-func (v *InlineVerifier) getFingerprintDataFromTargetDb(schemaName, tableName string, tx *sql.Tx, table *TableSchema, paginationKeys []uint64) (map[uint64][]byte, map[uint64]map[string][]byte, error) {
+func (v *InlineVerifier) getFingerprintDataFromTargetDb(schemaName, tableName string, tx *sql.Tx, table *TableSchema, paginationKeys []PaginationKey) (map[string][]byte, map[string]map[string][]byte, error) {
 	return v.getFingerprintDataFromDb(v.TargetDB, v.targetStmtCache, schemaName, tableName, tx, table, paginationKeys)
 }
 
-func (v *InlineVerifier) getFingerprintDataFromDb(db *sql.DB, stmtCache *StmtCache, schemaName, tableName string, tx *sql.Tx, table *TableSchema, paginationKeys []uint64) (map[uint64][]byte, map[uint64]map[string][]byte, error) {
+func (v *InlineVerifier) getFingerprintDataFromDb(db *sql.DB, stmtCache *StmtCache, schemaName, tableName string, tx *sql.Tx, table *TableSchema, paginationKeys []PaginationKey) (map[string][]byte, map[string]map[string][]byte, error) {
 	fingerprintQuery := table.FingerprintQuery(schemaName, tableName, len(paginationKeys))
 	fingerprintStmt, err := stmtCache.StmtFor(db, fingerprintQuery)
 	if err != nil {
@@ -540,9 +573,17 @@ func (v *InlineVerifier) getFingerprintDataFromDb(db *sql.DB, stmtCache *StmtCac
 		fingerprintStmt = tx.Stmt(fingerprintStmt)
 	}
 
-	args := make([]interface{}, len(paginationKeys))
-	for i, paginationKey := range paginationKeys {
-		args[i] = paginationKey
+	args := make([]interface{}, 0, len(paginationKeys))
+	for _, key := range paginationKeys {
+		// Flatten keys for arguments
+		switch k := key.(type) {
+		case CompositeKey:
+			for _, subKey := range k {
+				args = append(args, subKey.SQLValue())
+			}
+		default:
+			args = append(args, key.SQLValue())
+		}
 	}
 
 	rows, err := fingerprintStmt.Query(args...)
@@ -555,8 +596,10 @@ func (v *InlineVerifier) getFingerprintDataFromDb(db *sql.DB, stmtCache *StmtCac
 		return nil, nil, err
 	}
 
-	fingerprints := make(map[uint64][]byte)                // paginationKey -> fingerprint
-	decompressedData := make(map[uint64]map[string][]byte) // paginationKey -> columnName -> decompressedData
+	fingerprints := make(map[string][]byte)
+	decompressedData := make(map[string]map[string][]byte)
+	paginationCols := table.GetPaginationColumns()
+	numPKs := len(paginationCols)
 
 	for rows.Next() {
 		rowData, err := ScanByteRow(rows, len(columns))
@@ -564,20 +607,41 @@ func (v *InlineVerifier) getFingerprintDataFromDb(db *sql.DB, stmtCache *StmtCac
 			return nil, nil, err
 		}
 
-		paginationKey, err := strconv.ParseUint(string(rowData[0]), 10, 64)
-		if err != nil {
-			return nil, nil, err
+		// Reconstruct the key
+		keys := make([]PaginationKey, numPKs)
+		for i, col := range paginationCols {
+			switch col.Type {
+			case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+				paginationKeyUint, err := strconv.ParseUint(string(rowData[i]), 10, 64)
+				if err != nil {
+					return nil, nil, err
+				}
+				keys[i] = NewUint64Key(paginationKeyUint)
+
+			case schema.TYPE_BINARY, schema.TYPE_STRING:
+				keys[i] = NewBinaryKey(rowData[i])
+
+			default:
+				paginationKeyUint, err := strconv.ParseUint(string(rowData[i]), 10, 64)
+				if err != nil {
+					return nil, nil, err
+				}
+				keys[i] = NewUint64Key(paginationKeyUint)
+			}
 		}
 
-		fingerprints[paginationKey] = rowData[1]
-		decompressedData[paginationKey] = make(map[string][]byte)
+		var paginationKeyStr string
+		if len(keys) == 1 {
+			paginationKeyStr = keys[0].String()
+		} else {
+			paginationKeyStr = CompositeKey(keys).String()
+		}
 
-		// Note that the FingerprintQuery returns the columns: paginationKey, fingerprint,
-		// compressedData1, compressedData2, ...
-		// If there are no compressed data, only 2 columns are returned and this
-		// loop will be skipped.
-		for i := 2; i < len(columns); i++ {
-			decompressedData[paginationKey][columns[i]], err = v.decompressData(table, columns[i], rowData[i])
+		fingerprints[paginationKeyStr] = rowData[numPKs]
+		decompressedData[paginationKeyStr] = make(map[string][]byte)
+
+		for i := numPKs + 1; i < len(columns); i++ {
+			decompressedData[paginationKeyStr][columns[i]], err = v.decompressData(table, columns[i], rowData[i])
 			if err != nil {
 				return nil, nil, err
 			}
@@ -606,8 +670,8 @@ func (v *InlineVerifier) decompressData(table *TableSchema, column string, compr
 	}
 }
 
-func (v *InlineVerifier) compareHashes(source, target map[uint64][]byte) map[uint64]InlineVerifierMismatches {
-	mismatchSet := map[uint64]InlineVerifierMismatches{}
+func (v *InlineVerifier) compareHashes(source, target map[string][]byte) map[string]InlineVerifierMismatches {
+	mismatchSet := map[string]InlineVerifierMismatches{}
 
 	for paginationKey, targetHash := range target {
 		sourceHash, exists := source[paginationKey]
@@ -639,8 +703,8 @@ func (v *InlineVerifier) compareHashes(source, target map[uint64][]byte) map[uin
 	return mismatchSet
 }
 
-func compareDecompressedData(source, target map[uint64]map[string][]byte) map[uint64]InlineVerifierMismatches {
-	mismatchSet := map[uint64]InlineVerifierMismatches{}
+func compareDecompressedData(source, target map[string]map[string][]byte) map[string]InlineVerifierMismatches {
+	mismatchSet := map[string]InlineVerifierMismatches{}
 
 	for paginationKey, targetDecompressedColumns := range target {
 		sourceDecompressedColumns, exists := source[paginationKey]
@@ -704,7 +768,7 @@ func compareDecompressedData(source, target map[uint64]map[string][]byte) map[ui
 	return mismatchSet
 }
 
-func (v *InlineVerifier) compareHashesAndData(sourceHashes, targetHashes map[uint64][]byte, sourceData, targetData map[uint64]map[string][]byte) []InlineVerifierMismatches {
+func (v *InlineVerifier) compareHashesAndData(sourceHashes, targetHashes map[string][]byte, sourceData, targetData map[string]map[string][]byte) []InlineVerifierMismatches {
 	mismatches := v.compareHashes(sourceHashes, targetHashes)
 	compressedMismatch := compareDecompressedData(sourceData, targetData)
 	for paginationKey, mismatch := range compressedMismatch {
@@ -789,6 +853,43 @@ func (v *InlineVerifier) verifyAllEventsInStore() (bool, map[string]map[string][
 	return mismatchFound, mismatches, nil
 }
 
+func parsePaginationKeyFromString(table *TableSchema, keyStr string) (PaginationKey, error) {
+	parts := strings.Split(keyStr, ",")
+	paginationCols := table.GetPaginationColumns()
+	if len(parts) != len(paginationCols) {
+		return nil, fmt.Errorf("key string %s does not match column count %d", keyStr, len(paginationCols))
+	}
+
+	keys := make([]PaginationKey, len(paginationCols))
+	for i, col := range paginationCols {
+		switch col.Type {
+		case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+			val, err := strconv.ParseUint(parts[i], 10, 64)
+			if err != nil {
+				return nil, err
+			}
+			keys[i] = NewUint64Key(val)
+		case schema.TYPE_BINARY, schema.TYPE_STRING:
+			valBytes, err := hex.DecodeString(parts[i])
+			if err != nil {
+				return nil, err
+			}
+			keys[i] = NewBinaryKey(valBytes)
+		default:
+			val, err := strconv.ParseUint(parts[i], 10, 64)
+			if err != nil {
+				return nil, err
+			}
+			keys[i] = NewUint64Key(val)
+		}
+	}
+
+	if len(keys) == 1 {
+		return keys[0], nil
+	}
+	return CompositeKey(keys), nil
+}
+
 // Returns a list of mismatched PaginationKeys.
 // Since the mismatches gets re-added to the reverify store, this must return
 // a union of mismatches of fingerprints and mismatches due to decompressed
@@ -809,11 +910,25 @@ func (v *InlineVerifier) verifyBinlogBatch(batch BinlogVerifyBatch) ([]InlineVer
 		return []InlineVerifierMismatches{}, fmt.Errorf("programming error? %s.%s is not found in TableSchemaCache but is being reverified", batch.SchemaName, batch.TableName)
 	}
 
+	keys := make([]PaginationKey, 0, len(batch.PaginationKeys))
+	for _, kRaw := range batch.PaginationKeys {
+		kStr, ok := kRaw.(string)
+		if !ok {
+			continue
+		}
+		pk, err := parsePaginationKeyFromString(sourceTableSchema, kStr)
+		if err != nil {
+			v.logger.WithError(err).Warnf("failed to parse pagination key %s", kStr)
+			continue
+		}
+		keys = append(keys, pk)
+	}
+
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 
-	var sourceFingerprints map[uint64][]byte
-	var sourceDecompressedData map[uint64]map[string][]byte
+	var sourceFingerprints map[string][]byte
+	var sourceDecompressedData map[string]map[string][]byte
 	var sourceErr error
 	go func() {
 		defer wg.Done()
@@ -822,14 +937,14 @@ func (v *InlineVerifier) verifyBinlogBatch(batch BinlogVerifyBatch) ([]InlineVer
 				batch.SchemaName, batch.TableName,
 				nil, // No transaction
 				sourceTableSchema,
-				batch.PaginationKeys,
+				keys,
 			)
 			return
 		})
 	}()
 
-	var targetFingerprints map[uint64][]byte
-	var targetDecompressedData map[uint64]map[string][]byte
+	var targetFingerprints map[string][]byte
+	var targetDecompressedData map[string]map[string][]byte
 	var targetErr error
 	go func() {
 		defer wg.Done()
@@ -838,7 +953,7 @@ func (v *InlineVerifier) verifyBinlogBatch(batch BinlogVerifyBatch) ([]InlineVer
 				targetSchema, targetTable,
 				nil, // No transaction
 				sourceTableSchema,
-				batch.PaginationKeys,
+				keys,
 			)
 			return
 		})
