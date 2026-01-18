@@ -40,8 +40,15 @@ type TableSchema struct {
 	CompressedColumnsForVerification map[string]string   // Map of column name => compression type
 	IgnoredColumnsForVerification    map[string]struct{} // Set of column name
 	ForcedIndexForVerification       string              // Forced index name
+	
+	// Single column pagination (backward compatibility)
 	PaginationKeyColumn              *schema.TableColumn
 	PaginationKeyIndex               int
+	
+	// Composite pagination support (max 3 columns)
+	IsCompositePagination           bool
+	CompositePaginationColumns      []*schema.TableColumn
+	CompositePaginationIndexes      []int
 
 	rowMd5Query string
 }
@@ -126,29 +133,74 @@ func QuotedTableNameFromString(database, table string) string {
 	return fmt.Sprintf("`%s`.`%s`", database, table)
 }
 
+// MaxPaginationKeysData holds both single and composite pagination keys
+type MaxPaginationKeysData struct {
+	SingleKeys    map[*TableSchema]uint64
+	CompositeKeys map[*TableSchema][]interface{}
+}
+
 func MaxPaginationKeys(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) (map[*TableSchema]uint64, []*TableSchema, error) {
-	tablesWithData := make(map[*TableSchema]uint64)
+	data, emptyTables, err := MaxPaginationKeysWithComposite(db, tables, logger)
+	if err != nil {
+		return nil, nil, err
+	}
+	return data.SingleKeys, emptyTables, nil
+}
+
+func MaxPaginationKeysWithComposite(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) (*MaxPaginationKeysData, []*TableSchema, error) {
+	data := &MaxPaginationKeysData{
+		SingleKeys:    make(map[*TableSchema]uint64),
+		CompositeKeys: make(map[*TableSchema][]interface{}),
+	}
 	emptyTables := make([]*TableSchema, 0, len(tables))
 
 	for _, table := range tables {
 		logger := logger.WithField("table", table.String())
 
-		maxPaginationKey, maxPaginationKeyExists, err := maxPaginationKey(db, table)
-		if err != nil {
-			logger.WithError(err).Errorf("failed to get max primary key %s", table.GetPaginationColumn().Name)
-			return tablesWithData, emptyTables, err
-		}
+		if table.IsCompositePagination {
+			// Handle composite pagination
+			maxKeys, maxKeysExist, err := maxCompositePaginationKey(db, table)
+			if err != nil {
+				logger.WithError(err).Error("failed to get max composite pagination keys")
+				return nil, emptyTables, err
+			}
 
-		if !maxPaginationKeyExists {
-			emptyTables = append(emptyTables, table)
-			logger.Warn("no data in this table, skipping")
-			continue
-		}
+			if !maxKeysExist {
+				emptyTables = append(emptyTables, table)
+				logger.Warn("no data in this table, skipping")
+				continue
+			}
 
-		tablesWithData[table] = maxPaginationKey
+			data.CompositeKeys[table] = maxKeys
+			
+			// For backward compatibility, store first key as uint64 if possible
+			if len(maxKeys) > 0 {
+				if firstKey, ok := maxKeys[0].(uint64); ok {
+					data.SingleKeys[table] = firstKey
+				} else {
+					// Use MaxUint64-1 to indicate composite key table with data
+					data.SingleKeys[table] = math.MaxUint64 - 1
+				}
+			}
+		} else {
+			// Handle single pagination key
+			maxPaginationKey, maxPaginationKeyExists, err := maxPaginationKey(db, table)
+			if err != nil {
+				logger.WithError(err).Errorf("failed to get max primary key %s", table.GetPaginationColumn().Name)
+				return nil, emptyTables, err
+			}
+
+			if !maxPaginationKeyExists {
+				emptyTables = append(emptyTables, table)
+				logger.Warn("no data in this table, skipping")
+				continue
+			}
+
+			data.SingleKeys[table] = maxPaginationKey
+		}
 	}
 
-	return tablesWithData, emptyTables, nil
+	return data, emptyTables, nil
 }
 
 func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig ColumnCompressionConfig, columnIgnoreConfig ColumnIgnoreConfig, forceIndexConfig ForceIndexConfig, cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (TableSchemaCache, error) {
@@ -216,13 +268,11 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 			tableLog := dbLog.WithField("table", tableName)
 			tableLog.Debug("caching table schema")
 
-			paginationKeyColumn, paginationKeyIndex, err := tableSchema.paginationKeyColumn(cascadingPaginationColumnConfig)
+			err := tableSchema.setupPaginationColumns(cascadingPaginationColumnConfig)
 			if err != nil {
 				logger.WithError(err).Error("invalid table")
 				return tableSchemaCache, err
 			}
-			tableSchema.PaginationKeyColumn = paginationKeyColumn
-			tableSchema.PaginationKeyIndex = paginationKeyIndex
 
 			tableSchemaCache[tableSchema.String()] = tableSchema
 		}
@@ -255,6 +305,48 @@ func NonExistingPaginationKeyError(schema, table string) error {
 // NonNumericPaginationKeyError exported to facilitate black box testing
 func NonNumericPaginationKeyError(schema, table, paginationKey string) error {
 	return fmt.Errorf("Pagination Key `%s` for %s is non-numeric", paginationKey, QuotedTableNameFromString(schema, table))
+}
+
+// Validates if column type is supported for pagination (bigint or varchar(255))
+func isValidPaginationColumnType(col *schema.TableColumn) bool {
+	return col.Type == schema.TYPE_NUMBER || 
+		col.Type == schema.TYPE_MEDIUM_INT || 
+		(col.Type == schema.TYPE_STRING && col.ColumnType == "varchar(255)")
+}
+
+func (t *TableSchema) setupPaginationColumns(cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) error {
+	// First check for composite pagination config
+	if compositeColumns, found := cascadingPaginationColumnConfig.CompositePaginationColumnsFor(t.Schema, t.Name); found {
+		t.IsCompositePagination = true
+		t.CompositePaginationColumns = make([]*schema.TableColumn, len(compositeColumns))
+		t.CompositePaginationIndexes = make([]int, len(compositeColumns))
+		
+		for i, colName := range compositeColumns {
+			col, idx, err := t.findColumnByName(colName)
+			if err != nil {
+				return err
+			}
+			if !isValidPaginationColumnType(col) {
+				return fmt.Errorf("Composite pagination column `%s` for %s must be BIGINT or VARCHAR(255)", colName, QuotedTableNameFromString(t.Schema, t.Name))
+			}
+			t.CompositePaginationColumns[i] = col
+			t.CompositePaginationIndexes[i] = idx
+		}
+		// For backward compatibility, set the first column as the primary pagination column
+		t.PaginationKeyColumn = t.CompositePaginationColumns[0]
+		t.PaginationKeyIndex = t.CompositePaginationIndexes[0]
+		return nil
+	}
+	
+	// Fall back to single column pagination
+	col, idx, err := t.paginationKeyColumn(cascadingPaginationColumnConfig)
+	if err != nil {
+		return err
+	}
+	t.PaginationKeyColumn = col
+	t.PaginationKeyIndex = idx
+	t.IsCompositePagination = false
+	return nil
 }
 
 func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (*schema.TableColumn, int, error) {
@@ -422,5 +514,60 @@ func maxPaginationKey(db *sql.DB, table *TableSchema) (uint64, bool, error) {
 		return 0, false, err
 	default:
 		return maxPaginationKey, true, nil
+	}
+}
+
+func maxCompositePaginationKey(db *sql.DB, table *TableSchema) ([]interface{}, bool, error) {
+	// Build SELECT columns
+	columns := make([]string, len(table.CompositePaginationColumns))
+	orderBy := make([]string, len(table.CompositePaginationColumns))
+	
+	for i, col := range table.CompositePaginationColumns {
+		columns[i] = QuoteField(col.Name)
+		orderBy[i] = fmt.Sprintf("%s DESC", QuoteField(col.Name))
+	}
+	
+	query, args, err := sq.
+		Select(columns...).
+		From(QuotedTableName(table)).
+		OrderBy(orderBy...).
+		Limit(1).
+		ToSql()
+
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Prepare scan destinations
+	scanDest := make([]interface{}, len(columns))
+	result := make([]interface{}, len(columns))
+	
+	for i, col := range table.CompositePaginationColumns {
+		if col.Type == schema.TYPE_STRING {
+			var s string
+			scanDest[i] = &s
+		} else {
+			var n uint64
+			scanDest[i] = &n
+		}
+	}
+
+	err = db.QueryRow(query, args...).Scan(scanDest...)
+
+	switch {
+	case err == sqlorig.ErrNoRows:
+		return nil, false, nil
+	case err != nil:
+		return nil, false, err
+	default:
+		// Copy scanned values to result
+		for i, col := range table.CompositePaginationColumns {
+			if col.Type == schema.TYPE_STRING {
+				result[i] = *(scanDest[i].(*string))
+			} else {
+				result[i] = *(scanDest[i].(*uint64))
+			}
+		}
+		return result, true, nil
 	}
 }

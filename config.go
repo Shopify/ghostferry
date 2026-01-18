@@ -377,6 +377,10 @@ func (c ForceIndexConfig) IndexFor(schemaName, tableName string) string {
 // used. The term `Cascading` to denote that greater specificity takes
 // precedence.
 type CascadingPaginationColumnConfig struct {
+	// PerTableComposite has highest specificity for composite keys (max 3 columns)
+	// SchemaName => TableName => [ColumnName1, ColumnName2, ColumnName3]
+	PerTableComposite map[string]map[string][]string
+
 	// PerTable has greatest specificity and takes precedence over the other options
 	PerTable map[string]map[string]string // SchemaName => TableName => ColumnName
 
@@ -402,6 +406,30 @@ func (c *CascadingPaginationColumnConfig) PaginationColumnFor(schemaName, tableN
 	}
 
 	return column, true
+}
+
+// CompositePaginationColumnsFor retrieves composite pagination columns for a table
+func (c *CascadingPaginationColumnConfig) CompositePaginationColumnsFor(schemaName, tableName string) ([]string, bool) {
+	if c == nil || c.PerTableComposite == nil {
+		return nil, false
+	}
+
+	tableConfig, found := c.PerTableComposite[schemaName]
+	if !found {
+		return nil, false
+	}
+
+	columns, found := tableConfig[tableName]
+	if !found {
+		return nil, false
+	}
+
+	// Validate max 3 columns
+	if len(columns) > 3 || len(columns) == 0 {
+		return nil, false
+	}
+
+	return columns, true
 }
 
 // FallbackPaginationColumnName retreives the column name specified as a fallback when the Primary Key isn't suitable for pagination

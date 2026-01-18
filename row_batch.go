@@ -8,6 +8,11 @@ import (
 type RowBatch struct {
 	values             []RowData
 	paginationKeyIndex int
+	
+	// Composite pagination support
+	isCompositePagination     bool
+	compositePaginationIndexes []int
+	
 	table              *TableSchema
 	fingerprints       map[uint64][]byte
 	columns            []string
