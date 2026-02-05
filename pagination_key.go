@@ -11,12 +11,21 @@ import (
 	"github.com/go-mysql-org/go-mysql/schema"
 )
 
+// PaginationKey represents a cursor position for paginating through table rows.
+// It abstracts over different primary key types (integers, UUIDs, binary data)
+// to enable consistent batched iteration through tables.
 type PaginationKey interface {
+	// SQLValue returns the value to use in SQL WHERE clauses (e.g., WHERE id > ?).
 	SQLValue() interface{}
+	// Compare returns -1, 0, or 1 if this key is less than, equal to, or greater than other.
 	Compare(other PaginationKey) int
+	// NumericPosition returns a float64 approximation for progress tracking and estimation.
 	NumericPosition() float64
+	// String returns a human-readable representation for logging and debugging.
 	String() string
+	// MarshalJSON serializes the key for state persistence and checkpointing.
 	MarshalJSON() ([]byte, error)
+	// IsMax returns true if this key represents the maximum possible value for its type.
 	IsMax() bool
 }
 
@@ -207,7 +216,7 @@ func MaxPaginationKey(column *schema.TableColumn) PaginationKey {
 		if size > 4096 {
 			size = 4096
 		}
-		
+
 		maxBytes := make([]byte, size)
 		for i := range maxBytes {
 			maxBytes[i] = 0xFF
@@ -215,5 +224,39 @@ func MaxPaginationKey(column *schema.TableColumn) PaginationKey {
 		return NewBinaryKey(maxBytes)
 	default:
 		return NewUint64Key(math.MaxUint64)
+	}
+}
+
+// NewPaginationKeyFromRow extracts a pagination key from a row at the given index.
+// It determines the appropriate key type based on the column schema.
+func NewPaginationKeyFromRow(rowData RowData, index int, column *schema.TableColumn) (PaginationKey, error) {
+	switch column.Type {
+	case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+		value, err := rowData.GetUint64(index)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get uint64 pagination key: %w", err)
+		}
+		return NewUint64Key(value), nil
+
+	case schema.TYPE_BINARY, schema.TYPE_STRING:
+		valueInterface := rowData[index]
+		var valueBytes []byte
+		switch v := valueInterface.(type) {
+		case []byte:
+			valueBytes = v
+		case string:
+			valueBytes = []byte(v)
+		default:
+			return nil, fmt.Errorf("expected binary pagination key to be []byte or string, got %T", valueInterface)
+		}
+		return NewBinaryKey(valueBytes), nil
+
+	default:
+		// Fallback for other integer types
+		value, err := rowData.GetUint64(index)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get pagination key: %w", err)
+		}
+		return NewUint64Key(value), nil
 	}
 }

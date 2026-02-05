@@ -7,7 +7,6 @@ import (
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
-	"github.com/go-mysql-org/go-mysql/schema"
 	"github.com/sirupsen/logrus"
 )
 
@@ -57,65 +56,15 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 			return nil
 		}
 
-		var startPaginationKeypos, endPaginationKeypos PaginationKey
-		var err error
-		
 		paginationColumn := batch.TableSchema().GetPaginationColumn()
 
-		switch paginationColumn.Type {
-		case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-			var startValue, endValue uint64
-			startValue, err = values[0].GetUint64(batch.PaginationKeyIndex())
-			if err != nil {
-				return err
-			}
-			endValue, err = values[len(values)-1].GetUint64(batch.PaginationKeyIndex())
-			if err != nil {
-				return err
-			}
-			startPaginationKeypos = NewUint64Key(startValue)
-			endPaginationKeypos = NewUint64Key(endValue)
-
-		case schema.TYPE_BINARY, schema.TYPE_STRING:
-			startValueInterface := values[0][batch.PaginationKeyIndex()]
-			endValueInterface := values[len(values)-1][batch.PaginationKeyIndex()]
-
-			getBytes := func(val interface{}) ([]byte, error) {
-				switch v := val.(type) {
-				case []byte:
-					return v, nil
-				case string:
-					return []byte(v), nil
-				default:
-					return nil, fmt.Errorf("expected binary/string pagination key, got %T", val)
-				}
-			}
-
-			startValue, err := getBytes(startValueInterface)
-			if err != nil {
-				return err
-			}
-			
-			endValue, err := getBytes(endValueInterface)
-			if err != nil {
-				return err
-			}
-
-			startPaginationKeypos = NewBinaryKey(startValue)
-			endPaginationKeypos = NewBinaryKey(endValue)
-
-		default:
-			var startValue, endValue uint64
-			startValue, err = values[0].GetUint64(batch.PaginationKeyIndex())
-			if err != nil {
-				return err
-			}
-			endValue, err = values[len(values)-1].GetUint64(batch.PaginationKeyIndex())
-			if err != nil {
-				return err
-			}
-			startPaginationKeypos = NewUint64Key(startValue)
-			endPaginationKeypos = NewUint64Key(endValue)
+		startPaginationKeypos, err := NewPaginationKeyFromRow(values[0], batch.PaginationKeyIndex(), paginationColumn)
+		if err != nil {
+			return err
+		}
+		endPaginationKeypos, err := NewPaginationKeyFromRow(values[len(values)-1], batch.PaginationKeyIndex(), paginationColumn)
+		if err != nil {
+			return err
 		}
 
 		db := batch.TableSchema().Schema
