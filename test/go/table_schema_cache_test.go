@@ -86,18 +86,19 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesWithoutFiltering() {
 	}
 }
 
-func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutNumericPK() {
+func (this *TableSchemaCacheTestSuite) TestLoadTablesAcceptTablesWithVarcharPK() {
 	table := "test_table_4"
 	paginationColumn := "id"
-	query := fmt.Sprintf("CREATE TABLE %s.%s (%s varchar(20) not null, data TEXT, primary key(%s))", testhelpers.TestSchemaName, table, paginationColumn, paginationColumn)
+	// Use binary collation to ensure consistent ordering between MySQL and Go
+	query := fmt.Sprintf("CREATE TABLE %s.%s (%s varchar(20) COLLATE utf8mb4_bin not null, data TEXT, primary key(%s))", testhelpers.TestSchemaName, table, paginationColumn, paginationColumn)
 	_, err := this.Ferry.SourceDB.Exec(query)
 	this.Require().Nil(err)
 
-	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
+	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
 
-	this.Require().NotNil(err)
-	this.Require().EqualError(err, ghostferry.NonNumericPaginationKeyError(testhelpers.TestSchemaName, table, paginationColumn).Error())
-	this.Require().Contains(err.Error(), table)
+	this.Require().Nil(err)
+	this.Require().Contains(tableSchemaCache, testhelpers.TestSchemaName+"."+table)
+	this.Require().Equal(paginationColumn, tableSchemaCache[testhelpers.TestSchemaName+"."+table].GetPaginationColumn().Name)
 }
 func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWithoutNumericPKWithMediumInt() {
 	table := "pagination_by_column_medium_int_pk"
@@ -494,6 +495,64 @@ func (suite *TableSchemaCacheTestSuite) TestLoadTablesLoadsVisibleIndexes() {
 	suite.Require().Equal(requiredIndexLen, len(tables["gftest.test_table_1"].Indexes))
 	suite.Require().Equal("PRIMARY", tables["gftest.test_table_1"].Indexes[0].Name)
 	suite.Require().Equal("index_on_name_visible", tables["gftest.test_table_1"].Indexes[1].Name)
+}
+
+func (this *TableSchemaCacheTestSuite) TestVarcharWithNonBinaryCollationFails() {
+	// Create a table with VARCHAR PRIMARY KEY using non-binary collation
+	_, err := this.Ferry.SourceDB.Exec(fmt.Sprintf("CREATE TABLE %s.collation_test (id VARCHAR(10) COLLATE utf8mb4_unicode_ci NOT NULL PRIMARY KEY, data TEXT)", testhelpers.TestSchemaName))
+	this.Require().Nil(err)
+	defer this.Ferry.SourceDB.Exec(fmt.Sprintf("DROP TABLE %s.collation_test", testhelpers.TestSchemaName))
+
+	tableFilter := &testhelpers.TestTableFilter{
+		DbsFunc:    testhelpers.DbApplicabilityFilter([]string{testhelpers.TestSchemaName}),
+		TablesFunc: nil,
+	}
+
+	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, tableFilter, nil, nil, nil, &ghostferry.CascadingPaginationColumnConfig{})
+	this.Require().NotNil(err)
+	this.Require().Contains(err.Error(), "non-binary collation")
+	this.Require().Contains(err.Error(), "utf8mb4_unicode_ci")
+}
+
+func (this *TableSchemaCacheTestSuite) TestVarcharWithBinaryCollationPasses() {
+	// Create a table with VARCHAR PRIMARY KEY using binary collation
+	_, err := this.Ferry.SourceDB.Exec(fmt.Sprintf("CREATE TABLE %s.collation_test (id VARCHAR(10) COLLATE utf8mb4_bin NOT NULL PRIMARY KEY, data TEXT)", testhelpers.TestSchemaName))
+	this.Require().Nil(err)
+	defer this.Ferry.SourceDB.Exec(fmt.Sprintf("DROP TABLE %s.collation_test", testhelpers.TestSchemaName))
+
+	tableFilter := &testhelpers.TestTableFilter{
+		DbsFunc:    testhelpers.DbApplicabilityFilter([]string{testhelpers.TestSchemaName}),
+		TablesFunc: nil,
+	}
+
+	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, tableFilter, nil, nil, nil, &ghostferry.CascadingPaginationColumnConfig{})
+	this.Require().Nil(err)
+	this.Require().NotNil(tableSchemaCache)
+
+	table := tableSchemaCache.Get(testhelpers.TestSchemaName, "collation_test")
+	this.Require().NotNil(table)
+	this.Require().Equal("id", table.PaginationKeyColumn.Name)
+	this.Require().Equal("utf8mb4_bin", table.PaginationKeyColumn.Collation)
+}
+
+func (this *TableSchemaCacheTestSuite) TestVarbinaryPasses() {
+	// Create a table with VARBINARY PRIMARY KEY (always binary-safe)
+	_, err := this.Ferry.SourceDB.Exec(fmt.Sprintf("CREATE TABLE %s.collation_test (id VARBINARY(16) NOT NULL PRIMARY KEY, data TEXT)", testhelpers.TestSchemaName))
+	this.Require().Nil(err)
+	defer this.Ferry.SourceDB.Exec(fmt.Sprintf("DROP TABLE %s.collation_test", testhelpers.TestSchemaName))
+
+	tableFilter := &testhelpers.TestTableFilter{
+		DbsFunc:    testhelpers.DbApplicabilityFilter([]string{testhelpers.TestSchemaName}),
+		TablesFunc: nil,
+	}
+
+	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, tableFilter, nil, nil, nil, &ghostferry.CascadingPaginationColumnConfig{})
+	this.Require().Nil(err)
+	this.Require().NotNil(tableSchemaCache)
+
+	table := tableSchemaCache.Get(testhelpers.TestSchemaName, "collation_test")
+	this.Require().NotNil(table)
+	this.Require().Equal("id", table.PaginationKeyColumn.Name)
 }
 
 func TestTableSchemaCache(t *testing.T) {

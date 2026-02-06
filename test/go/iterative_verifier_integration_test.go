@@ -14,8 +14,12 @@ import (
 func TestHashesSql(t *testing.T) {
 	columns := []schema.TableColumn{schema.TableColumn{Name: "id"}, schema.TableColumn{Name: "data"}, schema.TableColumn{Name: "float_col", Type: schema.TYPE_FLOAT}}
 	paginationKeys := []uint64{1, 5, 42}
+	paginationKeysInterface := make([]interface{}, len(paginationKeys))
+	for i, pk := range paginationKeys {
+		paginationKeysInterface[i] = pk
+	}
 
-	sql, args, err := ghostferry.GetMd5HashesSql("gftest", "test_table", "id", columns, paginationKeys)
+	sql, args, err := ghostferry.GetMd5HashesSql("gftest", "test_table", "id", columns, paginationKeysInterface)
 
 	assert.Nil(t, err)
 	assert.Equal(t, "SELECT `id`, MD5(CONCAT(MD5(COALESCE(`id`, 'NULL')),MD5(COALESCE(`data`, 'NULL')),MD5(COALESCE((if (`float_col` = '-0', 0, `float_col`)), 'NULL')))) "+

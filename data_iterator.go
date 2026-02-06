@@ -2,7 +2,6 @@ package ghostferry
 
 import (
 	"fmt"
-	"math"
 	"sync"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -28,7 +27,7 @@ type DataIterator struct {
 
 type TableMaxPaginationKey struct {
 	Table            *TableSchema
-	MaxPaginationKey uint64
+	MaxPaginationKey PaginationKey
 }
 
 func (d *DataIterator) Run(tables []*TableSchema) {
@@ -86,15 +85,15 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 					return
 				}
 
-				startPaginationKey := d.StateTracker.LastSuccessfulPaginationKey(table.String())
-				if startPaginationKey == math.MaxUint64 {
+				startPaginationKey := d.StateTracker.LastSuccessfulPaginationKey(table.String(), table)
+				if startPaginationKey.IsMax() {
 					err := fmt.Errorf("%v has been marked as completed but a table iterator has been spawned, this is likely a programmer error which resulted in the inconsistent starting state", table.String())
 					logger.WithError(err).Error("this is definitely a bug")
 					d.ErrorHandler.Fatal("data_iterator", err)
 					return
 				}
 
-				cursor := d.CursorConfig.NewCursor(table, startPaginationKey, targetPaginationKeyInterface.(uint64))
+				cursor := d.CursorConfig.NewCursor(table, startPaginationKey, targetPaginationKeyInterface.(PaginationKey))
 				if d.SelectFingerprint {
 					if len(cursor.ColumnsToSelect) == 0 {
 						cursor.ColumnsToSelect = []string{"*"}
@@ -110,17 +109,18 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 					}, 1.0)
 
 					if d.SelectFingerprint {
-						fingerprints := make(map[uint64][]byte)
+						fingerprints := make(map[string][]byte)
 						rows := make([]RowData, batch.Size())
+						paginationColumn := table.GetPaginationColumn()
 
 						for i, rowData := range batch.Values() {
-							paginationKey, err := rowData.GetUint64(batch.PaginationKeyIndex())
+							paginationKey, err := NewPaginationKeyFromRow(rowData, batch.PaginationKeyIndex(), paginationColumn)
 							if err != nil {
 								logger.WithError(err).Error("failed to get paginationKey data")
 								return err
 							}
 
-							fingerprints[paginationKey] = rowData[len(rowData)-1].([]byte)
+							fingerprints[paginationKey.String()] = rowData[len(rowData)-1].([]byte)
 							rows[i] = rowData[:len(rowData)-1]
 						}
 

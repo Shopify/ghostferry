@@ -56,12 +56,13 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 			return nil
 		}
 
-		startPaginationKeypos, err := values[0].GetUint64(batch.PaginationKeyIndex())
+		paginationColumn := batch.TableSchema().GetPaginationColumn()
+
+		startPaginationKeypos, err := NewPaginationKeyFromRow(values[0], batch.PaginationKeyIndex(), paginationColumn)
 		if err != nil {
 			return err
 		}
-
-		endPaginationKeypos, err := values[len(values)-1].GetUint64(batch.PaginationKeyIndex())
+		endPaginationKeypos, err := NewPaginationKeyFromRow(values[len(values)-1], batch.PaginationKeyIndex(), paginationColumn)
 		if err != nil {
 			return err
 		}
@@ -78,12 +79,12 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 
 		query, args, err := batch.AsSQLQuery(db, table)
 		if err != nil {
-			return fmt.Errorf("during generating sql query at paginationKey %v -> %v: %v", startPaginationKeypos, endPaginationKeypos, err)
+			return fmt.Errorf("during generating sql query at paginationKey %s -> %s: %v", startPaginationKeypos.String(), endPaginationKeypos.String(), err)
 		}
 
 		stmt, err := w.stmtCache.StmtFor(w.DB, query)
 		if err != nil {
-			return fmt.Errorf("during prepare query near paginationKey %v -> %v (%s): %v", startPaginationKeypos, endPaginationKeypos, query, err)
+			return fmt.Errorf("during prepare query near paginationKey %s -> %s (%s): %v", startPaginationKeypos.String(), endPaginationKeypos.String(), query, err)
 		}
 
 		tx, err := w.DB.Begin()
@@ -94,14 +95,14 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 		_, err = tx.Stmt(stmt).Exec(args...)
 		if err != nil {
 			tx.Rollback()
-			return fmt.Errorf("during exec query near paginationKey %v -> %v (%s): %v", startPaginationKeypos, endPaginationKeypos, query, err)
+			return fmt.Errorf("during exec query near paginationKey %s -> %s (%s): %v", startPaginationKeypos.String(), endPaginationKeypos.String(), query, err)
 		}
 
 		if w.InlineVerifier != nil {
 			mismatches, err := w.InlineVerifier.CheckFingerprintInline(tx, db, table, batch, w.EnforceInlineVerification)
 			if err != nil {
 				tx.Rollback()
-				return fmt.Errorf("during fingerprint checking for paginationKey %v -> %v (%s): %v", startPaginationKeypos, endPaginationKeypos, query, err)
+				return fmt.Errorf("during fingerprint checking for paginationKey %s -> %s (%s): %v", startPaginationKeypos.String(), endPaginationKeypos.String(), query, err)
 			}
 
 			if w.EnforceInlineVerification {
@@ -119,7 +120,7 @@ func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {
 		err = tx.Commit()
 		if err != nil {
 			tx.Rollback()
-			return fmt.Errorf("during commit near paginationKey %v -> %v (%s): %v", startPaginationKeypos, endPaginationKeypos, query, err)
+			return fmt.Errorf("during commit near paginationKey %s -> %s (%s): %v", startPaginationKeypos.String(), endPaginationKeypos.String(), query, err)
 		}
 
 		// Note that the state tracker expects us the track based on the original

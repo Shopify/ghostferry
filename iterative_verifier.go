@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,17 +17,17 @@ import (
 )
 
 type ReverifyBatch struct {
-	PaginationKeys []uint64
+	PaginationKeys []interface{}
 	Table          TableIdentifier
 }
 
 type ReverifyEntry struct {
-	PaginationKey uint64
+	PaginationKey string
 	Table         *TableSchema
 }
 
 type ReverifyStore struct {
-	MapStore           map[TableIdentifier]map[uint64]struct{}
+	MapStore           map[TableIdentifier]map[string]struct{}
 	mapStoreMutex      *sync.Mutex
 	BatchStore         []ReverifyBatch
 	RowCount           uint64
@@ -50,13 +49,14 @@ func (r *ReverifyStore) Add(entry ReverifyEntry) {
 	r.mapStoreMutex.Lock()
 	defer r.mapStoreMutex.Unlock()
 
+	paginationKeyStr := entry.PaginationKey
 	tableId := NewTableIdentifierFromSchemaTable(entry.Table)
 	if _, exists := r.MapStore[tableId]; !exists {
-		r.MapStore[tableId] = make(map[uint64]struct{})
+		r.MapStore[tableId] = make(map[string]struct{})
 	}
 
-	if _, exists := r.MapStore[tableId][entry.PaginationKey]; !exists {
-		r.MapStore[tableId][entry.PaginationKey] = struct{}{}
+	if _, exists := r.MapStore[tableId][paginationKeyStr]; !exists {
+		r.MapStore[tableId][paginationKeyStr] = struct{}{}
 		r.RowCount++
 		if r.RowCount%r.EmitLogPerRowCount == 0 {
 			metrics.Gauge("iterative_verifier_store_rows", float64(r.RowCount), []MetricTag{}, 1.0)
@@ -74,16 +74,16 @@ func (r *ReverifyStore) FlushAndBatchByTable(batchsize int) []ReverifyBatch {
 
 	r.BatchStore = make([]ReverifyBatch, 0)
 	for tableId, paginationKeySet := range r.MapStore {
-		paginationKeyBatch := make([]uint64, 0, batchsize)
-		for paginationKey, _ := range paginationKeySet {
-			paginationKeyBatch = append(paginationKeyBatch, paginationKey)
-			delete(paginationKeySet, paginationKey)
+		paginationKeyBatch := make([]interface{}, 0, batchsize)
+		for paginationKeyStr, _ := range paginationKeySet {
+			paginationKeyBatch = append(paginationKeyBatch, paginationKeyStr)
+			delete(paginationKeySet, paginationKeyStr)
 			if len(paginationKeyBatch) >= batchsize {
 				r.BatchStore = append(r.BatchStore, ReverifyBatch{
 					PaginationKeys: paginationKeyBatch,
 					Table:          tableId,
 				})
-				paginationKeyBatch = make([]uint64, 0, batchsize)
+				paginationKeyBatch = make([]interface{}, 0, batchsize)
 			}
 		}
 
@@ -102,7 +102,7 @@ func (r *ReverifyStore) FlushAndBatchByTable(batchsize int) []ReverifyBatch {
 }
 
 func (r *ReverifyStore) flushStore() {
-	r.MapStore = make(map[TableIdentifier]map[uint64]struct{})
+	r.MapStore = make(map[TableIdentifier]map[string]struct{})
 	r.RowCount = 0
 }
 
@@ -184,10 +184,10 @@ func (v *IterativeVerifier) Initialize() error {
 func (v *IterativeVerifier) VerifyOnce() (VerificationResult, error) {
 	v.logger.Info("starting one-off verification of all tables")
 
-	err := v.iterateAllTables(func(paginationKey uint64, tableSchema *TableSchema) error {
+	err := v.iterateAllTables(func(paginationKey string, tableSchema *TableSchema) error {
 		return VerificationResult{
 			DataCorrect:     false,
-			Message:         fmt.Sprintf("verification failed on table: %s for paginationKey: %d", tableSchema.String(), paginationKey),
+			Message:         fmt.Sprintf("verification failed on table: %s for paginationKey: %s", tableSchema.String(), paginationKey),
 			IncorrectTables: []string{tableSchema.String()},
 		}
 	})
@@ -213,7 +213,7 @@ func (v *IterativeVerifier) VerifyBeforeCutover() error {
 	v.BinlogStreamer.AddEventListener(v.binlogEventListener)
 
 	v.logger.Debug("verifying all tables")
-	err := v.iterateAllTables(func(paginationKey uint64, tableSchema *TableSchema) error {
+	err := v.iterateAllTables(func(paginationKey string, tableSchema *TableSchema) error {
 		v.reverifyStore.Add(ReverifyEntry{PaginationKey: paginationKey, Table: tableSchema})
 		return nil
 	})
@@ -290,15 +290,12 @@ func (v *IterativeVerifier) Result() (VerificationResultAndStatus, error) {
 	return v.verificationResultAndStatus, v.verificationErr
 }
 
-func (v *IterativeVerifier) GetHashes(db *sql.DB, schema, table, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []uint64) (map[uint64][]byte, error) {
-	sql, args, err := GetMd5HashesSql(schema, table, paginationKeyColumn, columns, paginationKeys)
+func (v *IterativeVerifier) GetHashes(db *sql.DB, schemaName, tableName, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []interface{}) (map[string][]byte, error) {
+	sql, args, err := GetMd5HashesSql(schemaName, tableName, paginationKeyColumn, columns, paginationKeys)
 	if err != nil {
 		return nil, err
 	}
 
-	// This query must be a prepared query. If it is not, querying will use
-	// MySQL's plain text interface, which will scan all values into []uint8
-	// if we give it []interface{}.
 	stmt, err := db.Prepare(sql)
 	if err != nil {
 		return nil, err
@@ -313,19 +310,22 @@ func (v *IterativeVerifier) GetHashes(db *sql.DB, schema, table, paginationKeyCo
 
 	defer rows.Close()
 
-	resultSet := make(map[uint64][]byte)
+	table := v.TableSchemaCache.Get(schemaName, tableName)
+	paginationColumn := table.GetPaginationColumn()
+	resultSet := make(map[string][]byte)
+
 	for rows.Next() {
 		rowData, err := ScanGenericRow(rows, 2)
 		if err != nil {
 			return nil, err
 		}
 
-		paginationKey, err := rowData.GetUint64(0)
+		paginationKey, err := NewPaginationKeyFromRow(rowData, 0, paginationColumn)
 		if err != nil {
 			return nil, err
 		}
 
-		resultSet[paginationKey] = rowData[1].([]byte)
+		resultSet[paginationKey.String()] = rowData[1].([]byte)
 	}
 	return resultSet, nil
 }
@@ -363,7 +363,7 @@ func (v *IterativeVerifier) reverifyUntilStoreIsSmallEnough(maxIterations int) e
 	return nil
 }
 
-func (v *IterativeVerifier) iterateAllTables(mismatchedPaginationKeyFunc func(uint64, *TableSchema) error) error {
+func (v *IterativeVerifier) iterateAllTables(mismatchedPaginationKeyFunc func(string, *TableSchema) error) error {
 	pool := &WorkerPool{
 		Concurrency: v.Concurrency,
 		Process: func(tableIndex int) (interface{}, error) {
@@ -386,10 +386,10 @@ func (v *IterativeVerifier) iterateAllTables(mismatchedPaginationKeyFunc func(ui
 	return err
 }
 
-func (v *IterativeVerifier) iterateTableFingerprints(table *TableSchema, mismatchedPaginationKeyFunc func(uint64, *TableSchema) error) error {
+func (v *IterativeVerifier) iterateTableFingerprints(table *TableSchema, mismatchedPaginationKeyFunc func(string, *TableSchema) error) error {
 	// The cursor will stop iterating when it cannot find anymore rows,
-	// so it will not iterate until MaxUint64.
-	cursor := v.CursorConfig.NewCursorWithoutRowLock(table, 0, math.MaxUint64)
+	// so it will not iterate until MaxPaginationKey.
+	cursor := v.CursorConfig.NewCursorWithoutRowLock(table, MinPaginationKey(table.GetPaginationColumn()), MaxPaginationKey(table.GetPaginationColumn()))
 
 	// It only needs the PaginationKeys, not the entire row.
 	cursor.ColumnsToSelect = []string{fmt.Sprintf("`%s`", table.GetPaginationColumn().Name)}
@@ -399,15 +399,15 @@ func (v *IterativeVerifier) iterateTableFingerprints(table *TableSchema, mismatc
 			MetricTag{"source", "iterative_verifier_before_cutover"},
 		}, 1.0)
 
-		paginationKeys := make([]uint64, 0, batch.Size())
+		paginationKeys := make([]interface{}, 0, batch.Size())
+		paginationColumn := table.GetPaginationColumn()
 
 		for _, rowData := range batch.Values() {
-			paginationKey, err := rowData.GetUint64(batch.PaginationKeyIndex())
+			paginationKey, err := NewPaginationKeyFromRow(rowData, batch.PaginationKeyIndex(), paginationColumn)
 			if err != nil {
 				return err
 			}
-
-			paginationKeys = append(paginationKeys, paginationKey)
+			paginationKeys = append(paginationKeys, paginationKey.SQLValue())
 		}
 
 		mismatchedPaginationKeys, err := v.compareFingerprints(paginationKeys, batch.TableSchema())
@@ -513,7 +513,7 @@ func (v *IterativeVerifier) verifyStore(sourceTag string, additionalTags []Metri
 	return result, err
 }
 
-func (v *IterativeVerifier) reverifyPaginationKeys(table *TableSchema, paginationKeys []uint64) (VerificationResult, []uint64, error) {
+func (v *IterativeVerifier) reverifyPaginationKeys(table *TableSchema, paginationKeys []interface{}) (VerificationResult, []string, error) {
 	mismatchedPaginationKeys, err := v.compareFingerprints(paginationKeys, table)
 	if err != nil {
 		return VerificationResult{}, mismatchedPaginationKeys, err
@@ -523,14 +523,9 @@ func (v *IterativeVerifier) reverifyPaginationKeys(table *TableSchema, paginatio
 		return NewCorrectVerificationResult(), mismatchedPaginationKeys, nil
 	}
 
-	paginationKeyStrings := make([]string, len(mismatchedPaginationKeys))
-	for idx, paginationKey := range mismatchedPaginationKeys {
-		paginationKeyStrings[idx] = strconv.FormatUint(paginationKey, 10)
-	}
-
 	return VerificationResult{
 		DataCorrect:     false,
-		Message:         fmt.Sprintf("verification failed on table: %s for paginationKeys: %s", table.String(), strings.Join(paginationKeyStrings, ",")),
+		Message:         fmt.Sprintf("verification failed on table: %s for paginationKeys: %s", table.String(), strings.Join(mismatchedPaginationKeys, ",")),
 		IncorrectTables: []string{table.String()},
 	}, mismatchedPaginationKeys, nil
 }
@@ -582,7 +577,7 @@ func (v *IterativeVerifier) columnsToVerify(table *TableSchema) []schema.TableCo
 	return columns
 }
 
-func (v *IterativeVerifier) compareFingerprints(paginationKeys []uint64, table *TableSchema) ([]uint64, error) {
+func (v *IterativeVerifier) compareFingerprints(paginationKeys []interface{}, table *TableSchema) ([]string, error) {
 	targetDb := table.Schema
 	if targetDbName, exists := v.DatabaseRewrites[targetDb]; exists {
 		targetDb = targetDbName
@@ -596,7 +591,7 @@ func (v *IterativeVerifier) compareFingerprints(paginationKeys []uint64, table *
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
 
-	var sourceHashes map[uint64][]byte
+	var sourceHashes map[string][]byte
 	var sourceErr error
 	go func() {
 		defer wg.Done()
@@ -606,7 +601,7 @@ func (v *IterativeVerifier) compareFingerprints(paginationKeys []uint64, table *
 		})
 	}()
 
-	var targetHashes map[uint64][]byte
+	var targetHashes map[string][]byte
 	var targetErr error
 	go func() {
 		defer wg.Done()
@@ -632,7 +627,7 @@ func (v *IterativeVerifier) compareFingerprints(paginationKeys []uint64, table *
 	return mismatches, nil
 }
 
-func (v *IterativeVerifier) compareCompressedHashes(targetDb, targetTable string, table *TableSchema, paginationKeys []uint64) ([]uint64, error) {
+func (v *IterativeVerifier) compareCompressedHashes(targetDb, targetTable string, table *TableSchema, paginationKeys []interface{}) ([]string, error) {
 	sourceHashes, err := v.CompressionVerifier.GetCompressedHashes(v.SourceDB, table.Schema, table.Name, table.GetPaginationColumn().Name, v.columnsToVerify(table), paginationKeys)
 	if err != nil {
 		return nil, err
@@ -646,8 +641,8 @@ func (v *IterativeVerifier) compareCompressedHashes(targetDb, targetTable string
 	return compareHashes(sourceHashes, targetHashes), nil
 }
 
-func compareHashes(source, target map[uint64][]byte) []uint64 {
-	mismatchSet := map[uint64]struct{}{}
+func compareHashes(source, target map[string][]byte) []string {
+	mismatchSet := map[string]struct{}{}
 
 	for paginationKey, targetHash := range target {
 		sourceHash, exists := source[paginationKey]
@@ -663,7 +658,7 @@ func compareHashes(source, target map[uint64][]byte) []uint64 {
 		}
 	}
 
-	mismatches := make([]uint64, 0, len(mismatchSet))
+	mismatches := make([]string, 0, len(mismatchSet))
 	for mismatch, _ := range mismatchSet {
 		mismatches = append(mismatches, mismatch)
 	}
@@ -671,7 +666,7 @@ func compareHashes(source, target map[uint64][]byte) []uint64 {
 	return mismatches
 }
 
-func GetMd5HashesSql(schema, table, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []uint64) (string, []interface{}, error) {
+func GetMd5HashesSql(schema, table, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []interface{}) (string, []interface{}, error) {
 	quotedPaginationKey := QuoteField(paginationKeyColumn)
 	return rowMd5Selector(columns, paginationKeyColumn).
 		From(QuotedTableNameFromString(schema, table)).

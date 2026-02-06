@@ -126,8 +126,8 @@ func QuotedTableNameFromString(database, table string) string {
 	return fmt.Sprintf("`%s`.`%s`", database, table)
 }
 
-func MaxPaginationKeys(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) (map[*TableSchema]uint64, []*TableSchema, error) {
-	tablesWithData := make(map[*TableSchema]uint64)
+func MaxPaginationKeys(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) (map[*TableSchema]PaginationKey, []*TableSchema, error) {
+	tablesWithData := make(map[*TableSchema]PaginationKey)
 	emptyTables := make([]*TableSchema, 0, len(tables))
 
 	for _, table := range tables {
@@ -257,6 +257,11 @@ func NonNumericPaginationKeyError(schema, table, paginationKey string) error {
 	return fmt.Errorf("Pagination Key `%s` for %s is non-numeric", paginationKey, QuotedTableNameFromString(schema, table))
 }
 
+// NonBinaryCollationError exported to facilitate black box testing
+func NonBinaryCollationError(schema, table, paginationKey, collation string) error {
+	return fmt.Errorf("Pagination Key `%s` for %s has non-binary collation '%s'. Binary columns (BINARY, VARBINARY) or string columns with binary collation (e.g., utf8mb4_bin) are required to ensure consistent ordering between MySQL and Ghostferry", paginationKey, QuotedTableNameFromString(schema, table), collation)
+}
+
 func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (*schema.TableColumn, int, error) {
 	var err error
 	var paginationKeyColumn *schema.TableColumn
@@ -277,8 +282,25 @@ func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *Casca
 		err = NonExistingPaginationKeyError(t.Schema, t.Name)
 	}
 
-	if paginationKeyColumn != nil && paginationKeyColumn.Type != schema.TYPE_NUMBER && paginationKeyColumn.Type != schema.TYPE_MEDIUM_INT {
-		return nil, -1, NonNumericPaginationKeyError(t.Schema, t.Name, paginationKeyColumn.Name)
+	if paginationKeyColumn != nil {
+		isNumber := paginationKeyColumn.Type == schema.TYPE_NUMBER || paginationKeyColumn.Type == schema.TYPE_MEDIUM_INT
+		isBinary := paginationKeyColumn.Type == schema.TYPE_BINARY ||
+			paginationKeyColumn.Type == schema.TYPE_STRING
+
+		if !isNumber && !isBinary {
+			return nil, -1, NonNumericPaginationKeyError(t.Schema, t.Name, paginationKeyColumn.Name)
+		}
+
+		// For string types (VARCHAR, CHAR), validate that the collation is binary
+		// BINARY and VARBINARY types don't have collations and are always binary-safe
+		// Related PR comment with integration test proof: https://github.com/Shopify/ghostferry/pull/417#discussion_r2619684805
+		if paginationKeyColumn.Type == schema.TYPE_STRING && paginationKeyColumn.Collation != "" {
+			// Binary collations end with "_bin" (e.g., utf8mb4_bin, latin1_bin)
+			// BINARY type has empty collation and is handled above
+			if !strings.HasSuffix(paginationKeyColumn.Collation, "_bin") {
+				return nil, -1, NonBinaryCollationError(t.Schema, t.Name, paginationKeyColumn.Name, paginationKeyColumn.Collation)
+			}
+		}
 	}
 
 	return paginationKeyColumn, paginationKeyIndex, err
@@ -398,7 +420,7 @@ func showTablesFrom(c *sql.DB, dbname string) ([]string, error) {
 	return tables, nil
 }
 
-func maxPaginationKey(db *sql.DB, table *TableSchema) (uint64, bool, error) {
+func maxPaginationKey(db *sql.DB, table *TableSchema) (PaginationKey, bool, error) {
 	primaryKeyColumn := table.GetPaginationColumn()
 	paginationKeyName := QuoteField(primaryKeyColumn.Name)
 	query, args, err := sq.
@@ -409,18 +431,51 @@ func maxPaginationKey(db *sql.DB, table *TableSchema) (uint64, bool, error) {
 		ToSql()
 
 	if err != nil {
-		return 0, false, err
+		return nil, false, err
 	}
 
-	var maxPaginationKey uint64
-	err = db.QueryRow(query, args...).Scan(&maxPaginationKey)
+	var result PaginationKey
+	switch primaryKeyColumn.Type {
+	case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+		var value uint64
+		err = db.QueryRow(query, args...).Scan(&value)
+		result = NewUint64Key(value)
+
+	case schema.TYPE_BINARY, schema.TYPE_STRING:
+		// Scan into interface{} to handle both []byte and string from driver
+		var val interface{}
+		err = db.QueryRow(query, args...).Scan(&val)
+		if err != nil {
+			break
+		}
+		
+		var binValue []byte
+		switch v := val.(type) {
+		case []byte:
+			binValue = v
+		case string:
+			binValue = []byte(v)
+		default:
+			err = fmt.Errorf("expected binary/string for max key, got %T", val)
+		}
+		
+		if err == nil {
+			result = NewBinaryKey(binValue)
+		}
+
+	default:
+		// Fallback
+		var value uint64
+		err = db.QueryRow(query, args...).Scan(&value)
+		result = NewUint64Key(value)
+	}
 
 	switch {
 	case err == sqlorig.ErrNoRows:
-		return 0, false, nil
+		return nil, false, nil
 	case err != nil:
-		return 0, false, err
+		return nil, false, err
 	default:
-		return maxPaginationKey, true, nil
+		return result, true, nil
 	}
 }
