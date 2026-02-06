@@ -110,7 +110,7 @@ func (f *Ferry) NewDataIterator() *DataIterator {
 			BatchSizePerTableOverride: f.Config.DataIterationBatchSizePerTableOverride,
 			ReadRetries:               f.Config.DBReadRetries,
 		},
-		StateTracker: f.StateTracker,
+		StateTracker:         f.StateTracker,
 		TargetPaginationKeys: &sync.Map{},
 	}
 
@@ -993,9 +993,9 @@ func (f *Ferry) Progress() *Progress {
 	rowStatsWrittenPerTable := f.StateTracker.RowStatsWrittenPerTable()
 
 	s.Tables = make(map[string]TableProgress)
-	targetPaginationKeys := make(map[string]uint64)
+	targetPaginationKeys := make(map[string]PaginationKey)
 	f.DataIterator.TargetPaginationKeys.Range(func(k, v interface{}) bool {
-		targetPaginationKeys[k.(string)] = uint64(v.(PaginationKey).NumericPosition())
+		targetPaginationKeys[k.(string)] = v.(PaginationKey)
 		return true
 	})
 
@@ -1022,9 +1022,9 @@ func (f *Ferry) Progress() *Progress {
 
 		rowWrittenStats, _ := rowStatsWrittenPerTable[tableName]
 
-		var lastSuccessfulPaginationKey uint64
+		var lastSuccessfulPaginationKey PaginationKey
 		if lastSuccessfulPaginationKeyInterface != nil {
-			lastSuccessfulPaginationKey = uint64(lastSuccessfulPaginationKeyInterface.NumericPosition())
+			lastSuccessfulPaginationKey = lastSuccessfulPaginationKeyInterface
 		}
 
 		s.Tables[tableName] = TableProgress{
@@ -1042,7 +1042,7 @@ func (f *Ferry) Progress() *Progress {
 	var completedPaginationKeys uint64 = 0
 	estimatedPaginationKeysPerSecond := f.StateTracker.EstimatedPaginationKeysPerSecond()
 	for _, targetPaginationKey := range targetPaginationKeys {
-		totalPaginationKeysToCopy += targetPaginationKey
+		totalPaginationKeysToCopy += uint64(targetPaginationKey.NumericPosition())
 	}
 
 	for _, completedPaginationKey := range serializedState.LastSuccessfulPaginationKeys {
