@@ -36,6 +36,12 @@ type Uint64Key struct {
 	Value  uint64
 }
 
+type encodedKey struct {
+	Type   string          `json:"type"`
+	Value  json.RawMessage `json:"value"`
+	Column string          `json:"column,omitempty"`
+}
+
 func NewUint64Key(value uint64) Uint64Key {
 	return Uint64Key{Value: value}
 }
@@ -79,7 +85,17 @@ func (k Uint64Key) IsMax() bool {
 }
 
 func (k Uint64Key) MarshalJSON() ([]byte, error) {
-	return json.Marshal(k.Value)
+	valBytes, err := json.Marshal(k.Value)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return json.Marshal(encodedKey{
+		Type:   "uint64",
+		Value:  valBytes,
+		Column: k.Column,
+	})
 }
 
 type BinaryKey struct {
@@ -155,39 +171,16 @@ func (k BinaryKey) IsMax() bool {
 }
 
 func (k BinaryKey) MarshalJSON() ([]byte, error) {
-	return json.Marshal(hex.EncodeToString(k.Value))
-}
-
-type encodedKey struct {
-	Type   string          `json:"type"`
-	Value  json.RawMessage `json:"value"`
-	Column string          `json:"column,omitempty"`
-}
-
-func MarshalPaginationKey(k PaginationKey) ([]byte, error) {
-	var typeName string
-	var valBytes []byte
-	var err error
-
-	switch t := k.(type) {
-	case Uint64Key:
-		typeName = "uint64"
-		valBytes, err = t.MarshalJSON()
-	case BinaryKey:
-		typeName = "binary"
-		valBytes, err = t.MarshalJSON()
-	default:
-		return nil, fmt.Errorf("unknown pagination key type: %T", k)
-	}
+	valBytes, err := json.Marshal(hex.EncodeToString(k.Value))
 
 	if err != nil {
 		return nil, err
 	}
 
 	return json.Marshal(encodedKey{
-		Type:   typeName,
+		Type:   "binary",
 		Value:  valBytes,
-		Column: k.ColumnName(),
+		Column: k.Column,
 	})
 }
 

@@ -91,10 +91,31 @@ func TestUint64Key_IsMax(t *testing.T) {
 }
 
 func TestUint64Key_MarshalJSON(t *testing.T) {
+	key := ghostferry.NewUint64KeyWithColumn("id", 12345)
+	data, err := key.MarshalJSON()
+	require.NoError(t, err)
+
+	var result map[string]interface{}
+	err = json.Unmarshal(data, &result)
+	require.NoError(t, err)
+
+	assert.Equal(t, "uint64", result["type"])
+	assert.Equal(t, float64(12345), result["value"])
+	assert.Equal(t, "id", result["column"])
+}
+
+func TestUint64Key_MarshalJSON_when_no_column(t *testing.T) {
 	key := ghostferry.NewUint64Key(12345)
 	data, err := key.MarshalJSON()
 	require.NoError(t, err)
-	assert.Equal(t, "12345", string(data))
+
+	var result map[string]interface{}
+	err = json.Unmarshal(data, &result)
+	require.NoError(t, err)
+
+	assert.Equal(t, "uint64", result["type"])
+	assert.Equal(t, float64(12345), result["value"])
+	assert.Equal(t, nil, result["column"])
 }
 
 func TestBinaryKey_NewBinaryKeyClones(t *testing.T) {
@@ -276,28 +297,8 @@ func TestBinaryKey_IsMax(t *testing.T) {
 }
 
 func TestBinaryKey_MarshalJSON(t *testing.T) {
-	key := ghostferry.NewBinaryKey([]byte{0x01, 0x02, 0x03})
+	key := ghostferry.NewBinaryKeyWithColumn("uuid", []byte{0x01, 0x02, 0x03})
 	data, err := key.MarshalJSON()
-	require.NoError(t, err)
-	assert.Equal(t, `"010203"`, string(data))
-}
-
-func TestMarshalPaginationKey_Uint64(t *testing.T) {
-	key := ghostferry.NewUint64Key(12345)
-	data, err := ghostferry.MarshalPaginationKey(key)
-	require.NoError(t, err)
-
-	var result map[string]interface{}
-	err = json.Unmarshal(data, &result)
-	require.NoError(t, err)
-
-	assert.Equal(t, "uint64", result["type"])
-	assert.Equal(t, float64(12345), result["value"])
-}
-
-func TestMarshalPaginationKey_Binary(t *testing.T) {
-	key := ghostferry.NewBinaryKey([]byte{0x01, 0x02, 0x03})
-	data, err := ghostferry.MarshalPaginationKey(key)
 	require.NoError(t, err)
 
 	var result map[string]interface{}
@@ -306,6 +307,21 @@ func TestMarshalPaginationKey_Binary(t *testing.T) {
 
 	assert.Equal(t, "binary", result["type"])
 	assert.Equal(t, "010203", result["value"])
+	assert.Equal(t, "uuid", result["column"])
+}
+
+func TestBinaryKey_MarshalJSON_when_no_column(t *testing.T) {
+	key := ghostferry.NewBinaryKey([]byte{0x01, 0x02, 0x03})
+	data, err := key.MarshalJSON()
+	require.NoError(t, err)
+
+	var result map[string]interface{}
+	err = json.Unmarshal(data, &result)
+	require.NoError(t, err)
+
+	assert.Equal(t, "binary", result["type"])
+	assert.Equal(t, "010203", result["value"])
+	assert.Equal(t, nil, result["column"])
 }
 
 func TestUnmarshalPaginationKey_Uint64(t *testing.T) {
@@ -350,7 +366,7 @@ func TestUnmarshalPaginationKey_InvalidBinaryHex(t *testing.T) {
 func TestPaginationKey_RoundTrip_Uint64(t *testing.T) {
 	original := ghostferry.NewUint64Key(98765)
 
-	marshaled, err := ghostferry.MarshalPaginationKey(original)
+	marshaled, err := original.MarshalJSON()
 	require.NoError(t, err)
 
 	unmarshaled, err := ghostferry.UnmarshalPaginationKey(marshaled)
@@ -362,7 +378,7 @@ func TestPaginationKey_RoundTrip_Uint64(t *testing.T) {
 func TestPaginationKey_RoundTrip_Binary(t *testing.T) {
 	original := ghostferry.NewBinaryKey([]byte{0xDE, 0xAD, 0xBE, 0xEF})
 
-	marshaled, err := ghostferry.MarshalPaginationKey(original)
+	marshaled, err := original.MarshalJSON()
 	require.NoError(t, err)
 
 	unmarshaled, err := ghostferry.UnmarshalPaginationKey(marshaled)
