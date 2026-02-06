@@ -103,7 +103,7 @@ func TestBinaryKey_NewBinaryKeyClones(t *testing.T) {
 
 	original[0] = 0xFF
 
-	assert.Equal(t, []byte{0x01, 0x02, 0x03}, []byte(key))
+	assert.Equal(t, []byte{0x01, 0x02, 0x03}, key.Value)
 }
 
 func TestBinaryKey_SQLValue(t *testing.T) {
@@ -315,7 +315,7 @@ func TestUnmarshalPaginationKey_Uint64(t *testing.T) {
 
 	uint64Key, ok := key.(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(12345), uint64(uint64Key))
+	assert.Equal(t, uint64(12345), uint64Key.Value)
 }
 
 func TestUnmarshalPaginationKey_Binary(t *testing.T) {
@@ -325,7 +325,7 @@ func TestUnmarshalPaginationKey_Binary(t *testing.T) {
 
 	binaryKey, ok := key.(ghostferry.BinaryKey)
 	require.True(t, ok)
-	assert.Equal(t, []byte{0x01, 0x02, 0x03}, []byte(binaryKey))
+	assert.Equal(t, []byte{0x01, 0x02, 0x03}, binaryKey.Value)
 }
 
 func TestUnmarshalPaginationKey_InvalidType(t *testing.T) {
@@ -380,7 +380,8 @@ func TestMinPaginationKey_Numeric(t *testing.T) {
 	minKey := ghostferry.MinPaginationKey(column)
 	uint64Key, ok := minKey.(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(0), uint64(uint64Key))
+	assert.Equal(t, uint64(0), uint64Key.Value)
+	assert.Equal(t, "id", uint64Key.ColumnName())
 }
 
 func TestMinPaginationKey_MediumInt(t *testing.T) {
@@ -392,7 +393,8 @@ func TestMinPaginationKey_MediumInt(t *testing.T) {
 	minKey := ghostferry.MinPaginationKey(column)
 	uint64Key, ok := minKey.(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(0), uint64(uint64Key))
+	assert.Equal(t, uint64(0), uint64Key.Value)
+	assert.Equal(t, "id", uint64Key.ColumnName())
 }
 
 func TestMinPaginationKey_Binary(t *testing.T) {
@@ -404,7 +406,8 @@ func TestMinPaginationKey_Binary(t *testing.T) {
 	minKey := ghostferry.MinPaginationKey(column)
 	binaryKey, ok := minKey.(ghostferry.BinaryKey)
 	require.True(t, ok)
-	assert.Equal(t, []byte{}, []byte(binaryKey))
+	assert.Equal(t, []byte{}, binaryKey.Value)
+	assert.Equal(t, "uuid", binaryKey.ColumnName())
 }
 
 func TestMinPaginationKey_String(t *testing.T) {
@@ -416,7 +419,8 @@ func TestMinPaginationKey_String(t *testing.T) {
 	minKey := ghostferry.MinPaginationKey(column)
 	binaryKey, ok := minKey.(ghostferry.BinaryKey)
 	require.True(t, ok)
-	assert.Equal(t, []byte{}, []byte(binaryKey))
+	assert.Equal(t, []byte{}, binaryKey.Value)
+	assert.Equal(t, "key", binaryKey.ColumnName())
 }
 
 
@@ -429,7 +433,8 @@ func TestMaxPaginationKey_Numeric(t *testing.T) {
 	maxKey := ghostferry.MaxPaginationKey(column)
 	uint64Key, ok := maxKey.(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(math.MaxUint64), uint64(uint64Key))
+	assert.Equal(t, uint64(math.MaxUint64), uint64Key.Value)
+	assert.Equal(t, "id", uint64Key.ColumnName())
 }
 
 func TestMaxPaginationKey_MediumInt(t *testing.T) {
@@ -441,7 +446,8 @@ func TestMaxPaginationKey_MediumInt(t *testing.T) {
 	maxKey := ghostferry.MaxPaginationKey(column)
 	uint64Key, ok := maxKey.(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(math.MaxUint64), uint64(uint64Key))
+	assert.Equal(t, uint64(math.MaxUint64), uint64Key.Value)
+	assert.Equal(t, "id", uint64Key.ColumnName())
 }
 
 func TestMaxPaginationKey_Binary_UUID16(t *testing.T) {
@@ -454,9 +460,10 @@ func TestMaxPaginationKey_Binary_UUID16(t *testing.T) {
 	maxKey := ghostferry.MaxPaginationKey(column)
 	binaryKey, ok := maxKey.(ghostferry.BinaryKey)
 	require.True(t, ok)
-	assert.Equal(t, 16, len(binaryKey))
+	assert.Equal(t, 16, len(binaryKey.Value))
+	assert.Equal(t, "uuid", binaryKey.ColumnName())
 
-	for _, b := range binaryKey {
+	for _, b := range binaryKey.Value {
 		assert.Equal(t, byte(0xFF), b)
 	}
 	assert.True(t, binaryKey.IsMax())
@@ -472,7 +479,8 @@ func TestMaxPaginationKey_Binary_LargeSize(t *testing.T) {
 	maxKey := ghostferry.MaxPaginationKey(column)
 	binaryKey, ok := maxKey.(ghostferry.BinaryKey)
 	require.True(t, ok)
-	assert.Equal(t, 4096, len(binaryKey))
+	assert.Equal(t, 4096, len(binaryKey.Value))
+	assert.Equal(t, "large", binaryKey.ColumnName())
 }
 
 func TestMaxPaginationKey_DefaultToNumeric(t *testing.T) {
@@ -484,7 +492,8 @@ func TestMaxPaginationKey_DefaultToNumeric(t *testing.T) {
 	maxKey := ghostferry.MaxPaginationKey(column)
 	uint64Key, ok := maxKey.(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(math.MaxUint64), uint64(uint64Key))
+	assert.Equal(t, uint64(math.MaxUint64), uint64Key.Value)
+	assert.Equal(t, "id", uint64Key.ColumnName())
 }
 
 func TestPaginationKey_CrossTypeComparison_UUIDv7Ordering(t *testing.T) {

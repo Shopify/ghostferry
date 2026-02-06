@@ -55,15 +55,15 @@ func TestSerializableState_MarshalJSON_WithUint64Keys(t *testing.T) {
 
 	key1, ok := decoded.LastSuccessfulPaginationKeys["db.table1"].(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(100), uint64(key1))
+	assert.Equal(t, uint64(100), key1.Value)
 
 	key2, ok := decoded.LastSuccessfulPaginationKeys["db.table2"].(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(200), uint64(key2))
+	assert.Equal(t, uint64(200), key2.Value)
 
 	key3, ok := decoded.LastSuccessfulPaginationKeys["db.table3"].(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(300), uint64(key3))
+	assert.Equal(t, uint64(300), key3.Value)
 
 	assert.True(t, decoded.CompletedTables["db.table4"])
 }
@@ -93,11 +93,11 @@ func TestSerializableState_MarshalJSON_WithBinaryKeys(t *testing.T) {
 
 	key1, ok := decoded.LastSuccessfulPaginationKeys["db.uuid_table1"].(ghostferry.BinaryKey)
 	require.True(t, ok)
-	assert.Equal(t, uuid1, []byte(key1))
+	assert.Equal(t, uuid1, key1.Value)
 
 	key2, ok := decoded.LastSuccessfulPaginationKeys["db.uuid_table2"].(ghostferry.BinaryKey)
 	require.True(t, ok)
-	assert.Equal(t, uuid2, []byte(key2))
+	assert.Equal(t, uuid2, key2.Value)
 }
 
 func TestSerializableState_MarshalJSON_WithMixedKeys(t *testing.T) {
@@ -128,19 +128,19 @@ func TestSerializableState_MarshalJSON_WithMixedKeys(t *testing.T) {
 
 	numericKey, ok := decoded.LastSuccessfulPaginationKeys["db.numeric_table"].(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(12345), uint64(numericKey))
+	assert.Equal(t, uint64(12345), numericKey.Value)
 
 	uuidKey, ok := decoded.LastSuccessfulPaginationKeys["db.uuid_table"].(ghostferry.BinaryKey)
 	require.True(t, ok)
-	assert.Equal(t, uuid, []byte(uuidKey))
+	assert.Equal(t, uuid, uuidKey.Value)
 
 	varcharKey, ok := decoded.LastSuccessfulPaginationKeys["db.varchar_table"].(ghostferry.BinaryKey)
 	require.True(t, ok)
-	assert.Equal(t, []byte("some_key"), []byte(varcharKey))
+	assert.Equal(t, []byte("some_key"), varcharKey.Value)
 
 	bigintKey, ok := decoded.LastSuccessfulPaginationKeys["db.bigint_table"].(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(999999999), uint64(bigintKey))
+	assert.Equal(t, uint64(999999999), bigintKey.Value)
 
 	assert.True(t, decoded.CompletedTables["db.completed_table"])
 }
@@ -243,11 +243,11 @@ func TestSerializableState_RoundTrip_LargeState(t *testing.T) {
 
 	usersKey, ok := decoded.LastSuccessfulPaginationKeys["prod.users"].(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(1000000), uint64(usersKey))
+	assert.Equal(t, uint64(1000000), usersKey.Value)
 
 	sessionsKey, ok := decoded.LastSuccessfulPaginationKeys["prod.sessions"].(ghostferry.BinaryKey)
 	require.True(t, ok)
-	assert.Equal(t, uuid1, []byte(sessionsKey))
+	assert.Equal(t, uuid1, sessionsKey.Value)
 
 	assert.Equal(t, state.LastWrittenBinlogPosition, decoded.LastWrittenBinlogPosition)
 	assert.Equal(t, state.LastStoredBinlogPositionForInlineVerifier, decoded.LastStoredBinlogPositionForInlineVerifier)
@@ -306,7 +306,7 @@ func TestSerializableState_EmptyBinaryKey(t *testing.T) {
 
 	key, ok := decoded.LastSuccessfulPaginationKeys["db.table"].(ghostferry.BinaryKey)
 	require.True(t, ok)
-	assert.Equal(t, []byte{}, []byte(key))
+	assert.Equal(t, []byte{}, key.Value)
 }
 
 func TestSerializableState_ZeroUint64Key(t *testing.T) {
@@ -327,5 +327,5 @@ func TestSerializableState_ZeroUint64Key(t *testing.T) {
 
 	key, ok := decoded.LastSuccessfulPaginationKeys["db.table"].(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(0), uint64(key))
+	assert.Equal(t, uint64(0), key.Value)
 }

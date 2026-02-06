@@ -17,6 +17,8 @@ import (
 type PaginationKey interface {
 	// SQLValue returns the value to use in SQL WHERE clauses (e.g., WHERE id > ?).
 	SQLValue() interface{}
+	// ColumnName returns the column name this key belongs to, if known.
+	ColumnName() string
 	// Compare returns -1, 0, or 1 if this key is less than, equal to, or greater than other.
 	Compare(other PaginationKey) int
 	// NumericPosition returns a float64 approximation for progress tracking and estimation.
@@ -29,14 +31,25 @@ type PaginationKey interface {
 	IsMax() bool
 }
 
-type Uint64Key uint64
+type Uint64Key struct {
+	Column string
+	Value  uint64
+}
 
 func NewUint64Key(value uint64) Uint64Key {
-	return Uint64Key(value)
+	return Uint64Key{Value: value}
+}
+
+func NewUint64KeyWithColumn(column string, value uint64) Uint64Key {
+	return Uint64Key{Column: column, Value: value}
 }
 
 func (k Uint64Key) SQLValue() interface{} {
-	return uint64(k)
+	return k.Value
+}
+
+func (k Uint64Key) ColumnName() string {
+	return k.Column
 }
 
 func (k Uint64Key) Compare(other PaginationKey) int {
@@ -45,40 +58,53 @@ func (k Uint64Key) Compare(other PaginationKey) int {
 		panic(fmt.Sprintf("cannot compare Uint64Key with %T", other))
 	}
 
-	if k < otherKey {
+	if k.Value < otherKey.Value {
 		return -1
-	} else if k > otherKey {
+	} else if k.Value > otherKey.Value {
 		return 1
 	}
 	return 0
 }
 
 func (k Uint64Key) NumericPosition() float64 {
-	return float64(k)
+	return float64(k.Value)
 }
 
 func (k Uint64Key) String() string {
-	return fmt.Sprintf("%d", uint64(k))
+	return fmt.Sprintf("%d", k.Value)
 }
 
 func (k Uint64Key) IsMax() bool {
-	return k == Uint64Key(math.MaxUint64)
+	return k.Value == math.MaxUint64
 }
 
 func (k Uint64Key) MarshalJSON() ([]byte, error) {
-	return json.Marshal(uint64(k))
+	return json.Marshal(k.Value)
 }
 
-type BinaryKey []byte
+type BinaryKey struct {
+	Column string
+	Value  []byte
+}
 
 func NewBinaryKey(value []byte) BinaryKey {
 	clone := make([]byte, len(value))
 	copy(clone, value)
-	return BinaryKey(clone)
+	return BinaryKey{Value: clone}
+}
+
+func NewBinaryKeyWithColumn(column string, value []byte) BinaryKey {
+	clone := make([]byte, len(value))
+	copy(clone, value)
+	return BinaryKey{Column: column, Value: clone}
 }
 
 func (k BinaryKey) SQLValue() interface{} {
-	return []byte(k)
+	return k.Value
+}
+
+func (k BinaryKey) ColumnName() string {
+	return k.Column
 }
 
 func (k BinaryKey) Compare(other PaginationKey) int {
@@ -86,7 +112,7 @@ func (k BinaryKey) Compare(other PaginationKey) int {
 	if !ok {
 		panic(fmt.Sprintf("type mismatch: cannot compare BinaryKey with %T", other))
 	}
-	return bytes.Compare(k, otherKey)
+	return bytes.Compare(k.Value, otherKey.Value)
 }
 
 // NumericPosition calculates a rough float position for progress tracking.
@@ -98,29 +124,29 @@ func (k BinaryKey) Compare(other PaginationKey) int {
 //
 // The core pagination algorithm (using Compare()) is unaffected and works correctly with any binary data.
 func (k BinaryKey) NumericPosition() float64 {
-	if len(k) == 0 {
+	if len(k.Value) == 0 {
 		return 0.0
 	}
 
 	// Take up to the first 8 bytes to form a uint64 for estimation
 	var buf [8]byte
-	copy(buf[:], k)
+	copy(buf[:], k.Value)
 
 	val := binary.BigEndian.Uint64(buf[:])
 	return float64(val)
 }
 
 func (k BinaryKey) String() string {
-	return hex.EncodeToString(k)
+	return hex.EncodeToString(k.Value)
 }
 
 func (k BinaryKey) IsMax() bool {
 	// We cannot know the true "Max" of a VARBINARY without knowing the length.
 	// However, for UUID(16), we can check for FF...
-	if len(k) == 0 {
+	if len(k.Value) == 0 {
 		return false
 	}
-	for _, b := range k {
+	for _, b := range k.Value {
 		if b != 0xFF {
 			return false
 		}
@@ -129,12 +155,13 @@ func (k BinaryKey) IsMax() bool {
 }
 
 func (k BinaryKey) MarshalJSON() ([]byte, error) {
-	return json.Marshal(hex.EncodeToString(k))
+	return json.Marshal(hex.EncodeToString(k.Value))
 }
 
 type encodedKey struct {
-	Type  string          `json:"type"`
-	Value json.RawMessage `json:"value"`
+	Type   string          `json:"type"`
+	Value  json.RawMessage `json:"value"`
+	Column string          `json:"column,omitempty"`
 }
 
 func MarshalPaginationKey(k PaginationKey) ([]byte, error) {
@@ -158,8 +185,9 @@ func MarshalPaginationKey(k PaginationKey) ([]byte, error) {
 	}
 
 	return json.Marshal(encodedKey{
-		Type:  typeName,
-		Value: valBytes,
+		Type:   typeName,
+		Value:  valBytes,
+		Column: k.ColumnName(),
 	})
 }
 
@@ -175,7 +203,9 @@ func UnmarshalPaginationKey(data []byte) (PaginationKey, error) {
 		if err := json.Unmarshal(wrapper.Value, &i); err != nil {
 			return nil, err
 		}
-		return NewUint64Key(i), nil
+		key := NewUint64Key(i)
+		key.Column = wrapper.Column
+		return key, nil
 	case "binary":
 		var s string
 		if err := json.Unmarshal(wrapper.Value, &s); err != nil {
@@ -185,7 +215,9 @@ func UnmarshalPaginationKey(data []byte) (PaginationKey, error) {
 		if err != nil {
 			return nil, err
 		}
-		return NewBinaryKey(b), nil
+		key := NewBinaryKey(b)
+		key.Column = wrapper.Column
+		return key, nil
 	default:
 		return nil, fmt.Errorf("unknown key type: %s", wrapper.Type)
 	}
@@ -194,21 +226,21 @@ func UnmarshalPaginationKey(data []byte) (PaginationKey, error) {
 func MinPaginationKey(column *schema.TableColumn) PaginationKey {
 	switch column.Type {
 	case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-		return NewUint64Key(0)
+		return NewUint64KeyWithColumn(column.Name, 0)
 	// Handle all potential binary/string types
 	case schema.TYPE_BINARY, schema.TYPE_STRING:
 		// The smallest value for any binary/string type is an empty slice.
 		// Even for fixed BINARY(N), starting at empty ensures we catch [0x00, ...]
-		return NewBinaryKey([]byte{})
+		return NewBinaryKeyWithColumn(column.Name, []byte{})
 	default:
-		return NewUint64Key(0)
+		return NewUint64KeyWithColumn(column.Name, 0)
 	}
 }
 
 func MaxPaginationKey(column *schema.TableColumn) PaginationKey {
 	switch column.Type {
 	case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-		return NewUint64Key(math.MaxUint64)
+		return NewUint64KeyWithColumn(column.Name, math.MaxUint64)
 	case schema.TYPE_BINARY, schema.TYPE_STRING:
 		// SAFETY: Cap the size to prevent OOM on LONGBLOB (4GB).
 		// InnoDB index limit is 3072 bytes. 4KB is a safe upper bound for a PK.
@@ -221,9 +253,9 @@ func MaxPaginationKey(column *schema.TableColumn) PaginationKey {
 		for i := range maxBytes {
 			maxBytes[i] = 0xFF
 		}
-		return NewBinaryKey(maxBytes)
+		return NewBinaryKeyWithColumn(column.Name, maxBytes)
 	default:
-		return NewUint64Key(math.MaxUint64)
+		return NewUint64KeyWithColumn(column.Name, math.MaxUint64)
 	}
 }
 
@@ -236,7 +268,7 @@ func NewPaginationKeyFromRow(rowData RowData, index int, column *schema.TableCol
 		if err != nil {
 			return nil, fmt.Errorf("failed to get uint64 pagination key: %w", err)
 		}
-		return NewUint64Key(value), nil
+		return NewUint64KeyWithColumn(column.Name, value), nil
 
 	case schema.TYPE_BINARY, schema.TYPE_STRING:
 		valueInterface := rowData[index]
@@ -249,7 +281,7 @@ func NewPaginationKeyFromRow(rowData RowData, index int, column *schema.TableCol
 		default:
 			return nil, fmt.Errorf("expected binary pagination key to be []byte or string, got %T", valueInterface)
 		}
-		return NewBinaryKey(valueBytes), nil
+		return NewBinaryKeyWithColumn(column.Name, valueBytes), nil
 
 	default:
 		// Fallback for other integer types
@@ -257,6 +289,6 @@ func NewPaginationKeyFromRow(rowData RowData, index int, column *schema.TableCol
 		if err != nil {
 			return nil, fmt.Errorf("failed to get pagination key: %w", err)
 		}
-		return NewUint64Key(value), nil
+		return NewUint64KeyWithColumn(column.Name, value), nil
 	}
 }
