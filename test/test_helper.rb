@@ -163,8 +163,8 @@ class GhostferryTestCase < Minitest::Test
   def assert_test_table_is_identical
     source, target = source_and_target_table_metrics
 
-    assert source[DEFAULT_FULL_TABLE_NAME][:row_count] > 0
-    assert target[DEFAULT_FULL_TABLE_NAME][:row_count] > 0
+    assert_operator 0, :<, source[DEFAULT_FULL_TABLE_NAME][:row_count]
+    assert_operator 0, :<, target[DEFAULT_FULL_TABLE_NAME][:row_count]
 
     assert_equal(
       source[DEFAULT_FULL_TABLE_NAME][:row_count],
@@ -182,8 +182,8 @@ class GhostferryTestCase < Minitest::Test
   def assert_uuid_table_is_identical
     source, target = source_and_target_table_metrics(tables: [UUID_FULL_TABLE_NAME])
 
-    assert source[UUID_FULL_TABLE_NAME][:row_count] > 0
-    assert target[UUID_FULL_TABLE_NAME][:row_count] > 0
+    assert_operator 0, :<, source[UUID_FULL_TABLE_NAME][:row_count]
+    assert_operator 0, :<, target[UUID_FULL_TABLE_NAME][:row_count]
 
     assert_equal(
       source[UUID_FULL_TABLE_NAME][:row_count],
