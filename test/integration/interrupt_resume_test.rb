@@ -697,7 +697,7 @@ class InterruptResumeTest < GhostferryTestCase
     count = result.first["cnt"]
     assert_equal 200, count
 
-    result = target_db.query("SELECT MAX(id) AS max_id FROM #{UUID_FULL_TABLE_NAME}")
+    result = target_db.query("SELECT MAX(uuid) AS max_id FROM #{UUID_FULL_TABLE_NAME}")
     last_successful_id_bytes = result.first["max_id"]
     assert last_successful_id_bytes.length > 0
 
