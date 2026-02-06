@@ -73,6 +73,32 @@ func (this *RowBatchTestSuite) TestRowBatchGeneratesInsertQuery() {
 	this.Require().Equal(expected, v1)
 }
 
+func (this *RowBatchTestSuite) TestRowBatchGeneratesInsertQueryWithVirtualColumns() {
+	vals := []ghostferry.RowData{
+		ghostferry.RowData{1000, []byte("val1"), true},
+		ghostferry.RowData{1001, []byte("val2"), true},
+		ghostferry.RowData{1002, []byte("val3"), true},
+	}
+
+	// column 'col2' (#1) is generated so we should not insert into it.
+	this.targetTable.Columns[1].IsVirtual = true
+
+	batch := ghostferry.NewRowBatch(this.sourceTable, vals, 0)
+	this.Require().Equal(vals, batch.Values())
+
+	q1, v1, err := batch.AsSQLQuery(this.targetTable.Schema, this.targetTable.Name)
+	this.Require().Nil(err)
+	this.Require().Equal("INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col3`) VALUES (?,?),(?,?),(?,?)", q1)
+
+	expected := []interface{}{
+		1000, true,
+		1001, true,
+		1002, true,
+	}
+
+	this.Require().Equal(expected, v1)
+}
+
 func (this *RowBatchTestSuite) TestRowBatchWithWrongColumnsReturnsError() {
 	vals := []ghostferry.RowData{
 		ghostferry.RowData{1000, []byte("val0"), true},

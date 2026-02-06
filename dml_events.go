@@ -42,14 +42,14 @@ type RowData []interface{}
 // https://github.com/Shopify/ghostferry/issues/165.
 //
 // In summary:
-// - This code receives values from both go-sql-driver/mysql and
-//   go-mysql-org/go-mysql.
-// - go-sql-driver/mysql gives us int64 for signed integer, and uint64 in a byte
-//   slice for unsigned integer.
-// - go-mysql-org/go-mysql gives us int64 for signed integer, and uint64 for
-//   unsigned integer.
-// - We currently make this function deal with both cases. In the future we can
-//   investigate alternative solutions.
+//   - This code receives values from both go-sql-driver/mysql and
+//     go-mysql-org/go-mysql.
+//   - go-sql-driver/mysql gives us int64 for signed integer, and uint64 in a byte
+//     slice for unsigned integer.
+//   - go-mysql-org/go-mysql gives us int64 for signed integer, and uint64 for
+//     unsigned integer.
+//   - We currently make this function deal with both cases. In the future we can
+//     investigate alternative solutions.
 func (r RowData) GetUint64(colIdx int) (uint64, error) {
 	u64, ok := Uint64Value(r[colIdx])
 	if ok {
@@ -174,8 +174,8 @@ func (e *BinlogInsertEvent) AsSQLString(schemaName, tableName string) (string, e
 
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(schemaName, tableName) +
-		" (" + strings.Join(quotedColumnNames(e.table), ",") + ")" +
-		" VALUES (" + buildStringListForValues(e.table.Columns, e.newValues) + ")"
+		" (" + strings.Join(quotedColumnNamesForInsert(e.table), ",") + ")" +
+		" VALUES (" + buildStringListForInsertValues(e.table, e.newValues) + ")"
 
 	return query, nil
 }
@@ -323,10 +323,14 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 	}
 }
 
-func quotedColumnNames(table *TableSchema) []string {
-	cols := make([]string, len(table.Columns))
-	for i, column := range table.Columns {
-		cols[i] = QuoteField(column.Name)
+func quotedColumnNamesForInsert(table *TableSchema) []string {
+	cols := []string{}
+
+	for _, c := range table.Columns {
+		if c.IsVirtual {
+			continue
+		}
+		cols = append(cols, QuoteField(c.Name))
 	}
 
 	return cols
@@ -347,15 +351,18 @@ func verifyValuesHasTheSameLengthAsColumns(table *TableSchema, values ...RowData
 	return nil
 }
 
-func buildStringListForValues(columns []schema.TableColumn, values []interface{}) string {
+func buildStringListForInsertValues(table *TableSchema, values []interface{}) string {
 	var buffer []byte
 
 	for i, value := range values {
-		if i > 0 {
-			buffer = append(buffer, ',')
+		if table.Columns[i].IsVirtual {
+			continue
 		}
 
-		buffer = appendEscapedValue(buffer, value, columns[i])
+		if len(buffer) != 0 {
+			buffer = append(buffer, ',')
+		}
+		buffer = appendEscapedValue(buffer, value, table.Columns[i])
 	}
 
 	return string(buffer)
@@ -504,10 +511,10 @@ func Int64Value(value interface{}) (int64, bool) {
 //
 // This is specifically mentioned in the the below link:
 //
-//    When BINARY values are stored, they are right-padded with the pad value
-//    to the specified length. The pad value is 0x00 (the zero byte). Values
-//    are right-padded with 0x00 for inserts, and no trailing bytes are removed
-//    for retrievals.
+//	When BINARY values are stored, they are right-padded with the pad value
+//	to the specified length. The pad value is 0x00 (the zero byte). Values
+//	are right-padded with 0x00 for inserts, and no trailing bytes are removed
+//	for retrievals.
 //
 // ref: https://dev.mysql.com/doc/refman/5.7/en/binary-varbinary.html
 func appendEscapedString(buffer []byte, value string, rightPadToLengthWithZeroBytes int) []byte {

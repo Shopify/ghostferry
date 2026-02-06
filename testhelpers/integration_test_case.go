@@ -122,7 +122,7 @@ func (this *IntegrationTestCase) VerifyData() {
 		}
 
 		if !verificationResult.DataCorrect {
-			this.T.Fatalf(verificationResult.Message)
+			this.T.Fatal(verificationResult.Message)
 		}
 	}
 
