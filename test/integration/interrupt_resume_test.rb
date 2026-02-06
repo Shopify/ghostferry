@@ -553,8 +553,10 @@ class InterruptResumeTest < GhostferryTestCase
     dumped_state = ghostferry.run_expecting_interrupt
     assert_basic_fields_exist_in_dumped_state(dumped_state)
 
-    last_pk = dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]["value"]
-    assert last_pk > 200
+    last_pk = dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]
+    assert_operator 200, :<, last_pk["value"]
+    assert_equal "uint64", last_pk["type"]
+    assert_equal "id", last_pk["column"]
 
     # We need to rewind the state backwards, and then change that row on the
     # source. We also need to block the binlog streamer to prevent writing to
@@ -566,7 +568,7 @@ class InterruptResumeTest < GhostferryTestCase
     # should not fail and should add to the verify queue and keep checking until
     # cutover.  Eventually, the binlog streamer will be unblocked and then it will
     # apply the insert. The verification status should be correct.
-    id_to_change = source_db.query("SELECT id FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id <= #{last_pk} ORDER BY id DESC LIMIT 1").first["id"]
+    id_to_change = source_db.query("SELECT id FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id <= #{last_pk["value"]} ORDER BY id DESC LIMIT 1").first["id"]
     assert id_to_change > 2, "the last row of the batch should have an id of greater than 2, not #{id_to_change}"
     source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'changed' WHERE id = #{id_to_change}")
 
@@ -623,14 +625,16 @@ class InterruptResumeTest < GhostferryTestCase
     dumped_state = ghostferry.run_expecting_interrupt
     assert_basic_fields_exist_in_dumped_state(dumped_state)
 
-    last_pk = dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]["value"]
-    assert last_pk > 200
+    last_pk = dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]
+    assert_operator 200, :<, last_pk["value"]
+    assert_equal "uint64", last_pk["type"]
+    assert_equal "id", last_pk["column"]
 
     # This should be similar to test_issue_149_correct, except we force the
     # BinlogStremer to corrupt the data on the target. We need to check that
     # the InlineVerifier indeed fails this run, if a corruption happens on the
     # row this race condition exists for.
-    id_to_change = source_db.query("SELECT id FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id <= #{last_pk} ORDER BY id DESC LIMIT 1").first["id"]
+    id_to_change = source_db.query("SELECT id FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id <= #{last_pk["value"]} ORDER BY id DESC LIMIT 1").first["id"]
     assert id_to_change > 2, "the last row of the batch should have an id of greater than 2, not #{id_to_change}"
     source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'changed' WHERE id = #{id_to_change}")
     target_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'corrupted' WHERE id = #{id_to_change}")
@@ -697,12 +701,14 @@ class InterruptResumeTest < GhostferryTestCase
     count = result.first["cnt"]
     assert_equal 200, count
 
-    result = target_db.query("SELECT MAX(id) AS max_id FROM #{UUID_FULL_TABLE_NAME}")
+    result = target_db.query("SELECT MAX(uuid) AS max_id FROM #{UUID_FULL_TABLE_NAME}")
     last_successful_id_bytes = result.first["max_id"]
     assert last_successful_id_bytes.length > 0
 
-    last_key_in_state = dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{UUID_TABLE}"]["value"]
-    assert_equal last_successful_id_bytes.unpack1("H*"), last_key_in_state
+    last_key_in_state = dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{UUID_TABLE}"]
+    assert_equal "binary", last_key_in_state["type"]
+    assert_equal "uuid", last_key_in_state["column"]
+    assert_equal last_successful_id_bytes.unpack1("H*"), last_key_in_state["value"]
   end
 
   def test_interrupt_and_resume_without_last_known_schema_cache_with_uuid_table

@@ -16,8 +16,10 @@ class CallbacksTest < GhostferryTestCase
 
     assert_equal "done", progress.last["CurrentState"]
 
-    assert_equal 1111, progress.last["Tables"]["gftest.test_table_1"]["LastSuccessfulPaginationKey"]
-    assert_equal 1111, progress.last["Tables"]["gftest.test_table_1"]["TargetPaginationKey"]
+    expected_pk = {"type" => "uint64", "column" => "id", "value" => 1111}
+
+    assert_equal expected_pk, progress.last["Tables"]["gftest.test_table_1"]["LastSuccessfulPaginationKey"]
+    assert_equal expected_pk, progress.last["Tables"]["gftest.test_table_1"]["TargetPaginationKey"]
     assert_equal "completed", progress.last["Tables"]["gftest.test_table_1"]["CurrentAction"]
 
     result = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
@@ -69,8 +71,10 @@ class CallbacksTest < GhostferryTestCase
 
     assert_equal "cutover", progress.last["CurrentState"]
 
-    assert_equal 1111, progress.last["Tables"]["gftest.test_table_1"]["LastSuccessfulPaginationKey"]
-    assert_equal 1111, progress.last["Tables"]["gftest.test_table_1"]["TargetPaginationKey"]
+    expected_pk = {"type" => "uint64", "column" => "id", "value" => 1111}
+
+    assert_equal expected_pk, progress.last["Tables"]["gftest.test_table_1"]["LastSuccessfulPaginationKey"]
+    assert_equal expected_pk, progress.last["Tables"]["gftest.test_table_1"]["TargetPaginationKey"]
     assert_equal "completed", progress.last["Tables"]["gftest.test_table_1"]["CurrentAction"]
 
     result = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")

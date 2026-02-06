@@ -172,11 +172,11 @@ module DbHelper
     dbtable = full_table_name(database_name, table_name)
 
     connection.query("CREATE DATABASE IF NOT EXISTS #{database_name}")
-    connection.query("CREATE TABLE IF NOT EXISTS #{dbtable} (id VARBINARY(16) NOT NULL, data TEXT, PRIMARY KEY(id))")
+    connection.query("CREATE TABLE IF NOT EXISTS #{dbtable} (uuid VARBINARY(16) NOT NULL, data TEXT, PRIMARY KEY(uuid))")
 
     return if number_of_rows == 0
 
-    insert_statement = connection.prepare("INSERT INTO #{dbtable} (id, data) VALUES (?, ?)")
+    insert_statement = connection.prepare("INSERT INTO #{dbtable} (uuid, data) VALUES (?, ?)")
     transaction(connection) do
       number_of_rows.times do
         uuid_bytes = generate_uuid_bytes
@@ -191,16 +191,16 @@ module DbHelper
     seed_uuid_data(source_db, number_of_rows: max_rows)
 
     num_holes = 140
-    result = source_db.query("SELECT id FROM #{UUID_FULL_TABLE_NAME} ORDER BY id LIMIT #{num_holes}")
+    result = source_db.query("SELECT uuid FROM #{UUID_FULL_TABLE_NAME} ORDER BY uuid LIMIT #{num_holes}")
 
     holes_ids = []
     result.each do |row|
-      holes_ids << row["id"]
+      holes_ids << row["uuid"]
     end
 
     unless holes_ids.empty?
       sqlargs = (["?"]*holes_ids.length).join(",")
-      delete_statement = source_db.prepare("DELETE FROM #{UUID_FULL_TABLE_NAME} WHERE id IN (#{sqlargs})")
+      delete_statement = source_db.prepare("DELETE FROM #{UUID_FULL_TABLE_NAME} WHERE uuid IN (#{sqlargs})")
       delete_statement.execute(*holes_ids)
     end
 

@@ -11,8 +11,8 @@ const (
 )
 
 type TableProgress struct {
-	LastSuccessfulPaginationKey uint64
-	TargetPaginationKey         uint64
+	LastSuccessfulPaginationKey PaginationKey
+	TargetPaginationKey         PaginationKey
 	CurrentAction               string // Possible values are defined via the constants TableAction*
 	RowsWritten                 uint64
 	BatchSize                   uint64

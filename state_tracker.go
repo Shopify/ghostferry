@@ -54,7 +54,7 @@ func (s *SerializableState) MarshalJSON() ([]byte, error) {
 	}
 
 	for k, v := range s.LastSuccessfulPaginationKeys {
-		b, err := MarshalPaginationKey(v)
+		b, err := v.MarshalJSON()
 		if err != nil {
 			return nil, err
 		}
