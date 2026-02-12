@@ -439,7 +439,7 @@ func maxPaginationKey(db *sql.DB, table *TableSchema) (PaginationKey, bool, erro
 	case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
 		var value uint64
 		err = db.QueryRow(query, args...).Scan(&value)
-		result = NewUint64Key(value)
+		result = NewUint64KeyWithColumn(primaryKeyColumn.Name, value)
 
 	case schema.TYPE_BINARY, schema.TYPE_STRING:
 		// Scan into interface{} to handle both []byte and string from driver
@@ -460,14 +460,14 @@ func maxPaginationKey(db *sql.DB, table *TableSchema) (PaginationKey, bool, erro
 		}
 		
 		if err == nil {
-			result = NewBinaryKey(binValue)
+			result = NewBinaryKeyWithColumn(primaryKeyColumn.Name, binValue)
 		}
 
 	default:
 		// Fallback
 		var value uint64
 		err = db.QueryRow(query, args...).Scan(&value)
-		result = NewUint64Key(value)
+		result = NewUint64KeyWithColumn(primaryKeyColumn.Name, value)
 	}
 
 	switch {

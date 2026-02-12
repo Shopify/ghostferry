@@ -91,10 +91,31 @@ func TestUint64Key_IsMax(t *testing.T) {
 }
 
 func TestUint64Key_MarshalJSON(t *testing.T) {
+	key := ghostferry.NewUint64KeyWithColumn("id", 12345)
+	data, err := key.MarshalJSON()
+	require.NoError(t, err)
+
+	var result map[string]interface{}
+	err = json.Unmarshal(data, &result)
+	require.NoError(t, err)
+
+	assert.Equal(t, "uint64", result["type"])
+	assert.Equal(t, float64(12345), result["value"])
+	assert.Equal(t, "id", result["column"])
+}
+
+func TestUint64Key_MarshalJSON_when_no_column(t *testing.T) {
 	key := ghostferry.NewUint64Key(12345)
 	data, err := key.MarshalJSON()
 	require.NoError(t, err)
-	assert.Equal(t, "12345", string(data))
+
+	var result map[string]interface{}
+	err = json.Unmarshal(data, &result)
+	require.NoError(t, err)
+
+	assert.Equal(t, "uint64", result["type"])
+	assert.Equal(t, float64(12345), result["value"])
+	assert.Equal(t, nil, result["column"])
 }
 
 func TestBinaryKey_NewBinaryKeyClones(t *testing.T) {
@@ -103,7 +124,7 @@ func TestBinaryKey_NewBinaryKeyClones(t *testing.T) {
 
 	original[0] = 0xFF
 
-	assert.Equal(t, []byte{0x01, 0x02, 0x03}, []byte(key))
+	assert.Equal(t, []byte{0x01, 0x02, 0x03}, key.Value)
 }
 
 func TestBinaryKey_SQLValue(t *testing.T) {
@@ -276,28 +297,8 @@ func TestBinaryKey_IsMax(t *testing.T) {
 }
 
 func TestBinaryKey_MarshalJSON(t *testing.T) {
-	key := ghostferry.NewBinaryKey([]byte{0x01, 0x02, 0x03})
+	key := ghostferry.NewBinaryKeyWithColumn("uuid", []byte{0x01, 0x02, 0x03})
 	data, err := key.MarshalJSON()
-	require.NoError(t, err)
-	assert.Equal(t, `"010203"`, string(data))
-}
-
-func TestMarshalPaginationKey_Uint64(t *testing.T) {
-	key := ghostferry.NewUint64Key(12345)
-	data, err := ghostferry.MarshalPaginationKey(key)
-	require.NoError(t, err)
-
-	var result map[string]interface{}
-	err = json.Unmarshal(data, &result)
-	require.NoError(t, err)
-
-	assert.Equal(t, "uint64", result["type"])
-	assert.Equal(t, float64(12345), result["value"])
-}
-
-func TestMarshalPaginationKey_Binary(t *testing.T) {
-	key := ghostferry.NewBinaryKey([]byte{0x01, 0x02, 0x03})
-	data, err := ghostferry.MarshalPaginationKey(key)
 	require.NoError(t, err)
 
 	var result map[string]interface{}
@@ -306,6 +307,21 @@ func TestMarshalPaginationKey_Binary(t *testing.T) {
 
 	assert.Equal(t, "binary", result["type"])
 	assert.Equal(t, "010203", result["value"])
+	assert.Equal(t, "uuid", result["column"])
+}
+
+func TestBinaryKey_MarshalJSON_when_no_column(t *testing.T) {
+	key := ghostferry.NewBinaryKey([]byte{0x01, 0x02, 0x03})
+	data, err := key.MarshalJSON()
+	require.NoError(t, err)
+
+	var result map[string]interface{}
+	err = json.Unmarshal(data, &result)
+	require.NoError(t, err)
+
+	assert.Equal(t, "binary", result["type"])
+	assert.Equal(t, "010203", result["value"])
+	assert.Equal(t, nil, result["column"])
 }
 
 func TestUnmarshalPaginationKey_Uint64(t *testing.T) {
@@ -315,7 +331,7 @@ func TestUnmarshalPaginationKey_Uint64(t *testing.T) {
 
 	uint64Key, ok := key.(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(12345), uint64(uint64Key))
+	assert.Equal(t, uint64(12345), uint64Key.Value)
 }
 
 func TestUnmarshalPaginationKey_Binary(t *testing.T) {
@@ -325,7 +341,7 @@ func TestUnmarshalPaginationKey_Binary(t *testing.T) {
 
 	binaryKey, ok := key.(ghostferry.BinaryKey)
 	require.True(t, ok)
-	assert.Equal(t, []byte{0x01, 0x02, 0x03}, []byte(binaryKey))
+	assert.Equal(t, []byte{0x01, 0x02, 0x03}, binaryKey.Value)
 }
 
 func TestUnmarshalPaginationKey_InvalidType(t *testing.T) {
@@ -350,7 +366,7 @@ func TestUnmarshalPaginationKey_InvalidBinaryHex(t *testing.T) {
 func TestPaginationKey_RoundTrip_Uint64(t *testing.T) {
 	original := ghostferry.NewUint64Key(98765)
 
-	marshaled, err := ghostferry.MarshalPaginationKey(original)
+	marshaled, err := original.MarshalJSON()
 	require.NoError(t, err)
 
 	unmarshaled, err := ghostferry.UnmarshalPaginationKey(marshaled)
@@ -362,7 +378,7 @@ func TestPaginationKey_RoundTrip_Uint64(t *testing.T) {
 func TestPaginationKey_RoundTrip_Binary(t *testing.T) {
 	original := ghostferry.NewBinaryKey([]byte{0xDE, 0xAD, 0xBE, 0xEF})
 
-	marshaled, err := ghostferry.MarshalPaginationKey(original)
+	marshaled, err := original.MarshalJSON()
 	require.NoError(t, err)
 
 	unmarshaled, err := ghostferry.UnmarshalPaginationKey(marshaled)
@@ -380,7 +396,8 @@ func TestMinPaginationKey_Numeric(t *testing.T) {
 	minKey := ghostferry.MinPaginationKey(column)
 	uint64Key, ok := minKey.(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(0), uint64(uint64Key))
+	assert.Equal(t, uint64(0), uint64Key.Value)
+	assert.Equal(t, "id", uint64Key.ColumnName())
 }
 
 func TestMinPaginationKey_MediumInt(t *testing.T) {
@@ -392,7 +409,8 @@ func TestMinPaginationKey_MediumInt(t *testing.T) {
 	minKey := ghostferry.MinPaginationKey(column)
 	uint64Key, ok := minKey.(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(0), uint64(uint64Key))
+	assert.Equal(t, uint64(0), uint64Key.Value)
+	assert.Equal(t, "id", uint64Key.ColumnName())
 }
 
 func TestMinPaginationKey_Binary(t *testing.T) {
@@ -404,7 +422,8 @@ func TestMinPaginationKey_Binary(t *testing.T) {
 	minKey := ghostferry.MinPaginationKey(column)
 	binaryKey, ok := minKey.(ghostferry.BinaryKey)
 	require.True(t, ok)
-	assert.Equal(t, []byte{}, []byte(binaryKey))
+	assert.Equal(t, []byte{}, binaryKey.Value)
+	assert.Equal(t, "uuid", binaryKey.ColumnName())
 }
 
 func TestMinPaginationKey_String(t *testing.T) {
@@ -416,7 +435,8 @@ func TestMinPaginationKey_String(t *testing.T) {
 	minKey := ghostferry.MinPaginationKey(column)
 	binaryKey, ok := minKey.(ghostferry.BinaryKey)
 	require.True(t, ok)
-	assert.Equal(t, []byte{}, []byte(binaryKey))
+	assert.Equal(t, []byte{}, binaryKey.Value)
+	assert.Equal(t, "key", binaryKey.ColumnName())
 }
 
 
@@ -429,7 +449,8 @@ func TestMaxPaginationKey_Numeric(t *testing.T) {
 	maxKey := ghostferry.MaxPaginationKey(column)
 	uint64Key, ok := maxKey.(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(math.MaxUint64), uint64(uint64Key))
+	assert.Equal(t, uint64(math.MaxUint64), uint64Key.Value)
+	assert.Equal(t, "id", uint64Key.ColumnName())
 }
 
 func TestMaxPaginationKey_MediumInt(t *testing.T) {
@@ -441,7 +462,8 @@ func TestMaxPaginationKey_MediumInt(t *testing.T) {
 	maxKey := ghostferry.MaxPaginationKey(column)
 	uint64Key, ok := maxKey.(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(math.MaxUint64), uint64(uint64Key))
+	assert.Equal(t, uint64(math.MaxUint64), uint64Key.Value)
+	assert.Equal(t, "id", uint64Key.ColumnName())
 }
 
 func TestMaxPaginationKey_Binary_UUID16(t *testing.T) {
@@ -454,9 +476,10 @@ func TestMaxPaginationKey_Binary_UUID16(t *testing.T) {
 	maxKey := ghostferry.MaxPaginationKey(column)
 	binaryKey, ok := maxKey.(ghostferry.BinaryKey)
 	require.True(t, ok)
-	assert.Equal(t, 16, len(binaryKey))
+	assert.Equal(t, 16, len(binaryKey.Value))
+	assert.Equal(t, "uuid", binaryKey.ColumnName())
 
-	for _, b := range binaryKey {
+	for _, b := range binaryKey.Value {
 		assert.Equal(t, byte(0xFF), b)
 	}
 	assert.True(t, binaryKey.IsMax())
@@ -472,7 +495,8 @@ func TestMaxPaginationKey_Binary_LargeSize(t *testing.T) {
 	maxKey := ghostferry.MaxPaginationKey(column)
 	binaryKey, ok := maxKey.(ghostferry.BinaryKey)
 	require.True(t, ok)
-	assert.Equal(t, 4096, len(binaryKey))
+	assert.Equal(t, 4096, len(binaryKey.Value))
+	assert.Equal(t, "large", binaryKey.ColumnName())
 }
 
 func TestMaxPaginationKey_DefaultToNumeric(t *testing.T) {
@@ -484,7 +508,8 @@ func TestMaxPaginationKey_DefaultToNumeric(t *testing.T) {
 	maxKey := ghostferry.MaxPaginationKey(column)
 	uint64Key, ok := maxKey.(ghostferry.Uint64Key)
 	require.True(t, ok)
-	assert.Equal(t, uint64(math.MaxUint64), uint64(uint64Key))
+	assert.Equal(t, uint64(math.MaxUint64), uint64Key.Value)
+	assert.Equal(t, "id", uint64Key.ColumnName())
 }
 
 func TestPaginationKey_CrossTypeComparison_UUIDv7Ordering(t *testing.T) {

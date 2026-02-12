@@ -20,8 +20,8 @@ type ControlServerTableStatus struct {
 	TableName                   string
 	PaginationKeyName           string
 	Status                      string
-	LastSuccessfulPaginationKey uint64
-	TargetPaginationKey         uint64
+	LastSuccessfulPaginationKey PaginationKey
+	TargetPaginationKey         PaginationKey
 
 	BatchSize                   uint64
 }
@@ -286,11 +286,11 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 
 		lastSuccessfulPaginationKey := tableProgress.LastSuccessfulPaginationKey
 		if tableProgress.CurrentAction == TableActionWaiting {
-			lastSuccessfulPaginationKey = 0
+			lastSuccessfulPaginationKey = MinPaginationKey(this.F.Tables[name].GetPaginationColumn())
 		}
 		controlStatus := &ControlServerTableStatus{
 			TableName:                   name,
-			PaginationKeyName:           this.F.Tables[name].GetPaginationColumn().Name,
+			PaginationKeyName:           lastSuccessfulPaginationKey.ColumnName(),
 			Status:                      tableProgress.CurrentAction,
 			LastSuccessfulPaginationKey: lastSuccessfulPaginationKey,
 			TargetPaginationKey:         tableProgress.TargetPaginationKey,
