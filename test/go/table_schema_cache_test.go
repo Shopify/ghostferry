@@ -333,6 +333,11 @@ func (this *TableSchemaCacheTestSuite) TestTableRowMd5Query() {
 	query := table.RowMd5Query()
 	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')),MD5(COALESCE(`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5", query)
 
+	table = tables[0]
+	table.Columns[0].IsVirtual = true
+	query = table.RowMd5Query()
+	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5", query)
+
 	table = tables[1]
 	table.CompressedColumnsForVerification = map[string]string{"data": "SNAPPY"}
 	query = table.RowMd5Query()

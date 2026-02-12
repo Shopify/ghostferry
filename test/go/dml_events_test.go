@@ -83,6 +83,36 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventGeneratesInsertQuery() {
 	this.Require().Equal("INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col2`,`col3`) VALUES (1002,CAST('{\"val\": 42.0}' AS JSON),0)", q3)
 }
 
+func (this *DMLEventsTestSuite) TestBinlogInsertEventGeneratesInsertQueryWithVirtualColumns() {
+	rowsEvent := &replication.RowsEvent{
+		Table: this.tableMapEvent,
+		Rows: [][]interface{}{
+			{1000, []byte("val1"), true},
+			{1001, []byte("val2"), false},
+			{1002, "{\"val\": 42.0}", false},
+		},
+	}
+
+	// column 'col1' (#0) is generated so we should not insert into it.
+	this.targetTable.Columns[0].IsVirtual = true
+
+	dmlEvents, err := ghostferry.NewBinlogInsertEvents(this.eventBase, rowsEvent)
+	this.Require().Nil(err)
+	this.Require().Equal(3, len(dmlEvents))
+
+	q1, err := dmlEvents[0].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
+	this.Require().Nil(err)
+	this.Require().Equal("INSERT IGNORE INTO `target_schema`.`target_table` (`col2`,`col3`) VALUES (_binary'val1',1)", q1)
+
+	q2, err := dmlEvents[1].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
+	this.Require().Nil(err)
+	this.Require().Equal("INSERT IGNORE INTO `target_schema`.`target_table` (`col2`,`col3`) VALUES (_binary'val2',0)", q2)
+
+	q3, err := dmlEvents[2].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
+	this.Require().Nil(err)
+	this.Require().Equal("INSERT IGNORE INTO `target_schema`.`target_table` (`col2`,`col3`) VALUES (CAST('{\"val\": 42.0}' AS JSON),0)", q3)
+}
+
 func (this *DMLEventsTestSuite) TestBinlogInsertEventWithWrongColumnsReturnsError() {
 	rowsEvent := &replication.RowsEvent{
 		Table: this.tableMapEvent,
