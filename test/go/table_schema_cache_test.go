@@ -333,15 +333,30 @@ func (this *TableSchemaCacheTestSuite) TestTableRowMd5Query() {
 	query := table.RowMd5Query()
 	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')),MD5(COALESCE(`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5", query)
 
-	table = tables[0]
-	table.Columns[0].IsVirtual = true
-	query = table.RowMd5Query()
-	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5", query)
-
 	table = tables[1]
 	table.CompressedColumnsForVerification = map[string]string{"data": "SNAPPY"}
 	query = table.RowMd5Query()
 	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5", query)
+}
+
+func (this *TableSchemaCacheTestSuite) TestTableRowMd5QueryWithVirtualField() {
+	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
+	this.Require().Nil(err)
+
+	tables := tableSchemaCache.AsSlice()
+	table := tables[0]
+	table.Columns[0].IsVirtual = true
+	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5", table.RowMd5Query())
+}
+
+func (this *TableSchemaCacheTestSuite) TestTableRowMd5QueryWithStoredField() {
+	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
+	this.Require().Nil(err)
+
+	tables := tableSchemaCache.AsSlice()
+	table := tables[0]
+	table.Columns[1].IsStored = true
+	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5", table.RowMd5Query())
 }
 
 func (this *TableSchemaCacheTestSuite) TestFingerprintQueryWithIgnoredColumns() {

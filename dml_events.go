@@ -168,14 +168,15 @@ func (e *BinlogInsertEvent) NewValues() RowData {
 }
 
 func (e *BinlogInsertEvent) AsSQLString(schemaName, tableName string) (string, error) {
-	if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.newValues); err != nil {
+	filteredNewValues, err := e.table.FilterGeneratedColumnsOnRowData(e.newValues)
+	if err != nil {
 		return "", err
 	}
 
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(schemaName, tableName) +
-		" (" + strings.Join(quotedColumnNamesForInsert(e.table), ",") + ")" +
-		" VALUES (" + buildStringListForInsertValues(e.table, e.newValues) + ")"
+		" (" + strings.Join(quotedColumnNames(e.table), ",") + ")" +
+		" VALUES (" + buildStringListForValues(e.table, filteredNewValues) + ")"
 
 	return query, nil
 }
@@ -227,8 +228,8 @@ func (e *BinlogUpdateEvent) AsSQLString(schemaName, tableName string) (string, e
 	}
 
 	query := "UPDATE " + QuotedTableNameFromString(schemaName, tableName) +
-		" SET " + buildStringMapForSet(e.table.Columns, e.newValues) +
-		" WHERE " + buildStringMapForWhere(e.table.Columns, e.oldValues)
+		" SET " + buildStringMapForSet(e.table, e.newValues) +
+		" WHERE " + buildStringMapForWhere(e.table, e.oldValues)
 
 	return query, nil
 }
@@ -269,7 +270,7 @@ func (e *BinlogDeleteEvent) AsSQLString(schemaName, tableName string) (string, e
 	}
 
 	query := "DELETE FROM " + QuotedTableNameFromString(schemaName, tableName) +
-		" WHERE " + buildStringMapForWhere(e.table.Columns, e.oldValues)
+		" WHERE " + buildStringMapForWhere(e.table, e.oldValues)
 
 	return query, nil
 }
@@ -281,16 +282,22 @@ func (e *BinlogDeleteEvent) PaginationKey() (string, error) {
 func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, resumablePos mysql.Position, query []byte) ([]DMLEvent, error) {
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
-	for _, row := range rowsEvent.Rows {
-		if len(row) != len(table.Columns) {
+	for _, rawRow := range rowsEvent.Rows {
+		if len(rawRow) != len(table.Columns) {
 			return nil, fmt.Errorf(
 				"table %s.%s has %d columns but event has %d columns instead",
 				table.Schema,
 				table.Name,
 				len(table.Columns),
-				len(row),
+				len(rawRow),
 			)
 		}
+
+		row, err := table.FilterGeneratedColumnsOnRowData(rawRow)
+		if err != nil {
+			return nil, err
+		}
+
 		for i, col := range table.Columns {
 			if col.IsUnsigned {
 				switch v := row[i].(type) {
@@ -323,14 +330,10 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 	}
 }
 
-func quotedColumnNamesForInsert(table *TableSchema) []string {
-	cols := []string{}
-
-	for _, c := range table.Columns {
-		if c.IsVirtual {
-			continue
-		}
-		cols = append(cols, QuoteField(c.Name))
+func quotedColumnNames(table *TableSchema) []string {
+	cols := make([]string, 0, len(table.Columns))
+	for _, name := range table.NonGeneratedColumnNames() {
+		cols = append(cols, QuoteField(name))
 	}
 
 	return cols
@@ -351,56 +354,59 @@ func verifyValuesHasTheSameLengthAsColumns(table *TableSchema, values ...RowData
 	return nil
 }
 
-func buildStringListForInsertValues(table *TableSchema, values []interface{}) string {
+func buildStringListForValues(table *TableSchema, values []interface{}) string {
 	var buffer []byte
 
 	for i, value := range values {
-		if table.Columns[i].IsVirtual {
-			continue
-		}
-
-		if len(buffer) != 0 {
+		if len(buffer) > 0 {
 			buffer = append(buffer, ',')
 		}
+
 		buffer = appendEscapedValue(buffer, value, table.Columns[i])
 	}
 
 	return string(buffer)
 }
 
-func buildStringMapForWhere(columns []schema.TableColumn, values []interface{}) string {
+func buildStringMapForWhere(table *TableSchema, values []interface{}) string {
 	var buffer []byte
 
 	for i, value := range values {
-		if i > 0 {
+		if table.IsColumnIndexGenerated(i) {
+			continue
+		}
+		if len(buffer) > 0 {
 			buffer = append(buffer, " AND "...)
 		}
 
-		buffer = append(buffer, QuoteField(columns[i].Name)...)
+		buffer = append(buffer, QuoteField(table.Columns[i].Name)...)
 
 		if isNilValue(value) {
 			// "WHERE value = NULL" will never match rows.
 			buffer = append(buffer, " IS NULL"...)
 		} else {
 			buffer = append(buffer, '=')
-			buffer = appendEscapedValue(buffer, value, columns[i])
+			buffer = appendEscapedValue(buffer, value, table.Columns[i])
 		}
 	}
 
 	return string(buffer)
 }
 
-func buildStringMapForSet(columns []schema.TableColumn, values []interface{}) string {
+func buildStringMapForSet(table *TableSchema, values []interface{}) string {
 	var buffer []byte
 
 	for i, value := range values {
-		if i > 0 {
+		if table.IsColumnIndexGenerated(i) {
+			continue
+		}
+		if len(buffer) > 0 {
 			buffer = append(buffer, ',')
 		}
 
-		buffer = append(buffer, QuoteField(columns[i].Name)...)
+		buffer = append(buffer, QuoteField(table.Columns[i].Name)...)
 		buffer = append(buffer, '=')
-		buffer = appendEscapedValue(buffer, value, columns[i])
+		buffer = appendEscapedValue(buffer, value, table.Columns[i])
 	}
 
 	return string(buffer)

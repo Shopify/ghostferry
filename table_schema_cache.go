@@ -45,6 +45,89 @@ type TableSchema struct {
 	rowMd5Query string
 }
 
+// IsColumnGenerated evaluates whether a go_myslq.schema.TableColumn is generated or not.
+func IsColumnGenerated(tc *schema.TableColumn) bool {
+	return tc.IsVirtual || tc.IsStored
+}
+
+// IsColumnIndexGenerated evaluates whether a TableSchema column is generated, by index.
+func (t *TableSchema) IsColumnIndexGenerated(idx int) bool {
+	return IsColumnGenerated(&t.Columns[idx])
+}
+
+// Evaluates whether a TableSchema column is generated, by name.
+func (t *TableSchema) IsColumnNameGenerated(name string) bool {
+	for _, col := range t.Columns {
+		if name == col.Name && IsColumnGenerated(&col) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Returns a count of total, generated and non-generated columns for a TableSchema.
+func (t *TableSchema) ColumnsCount() (int, int, int) {
+	var generated int
+
+	for _, col := range t.Columns {
+		if IsColumnGenerated(&col) {
+			generated += 1
+		}
+	}
+
+	return len(t.Columns), generated, len(t.Columns) - generated
+}
+
+// Returns a list of all non-generated column names for a TableSchema, in schema order.
+func (t *TableSchema) NonGeneratedColumnNames() []string {
+	res := make([]string, 0, len(t.Columns))
+
+	for _, col := range t.Columns {
+		if IsColumnGenerated(&col) {
+			continue
+		}
+		res = append(res, col.Name)
+	}
+
+	return res
+}
+
+// FilterGeneratedColumnsOnRowData takes a row (as slice of RowData elements) and returns
+// a copy with elements for generated columns removed.
+func (t *TableSchema) FilterGeneratedColumnsOnRowData(row []interface{}) ([]interface{}, error) {
+	columnsCount, _, nonGeneratedColumnsCount := t.ColumnsCount()
+
+	if len(row) != columnsCount {
+		return nil, fmt.Errorf(
+			"table %s.%s has %d columns but row has %d columns instead",
+			t.Schema,
+			t.Name,
+			columnsCount,
+			len(row),
+		)
+	}
+
+	res := make([]interface{}, 0, len(row))
+	for i, val := range row {
+		if t.IsColumnIndexGenerated(i) {
+			continue
+		}
+		res = append(res, val)
+	}
+
+	if len(res) != nonGeneratedColumnsCount {
+		return nil, fmt.Errorf(
+			"table %s.%s has %d updatable columns but processed row has %d updatable columns instead",
+			t.Schema,
+			t.Name,
+			nonGeneratedColumnsCount,
+			len(res),
+		)
+	}
+	return res, nil
+}
+
 // This query returns the MD5 hash for a row on this table. This query is valid
 // for both the source and the target shard.
 //
@@ -89,11 +172,12 @@ func (t *TableSchema) RowMd5Query() string {
 	}
 
 	columns := make([]schema.TableColumn, 0, len(t.Columns))
-	for _, column := range t.Columns {
+	for i, column := range t.Columns {
 		_, isCompressed := t.CompressedColumnsForVerification[column.Name]
 		_, isIgnored := t.IgnoredColumnsForVerification[column.Name]
+		isGenerated := t.IsColumnIndexGenerated(i)
 
-		if isCompressed || isIgnored || column.IsVirtual {
+		if isCompressed || isIgnored || isGenerated {
 			continue
 		}
 
@@ -150,6 +234,19 @@ func MaxPaginationKeys(db *sql.DB, tables []*TableSchema, logger Logger) (map[*T
 	return tablesWithData, emptyTables, nil
 }
 
+// removeInvisibleIndeces removes all invisible idx references from a go_mysql.schema.Table.
+func removeInvisibleIndexes(ts *schema.Table) {
+	j := 0
+	for i, index := range ts.Indexes {
+		if !index.Visible {
+			continue
+		}
+		ts.Indexes[j] = ts.Indexes[i]
+		j++
+	}
+	ts.Indexes = ts.Indexes[:j]
+}
+
 func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig ColumnCompressionConfig, columnIgnoreConfig ColumnIgnoreConfig, forceIndexConfig ForceIndexConfig, cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (TableSchemaCache, error) {
 	logger := LogWithField("tag", "table_schema_cache")
 
@@ -188,14 +285,8 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 				return tableSchemaCache, err
 			}
 
-			// Filter out invisible indexes
-			visibleIndexes := make([]*schema.Index, 0, len(tableSchema.Indexes))
-			for _, index := range tableSchema.Indexes {
-				if index.Visible {
-					visibleIndexes = append(visibleIndexes, index)
-				}
-			}
-			tableSchema.Indexes = visibleIndexes
+			// filter out unwanted indeces and columns
+			removeInvisibleIndexes(tableSchema)
 
 			tableSchemas = append(tableSchemas, &TableSchema{
 				Table:                            tableSchema,
