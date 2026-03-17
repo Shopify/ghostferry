@@ -64,77 +64,27 @@ func (e *RowBatch) AsSQLQuery(schemaName, tableName string) (string, []interface
 		return "", nil, err
 	}
 
-	vcm := e.virtualColumnsMap()
-	valuesStr := "(" + strings.Repeat("?,", e.activeColumnCount(vcm)-1) + "?)"
+	filteredColumns := e.table.NonGeneratedColumnNames()
+
+	valuesStr := "(" + strings.Repeat("?,", len(filteredColumns)-1) + "?)"
 	valuesStr = strings.Repeat(valuesStr+",", len(e.values)-1) + valuesStr
 
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(schemaName, tableName) +
-		" (" + e.quotedFields(vcm) + ") VALUES " + valuesStr
+		" (" + strings.Join(QuoteFields(filteredColumns), ",") + ") VALUES " + valuesStr
 
-	return query, e.flattenRowData(vcm), nil
+	return query, e.flattenRowData(), nil
 }
 
-// virtualColumnsMap returns a map of given columns (by index) -> whether the column is virtual (i.e. generated).
-func (e *RowBatch) virtualColumnsMap() map[int]bool {
-	res := map[int]bool{}
+func (e *RowBatch) flattenRowData() []interface{} {
+	flattened := make([]interface{}, 0, len(e.values))
 
-	for i, name := range e.columns {
-		isVirtual := false
-		for _, c := range e.table.Columns {
-			if name == c.Name && c.IsVirtual {
-				isVirtual = true
-				break
-			}
-		}
-
-		res[i] = isVirtual
-	}
-
-	return res
-}
-
-// activeColumnCount returns the number of active (non-virtual) columns for this RowBatch.
-func (e *RowBatch) activeColumnCount(vcm map[int]bool) int {
-	if vcm == nil {
-		return len(e.columns)
-	}
-
-	count := 0
-	for _, isVirtual := range vcm {
-		if !isVirtual {
-			count++
-		}
-	}
-	return count
-}
-
-// quotedFields returns a string with comma-separated quoted field names for INSERTs.
-func (e *RowBatch) quotedFields(vcm map[int]bool) string {
-	cols := []string{}
-	for i, name := range e.columns {
-		if vcm != nil && vcm[i] {
-			continue
-		}
-		cols = append(cols, name)
-	}
-
-	return strings.Join(QuoteFields(cols), ",")
-}
-
-// flattenRowData flattens RowData values into a single array for INSERTs.
-func (e *RowBatch) flattenRowData(vcm map[int]bool) []interface{} {
-	rowSize := e.activeColumnCount(vcm)
-	flattened := make([]interface{}, rowSize*len(e.values))
-
-	for rowIdx, row := range e.values {
-		i := 0
+	for _, row := range e.values {
 		for colIdx, col := range row {
-			if vcm != nil && vcm[colIdx] {
+			if e.table.IsColumnIndexGenerated(colIdx) {
 				continue
 			}
-			flattened[rowIdx*rowSize+i] = col
-			i++
+			flattened = append(flattened, col)
 		}
 	}
 
