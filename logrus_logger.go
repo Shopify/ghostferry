@@ -1,6 +1,8 @@
 package ghostferry
 
 import (
+	"io"
+
 	"github.com/sirupsen/logrus"
 )
 
@@ -31,30 +33,25 @@ func (l *logrusLogger) WithError(err error) Logger {
 	return &logrusLogger{entry: l.entry.WithError(err)}
 }
 
-// LogWithField creates a new Logger with a single key-value field.
-// This is the primary way components create their tagged loggers.
-func LogWithField(key string, value any) Logger {
+// --- internal factory functions (called by logger.go dispatch) ---
+
+func logrusWithField(key string, value any) Logger {
 	return &logrusLogger{entry: logrus.WithField(key, value)}
 }
 
-// LogWithFields creates a new Logger with multiple key-value fields.
-func LogWithFields(fields Fields) Logger {
+func logrusWithFields(fields Fields) Logger {
 	return &logrusLogger{entry: logrus.WithFields(logrus.Fields(fields))}
 }
 
-// LogWithError creates a new Logger with an error field.
-func LogWithError(err error) Logger {
+func logrusWithError(err error) Logger {
 	return &logrusLogger{entry: logrus.WithError(err)}
 }
 
-// NewDefaultLogger creates a Logger from the standard/global logrus logger.
-// Used as a fallback when no logger is provided.
-func NewDefaultLogger() Logger {
+func newLogrusDefaultLogger() Logger {
 	return &logrusLogger{entry: logrus.NewEntry(logrus.StandardLogger())}
 }
 
-// SetLogLevel sets the global log level for the logrus backend.
-func SetLogLevel(level LogLevel) {
+func setLogrusLevel(level LogLevel) {
 	switch level {
 	case LogLevelDebug:
 		logrus.SetLevel(logrus.DebugLevel)
@@ -67,7 +64,10 @@ func SetLogLevel(level LogLevel) {
 	}
 }
 
-// SetLogJSONFormatter sets the logrus formatter to JSON output.
-func SetLogJSONFormatter() {
+func setLogrusJSONFormatter() {
 	logrus.SetFormatter(&logrus.JSONFormatter{})
+}
+
+func setLogrusOutput(w io.Writer) {
+	logrus.SetOutput(w)
 }

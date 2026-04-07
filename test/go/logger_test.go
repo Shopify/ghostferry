@@ -2,217 +2,360 @@ package test
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/Shopify/ghostferry"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
 )
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+// savedBackend captures and restores global logging state between tests.
+type savedBackend struct {
+	backend ghostferry.LogBackendType
+}
+
+func saveBackend() savedBackend {
+	return savedBackend{backend: ghostferry.GetLogBackend()}
+}
+
+func (s savedBackend) restore() {
+	ghostferry.SetLogBackend(s.backend)
+}
+
+// useBackend switches backend, sets debug level, and directs output to buf.
+func useBackend(backend ghostferry.LogBackendType, buf *bytes.Buffer) {
+	ghostferry.SetLogBackend(backend)
+	ghostferry.SetLogLevel(ghostferry.LogLevelDebug)
+	ghostferry.SetLogOutput(buf)
+}
+
+// backends is the list of backends to run conformance tests against.
+var backends = []ghostferry.LogBackendType{
+	ghostferry.LogBackendLogrus,
+	ghostferry.LogBackendZerolog,
+}
+
+// ---------------------------------------------------------------------------
+// LoggerTestSuite -- backend-agnostic conformance tests
+// ---------------------------------------------------------------------------
+
 type LoggerTestSuite struct {
 	suite.Suite
-
-	// Save and restore logrus state between tests so we don't pollute other suites.
-	origLevel     logrus.Level
-	origFormatter logrus.Formatter
-	origOutput    *os.File
+	saved savedBackend
 }
 
 func (s *LoggerTestSuite) SetupTest() {
-	s.origLevel = logrus.GetLevel()
-	s.origFormatter = logrus.StandardLogger().Formatter
+	s.saved = saveBackend()
 }
 
 func (s *LoggerTestSuite) TearDownTest() {
-	logrus.SetLevel(s.origLevel)
-	logrus.StandardLogger().Formatter = s.origFormatter
-	logrus.SetOutput(os.Stderr)
+	s.saved.restore()
 }
 
-// --- Interface satisfaction (compile-time) ---
+// --- SetLogBackend ---
+
+func (s *LoggerTestSuite) TestDefaultBackendIsLogrus() {
+	s.saved.restore() // ensure clean default
+	s.Require().Equal(ghostferry.LogBackendLogrus, ghostferry.GetLogBackend())
+}
+
+func (s *LoggerTestSuite) TestSetLogBackendZerolog() {
+	ghostferry.SetLogBackend(ghostferry.LogBackendZerolog)
+	s.Require().Equal(ghostferry.LogBackendZerolog, ghostferry.GetLogBackend())
+}
+
+func (s *LoggerTestSuite) TestSetLogBackendInvalidPanics() {
+	s.Require().Panics(func() {
+		ghostferry.SetLogBackend("invalid_backend")
+	})
+}
+
+// --- Factory functions return non-nil Logger (both backends) ---
 
 func (s *LoggerTestSuite) TestLogWithFieldReturnsLogger() {
-	var l ghostferry.Logger = ghostferry.LogWithField("tag", "test")
-	s.Require().NotNil(l)
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			ghostferry.SetLogBackend(b)
+			var l ghostferry.Logger = ghostferry.LogWithField("tag", "test")
+			s.Require().NotNil(l)
+		})
+	}
 }
 
 func (s *LoggerTestSuite) TestLogWithFieldsReturnsLogger() {
-	var l ghostferry.Logger = ghostferry.LogWithFields(ghostferry.Fields{
-		"a": 1,
-		"b": "two",
-	})
-	s.Require().NotNil(l)
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			ghostferry.SetLogBackend(b)
+			var l ghostferry.Logger = ghostferry.LogWithFields(ghostferry.Fields{"a": 1, "b": "two"})
+			s.Require().NotNil(l)
+		})
+	}
 }
 
 func (s *LoggerTestSuite) TestLogWithErrorReturnsLogger() {
-	var l ghostferry.Logger = ghostferry.LogWithError(fmt.Errorf("boom"))
-	s.Require().NotNil(l)
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			ghostferry.SetLogBackend(b)
+			var l ghostferry.Logger = ghostferry.LogWithError(fmt.Errorf("boom"))
+			s.Require().NotNil(l)
+		})
+	}
 }
 
 func (s *LoggerTestSuite) TestNewDefaultLoggerReturnsLogger() {
-	var l ghostferry.Logger = ghostferry.NewDefaultLogger()
-	s.Require().NotNil(l)
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			ghostferry.SetLogBackend(b)
+			var l ghostferry.Logger = ghostferry.NewDefaultLogger()
+			s.Require().NotNil(l)
+		})
+	}
 }
 
-// --- Chaining returns Logger at every step ---
+// --- Chaining (both backends) ---
 
 func (s *LoggerTestSuite) TestWithFieldChaining() {
-	l := ghostferry.LogWithField("tag", "test")
-	l2 := l.WithField("extra", "value")
-	s.Require().NotNil(l2)
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			ghostferry.SetLogBackend(b)
+			l := ghostferry.LogWithField("tag", "test").WithField("extra", "value")
+			s.Require().NotNil(l)
+		})
+	}
 }
 
 func (s *LoggerTestSuite) TestWithFieldsChaining() {
-	l := ghostferry.LogWithField("tag", "test")
-	l2 := l.WithFields(ghostferry.Fields{"a": 1, "b": 2})
-	s.Require().NotNil(l2)
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			ghostferry.SetLogBackend(b)
+			l := ghostferry.LogWithField("tag", "test").WithFields(ghostferry.Fields{"a": 1})
+			s.Require().NotNil(l)
+		})
+	}
 }
 
 func (s *LoggerTestSuite) TestWithErrorChaining() {
-	l := ghostferry.LogWithField("tag", "test")
-	l2 := l.WithError(fmt.Errorf("oops"))
-	s.Require().NotNil(l2)
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			ghostferry.SetLogBackend(b)
+			l := ghostferry.LogWithField("tag", "test").WithError(fmt.Errorf("oops"))
+			s.Require().NotNil(l)
+		})
+	}
 }
 
 func (s *LoggerTestSuite) TestDeepChaining() {
-	l := ghostferry.LogWithField("tag", "test").
-		WithField("a", 1).
-		WithError(fmt.Errorf("err")).
-		WithFields(ghostferry.Fields{"b": 2, "c": 3}).
-		WithField("d", 4)
-	s.Require().NotNil(l)
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			ghostferry.SetLogBackend(b)
+			l := ghostferry.LogWithField("tag", "test").
+				WithField("a", 1).
+				WithError(fmt.Errorf("err")).
+				WithFields(ghostferry.Fields{"b": 2, "c": 3}).
+				WithField("d", 4)
+			s.Require().NotNil(l)
+		})
+	}
 }
-
-// --- Chaining does not mutate the original logger ---
-
-func (s *LoggerTestSuite) TestChainingDoesNotMutateOriginal() {
-	ghostferry.SetLogLevel(ghostferry.LogLevelDebug)
-	var buf bytes.Buffer
-	logrus.SetOutput(&buf)
-	logrus.SetFormatter(&logrus.JSONFormatter{DisableTimestamp: true})
-
-	original := ghostferry.LogWithField("tag", "original")
-	_ = original.WithField("extra", "derived")
-
-	// Log from the original -- it should NOT contain the "extra" field.
-	original.Info("from original")
-	output := buf.String()
-
-	s.Require().Contains(output, `"tag":"original"`)
-	s.Require().NotContains(output, `"extra"`)
-}
-
-// --- Empty Fields is safe ---
 
 func (s *LoggerTestSuite) TestWithEmptyFields() {
-	l := ghostferry.LogWithField("tag", "test").WithFields(ghostferry.Fields{})
-	s.Require().NotNil(l)
-	// Should not panic.
-	l.Debug("empty fields ok")
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			ghostferry.SetLogBackend(b)
+			l := ghostferry.LogWithField("tag", "test").WithFields(ghostferry.Fields{})
+			s.Require().NotNil(l)
+			s.Require().NotPanics(func() { l.Debug("empty fields ok") })
+		})
+	}
 }
 
-// --- All log methods execute without panic ---
+// --- All log methods execute without panic (both backends) ---
 
 func (s *LoggerTestSuite) TestAllLogMethodsNoPanic() {
-	// Send output to a buffer so we don't spam test output.
-	logrus.SetOutput(&bytes.Buffer{})
-	ghostferry.SetLogLevel(ghostferry.LogLevelDebug)
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			var buf bytes.Buffer
+			useBackend(b, &buf)
+			l := ghostferry.LogWithField("tag", "test_methods")
 
-	l := ghostferry.LogWithField("tag", "test_methods")
-
-	s.Require().NotPanics(func() { l.Debug("debug msg") })
-	s.Require().NotPanics(func() { l.Debugf("debug %s", "formatted") })
-	s.Require().NotPanics(func() { l.Info("info msg") })
-	s.Require().NotPanics(func() { l.Infof("info %s", "formatted") })
-	s.Require().NotPanics(func() { l.Warn("warn msg") })
-	s.Require().NotPanics(func() { l.Warnf("warn %s", "formatted") })
-	s.Require().NotPanics(func() { l.Error("error msg") })
-	s.Require().NotPanics(func() { l.Errorf("error %s", "formatted") })
+			s.Require().NotPanics(func() { l.Debug("debug msg") })
+			s.Require().NotPanics(func() { l.Debugf("debug %s", "formatted") })
+			s.Require().NotPanics(func() { l.Info("info msg") })
+			s.Require().NotPanics(func() { l.Infof("info %s", "formatted") })
+			s.Require().NotPanics(func() { l.Warn("warn msg") })
+			s.Require().NotPanics(func() { l.Warnf("warn %s", "formatted") })
+			s.Require().NotPanics(func() { l.Error("error msg") })
+			s.Require().NotPanics(func() { l.Errorf("error %s", "formatted") })
+		})
+	}
 }
 
-// --- SetLogLevel controls output ---
+// --- Chaining does not mutate original (both backends) ---
 
-func (s *LoggerTestSuite) TestSetLogLevelDebug() {
-	var buf bytes.Buffer
-	logrus.SetOutput(&buf)
+func (s *LoggerTestSuite) TestChainingDoesNotMutateOriginal() {
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			var buf bytes.Buffer
+			useBackend(b, &buf)
+			ghostferry.SetLogJSONFormatter()
 
-	ghostferry.SetLogLevel(ghostferry.LogLevelDebug)
-	ghostferry.LogWithField("tag", "test").Debug("visible")
+			original := ghostferry.LogWithField("tag", "original")
+			_ = original.WithField("extra", "derived")
 
-	s.Require().Contains(buf.String(), "visible")
+			original.Info("from original")
+			output := buf.String()
+
+			s.Require().Contains(output, `"tag":"original"`)
+			s.Require().NotContains(output, `"extra"`)
+		})
+	}
+}
+
+// --- SetLogLevel controls output (both backends) ---
+
+func (s *LoggerTestSuite) TestSetLogLevelDebugShowsDebug() {
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			var buf bytes.Buffer
+			useBackend(b, &buf)
+
+			ghostferry.LogWithField("tag", "test").Debug("visible")
+			s.Require().Contains(buf.String(), "visible")
+		})
+	}
 }
 
 func (s *LoggerTestSuite) TestSetLogLevelFiltersLowerLevels() {
-	var buf bytes.Buffer
-	logrus.SetOutput(&buf)
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			var buf bytes.Buffer
+			ghostferry.SetLogBackend(b)
+			ghostferry.SetLogOutput(&buf)
+			ghostferry.SetLogLevel(ghostferry.LogLevelError)
 
-	ghostferry.SetLogLevel(ghostferry.LogLevelError)
-	ghostferry.LogWithField("tag", "test").Debug("should not appear")
-	ghostferry.LogWithField("tag", "test").Info("should not appear")
-	ghostferry.LogWithField("tag", "test").Warn("should not appear")
+			ghostferry.LogWithField("tag", "test").Debug("no")
+			ghostferry.LogWithField("tag", "test").Info("no")
+			ghostferry.LogWithField("tag", "test").Warn("no")
 
-	s.Require().Empty(buf.String())
+			s.Require().Empty(buf.String())
+		})
+	}
 }
 
 func (s *LoggerTestSuite) TestSetLogLevelAllValues() {
-	s.Require().NotPanics(func() { ghostferry.SetLogLevel(ghostferry.LogLevelDebug) })
-	s.Require().NotPanics(func() { ghostferry.SetLogLevel(ghostferry.LogLevelInfo) })
-	s.Require().NotPanics(func() { ghostferry.SetLogLevel(ghostferry.LogLevelWarn) })
-	s.Require().NotPanics(func() { ghostferry.SetLogLevel(ghostferry.LogLevelError) })
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			ghostferry.SetLogBackend(b)
+			s.Require().NotPanics(func() { ghostferry.SetLogLevel(ghostferry.LogLevelDebug) })
+			s.Require().NotPanics(func() { ghostferry.SetLogLevel(ghostferry.LogLevelInfo) })
+			s.Require().NotPanics(func() { ghostferry.SetLogLevel(ghostferry.LogLevelWarn) })
+			s.Require().NotPanics(func() { ghostferry.SetLogLevel(ghostferry.LogLevelError) })
+		})
+	}
 }
 
-// --- SetLogJSONFormatter switches to JSON ---
+// --- JSON output verification (both backends) ---
 
-func (s *LoggerTestSuite) TestSetLogJSONFormatterProducesJSON() {
-	var buf bytes.Buffer
-	logrus.SetOutput(&buf)
-	ghostferry.SetLogLevel(ghostferry.LogLevelDebug)
+func (s *LoggerTestSuite) TestJSONOutputContainsFields() {
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			var buf bytes.Buffer
+			useBackend(b, &buf)
+			ghostferry.SetLogJSONFormatter()
 
-	ghostferry.SetLogJSONFormatter()
-	ghostferry.LogWithField("tag", "json_test").Info("hello json")
+			ghostferry.LogWithFields(ghostferry.Fields{
+				"table":  "users",
+				"action": "copy",
+			}).Info("processing")
 
-	output := buf.String()
-	s.Require().Contains(output, `"tag":"json_test"`)
-	s.Require().Contains(output, `"msg":"hello json"`)
-	s.Require().Contains(output, `"level":"info"`)
+			output := buf.String()
+			s.Require().Contains(output, `"table":"users"`)
+			s.Require().Contains(output, `"action":"copy"`)
+			s.Require().Contains(output, `"msg":"processing"`)
+		})
+	}
 }
 
-// --- WithError attaches error field ---
+func (s *LoggerTestSuite) TestJSONOutputContainsLevel() {
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			var buf bytes.Buffer
+			useBackend(b, &buf)
+			ghostferry.SetLogJSONFormatter()
+
+			ghostferry.LogWithField("tag", "test").Info("hello")
+
+			output := buf.String()
+			s.Require().Contains(output, `"level"`)
+			s.Require().Contains(output, `"msg":"hello"`)
+		})
+	}
+}
+
+// --- WithError attaches error field (both backends) ---
 
 func (s *LoggerTestSuite) TestWithErrorAttachesField() {
-	var buf bytes.Buffer
-	logrus.SetOutput(&buf)
-	logrus.SetFormatter(&logrus.JSONFormatter{DisableTimestamp: true})
-	ghostferry.SetLogLevel(ghostferry.LogLevelDebug)
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			var buf bytes.Buffer
+			useBackend(b, &buf)
+			ghostferry.SetLogJSONFormatter()
 
-	ghostferry.LogWithField("tag", "test").
-		WithError(fmt.Errorf("something failed")).
-		Error("operation failed")
+			ghostferry.LogWithField("tag", "test").
+				WithError(fmt.Errorf("something failed")).
+				Error("operation failed")
 
-	output := buf.String()
-	s.Require().Contains(output, `"error":"something failed"`)
-	s.Require().Contains(output, `"msg":"operation failed"`)
+			output := buf.String()
+			s.Require().Contains(output, `"error":"something failed"`)
+			s.Require().Contains(output, `"msg":"operation failed"`)
+		})
+	}
 }
 
-// --- Fields appear in output ---
+// --- JSON output is valid JSON (both backends) ---
 
-func (s *LoggerTestSuite) TestFieldsAppearInOutput() {
-	var buf bytes.Buffer
-	logrus.SetOutput(&buf)
-	logrus.SetFormatter(&logrus.JSONFormatter{DisableTimestamp: true})
-	ghostferry.SetLogLevel(ghostferry.LogLevelDebug)
+func (s *LoggerTestSuite) TestOutputIsValidJSON() {
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			var buf bytes.Buffer
+			useBackend(b, &buf)
+			ghostferry.SetLogJSONFormatter()
 
-	ghostferry.LogWithFields(ghostferry.Fields{
-		"table":  "users",
-		"action": "copy",
-	}).Info("processing")
+			ghostferry.LogWithField("tag", "json_check").Info("valid json test")
 
-	output := buf.String()
-	s.Require().Contains(output, `"table":"users"`)
-	s.Require().Contains(output, `"action":"copy"`)
-	s.Require().Contains(output, `"msg":"processing"`)
+			var parsed map[string]any
+			err := json.Unmarshal(buf.Bytes(), &parsed)
+			s.Require().NoError(err, "output should be valid JSON: %s", buf.String())
+			s.Require().Equal("json_check", parsed["tag"])
+			s.Require().Equal("valid json test", parsed["msg"])
+		})
+	}
+}
+
+// --- SetLogJSONFormatter doesn't panic (both backends) ---
+
+func (s *LoggerTestSuite) TestSetLogJSONFormatterNoPanic() {
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			ghostferry.SetLogBackend(b)
+			s.Require().NotPanics(func() { ghostferry.SetLogJSONFormatter() })
+		})
+	}
+}
+
+// --- GetLogBackend reflects current state ---
+
+func (s *LoggerTestSuite) TestGetLogBackendReflectsState() {
+	ghostferry.SetLogBackend(ghostferry.LogBackendLogrus)
+	s.Require().Equal(ghostferry.LogBackendLogrus, ghostferry.GetLogBackend())
+
+	ghostferry.SetLogBackend(ghostferry.LogBackendZerolog)
+	s.Require().Equal(ghostferry.LogBackendZerolog, ghostferry.GetLogBackend())
 }
 
 func TestLoggerTestSuite(t *testing.T) {

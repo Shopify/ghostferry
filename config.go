@@ -793,6 +793,12 @@ type Config struct {
 	// If true, net/http/pprof will be enabled on port 6060.
 	EnablePProf bool
 
+	// LogBackend selects the logging backend to use.
+	// Valid values: "logrus" (default), "zerolog".
+	//
+	// Optional: defaults to "logrus"
+	LogBackend string
+
 	// ----------------------------------------------------------------------------------------------------------------
 	// Updatable config
 	// The following configs are updatable via the `Config.Update` method and should be passed by pointer
@@ -809,6 +815,11 @@ type Config struct {
 }
 
 func (c *Config) ValidateConfig() error {
+	// Configure logging backend early, before any validation logging occurs.
+	if c.LogBackend != "" {
+		SetLogBackend(LogBackendType(c.LogBackend))
+	}
+
 	if err := c.Source.Validate(); err != nil {
 		return fmt.Errorf("source: %s", err)
 	}
