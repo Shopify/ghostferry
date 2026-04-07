@@ -6,8 +6,8 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
-	"github.com/sirupsen/logrus"
 )
 
 func addTypesToTable(db *sql.DB, dbName, tableName string) {
@@ -84,7 +84,7 @@ func setupFixedPointDecimalTypeTable(f *testhelpers.TestFerry, sourceDB, targetD
 }
 
 func TestCopyDataWithManyTypes(t *testing.T) {
-	logrus.SetLevel(logrus.DebugLevel)
+	ghostferry.SetLogLevel(ghostferry.LogLevelDebug)
 	testcase := &testhelpers.IntegrationTestCase{
 		T:           t,
 		SetupAction: setupMultiTypeTable,
@@ -102,7 +102,7 @@ func TestCopyDataWithManyTypes(t *testing.T) {
 }
 
 func TestCopyDataWithFixedPointDecimalTypes(t *testing.T) {
-	logrus.SetLevel(logrus.DebugLevel)
+	ghostferry.SetLogLevel(ghostferry.LogLevelDebug)
 	testcase := &testhelpers.IntegrationTestCase{
 		T:           t,
 		SetupAction: setupFixedPointDecimalTypeTable,

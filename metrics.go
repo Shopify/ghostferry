@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -117,7 +115,7 @@ func (m *Metrics) sendMetric(metric interface{}) {
 	select {
 	case m.Sink <- metric:
 	default:
-		log.WithField("tag", "metrics").
+		LogWithField("tag", "metrics").
 			WithField("metric", metric).
 			Warn("Metrics sink full, dropping metric")
 	}

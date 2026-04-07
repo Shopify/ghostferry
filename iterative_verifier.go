@@ -13,7 +13,6 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/go-mysql-org/go-mysql/schema"
-	"github.com/sirupsen/logrus"
 )
 
 type ReverifyBatch struct {
@@ -60,7 +59,7 @@ func (r *ReverifyStore) Add(entry ReverifyEntry) {
 		r.RowCount++
 		if r.RowCount%r.EmitLogPerRowCount == 0 {
 			metrics.Gauge("iterative_verifier_store_rows", float64(r.RowCount), []MetricTag{}, 1.0)
-			logrus.WithFields(logrus.Fields{
+			LogWithFields(Fields{
 				"tag":  "reverify_store",
 				"rows": r.RowCount,
 			}).Debug("added rows will be reverified")
@@ -132,7 +131,7 @@ type IterativeVerifier struct {
 	MaxExpectedDowntime time.Duration
 
 	reverifyStore *ReverifyStore
-	logger        *logrus.Entry
+	logger        Logger
 
 	beforeCutoverVerifyDone    bool
 	verifyDuringCutoverStarted AtomicBoolean
@@ -170,7 +169,7 @@ func (v *IterativeVerifier) SanityCheckParameters() error {
 }
 
 func (v *IterativeVerifier) Initialize() error {
-	v.logger = logrus.WithField("tag", "iterative_verifier")
+	v.logger = LogWithField("tag", "iterative_verifier")
 
 	if err := v.SanityCheckParameters(); err != nil {
 		v.logger.WithError(err).Error("iterative verifier parameter sanity check failed")
@@ -345,7 +344,7 @@ func (v *IterativeVerifier) reverifyUntilStoreIsSmallEnough(maxIterations int) e
 		after := v.reverifyStore.RowCount
 		timeToVerify = time.Now().Sub(start)
 
-		v.logger.WithFields(logrus.Fields{
+		v.logger.WithFields(Fields{
 			"store_size_before": before,
 			"store_size_after":  after,
 			"iteration":         iteration,
@@ -417,7 +416,7 @@ func (v *IterativeVerifier) iterateTableFingerprints(table *TableSchema, mismatc
 		}
 
 		if len(mismatchedPaginationKeys) > 0 {
-			v.logger.WithFields(logrus.Fields{
+			v.logger.WithFields(Fields{
 				"table":                     batch.TableSchema().String(),
 				"mismatched_paginationKeys": mismatchedPaginationKeys,
 			}).Info("found mismatched rows")
@@ -457,7 +456,7 @@ func (v *IterativeVerifier) verifyStore(sourceTag string, additionalTags []Metri
 
 			metrics.Count("RowEvent", int64(len(reverifyBatch.PaginationKeys)), tags, 1.0)
 
-			v.logger.WithFields(logrus.Fields{
+			v.logger.WithFields(Fields{
 				"table":               table.String(),
 				"len(paginationKeys)": len(reverifyBatch.PaginationKeys),
 			}).Debug("received paginationKey batch to reverify")

@@ -12,7 +12,6 @@ import (
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -167,7 +166,7 @@ func (c *DatabaseConfig) Validate() error {
 	return nil
 }
 
-func (c *DatabaseConfig) SqlDB(logger *logrus.Entry) (*sql.DB, error) {
+func (c *DatabaseConfig) SqlDB(logger Logger) (*sql.DB, error) {
 	dbCfg, err := c.MySQLConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build database config: %s", err)
@@ -904,7 +903,7 @@ func (c *Config) checkForDeprecatedConfig() {
 }
 
 func (c *Config) logDeprecated(deprecatedConfig string, newConfig string) {
-	logrus.Warnf("Config.%s is deprecated in favour of Config.%s", deprecatedConfig, newConfig)
+	LogWithField("tag", "config").Warnf("Config.%s is deprecated in favour of Config.%s", deprecatedConfig, newConfig)
 }
 
 func (c *Config) Update(updatedConfig UpdatableConfig) {

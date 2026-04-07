@@ -7,8 +7,6 @@ import (
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"sync/atomic"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 type Throttler interface {
@@ -86,7 +84,7 @@ type LagThrottler struct {
 
 	DB       *sql.DB
 	lag      int
-	logger   *logrus.Entry
+	logger   Logger
 	interval time.Duration
 }
 
@@ -112,7 +110,7 @@ func NewLagThrottler(config *LagThrottlerConfig) (*LagThrottler, error) {
 		return nil, fmt.Errorf("connection invalid: %s", err)
 	}
 
-	logger := logrus.WithField("tag", "throttler")
+	logger := LogWithField("tag", "throttler")
 	db, err := config.Connection.SqlDB(logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create connection: %s", err)

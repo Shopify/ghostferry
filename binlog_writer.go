@@ -5,8 +5,6 @@ import (
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
-
-	"github.com/sirupsen/logrus"
 )
 
 type BinlogWriter struct {
@@ -24,11 +22,11 @@ type BinlogWriter struct {
 	binlogEventBuffer chan DMLEvent
 	// Useful for debugging binlog writer lag, if diverged from binlog streamer lag
 	lastProcessedEventTime time.Time
-	logger                 *logrus.Entry
+	logger                 Logger
 }
 
 func (b *BinlogWriter) Run() {
-	b.logger = logrus.WithField("tag", "binlog_writer")
+	b.logger = LogWithField("tag", "binlog_writer")
 	b.binlogEventBuffer = make(chan DMLEvent, b.BatchSize)
 
 	batch := make([]DMLEvent, 0, b.BatchSize)

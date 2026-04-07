@@ -9,16 +9,15 @@ import (
 	"time"
 
 	"github.com/Shopify/ghostferry"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
 )
 
 func SetupTest() {
 	var err error
 
-	logrus.SetLevel(logrus.DebugLevel)
+	ghostferry.SetLogLevel(ghostferry.LogLevelDebug)
 	if os.Getenv("CI") == "true" {
-		logrus.SetLevel(logrus.ErrorLevel)
+		ghostferry.SetLogLevel(ghostferry.LogLevelError)
 	}
 
 	seed := time.Now().UnixNano()
@@ -28,7 +27,7 @@ func SetupTest() {
 		PanicIfError(err)
 	}
 
-	logrus.Warnf("random seed: %d", seed)
+	ghostferry.LogWithField("tag", "test").Warnf("random seed: %d", seed)
 	rand.Seed(seed)
 }
 

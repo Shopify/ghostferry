@@ -8,8 +8,6 @@ import (
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
-
-	"github.com/sirupsen/logrus"
 )
 
 type IncompleteVerificationError struct{}
@@ -105,7 +103,7 @@ type ChecksumTableVerifier struct {
 	verificationResultAndStatus VerificationResultAndStatus
 	verificationErr             error
 
-	logger *logrus.Entry
+	logger Logger
 	wg     *sync.WaitGroup
 }
 
@@ -116,7 +114,7 @@ func (v *ChecksumTableVerifier) VerifyBeforeCutover() error {
 
 func (v *ChecksumTableVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	if v.logger == nil {
-		v.logger = logrus.WithField("tag", "checksum_verifier")
+		v.logger = LogWithField("tag", "checksum_verifier")
 	}
 
 	for _, table := range v.Tables {
@@ -138,7 +136,7 @@ func (v *ChecksumTableVerifier) VerifyDuringCutover() (VerificationResult, error
 
 		targetTable := QuotedTableNameFromString(targetDbName, targetTableName)
 
-		logWithTable := v.logger.WithFields(logrus.Fields{
+		logWithTable := v.logger.WithFields(Fields{
 			"sourceTable": sourceTable,
 			"targetTable": targetTable,
 		})
@@ -174,7 +172,7 @@ func (v *ChecksumTableVerifier) VerifyDuringCutover() (VerificationResult, error
 			return VerificationResult{}, targetErr
 		}
 
-		logFields := logrus.Fields{
+		logFields := Fields{
 			"sourceChecksum": sourceChecksum,
 			"targetChecksum": targetChecksum,
 		}
@@ -228,7 +226,7 @@ func (v *ChecksumTableVerifier) StartInBackground() error {
 		DoneTime:  time.Time{},
 	}
 	v.verificationErr = nil
-	v.logger = logrus.WithField("tag", "checksum_verifier")
+	v.logger = LogWithField("tag", "checksum_verifier")
 	v.wg = &sync.WaitGroup{}
 
 	v.logger.Info("checksum table verification started")

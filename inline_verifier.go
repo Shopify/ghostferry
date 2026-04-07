@@ -17,7 +17,6 @@ import (
 
 	"github.com/go-mysql-org/go-mysql/schema"
 	"github.com/golang/snappy"
-	"github.com/sirupsen/logrus"
 )
 
 // This struct is very similar to ReverifyStore, but it is more optimized
@@ -150,7 +149,7 @@ func (s *BinlogVerifyStore) Add(table *TableSchema, paginationKey string) {
 	if s.totalRowCount%s.EmitLogPerRowsAdded == 0 {
 		metrics.Gauge("inline_verifier_current_rows", float64(s.currentRowCount), []MetricTag{}, 1.0)
 		metrics.Gauge("inline_verifier_total_rows", float64(s.totalRowCount), []MetricTag{}, 1.0)
-		logrus.WithFields(logrus.Fields{
+		LogWithFields(Fields{
 			"tag":         "binlog_verify_store",
 			"currentRows": s.currentRowCount,
 			"totalRows":   s.totalRowCount,
@@ -275,7 +274,7 @@ type InlineVerifier struct {
 
 	sourceStmtCache *StmtCache
 	targetStmtCache *StmtCache
-	logger          *logrus.Entry
+	logger          Logger
 
 	// Used only for the ControlServer initiated VerifyDuringCutover
 	backgroundVerificationResultAndStatus VerificationResultAndStatus
@@ -406,7 +405,7 @@ func (v *InlineVerifier) PeriodicallyVerifyBinlogEvents(ctx context.Context) {
 
 			v.readdMismatchedPaginationKeysToBeVerifiedAgain(mismatches)
 
-			v.logger.WithFields(logrus.Fields{
+			v.logger.WithFields(Fields{
 				"remainingRowCount": v.reverifyStore.currentRowCount,
 			}).Debug("reverified")
 		case <-ctx.Done():
@@ -434,7 +433,7 @@ func (v *InlineVerifier) VerifyBeforeCutover() error {
 		after := v.reverifyStore.currentRowCount
 		timeToVerify = time.Now().Sub(start)
 
-		v.logger.WithFields(logrus.Fields{
+		v.logger.WithFields(Fields{
 			"store_size_before": before,
 			"store_size_after":  after,
 			"iteration":         i,

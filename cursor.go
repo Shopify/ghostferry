@@ -10,7 +10,6 @@ import (
 
 	"github.com/Masterminds/squirrel"
 	"github.com/go-mysql-org/go-mysql/schema"
-	"github.com/sirupsen/logrus"
 )
 
 // both `sql.Tx` and `sql.DB` allow a SQL query to be `Prepare`d
@@ -82,11 +81,11 @@ type Cursor struct {
 
 	paginationKeyColumn         *schema.TableColumn
 	lastSuccessfulPaginationKey PaginationKey
-	logger                      *logrus.Entry
+	logger                      Logger
 }
 
 func (c *Cursor) Each(f func(*RowBatch) error) error {
-	c.logger = logrus.WithFields(logrus.Fields{
+	c.logger = LogWithFields(Fields{
 		"table": c.Table.String(),
 		"tag":   "cursor",
 	})
@@ -198,7 +197,7 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos Pagina
 	splitQuery := strings.Split(query, "FROM")
 	loggedQuery := fmt.Sprintf("SELECT [omitted] FROM %s", splitQuery[1])
 
-	logger := c.logger.WithFields(logrus.Fields{
+	logger := c.logger.WithFields(Fields{
 		"sql":  loggedQuery,
 		"args": args,
 	})

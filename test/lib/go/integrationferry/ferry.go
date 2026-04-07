@@ -12,7 +12,6 @@ import (
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -343,10 +342,10 @@ func Run(f *IntegrationFerry) error {
 }
 
 func Setup(c *RunCallbacks) *IntegrationFerry {
-	logrus.SetFormatter(&logrus.JSONFormatter{})
-	logrus.SetLevel(logrus.DebugLevel)
+	ghostferry.SetLogJSONFormatter()
+	ghostferry.SetLogLevel(ghostferry.LogLevelDebug)
 	if os.Getenv("CI") == "true" {
-		logrus.SetLevel(logrus.ErrorLevel)
+		ghostferry.SetLogLevel(ghostferry.LogLevelError)
 	}
 
 	config, err := NewStandardConfig()

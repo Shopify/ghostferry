@@ -22,7 +22,6 @@ import (
 	siddontangmysql "github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-sql-driver/mysql"
 	siddontanglog "github.com/siddontang/go-log/log"
-	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -88,7 +87,7 @@ type Ferry struct {
 	DoneTime     time.Time
 	OverallState atomic.Value
 
-	logger *logrus.Entry
+	logger Logger
 
 	rowCopyCompleteCh chan struct{}
 }
@@ -246,7 +245,7 @@ func (f *Ferry) NewInlineVerifier() *InlineVerifier {
 		reverifyStore:   binlogVerifyStore,
 		sourceStmtCache: NewStmtCache(),
 		targetStmtCache: NewStmtCache(),
-		logger:          logrus.WithField("tag", "inline-verifier"),
+		logger:          LogWithField("tag", "inline-verifier"),
 	}
 }
 
@@ -337,7 +336,7 @@ func (f *Ferry) Initialize() (err error) {
 	f.StartTime = time.Now().Truncate(time.Second)
 	f.OverallState.Store(StateStarting)
 
-	f.logger = logrus.WithField("tag", "ferry")
+	f.logger = LogWithField("tag", "ferry")
 	f.rowCopyCompleteCh = make(chan struct{})
 
 	f.logger.Infof("hello world from %s", VersionString)
@@ -466,7 +465,7 @@ func (f *Ferry) Initialize() (err error) {
 	if f.StateToResumeFrom == nil {
 		f.StateTracker = NewStateTracker(f.DataIterationConcurrency * 10)
 	} else {
-		f.logger.WithFields(logrus.Fields{
+		f.logger.WithFields(Fields{
 			"LastWrittenBinlogPosition":                 f.StateToResumeFrom.LastWrittenBinlogPosition,
 			"LastStoredBinlogPositionForInlineVerifier": f.StateToResumeFrom.LastStoredBinlogPositionForInlineVerifier,
 			"LastStoredBinlogPositionForTargetVerifier": f.StateToResumeFrom.LastStoredBinlogPositionForTargetVerifier,
@@ -1124,7 +1123,7 @@ func (f *Ferry) checkConnection(dbname string, db *sql.DB) error {
 
 	hasSSL := cipher != ""
 
-	f.logger.WithFields(logrus.Fields{
+	f.logger.WithFields(Fields{
 		"hasSSL":     hasSSL,
 		"ssl_cipher": cipher,
 		"dbname":     dbname,

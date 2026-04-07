@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/Shopify/ghostferry"
-	"github.com/sirupsen/logrus"
 )
 
 type CopydbFerry struct {
@@ -44,19 +43,19 @@ func (this *CopydbFerry) Start() error {
 func (this *CopydbFerry) CreateDatabasesAndTables() error {
 	// We need to create the same table/schemas on the target database
 	// as the ones we are copying.
-	logrus.Info("creating databases and tables on target")
+	ghostferry.LogWithField("tag", "copydb").Info("creating databases and tables on target")
 	for _, tableName := range this.Ferry.Tables.GetTableListWithPriority(this.config.TablesToBeCreatedFirst) {
 		t := strings.Split(tableName, ".")
 
 		err := this.createDatabaseIfExistsOnTarget(t[0])
 		if err != nil {
-			logrus.WithError(err).WithField("database", t[0]).Error("cannot create database, this may leave the target database in an insane state")
+			ghostferry.LogWithError(err).WithField("database", t[0]).Error("cannot create database, this may leave the target database in an insane state")
 			return err
 		}
 
 		err = this.createTableOnTarget(t[0], t[1])
 		if err != nil {
-			logrus.WithError(err).WithField("table", tableName).Error("cannot create table, this may leave the target database in an insane state")
+			ghostferry.LogWithError(err).WithField("table", tableName).Error("cannot create table, this may leave the target database in an insane state")
 			return err
 		}
 	}
@@ -103,14 +102,14 @@ func (this *CopydbFerry) Run() {
 	// This is where you cutover from using the source database to
 	// using the target database
 
-	logrus.Info("ghostferry main operations has terminated but the control server remains online")
-	logrus.Info("press CTRL+C or send an interrupt to stop the control server and end this process")
+	ghostferry.LogWithField("tag", "copydb").Info("ghostferry main operations has terminated but the control server remains online")
+	ghostferry.LogWithField("tag", "copydb").Info("press CTRL+C or send an interrupt to stop the control server and end this process")
 
 	this.Ferry.ControlServer.Wait()
 }
 
 func (this *CopydbFerry) initializeWaitUntilReplicaIsCaughtUpToMasterConnection() error {
-	masterDB, err := this.config.SourceReplicationMaster.SqlDB(logrus.WithField("tag", "copydb"))
+	masterDB, err := this.config.SourceReplicationMaster.SqlDB(ghostferry.LogWithField("tag", "copydb"))
 	if err != nil {
 		return err
 	}
@@ -140,7 +139,7 @@ func (this *CopydbFerry) createDatabaseIfExistsOnTarget(database string) error {
 	r := this.Ferry.SourceDB.QueryRow(fmt.Sprintf("SHOW CREATE DATABASE `%s`", database))
 	err := r.Scan(&originalDatabaseName, &createDatabaseQuery)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
+		ghostferry.LogWithFields(ghostferry.Fields{
 			"error":    err,
 			"database": database,
 		}).Error("unable to show create database on source")
@@ -167,7 +166,7 @@ func (this *CopydbFerry) createTableOnTarget(database, table string) error {
 	r := this.Ferry.SourceDB.QueryRow(fmt.Sprintf("SHOW CREATE TABLE `%s`.`%s`", database, table))
 	err := r.Scan(&tableNameAgain, &createTableQuery)
 	if err != nil {
-		logrus.WithFields(logrus.Fields{
+		ghostferry.LogWithFields(ghostferry.Fields{
 			"error":    err,
 			"database": database,
 			"table":    table,

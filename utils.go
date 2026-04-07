@@ -15,18 +15,17 @@ import (
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/schema"
-	"github.com/sirupsen/logrus"
 )
 
-func WithRetries(maxRetries int, sleep time.Duration, logger *logrus.Entry, verb string, f func() error) (err error) {
+func WithRetries(maxRetries int, sleep time.Duration, logger Logger, verb string, f func() error) (err error) {
 	return WithRetriesContext(nil, maxRetries, sleep, logger, verb, f)
 }
 
-func WithRetriesContext(ctx context.Context, maxRetries int, sleep time.Duration, logger *logrus.Entry, verb string, f func() error) (err error) {
+func WithRetriesContext(ctx context.Context, maxRetries int, sleep time.Duration, logger Logger, verb string, f func() error) (err error) {
 	try := 1
 
 	if logger == nil {
-		logger = logrus.NewEntry(logrus.StandardLogger())
+		logger = NewDefaultLogger()
 	}
 
 	for {
