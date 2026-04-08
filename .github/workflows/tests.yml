@@ -61,6 +61,10 @@ jobs:
     strategy:
       matrix:
         mysql: ["5.7", "8.0", "8.4"]
+        log_backend: ["logrus"]
+        include:
+          - mysql: "8.4"
+            log_backend: "zerolog"
 
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -70,6 +74,7 @@ jobs:
       CI: "true"
       BUNDLE_WITHOUT: "development"
       MYSQL_VERSION: ${{ matrix.mysql }}
+      GHOSTFERRY_LOG_BACKEND: ${{ matrix.log_backend }}
 
     steps:
       - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
