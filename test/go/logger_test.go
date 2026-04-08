@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/Shopify/ghostferry"
@@ -15,17 +16,21 @@ import (
 // Helpers
 // ---------------------------------------------------------------------------
 
-// savedBackend captures and restores global logging state between tests.
-type savedBackend struct {
+// savedLogState captures and restores global logging state between tests.
+// The backend is saved from the current state (to respect env var overrides).
+// Level and output are reset to known defaults since we have no getter for them.
+type savedLogState struct {
 	backend ghostferry.LogBackendType
 }
 
-func saveBackend() savedBackend {
-	return savedBackend{backend: ghostferry.GetLogBackend()}
+func saveLogState() savedLogState {
+	return savedLogState{backend: ghostferry.GetLogBackend()}
 }
 
-func (s savedBackend) restore() {
+func (s savedLogState) restore() {
 	ghostferry.SetLogBackend(s.backend)
+	ghostferry.SetLogLevel(ghostferry.LogLevelInfo)
+	ghostferry.SetLogOutput(os.Stderr)
 }
 
 // useBackend switches backend, sets debug level, and directs output to buf.
@@ -47,11 +52,11 @@ var backends = []ghostferry.LogBackendType{
 
 type LoggerTestSuite struct {
 	suite.Suite
-	saved savedBackend
+	saved savedLogState
 }
 
 func (s *LoggerTestSuite) SetupTest() {
-	s.saved = saveBackend()
+	s.saved = saveLogState()
 }
 
 func (s *LoggerTestSuite) TearDownTest() {

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/rs/zerolog"
 )
@@ -18,6 +19,36 @@ var globalZerologLogger = newGlobalZerolog(os.Stderr)
 
 func newGlobalZerolog(w io.Writer) zerolog.Logger {
 	return zerolog.New(w).With().Timestamp().Logger()
+}
+
+// zerologContextField adds a key-value pair to a zerolog.Context using the
+// native typed method when possible, avoiding Interface() reflection for the
+// most common types in the codebase (string, int, uint64, uint32, error, etc.).
+func zerologContextField(ctx zerolog.Context, key string, value any) zerolog.Context {
+	switch v := value.(type) {
+	case string:
+		return ctx.Str(key, v)
+	case int:
+		return ctx.Int(key, v)
+	case int64:
+		return ctx.Int64(key, v)
+	case uint16:
+		return ctx.Uint16(key, v)
+	case uint32:
+		return ctx.Uint32(key, v)
+	case uint64:
+		return ctx.Uint64(key, v)
+	case bool:
+		return ctx.Bool(key, v)
+	case error:
+		return ctx.AnErr(key, v)
+	case time.Duration:
+		return ctx.Dur(key, v)
+	case fmt.Stringer:
+		return ctx.Stringer(key, v)
+	default:
+		return ctx.Interface(key, v)
+	}
 }
 
 // zerologLogger wraps zerolog.Logger to implement the Logger interface.
@@ -36,13 +67,13 @@ func (l *zerologLogger) Errorf(format string, args ...any) { l.logger.Error().Ms
 func (l *zerologLogger) Panicf(format string, args ...any) { l.logger.Panic().Msgf(format, args...) }
 
 func (l *zerologLogger) WithField(key string, value any) Logger {
-	return &zerologLogger{logger: l.logger.With().Interface(key, value).Logger()}
+	return &zerologLogger{logger: zerologContextField(l.logger.With(), key, value).Logger()}
 }
 
 func (l *zerologLogger) WithFields(fields Fields) Logger {
 	ctx := l.logger.With()
 	for k, v := range fields {
-		ctx = ctx.Interface(k, v)
+		ctx = zerologContextField(ctx, k, v)
 	}
 	return &zerologLogger{logger: ctx.Logger()}
 }
@@ -57,7 +88,7 @@ func zerologWithField(key string, value any) Logger {
 	globalZerologMu.RLock()
 	base := globalZerologLogger
 	globalZerologMu.RUnlock()
-	return &zerologLogger{logger: base.With().Interface(key, value).Logger()}
+	return &zerologLogger{logger: zerologContextField(base.With(), key, value).Logger()}
 }
 
 func zerologWithFields(fields Fields) Logger {
@@ -66,7 +97,7 @@ func zerologWithFields(fields Fields) Logger {
 	globalZerologMu.RUnlock()
 	ctx := base.With()
 	for k, v := range fields {
-		ctx = ctx.Interface(k, v)
+		ctx = zerologContextField(ctx, k, v)
 	}
 	return &zerologLogger{logger: ctx.Logger()}
 }
