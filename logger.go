@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync/atomic"
 )
 
 // Logger is the interface for structured logging throughout ghostferry.
@@ -68,10 +69,14 @@ const (
 )
 
 // activeBackend holds the currently selected logging backend.
-// It defaults to logrus for backward compatibility.
-var activeBackend LogBackendType = LogBackendLogrus
+// It is accessed atomically to be safe under the Go memory model, even though
+// in practice the backend is always configured before goroutines are launched.
+var activeBackend atomic.Value // stores LogBackendType
 
 func init() {
+	// Set the default before anything else runs.
+	activeBackend.Store(LogBackendLogrus)
+
 	if backend := os.Getenv("GHOSTFERRY_LOG_BACKEND"); backend != "" {
 		SetLogBackend(LogBackendType(backend))
 	}
@@ -84,6 +89,11 @@ func init() {
 	}
 }
 
+// getBackend returns the currently active backend type.
+func getBackend() LogBackendType {
+	return activeBackend.Load().(LogBackendType)
+}
+
 // SetLogBackend switches the active logging backend.
 // This should be called once at program startup, before any loggers are created.
 // If an unknown backend is specified, a warning is printed to stderr and the
@@ -91,16 +101,16 @@ func init() {
 func SetLogBackend(backend LogBackendType) {
 	switch backend {
 	case LogBackendLogrus, LogBackendZerolog:
-		activeBackend = backend
+		activeBackend.Store(backend)
 	default:
 		fmt.Fprintf(os.Stderr, "ghostferry: unknown log backend %q, falling back to %q\n", backend, LogBackendLogrus)
-		activeBackend = LogBackendLogrus
+		activeBackend.Store(LogBackendLogrus)
 	}
 }
 
 // GetLogBackend returns the currently active logging backend.
 func GetLogBackend() LogBackendType {
-	return activeBackend
+	return getBackend()
 }
 
 // --- Public factory functions (dispatch to active backend) ---
@@ -108,7 +118,7 @@ func GetLogBackend() LogBackendType {
 // LogWithField creates a new Logger with a single key-value field.
 // This is the primary way components create their tagged loggers.
 func LogWithField(key string, value any) Logger {
-	if activeBackend == LogBackendZerolog {
+	if getBackend() == LogBackendZerolog {
 		return zerologWithField(key, value)
 	}
 	return logrusWithField(key, value)
@@ -116,7 +126,7 @@ func LogWithField(key string, value any) Logger {
 
 // LogWithFields creates a new Logger with multiple key-value fields.
 func LogWithFields(fields Fields) Logger {
-	if activeBackend == LogBackendZerolog {
+	if getBackend() == LogBackendZerolog {
 		return zerologWithFields(fields)
 	}
 	return logrusWithFields(fields)
@@ -124,7 +134,7 @@ func LogWithFields(fields Fields) Logger {
 
 // LogWithError creates a new Logger with an error field.
 func LogWithError(err error) Logger {
-	if activeBackend == LogBackendZerolog {
+	if getBackend() == LogBackendZerolog {
 		return zerologWithError(err)
 	}
 	return logrusWithError(err)
@@ -133,7 +143,7 @@ func LogWithError(err error) Logger {
 // NewDefaultLogger creates a Logger from the active backend's default configuration.
 // Used as a fallback when no logger is provided.
 func NewDefaultLogger() Logger {
-	if activeBackend == LogBackendZerolog {
+	if getBackend() == LogBackendZerolog {
 		return newZerologDefaultLogger()
 	}
 	return newLogrusDefaultLogger()
@@ -141,7 +151,7 @@ func NewDefaultLogger() Logger {
 
 // SetLogLevel sets the global log level for the active backend.
 func SetLogLevel(level LogLevel) {
-	if activeBackend == LogBackendZerolog {
+	if getBackend() == LogBackendZerolog {
 		setZerologLevel(level)
 		return
 	}
@@ -151,7 +161,7 @@ func SetLogLevel(level LogLevel) {
 // SetLogJSONFormatter configures the active backend to output JSON.
 // For zerolog this is a no-op since JSON is the default format.
 func SetLogJSONFormatter() {
-	if activeBackend == LogBackendZerolog {
+	if getBackend() == LogBackendZerolog {
 		setZerologJSONFormatter()
 		return
 	}
@@ -161,7 +171,7 @@ func SetLogJSONFormatter() {
 // SetLogOutput sets the output writer for the active backend.
 // This is primarily useful for testing (capturing log output).
 func SetLogOutput(w io.Writer) {
-	if activeBackend == LogBackendZerolog {
+	if getBackend() == LogBackendZerolog {
 		setZerologOutput(w)
 		return
 	}
