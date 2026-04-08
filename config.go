@@ -795,9 +795,18 @@ type Config struct {
 
 	// LogBackend selects the logging backend to use.
 	// Valid values: "logrus" (default), "zerolog".
+	// Can also be set via the GHOSTFERRY_LOG_BACKEND environment variable.
 	//
 	// Optional: defaults to "logrus"
 	LogBackend string
+
+	// LogLevel sets the logging verbosity.
+	// Valid values: "debug", "info", "warn", "error".
+	// Can also be set via the GHOSTFERRY_LOG_LEVEL environment variable.
+	// Note: the --verbose CLI flag, if present, takes precedence over this setting.
+	//
+	// Optional: defaults to "info"
+	LogLevel string
 
 	// ----------------------------------------------------------------------------------------------------------------
 	// Updatable config
@@ -815,9 +824,17 @@ type Config struct {
 }
 
 func (c *Config) ValidateConfig() error {
-	// Configure logging backend early, before any validation logging occurs.
+	// Configure logging backend and level early, before any validation logging occurs.
 	if c.LogBackend != "" {
 		SetLogBackend(LogBackendType(c.LogBackend))
+	}
+
+	if c.LogLevel != "" {
+		level, ok := ParseLogLevel(c.LogLevel)
+		if !ok {
+			return fmt.Errorf("invalid LogLevel %q (valid: debug, info, warn, error)", c.LogLevel)
+		}
+		SetLogLevel(level)
 	}
 
 	if err := c.Source.Validate(); err != nil {

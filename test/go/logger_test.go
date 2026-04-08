@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Shopify/ghostferry"
+	"github.com/Shopify/ghostferry/testhelpers"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -69,10 +70,12 @@ func (s *LoggerTestSuite) TestSetLogBackendZerolog() {
 	s.Require().Equal(ghostferry.LogBackendZerolog, ghostferry.GetLogBackend())
 }
 
-func (s *LoggerTestSuite) TestSetLogBackendInvalidPanics() {
-	s.Require().Panics(func() {
+func (s *LoggerTestSuite) TestSetLogBackendInvalidFallsBackToLogrus() {
+	ghostferry.SetLogBackend(ghostferry.LogBackendZerolog) // start from non-default
+	s.Require().NotPanics(func() {
 		ghostferry.SetLogBackend("invalid_backend")
 	})
+	s.Require().Equal(ghostferry.LogBackendLogrus, ghostferry.GetLogBackend())
 }
 
 // --- Factory functions return non-nil Logger (both backends) ---
@@ -356,6 +359,106 @@ func (s *LoggerTestSuite) TestGetLogBackendReflectsState() {
 
 	ghostferry.SetLogBackend(ghostferry.LogBackendZerolog)
 	s.Require().Equal(ghostferry.LogBackendZerolog, ghostferry.GetLogBackend())
+}
+
+// --- ParseLogLevel ---
+
+func (s *LoggerTestSuite) TestParseLogLevelValidValues() {
+	cases := []struct {
+		input    string
+		expected ghostferry.LogLevel
+	}{
+		{"debug", ghostferry.LogLevelDebug},
+		{"DEBUG", ghostferry.LogLevelDebug},
+		{"Debug", ghostferry.LogLevelDebug},
+		{"info", ghostferry.LogLevelInfo},
+		{"INFO", ghostferry.LogLevelInfo},
+		{"warn", ghostferry.LogLevelWarn},
+		{"WARN", ghostferry.LogLevelWarn},
+		{"warning", ghostferry.LogLevelWarn},
+		{"WARNING", ghostferry.LogLevelWarn},
+		{"error", ghostferry.LogLevelError},
+		{"ERROR", ghostferry.LogLevelError},
+	}
+	for _, tc := range cases {
+		s.Run(tc.input, func() {
+			level, ok := ghostferry.ParseLogLevel(tc.input)
+			s.Require().True(ok)
+			s.Require().Equal(tc.expected, level)
+		})
+	}
+}
+
+func (s *LoggerTestSuite) TestParseLogLevelInvalidReturnsFalse() {
+	invalids := []string{"", "trace", "fatal", "off", "42", "verbose"}
+	for _, input := range invalids {
+		s.Run(input, func() {
+			_, ok := ghostferry.ParseLogLevel(input)
+			s.Require().False(ok)
+		})
+	}
+}
+
+// --- Config.LogLevel validation ---
+
+func (s *LoggerTestSuite) TestConfigInvalidLogLevelReturnsError() {
+	config := minimalConfig()
+	config.LogLevel = "bogus"
+
+	err := config.ValidateConfig()
+	s.Require().Error(err)
+	s.Require().Contains(err.Error(), "invalid LogLevel")
+}
+
+func (s *LoggerTestSuite) TestConfigValidLogLevelApplied() {
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			ghostferry.SetLogBackend(b)
+			config := minimalConfig()
+			config.LogLevel = "warn"
+			config.LogBackend = string(b)
+
+			err := config.ValidateConfig()
+			s.Require().NoError(err)
+
+			// After validation, warn level should be active: debug and info
+			// messages should be suppressed.
+			var buf bytes.Buffer
+			ghostferry.SetLogOutput(&buf)
+			ghostferry.LogWithField("tag", "test").Debug("should not appear")
+			ghostferry.LogWithField("tag", "test").Info("should not appear")
+			s.Require().Empty(buf.String())
+		})
+	}
+}
+
+// --- Config.LogBackend invalid falls back gracefully ---
+
+func (s *LoggerTestSuite) TestConfigInvalidLogBackendFallsBack() {
+	config := minimalConfig()
+	config.LogBackend = "nonexistent"
+
+	// Should not panic, should fall back to logrus.
+	err := config.ValidateConfig()
+	s.Require().NoError(err)
+	s.Require().Equal(ghostferry.LogBackendLogrus, ghostferry.GetLogBackend())
+}
+
+// minimalConfig creates the smallest valid Config for testing ValidateConfig().
+func minimalConfig() *ghostferry.Config {
+	return &ghostferry.Config{
+		Source: &ghostferry.DatabaseConfig{
+			Host: "127.0.0.1",
+			Port: 3306,
+			User: "root",
+		},
+		Target: &ghostferry.DatabaseConfig{
+			Host: "127.0.0.1",
+			Port: 3306,
+			User: "root",
+		},
+		TableFilter: &testhelpers.TestTableFilter{},
+	}
 }
 
 func TestLoggerTestSuite(t *testing.T) {

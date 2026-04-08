@@ -3,6 +3,8 @@ package ghostferry
 import (
 	"fmt"
 	"io"
+	"os"
+	"strings"
 )
 
 // Logger is the interface for structured logging throughout ghostferry.
@@ -37,6 +39,24 @@ const (
 	LogLevelError
 )
 
+// ParseLogLevel converts a string to a LogLevel.
+// It returns the parsed level and true on success, or LogLevelInfo and false
+// if the string is not recognized.
+func ParseLogLevel(s string) (LogLevel, bool) {
+	switch strings.ToLower(s) {
+	case "debug":
+		return LogLevelDebug, true
+	case "info":
+		return LogLevelInfo, true
+	case "warn", "warning":
+		return LogLevelWarn, true
+	case "error":
+		return LogLevelError, true
+	default:
+		return LogLevelInfo, false
+	}
+}
+
 // LogBackendType identifies a logging backend implementation.
 type LogBackendType string
 
@@ -51,15 +71,30 @@ const (
 // It defaults to logrus for backward compatibility.
 var activeBackend LogBackendType = LogBackendLogrus
 
+func init() {
+	if backend := os.Getenv("GHOSTFERRY_LOG_BACKEND"); backend != "" {
+		SetLogBackend(LogBackendType(backend))
+	}
+	if level := os.Getenv("GHOSTFERRY_LOG_LEVEL"); level != "" {
+		if parsed, ok := ParseLogLevel(level); ok {
+			SetLogLevel(parsed)
+		} else {
+			fmt.Fprintf(os.Stderr, "ghostferry: unknown log level %q from GHOSTFERRY_LOG_LEVEL, ignoring\n", level)
+		}
+	}
+}
+
 // SetLogBackend switches the active logging backend.
 // This should be called once at program startup, before any loggers are created.
-// Valid values: LogBackendLogrus, LogBackendZerolog.
+// If an unknown backend is specified, a warning is printed to stderr and the
+// backend falls back to logrus.
 func SetLogBackend(backend LogBackendType) {
 	switch backend {
 	case LogBackendLogrus, LogBackendZerolog:
 		activeBackend = backend
 	default:
-		panic(fmt.Sprintf("ghostferry: unknown log backend %q (valid: %q, %q)", backend, LogBackendLogrus, LogBackendZerolog))
+		fmt.Fprintf(os.Stderr, "ghostferry: unknown log backend %q, falling back to %q\n", backend, LogBackendLogrus)
+		activeBackend = LogBackendLogrus
 	}
 }
 
