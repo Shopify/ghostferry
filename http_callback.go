@@ -7,8 +7,6 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
-
-	"github.com/sirupsen/logrus"
 )
 
 type HTTPCallback struct {
@@ -33,7 +31,7 @@ func postCallback(client *http.Client, uri string, body interface{}) error {
 		return err
 	}
 
-	logger := logrus.WithFields(logrus.Fields{
+	logger := LogWithFields(Fields{
 		"tag": "http-callback",
 		"uri": uri,
 	})
@@ -57,7 +55,7 @@ func postCallback(client *http.Client, uri string, body interface{}) error {
 		logger.WithField("error", err).Errorf("error reading callback body")
 	}
 
-	logger.WithFields(logrus.Fields{
+	logger.WithFields(Fields{
 		"status": res.StatusCode,
 		"body":   string(resBody),
 	}).Errorf("callback not ok")

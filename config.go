@@ -12,7 +12,6 @@ import (
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -167,7 +166,7 @@ func (c *DatabaseConfig) Validate() error {
 	return nil
 }
 
-func (c *DatabaseConfig) SqlDB(logger *logrus.Entry) (*sql.DB, error) {
+func (c *DatabaseConfig) SqlDB(logger Logger) (*sql.DB, error) {
 	dbCfg, err := c.MySQLConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build database config: %s", err)
@@ -794,6 +793,21 @@ type Config struct {
 	// If true, net/http/pprof will be enabled on port 6060.
 	EnablePProf bool
 
+	// LogBackend selects the logging backend to use.
+	// Valid values: "logrus" (default), "zerolog".
+	// Can also be set via the GHOSTFERRY_LOG_BACKEND environment variable.
+	//
+	// Optional: defaults to "logrus"
+	LogBackend string
+
+	// LogLevel sets the logging verbosity.
+	// Valid values: "debug", "info", "warn", "error".
+	// Can also be set via the GHOSTFERRY_LOG_LEVEL environment variable.
+	// Note: the --verbose CLI flag, if present, takes precedence over this setting.
+	//
+	// Optional: defaults to "info"
+	LogLevel string
+
 	// ----------------------------------------------------------------------------------------------------------------
 	// Updatable config
 	// The following configs are updatable via the `Config.Update` method and should be passed by pointer
@@ -810,6 +824,19 @@ type Config struct {
 }
 
 func (c *Config) ValidateConfig() error {
+	// Configure logging backend and level early, before any validation logging occurs.
+	if c.LogBackend != "" {
+		SetLogBackend(LogBackendType(c.LogBackend))
+	}
+
+	if c.LogLevel != "" {
+		level, ok := ParseLogLevel(c.LogLevel)
+		if !ok {
+			return fmt.Errorf("invalid LogLevel %q (valid: debug, info, warn, error)", c.LogLevel)
+		}
+		SetLogLevel(level)
+	}
+
 	if err := c.Source.Validate(); err != nil {
 		return fmt.Errorf("source: %s", err)
 	}
@@ -904,7 +931,7 @@ func (c *Config) checkForDeprecatedConfig() {
 }
 
 func (c *Config) logDeprecated(deprecatedConfig string, newConfig string) {
-	logrus.Warnf("Config.%s is deprecated in favour of Config.%s", deprecatedConfig, newConfig)
+	LogWithField("tag", "config").Warnf("Config.%s is deprecated in favour of Config.%s", deprecatedConfig, newConfig)
 }
 
 func (c *Config) Update(updatedConfig UpdatableConfig) {

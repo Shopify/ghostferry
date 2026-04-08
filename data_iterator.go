@@ -5,8 +5,6 @@ import (
 	"sync"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
-
-	"github.com/sirupsen/logrus"
 )
 
 type DataIterator struct {
@@ -22,7 +20,7 @@ type DataIterator struct {
 	TargetPaginationKeys *sync.Map
 	batchListeners       []func(*RowBatch) error
 	doneListeners        []func() error
-	logger               *logrus.Entry
+	logger               Logger
 }
 
 type TableMaxPaginationKey struct {
@@ -31,7 +29,7 @@ type TableMaxPaginationKey struct {
 }
 
 func (d *DataIterator) Run(tables []*TableSchema) {
-	d.logger = logrus.WithField("tag", "data_iterator")
+	d.logger = LogWithField("tag", "data_iterator")
 
 	// If a state tracker is not provided, then the caller doesn't care about
 	// tracking state. However, some methods are still useful so we initialize

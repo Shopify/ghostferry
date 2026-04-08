@@ -12,7 +12,6 @@ import (
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
-	"github.com/sirupsen/logrus"
 )
 
 const caughtUpThreshold = 10 * time.Second
@@ -55,7 +54,7 @@ type BinlogStreamer struct {
 
 	stopRequested bool
 
-	logger         *logrus.Entry
+	logger         Logger
 	eventListeners []func([]DMLEvent) error
 	// eventhandlers can be attached to binlog Replication Events
 	// for any event that does not have a specific handler attached, a default eventHandler
@@ -70,7 +69,7 @@ func (s *BinlogStreamer) ensureLogger() {
 	}
 
 	if s.logger == nil {
-		s.logger = logrus.WithField("tag", s.LogTag)
+		s.logger = LogWithField("tag", s.LogTag)
 	}
 }
 
@@ -94,15 +93,15 @@ func (s *BinlogStreamer) createBinlogSyncer() error {
 	}
 
 	syncerConfig := replication.BinlogSyncerConfig{
-		ServerID:                s.MyServerId,
-		Host:                    s.DBConfig.Host,
-		Port:                    s.DBConfig.Port,
-		User:                    s.DBConfig.User,
-		Password:                s.DBConfig.Pass,
-		TLSConfig:               tlsConfig,
-		UseDecimal:              true,
+		ServerID:                 s.MyServerId,
+		Host:                     s.DBConfig.Host,
+		Port:                     s.DBConfig.Port,
+		User:                     s.DBConfig.User,
+		Password:                 s.DBConfig.Pass,
+		TLSConfig:                tlsConfig,
+		UseDecimal:               true,
 		UseFloatWithTrailingZero: true,
-		TimestampStringLocation: time.UTC,
+		TimestampStringLocation:  time.UTC,
 	}
 
 	s.binlogSyncer = replication.NewBinlogSyncer(syncerConfig)
@@ -132,7 +131,7 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFrom(startFromBinlogPositio
 	s.lastStreamedBinlogPosition = startFromBinlogPosition
 	s.lastResumableBinlogPosition = startFromBinlogPosition
 
-	s.logger.WithFields(logrus.Fields{
+	s.logger.WithFields(Fields{
 		"file":     s.lastStreamedBinlogPosition.Name,
 		"position": s.lastStreamedBinlogPosition.Pos,
 		"host":     s.DBConfig.Host,
@@ -171,7 +170,7 @@ func (s *BinlogStreamer) defaultEventHandler(ev *replication.BinlogEvent, query 
 			}
 		}
 
-		s.logger.WithFields(logrus.Fields{
+		s.logger.WithFields(Fields{
 			"new_position":  es.evPosition.Pos,
 			"new_filename":  es.evPosition.Name,
 			"last_position": s.lastStreamedBinlogPosition.Pos,
@@ -239,7 +238,7 @@ func (s *BinlogStreamer) Run() {
 	s.ensureLogger()
 
 	defer func() {
-		s.logger.WithFields(logrus.Fields{
+		s.logger.WithFields(Fields{
 			"stopAtBinlogPosition":       s.stopAtBinlogPosition,
 			"lastStreamedBinlogPosition": s.lastStreamedBinlogPosition,
 		}).Info("exiting binlog streamer")
@@ -281,7 +280,7 @@ func (s *BinlogStreamer) Run() {
 			Pos:  ev.Header.LogPos,
 		}
 
-		s.logger.WithFields(logrus.Fields{
+		s.logger.WithFields(Fields{
 			"position":                   es.evPosition.Pos,
 			"file":                       es.evPosition.Name,
 			"type":                       fmt.Sprintf("%T", ev.Event),

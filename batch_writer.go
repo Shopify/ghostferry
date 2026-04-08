@@ -6,8 +6,6 @@ import (
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
-
-	"github.com/sirupsen/logrus"
 )
 
 var batchWriteRetryDelay = 5 * time.Millisecond
@@ -39,14 +37,14 @@ type BatchWriter struct {
 	WriteRetries int
 
 	stmtCache *StmtCache
-	logger    *logrus.Entry
+	logger    Logger
 
 	enableRowBatchSize bool
 }
 
 func (w *BatchWriter) Initialize() {
 	w.stmtCache = NewStmtCache()
-	w.logger = logrus.WithField("tag", "batch_writer")
+	w.logger = LogWithField("tag", "batch_writer")
 }
 
 func (w *BatchWriter) WriteRowBatch(batch *RowBatch) error {

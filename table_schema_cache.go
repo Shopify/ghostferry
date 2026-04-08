@@ -10,7 +10,6 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/go-mysql-org/go-mysql/schema"
-	"github.com/sirupsen/logrus"
 )
 
 var ignoredDatabases = map[string]bool{
@@ -126,7 +125,7 @@ func QuotedTableNameFromString(database, table string) string {
 	return fmt.Sprintf("`%s`.`%s`", database, table)
 }
 
-func MaxPaginationKeys(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) (map[*TableSchema]PaginationKey, []*TableSchema, error) {
+func MaxPaginationKeys(db *sql.DB, tables []*TableSchema, logger Logger) (map[*TableSchema]PaginationKey, []*TableSchema, error) {
 	tablesWithData := make(map[*TableSchema]PaginationKey)
 	emptyTables := make([]*TableSchema, 0, len(tables))
 
@@ -152,7 +151,7 @@ func MaxPaginationKeys(db *sql.DB, tables []*TableSchema, logger *logrus.Entry) 
 }
 
 func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig ColumnCompressionConfig, columnIgnoreConfig ColumnIgnoreConfig, forceIndexConfig ForceIndexConfig, cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (TableSchemaCache, error) {
-	logger := logrus.WithField("tag", "table_schema_cache")
+	logger := LogWithField("tag", "table_schema_cache")
 
 	tableSchemaCache := make(TableSchemaCache)
 
@@ -448,7 +447,7 @@ func maxPaginationKey(db *sql.DB, table *TableSchema) (PaginationKey, bool, erro
 		if err != nil {
 			break
 		}
-		
+
 		var binValue []byte
 		switch v := val.(type) {
 		case []byte:
@@ -458,7 +457,7 @@ func maxPaginationKey(db *sql.DB, table *TableSchema) (PaginationKey, bool, erro
 		default:
 			err = fmt.Errorf("expected binary/string for max key, got %T", val)
 		}
-		
+
 		if err == nil {
 			result = NewBinaryKeyWithColumn(primaryKeyColumn.Name, binValue)
 		}

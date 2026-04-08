@@ -8,7 +8,6 @@ import (
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
-	"github.com/sirupsen/logrus"
 )
 
 type ReplicatedMasterPositionFetcher interface {
@@ -51,12 +50,12 @@ type WaitUntilReplicaIsCaughtUpToMaster struct {
 
 	ReplicaDB *sql.DB
 
-	logger *logrus.Entry
+	logger Logger
 }
 
 func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUp(targetMasterPos mysql.Position, retries int) (bool, error) {
 	if w.logger == nil {
-		w.logger = logrus.WithField("tag", "wait_replica")
+		w.logger = LogWithField("tag", "wait_replica")
 	}
 
 	var currentReplicatedMasterPos mysql.Position
@@ -80,7 +79,7 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUp(targetMasterPos mysql.Po
 }
 
 func (w *WaitUntilReplicaIsCaughtUpToMaster) Wait() error {
-	w.logger = logrus.WithField("tag", "wait_replica")
+	w.logger = LogWithField("tag", "wait_replica")
 	// Essentially not timeout
 	if w.Timeout == time.Duration(0) {
 		w.Timeout = time.Duration(math.MaxInt64)

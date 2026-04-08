@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/sirupsen/logrus"
 )
 
 type ControlServerTableStatus struct {
@@ -23,7 +22,7 @@ type ControlServerTableStatus struct {
 	LastSuccessfulPaginationKey PaginationKey
 	TargetPaginationKey         PaginationKey
 
-	BatchSize                   uint64
+	BatchSize uint64
 }
 
 type CustomScriptStatus struct {
@@ -74,7 +73,7 @@ type ControlServer struct {
 	Verifier Verifier
 
 	server    *http.Server
-	logger    *logrus.Entry
+	logger    Logger
 	router    *mux.Router
 	templates *template.Template
 	wg        *sync.WaitGroup
@@ -87,7 +86,7 @@ type ControlServer struct {
 }
 
 func (this *ControlServer) Initialize() (err error) {
-	this.logger = logrus.WithField("tag", "control_server")
+	this.logger = LogWithField("tag", "control_server")
 	this.logger.Info("initializing")
 	this.wg = &sync.WaitGroup{}
 
@@ -134,7 +133,7 @@ func (this *ControlServer) Run() {
 	this.logger.Infof("running on %s", this.Config.ServerBindAddr)
 	err := this.server.ListenAndServe()
 	if err != nil {
-		logrus.WithError(err).Error("error on ListenAndServe")
+		LogWithError(err).Error("error on ListenAndServe")
 	}
 }
 
@@ -143,7 +142,7 @@ func (this *ControlServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	this.router.ServeHTTP(w, r)
 
-	this.logger.WithFields(logrus.Fields{
+	this.logger.WithFields(Fields{
 		"method": r.Method,
 		"path":   r.RequestURI,
 		"time":   time.Now().Sub(start),
@@ -214,7 +213,7 @@ func (this *ControlServer) HandleStatus(w http.ResponseWriter, r *http.Request) 
 
 	// Converting time values to seconds manually for json output
 	status.TimeTaken = status.TimeTaken / time.Second
-	status.BinlogStreamerLag = status.BinlogStreamerLag  / time.Second
+	status.BinlogStreamerLag = status.BinlogStreamerLag / time.Second
 	status.ETA = status.ETA / time.Second
 
 	w.Header().Set("Content-Type", "application/json")
@@ -295,7 +294,6 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 			LastSuccessfulPaginationKey: lastSuccessfulPaginationKey,
 			TargetPaginationKey:         tableProgress.TargetPaginationKey,
 			BatchSize:                   tableProgress.BatchSize,
-
 		}
 
 		tablesGroupByStatus[tableStatus] = append(tablesGroupByStatus[tableStatus], controlStatus)
@@ -490,14 +488,14 @@ func (this *ControlServer) startScriptInBackground(scriptName string, scriptCmd 
 			defaultExitCode := 1
 			if errors.As(err, &exitError) {
 				this.customScriptsExitCode[scriptName] = exitError.ExitCode()
-				logrus.WithFields(logrus.Fields{
+				LogWithFields(Fields{
 					"scriptName": scriptName,
 					"error":      err.Error(),
 					"exitCode":   exitError.ExitCode(),
 				}).Error("custom script ran with errors")
 			} else {
 				this.customScriptsExitCode[scriptName] = defaultExitCode
-				logrus.WithFields(logrus.Fields{
+				LogWithFields(Fields{
 					"scriptName": scriptName,
 					"error":      err.Error(),
 					"exitCode":   exitError.ExitCode(),

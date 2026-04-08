@@ -8,7 +8,6 @@ import (
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry"
-	"github.com/sirupsen/logrus"
 )
 
 type IntegrationTestCase struct {
@@ -132,25 +131,25 @@ func (this *IntegrationTestCase) VerifyData() {
 func (this *IntegrationTestCase) Teardown() {
 	r := recover()
 	if r != nil {
-		logrus.Errorf("panic detected in integration test: %v", r)
-		logrus.Error("cleaning up now...")
-		logrus.Error("you might see an unrelated panic as we delete the db, if there are background processes operating on the db")
+		ghostferry.LogWithField("tag", "integration_test").Errorf("panic detected in integration test: %v", r)
+		ghostferry.LogWithField("tag", "integration_test").Error("cleaning up now...")
+		ghostferry.LogWithField("tag", "integration_test").Error("you might see an unrelated panic as we delete the db, if there are background processes operating on the db")
 	}
 
 	_, err := this.SourceDB.Exec("SET GLOBAL read_only = OFF")
 	if err != nil {
-		logrus.WithError(err).Error("cannot set global read_only = OFF at the source db")
+		ghostferry.LogWithError(err).Error("cannot set global read_only = OFF at the source db")
 	}
 
 	for _, dbname := range ApplicableTestDbs {
 		_, err = this.SourceDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbname))
 		if err != nil {
-			logrus.WithError(err).Errorf("failed to drop database %s on the source db as a part of the test cleanup", dbname)
+			ghostferry.LogWithError(err).Errorf("failed to drop database %s on the source db as a part of the test cleanup", dbname)
 		}
 
 		_, err = this.TargetDB.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS %s", dbname))
 		if err != nil {
-			logrus.WithError(err).Errorf("failed to drop database %s on the target db as a part of the test cleanup", dbname)
+			ghostferry.LogWithError(err).Errorf("failed to drop database %s on the target db as a part of the test cleanup", dbname)
 		}
 	}
 

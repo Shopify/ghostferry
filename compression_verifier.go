@@ -14,7 +14,6 @@ import (
 	sq "github.com/Masterminds/squirrel"
 	"github.com/go-mysql-org/go-mysql/schema"
 	"github.com/golang/snappy"
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -47,7 +46,7 @@ func (e UnsupportedCompressionError) Error() string {
 // may have different hashes for the same data by first decompressing the compressed
 // data before fingerprinting
 type CompressionVerifier struct {
-	logger *logrus.Entry
+	logger Logger
 
 	TableSchemaCache        TableSchemaCache
 	supportedAlgorithms     map[string]struct{}
@@ -61,7 +60,7 @@ type CompressionVerifier struct {
 // and will apply the decompression algorithm to the applicable columns if necessary.
 // After the columns are decompressed, the hashes of the data are used to verify equality
 func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schemaName, tableName, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []interface{}) (map[string][]byte, error) {
-	c.logger.WithFields(logrus.Fields{
+	c.logger.WithFields(Fields{
 		"tag":   "compression_verifier",
 		"table": tableName,
 	}).Info("decompressing table data before verification")
@@ -142,7 +141,7 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schemaName, tableN
 		1.0,
 	)
 
-	logrus.WithFields(logrus.Fields{
+	LogWithFields(Fields{
 		"tag":   "compression_verifier",
 		"rows":  len(resultSet),
 		"table": tableName,
@@ -218,7 +217,7 @@ func NewCompressionVerifier(tableColumnCompressions TableColumnCompressionConfig
 	supportedAlgorithms[CompressionSnappy] = struct{}{}
 
 	compressionVerifier := &CompressionVerifier{
-		logger:                  logrus.WithField("tag", "compression_verifier"),
+		logger:                  LogWithField("tag", "compression_verifier"),
 		TableSchemaCache:        tableSchemaCache,
 		supportedAlgorithms:     supportedAlgorithms,
 		tableColumnCompressions: tableColumnCompressions,

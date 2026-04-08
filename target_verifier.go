@@ -4,11 +4,10 @@ import (
 	"fmt"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
-	"github.com/sirupsen/logrus"
 )
 
 type TargetVerifier struct {
-	logger         *logrus.Entry
+	logger         Logger
 	DB             *sql.DB
 	BinlogStreamer *BinlogStreamer
 	StateTracker   *StateTracker
@@ -16,7 +15,7 @@ type TargetVerifier struct {
 
 func NewTargetVerifier(targetDB *sql.DB, stateTracker *StateTracker, binlogStreamer *BinlogStreamer) (*TargetVerifier, error) {
 	targetVerifier := &TargetVerifier{
-		logger:         logrus.WithField("tag", "target_verifier"),
+		logger:         LogWithField("tag", "target_verifier"),
 		DB:             targetDB,
 		BinlogStreamer: binlogStreamer,
 		StateTracker:   stateTracker,

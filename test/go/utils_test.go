@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/Shopify/ghostferry"
@@ -14,11 +13,11 @@ import (
 type UtilsTestSuite struct {
 	suite.Suite
 
-	logger *logrus.Entry
+	logger ghostferry.Logger
 }
 
 func (this *UtilsTestSuite) SetupTest() {
-	this.logger = logrus.WithField("tag", "utils_test")
+	this.logger = ghostferry.LogWithField("tag", "utils_test")
 }
 
 func (this *UtilsTestSuite) TestReturnsErrAsIs() {

@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"os"
 	"sync/atomic"
-
-	"github.com/sirupsen/logrus"
 )
 
 type ErrorHandler interface {
@@ -25,7 +23,7 @@ type PanicErrorHandler struct {
 }
 
 func (this *PanicErrorHandler) ReportError(from string, err error) {
-	logger := logrus.WithField("tag", "error_handler")
+	logger := LogWithField("tag", "error_handler")
 
 	stateJSON, jsonErr := this.Ferry.SerializeStateToJSON()
 	if jsonErr != nil {
@@ -70,7 +68,7 @@ func (this *PanicErrorHandler) ReportError(from string, err error) {
 
 func (this *PanicErrorHandler) Fatal(from string, err error) {
 	if atomic.AddInt32(&this.errorCount, 1) > 1 {
-		logrus.WithField("tag", "error_handler").WithError(err).WithField("errfrom", from).Error("multiple fatal errors detected, not reporting again")
+		LogWithField("tag", "error_handler").WithError(err).WithField("errfrom", from).Error("multiple fatal errors detected, not reporting again")
 		return
 	}
 

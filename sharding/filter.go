@@ -9,7 +9,6 @@ import (
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/Shopify/ghostferry"
-	log "github.com/sirupsen/logrus"
 )
 
 type JoinTable struct {
@@ -151,7 +150,7 @@ func (f *ShardedCopyFilter) shardingKeyIndexHint(table *ghostferry.TableSchema, 
 		return "USE INDEX (`" + indexName + "`)"
 	} else {
 		if _, logged := f.missingShardingKeyIndexLogged.Load(table.Name); !logged {
-			log.WithFields(log.Fields{"tag": "sharding", "table": table.Name}).Warnf("missing suitable index")
+			ghostferry.LogWithFields(ghostferry.Fields{"tag": "sharding", "table": table.Name}).Warnf("missing suitable index")
 			metrics.Count("MissingShardingKeyIndex", 1, []ghostferry.MetricTag{{"table", table.Name}}, 1.0)
 			f.missingShardingKeyIndexLogged.Store(table.Name, true)
 		}
@@ -169,7 +168,7 @@ func (f *ShardedCopyFilter) shardingKeyIndexName(table *ghostferry.TableSchema) 
 				}
 			}
 
-			log.WithFields(log.Fields{"tag": "sharding", "table": table.Name}).
+			ghostferry.LogWithFields(ghostferry.Fields{"tag": "sharding", "table": table.Name}).
 				Warnf("index name %s not found on table %s", tableSpecificIndexConfig.IndexName, table.Name)
 		}
 	}
@@ -212,7 +211,7 @@ func (f *ShardedCopyFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, er
 					sql = ""
 				}
 
-				log.WithFields(log.Fields{
+				ghostferry.LogWithFields(ghostferry.Fields{
 					"tag":          "sharding",
 					"table":        event.Table(),
 					"position":     event.BinlogPosition(),
@@ -231,7 +230,7 @@ func (f *ShardedCopyFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, er
 					sql = ""
 				}
 
-				log.WithFields(log.Fields{
+				ghostferry.LogWithFields(ghostferry.Fields{
 					"tag":          "sharding",
 					"table":        event.Table(),
 					"position":     event.BinlogPosition(),

@@ -8,7 +8,6 @@ import (
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/copydb"
-	"github.com/sirupsen/logrus"
 )
 
 func usage() {
@@ -45,7 +44,7 @@ func main() {
 	}
 
 	if verbose {
-		logrus.SetLevel(logrus.DebugLevel)
+		ghostferry.SetLogLevel(ghostferry.LogLevelDebug)
 	}
 
 	// Default values for configurations
@@ -65,7 +64,7 @@ func main() {
 				Enabled: true,
 			},
 
-			AutomaticCutover:       false,
+			AutomaticCutover: false,
 		},
 	}
 
@@ -104,6 +103,14 @@ func main() {
 	err = config.InitializeAndValidateConfig()
 	if err != nil {
 		errorAndExit(fmt.Sprintf("failed to validate config: %v", err))
+	}
+
+	if verbose {
+		if config.Config.LogLevel != "" {
+			ghostferry.LogWithField("tag", "config").Warn(
+				"--verbose flag and Config.LogLevel are both set; --verbose takes precedence")
+		}
+		ghostferry.SetLogLevel(ghostferry.LogLevelDebug)
 	}
 
 	ferry := copydb.NewFerry(config)

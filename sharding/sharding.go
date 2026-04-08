@@ -6,13 +6,12 @@ import (
 	"sync"
 
 	"github.com/Shopify/ghostferry"
-	"github.com/sirupsen/logrus"
 )
 
 type ShardingFerry struct {
 	Ferry  *ghostferry.Ferry
 	config *Config
-	logger *logrus.Entry
+	logger ghostferry.Logger
 }
 
 func NewFerry(config *Config) (*ShardingFerry, error) {
@@ -73,7 +72,7 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 		Throttler: throttler,
 	}
 
-	logger := logrus.WithField("tag", "sharding")
+	logger := ghostferry.LogWithField("tag", "sharding")
 
 	return &ShardingFerry{
 		Ferry:  ferry,
