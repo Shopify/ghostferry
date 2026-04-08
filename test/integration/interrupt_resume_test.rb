@@ -687,6 +687,8 @@ class InterruptResumeTest < GhostferryTestCase
 
   def test_interrupt_resume_without_writes_to_source_with_uuid_table
     seed_simple_database_with_uuid_table
+    # prevents race condition with the regular table
+    source_db.query("DROP TABLE IF EXISTS #{DEFAULT_FULL_TABLE_NAME}")
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
 
@@ -713,6 +715,8 @@ class InterruptResumeTest < GhostferryTestCase
 
   def test_interrupt_and_resume_without_last_known_schema_cache_with_uuid_table
     seed_simple_database_with_uuid_table
+    # prevents race condition with the regular table
+    source_db.query("DROP TABLE IF EXISTS #{DEFAULT_FULL_TABLE_NAME}")
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
 
