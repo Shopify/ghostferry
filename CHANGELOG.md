@@ -2,7 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.2.1 - ?]
+## [1.3.0 - 2026-04-08]
+
+### Changed
+
+- Replace direct `logrus` usage with `Logger` interface, which uses `logrus` as a default backend.
+
+### Added
+
+- New configuration options for `LogBackend` and `LogLevel`, set with either environment variables or configuration passed in via stdin
+- New logger backend: `zerolog`, which should be backwards compatible with `logrus`.
+
+## [1.2.1 - 2026-02-12]
 
 ### Added
 

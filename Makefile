@@ -1,5 +1,5 @@
 # Variables to be built into the binary
-VERSION         := 1.2.1
+VERSION         := 1.3.0
 
 # This variable can be overwritten by the caller
 DATETIME        ?= $(shell date -u +%Y%m%d%H%M%S)
