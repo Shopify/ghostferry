@@ -81,17 +81,10 @@ class GhostferryTestCase < Minitest::Test
     g = new_ghostferry(filepath, config: config)
 
     batches_written = 0
-    interrupted = false
     g.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
       batches_written += 1
 
-      # Guard: send TERM exactly once. Without this, multiple AFTER_ROW_COPY
-      # callbacks can fire concurrently (DataIterationConcurrency defaults to 4)
-      # while the process is already shutting down. The redundant Process.kill
-      # calls race against the child's exit and raise Errno::ESRCH in the test
-      # harness, failing the test spuriously.
-      if batches_written > after_batches_written && !interrupted
-        interrupted = true
+      if batches_written >= after_batches_written
         g.send_signal("TERM")
       end
     end
