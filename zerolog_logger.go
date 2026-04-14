@@ -17,6 +17,22 @@ var globalZerologMu sync.RWMutex
 // It is initialized to write JSON to os.Stderr with timestamps.
 var globalZerologLogger = newGlobalZerolog(os.Stderr)
 
+// zerologDefaultLevel sets zerolog's global level to InfoLevel so that the
+// zerolog backend matches logrus's default behaviour (Info and above only).
+//
+// This must be a package-level var initializer rather than an init() function.
+// init() functions within a package run in alphabetical source-file order, so
+// zerolog_logger.go's init() would execute AFTER logger.go's init() — which
+// means it would overwrite any level already applied from GHOSTFERRY_LOG_LEVEL.
+// A var initializer runs before any init() in the same package, giving us the
+// right ordering:
+//
+//  1. zerolog pkg init (ctx.go)          → SetGlobalLevel(TraceLevel)   [-1]
+//  2. zerolog_logger.go var initializer  → SetGlobalLevel(InfoLevel)    [ 1]
+//  3. logger.go init()                   → env-var override (if set)    [?]
+//  4. Config.ValidateConfig() / caller   → explicit override (if set)   [?]
+var _ = func() struct{} { zerolog.SetGlobalLevel(zerolog.InfoLevel); return struct{}{} }()
+
 func newGlobalZerolog(w io.Writer) zerolog.Logger {
 	return zerolog.New(w).With().Timestamp().Logger()
 }

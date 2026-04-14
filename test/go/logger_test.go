@@ -28,6 +28,15 @@ func saveLogState() savedLogState {
 }
 
 func (s savedLogState) restore() {
+	// Always reset zerolog's global level regardless of which backend is being
+	// restored. Without this, a test that switches to zerolog and sets it to
+	// DebugLevel leaves zerolog at DebugLevel for all subsequent zerolog tests,
+	// because switching back to logrus and calling SetLogLevel only touches
+	// logrus's level — zerolog's atomic global is a separate variable.
+	ghostferry.SetLogBackend(ghostferry.LogBackendZerolog)
+	ghostferry.SetLogLevel(ghostferry.LogLevelInfo)
+	ghostferry.SetLogOutput(os.Stderr)
+
 	ghostferry.SetLogBackend(s.backend)
 	ghostferry.SetLogLevel(ghostferry.LogLevelInfo)
 	ghostferry.SetLogOutput(os.Stderr)
@@ -222,6 +231,31 @@ func (s *LoggerTestSuite) TestChainingDoesNotMutateOriginal() {
 			s.Require().NotContains(output, `"extra"`)
 		})
 	}
+}
+
+// --- zerolog default level matches logrus (Info) ---
+
+func (s *LoggerTestSuite) TestZerologDefaultLevelSuppressesDebug() {
+	var buf bytes.Buffer
+	ghostferry.SetLogBackend(ghostferry.LogBackendZerolog)
+	ghostferry.SetLogOutput(&buf)
+	// Deliberately do NOT call SetLogLevel — we want the package default.
+
+	ghostferry.LogWithField("tag", "test").Debug("should be suppressed")
+	s.Require().Empty(buf.String(), "debug messages should be suppressed at the default zerolog level")
+
+	ghostferry.LogWithField("tag", "test").Info("should appear")
+	s.Require().Contains(buf.String(), "should appear")
+}
+
+func (s *LoggerTestSuite) TestZerologExplicitLevelOverridesDefault() {
+	var buf bytes.Buffer
+	ghostferry.SetLogBackend(ghostferry.LogBackendZerolog)
+	ghostferry.SetLogOutput(&buf)
+	ghostferry.SetLogLevel(ghostferry.LogLevelDebug) // explicit override
+
+	ghostferry.LogWithField("tag", "test").Debug("should appear")
+	s.Require().Contains(buf.String(), "should appear")
 }
 
 // --- SetLogLevel controls output (both backends) ---
