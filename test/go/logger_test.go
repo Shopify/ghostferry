@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"testing"
 
@@ -497,6 +498,119 @@ func minimalConfig() *ghostferry.Config {
 			User: "root",
 		},
 		TableFilter: &testhelpers.TestTableFilter{},
+	}
+}
+
+// --- NewSlogLogger bridges log/slog to ghostferry.Logger (both backends) ---
+
+func (s *LoggerTestSuite) TestNewSlogLoggerRoutesLevels() {
+	levels := []struct {
+		fn      func(*slog.Logger, string, ...any)
+		keyword string // unique word to search for in output
+	}{
+		{(*slog.Logger).Info, "info-routed"},
+		{(*slog.Logger).Warn, "warn-routed"},
+		{(*slog.Logger).Error, "error-routed"},
+	}
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			for _, tc := range levels {
+				var buf bytes.Buffer
+				useBackend(b, &buf) // sets Debug so all levels pass through
+				ghostferry.SetLogJSONFormatter()
+
+				sl := ghostferry.NewSlogLogger(ghostferry.LogWithField("tag", "slog_test"))
+				tc.fn(sl, tc.keyword)
+
+				s.Require().Contains(buf.String(), tc.keyword,
+					"level %s should be routed through %s backend", tc.keyword, b)
+			}
+		})
+	}
+}
+
+func (s *LoggerTestSuite) TestNewSlogLoggerDebugRouted() {
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			var buf bytes.Buffer
+			useBackend(b, &buf)
+			ghostferry.SetLogJSONFormatter()
+
+			sl := ghostferry.NewSlogLogger(ghostferry.LogWithField("tag", "slog_test"))
+			sl.Debug("debug-routed")
+
+			s.Require().Contains(buf.String(), "debug-routed")
+		})
+	}
+}
+
+func (s *LoggerTestSuite) TestNewSlogLoggerAttrsAppearAsFields() {
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			var buf bytes.Buffer
+			useBackend(b, &buf)
+			ghostferry.SetLogJSONFormatter()
+
+			sl := ghostferry.NewSlogLogger(ghostferry.LogWithField("tag", "slog_test"))
+			sl.Info("with attrs", slog.String("host", "db1"), slog.Int("port", 3306))
+
+			output := buf.String()
+			s.Require().Contains(output, `"host":"db1"`)
+			s.Require().Contains(output, `"port":3306`)
+			s.Require().Contains(output, "with attrs")
+		})
+	}
+}
+
+func (s *LoggerTestSuite) TestNewSlogLoggerWithAttrsPreAttaches() {
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			var buf bytes.Buffer
+			useBackend(b, &buf)
+			ghostferry.SetLogJSONFormatter()
+
+			base := ghostferry.NewSlogLogger(ghostferry.LogWithField("tag", "slog_test"))
+			sl := base.With(slog.String("component", "replication"))
+			sl.Info("pre-attached")
+
+			output := buf.String()
+			s.Require().Contains(output, `"component":"replication"`)
+			s.Require().Contains(output, "pre-attached")
+		})
+	}
+}
+
+func (s *LoggerTestSuite) TestNewSlogLoggerWithGroupDotPrefixesKeys() {
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			var buf bytes.Buffer
+			useBackend(b, &buf)
+			ghostferry.SetLogJSONFormatter()
+
+			sl := ghostferry.NewSlogLogger(ghostferry.LogWithField("tag", "slog_test")).
+				WithGroup("db")
+			sl.Info("grouped", slog.String("host", "db1"))
+
+			s.Require().Contains(buf.String(), `"db.host":"db1"`)
+		})
+	}
+}
+
+func (s *LoggerTestSuite) TestNewSlogLoggerOutputIsValidJSON() {
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			var buf bytes.Buffer
+			useBackend(b, &buf)
+			ghostferry.SetLogJSONFormatter()
+
+			sl := ghostferry.NewSlogLogger(ghostferry.LogWithField("tag", "slog_json"))
+			sl.Info("json check", slog.String("k", "v"))
+
+			var parsed map[string]any
+			err := json.Unmarshal(buf.Bytes(), &parsed)
+			s.Require().NoError(err, "output should be valid JSON: %s", buf.String())
+			s.Require().Equal("json check", parsed["msg"])
+		})
 	}
 }
 
