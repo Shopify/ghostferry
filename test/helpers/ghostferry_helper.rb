@@ -360,7 +360,16 @@ module GhostferryHelper
     end
 
     def send_signal(signal)
-      Process.kill(signal, @pid) if @pid != 0
+      # Snapshot @pid before the check: the subprocess thread sets @pid = 0 on
+      # exit, and the child process can exit at any time. If the process exits
+      # between the guard and Process.kill, ESRCH ("no such process") is raised.
+      # That is benign -- the signal was not needed -- so we swallow it here
+      # rather than letting it surface as a test failure.
+      pid = @pid
+      return if pid == 0
+      Process.kill(signal, pid)
+    rescue Errno::ESRCH
+      # Process already exited; nothing to do.
     end
 
     def term_and_wait_for_exit
