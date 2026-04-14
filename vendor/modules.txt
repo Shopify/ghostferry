@@ -103,10 +103,6 @@ github.com/rs/zerolog/internal/json
 # github.com/shopspring/decimal v1.2.0
 ## explicit; go 1.13
 github.com/shopspring/decimal
-# github.com/siddontang/go-log v0.0.0-20180807004314-8d05993dda07
-## explicit
-github.com/siddontang/go-log/log
-github.com/siddontang/go-log/loggers
 # github.com/sirupsen/logrus v1.8.1
 ## explicit; go 1.13
 github.com/sirupsen/logrus

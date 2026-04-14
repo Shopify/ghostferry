@@ -21,7 +21,6 @@ import (
 
 	siddontangmysql "github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-sql-driver/mysql"
-	siddontanglog "github.com/siddontang/go-log/log"
 )
 
 var (
@@ -356,12 +355,6 @@ func (f *Ferry) Initialize() (err error) {
 			DumpStateToStdoutOnError: f.Config.DumpStateToStdoutOnError,
 		}
 	}
-
-	// Suppress go-mysql-org/go-mysql logging as we already log the equivalents.
-	// It also by defaults logs to stdout, which is different from Ghostferry
-	// logging, which all goes to stderr. stdout in Ghostferry is reserved for
-	// dumping states due to an abort.
-	siddontanglog.SetDefaultLogger(siddontanglog.NewDefault(&siddontanglog.NullHandler{}))
 
 	// Connect to the source and target databases and check the validity
 	// of the connections
