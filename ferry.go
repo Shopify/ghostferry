@@ -162,7 +162,7 @@ func (f *Ferry) newBinlogStreamer(db *sql.DB, dbConf *DatabaseConfig, schemaRewr
 func (f *Ferry) NewBinlogWriter() *BinlogWriter {
 	f.ensureInitialized()
 
-	return &BinlogWriter{
+	w := &BinlogWriter{
 		DB:               f.TargetDB,
 		DatabaseRewrites: f.Config.DatabaseRewrites,
 		TableRewrites:    f.Config.TableRewrites,
@@ -174,6 +174,8 @@ func (f *Ferry) NewBinlogWriter() *BinlogWriter {
 		ErrorHandler: f.ErrorHandler,
 		StateTracker: f.StateTracker,
 	}
+	w.Initialize()
+	return w
 }
 
 func (f *Ferry) NewBinlogWriterWithoutStateTracker() *BinlogWriter {
