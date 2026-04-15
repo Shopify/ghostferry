@@ -16,3 +16,5 @@ group :development do
   gem "tqdm"
   gem "pry-byebug"
 end
+
+gem "mutex_m", "~> 0.3.0"

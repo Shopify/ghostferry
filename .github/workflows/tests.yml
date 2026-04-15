@@ -29,10 +29,10 @@ jobs:
       MYSQL_VERSION: ${{ matrix.mysql }}
 
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-go@v6.4.0
         with:
-          go-version: 1.24.1
+          go-version: "1.26.2"
 
       - name: Starting up MySQL
         run: .github/workflows/start-mysql.sh
@@ -54,10 +54,10 @@ jobs:
       MYSQL_VERSION: ${{ matrix.mysql }}
 
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-go@v6.4.0
         with:
-          go-version: 1.24.1
+          go-version: "1.26.2"
 
       - name: Starting up MySQL
         run: .github/workflows/start-mysql.sh
@@ -85,13 +85,12 @@ jobs:
       GHOSTFERRY_LOG_BACKEND: ${{ matrix.log_backend }}
 
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-go@v6.4.0
         with:
-          go-version: 1.24.1
-      - uses: ruby/setup-ruby@44511735964dcb71245e7e55f72539531f7bc0eb # v1.257.0
+          go-version: "1.26.2"
+      - uses: ruby/setup-ruby@v1
         with:
-          ruby-version: 3.2
           bundler-cache: true
 
       - name: Starting up MySQL
@@ -106,16 +105,16 @@ jobs:
         runner: [ubuntu-latest, shopify-ubuntu-arm64]
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
-      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-go@v6.4.0
         with:
-          go-version: 1.24.1
+          go-version: "1.26.2"
 
       - name: Building Ghostferry
         run: .github/workflows/build-deb.sh --tagged-only
 
       - name: Upload debs
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: debs-${{ github.sha }}-${{ matrix.runner }}
           path: build/ghostferry*

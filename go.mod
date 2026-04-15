@@ -1,6 +1,6 @@
 module github.com/Shopify/ghostferry
 
-go 1.24.1
+go 1.26.2
 
 require (
 	github.com/DataDog/datadog-go v4.8.2+incompatible
