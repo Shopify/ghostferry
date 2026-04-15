@@ -6,6 +6,14 @@ on:
       - main
   pull_request:
 
+# Prevent Go from auto-activating vendor mode when a stale vendor/ directory
+# exists in the workspace. Actions/checkout does not always remove previously
+# tracked files that were deleted in a later commit, so a checkout of a commit
+# that removed vendor/ may still find the directory on disk, causing
+# "inconsistent vendoring" build failures.
+env:
+  GOFLAGS: "-mod=mod"
+
 jobs:
   gh-285:
     strategy:

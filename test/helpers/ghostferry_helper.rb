@@ -148,7 +148,7 @@ module GhostferryHelper
       # Captures GOMOD / GOWORK / GOFLAGS to detect unexpected workspace or
       # vendor-mode activation, and checks for a repo-level vendor/modules.txt.
       go_env, _  = Open3.capture2e("go", "env", "GOMOD", "GOWORK", "GOFLAGS")
-      repo_root  = File.expand_path("../../..", __dir__)
+      repo_root  = File.expand_path("../..", __dir__)
       vendor_txt = File.join(repo_root, "vendor", "modules.txt")
       @logger.debug("[compile_binary] go env: #{go_env.strip}")
       @logger.debug("[compile_binary] repo_root: #{repo_root}")
