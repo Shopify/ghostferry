@@ -374,7 +374,7 @@ func (v *IterativeVerifier) iterateAllTables(mismatchedPaginationKeyFunc func(st
 
 			err := v.iterateTableFingerprints(table, mismatchedPaginationKeyFunc)
 			if err != nil {
-				v.logger.WithError(err).WithField("table", table.String()).Error("error occured during table verification")
+				v.logger.WithError(err).WithField("table", table.String()).Error("error occurred during table verification")
 			}
 			return nil, err
 		},
@@ -477,7 +477,7 @@ func (v *IterativeVerifier) verifyStore(sourceTag string, additionalTags []Metri
 
 			if resultAndErr.ErroredOrFailed() {
 				if resultAndErr.Error != nil {
-					v.logger.WithError(resultAndErr.Error).Error("error occured in reverification")
+					v.logger.WithError(resultAndErr.Error).Error("error occurred in reverification")
 				} else {
 					v.logger.Errorf("failed reverification: %s", resultAndErr.Result.Message)
 				}
