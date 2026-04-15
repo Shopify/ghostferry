@@ -37,8 +37,7 @@ func (b *BinlogWriter) Initialize() {
 
 func (b *BinlogWriter) Run() {
 	if b.binlogEventBuffer == nil {
-		// Defensive fallback: caller forgot Initialize(), behave as before.
-		b.Initialize()
+		panic("Initialize() has not been called prior to Run()")
 	}
 
 	batch := make([]DMLEvent, 0, b.BatchSize)
