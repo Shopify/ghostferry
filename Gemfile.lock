@@ -21,6 +21,7 @@ GEM
       ruby-progressbar
     minitest-retry (0.3.1)
       minitest (>= 5.0)
+    mutex_m (0.3.0)
     mysql2 (0.5.7)
       bigdecimal
     pry (0.16.0)
@@ -46,6 +47,7 @@ DEPENDENCIES
   minitest-hooks
   minitest-reporters (~> 1.4)
   minitest-retry
+  mutex_m (~> 0.3.0)
   mysql2
   pry-byebug
   rake
