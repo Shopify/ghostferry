@@ -25,9 +25,21 @@ type BinlogWriter struct {
 	logger                 Logger
 }
 
-func (b *BinlogWriter) Run() {
+// Initialize allocates the event buffer channel and logger so that
+// BufferBinlogEvents can be called safely before Run() starts in its own
+// goroutine.  Ferry.NewBinlogWriter calls this automatically; external callers
+// that construct a BinlogWriter directly must call Initialize() before
+// registering BufferBinlogEvents as an event listener.
+func (b *BinlogWriter) Initialize() {
 	b.logger = LogWithField("tag", "binlog_writer")
 	b.binlogEventBuffer = make(chan DMLEvent, b.BatchSize)
+}
+
+func (b *BinlogWriter) Run() {
+	if b.binlogEventBuffer == nil {
+		// Defensive fallback: caller forgot Initialize(), behave as before.
+		b.Initialize()
+	}
 
 	batch := make([]DMLEvent, 0, b.BatchSize)
 	for {
