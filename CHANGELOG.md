@@ -8,6 +8,9 @@ All notable changes to this project will be documented in this file.
 
 - Align default zerolog log level with logrus (info vs trace)
 - Introduce slog handler wrapper around our Logger interface and use it with BinlogStreamer
+- Updated golang to 1.26.2
+- Updated ruby to 3.4.8 (test dependency)
+- Updated github actions (CI dependency)
 
 ### Removed
 
