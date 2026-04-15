@@ -9,6 +9,10 @@ All notable changes to this project will be documented in this file.
 - Align default zerolog log level with logrus (info vs trace)
 - Introduce slog handler wrapper around our Logger interface and use it with BinlogStreamer
 
+### Removed
+
+- Vendored packages are removed in favour of normal `go mod`
+
 ## [1.3.0 - 2026-04-08]
 
 ### Changed

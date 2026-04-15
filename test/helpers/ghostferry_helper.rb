@@ -142,13 +142,16 @@ module GhostferryHelper
       return if File.exist?(@compiled_binary_path)
 
       @logger.debug("compiling test binary to #{@compiled_binary_path}")
-      rc = system(
+
+      # Use capture2e so that go build stderr is included in the raised error
+      # message rather than being swallowed by the test runner.
+      output, status = Open3.capture2e(
         "go", "build",
         "-o", @compiled_binary_path,
         @main_path
       )
 
-      raise "could not compile ghostferry" unless rc
+      raise "could not compile ghostferry:\n#{output}" unless status.success?
     end
 
     def start_server
