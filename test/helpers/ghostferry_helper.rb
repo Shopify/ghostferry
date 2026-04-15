@@ -142,13 +142,27 @@ module GhostferryHelper
       return if File.exist?(@compiled_binary_path)
 
       @logger.debug("compiling test binary to #{@compiled_binary_path}")
-      rc = system(
+
+      # Diagnostics: dump Go environment before building so that CI failures
+      # show the actual cause rather than the generic "could not compile" message.
+      # Captures GOMOD / GOWORK / GOFLAGS to detect unexpected workspace or
+      # vendor-mode activation, and checks for a repo-level vendor/modules.txt.
+      go_env, _  = Open3.capture2e("go", "env", "GOMOD", "GOWORK", "GOFLAGS")
+      repo_root  = File.expand_path("../../..", __dir__)
+      vendor_txt = File.join(repo_root, "vendor", "modules.txt")
+      @logger.debug("[compile_binary] go env: #{go_env.strip}")
+      @logger.debug("[compile_binary] repo_root: #{repo_root}")
+      @logger.debug("[compile_binary] vendor/modules.txt present: #{File.exist?(vendor_txt)}")
+
+      # Use capture2e so that go build stderr is included in the raised error
+      # message rather than being swallowed by the test runner.
+      output, status = Open3.capture2e(
         "go", "build",
         "-o", @compiled_binary_path,
         @main_path
       )
 
-      raise "could not compile ghostferry" unless rc
+      raise "could not compile ghostferry:\n#{output}" unless status.success?
     end
 
     def start_server
