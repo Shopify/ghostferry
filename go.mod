@@ -11,7 +11,6 @@ require (
 	github.com/gorilla/mux v1.6.1
 	github.com/rs/zerolog v1.35.0
 	github.com/shopspring/decimal v1.2.0
-	github.com/siddontang/go-log v0.0.0-20180807004314-8d05993dda07
 	github.com/sirupsen/logrus v1.8.1
 	github.com/stretchr/testify v1.8.4
 )

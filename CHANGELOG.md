@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.1 - 2026-04-15]
+
+### Changed
+
+- Align default zerolog log level with logrus (info vs trace)
+- Introduce slog handler wrapper around our Logger interface and use it with BinlogStreamer
+
 ## [1.3.0 - 2026-04-08]
 
 ### Changed
