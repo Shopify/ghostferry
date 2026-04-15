@@ -19,7 +19,11 @@ class InterruptResumeTest < GhostferryTestCase
 
     result = target_db.query("SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}")
     count = result.first["cnt"]
-    assert_equal 200, count
+    # TERM is delivered asynchronously so the signal may arrive after the
+    # second batch has already been written. At least one batch (200 rows)
+    # must have been copied; more is also acceptable as we are verifying
+    # the last_successful_id later on against the dumped state.
+    assert_operator count, :>=, 200
 
     result = target_db.query("SELECT MAX(id) AS max_id FROM #{DEFAULT_FULL_TABLE_NAME}")
     last_successful_id = result.first["max_id"]
@@ -701,7 +705,10 @@ class InterruptResumeTest < GhostferryTestCase
 
     result = target_db.query("SELECT COUNT(*) AS cnt FROM #{UUID_FULL_TABLE_NAME}")
     count = result.first["cnt"]
-    assert_equal 200, count
+    # Same as the integer-keyed variant: TERM is async so at least one batch
+    # (200 rows) must be copied; a second batch landing first is also valid.
+    # We are verifying the last_successful_id_bytes later on against the dumped state.
+    assert_operator count, :>=, 200
 
     result = target_db.query("SELECT MAX(uuid) AS max_id FROM #{UUID_FULL_TABLE_NAME}")
     last_successful_id_bytes = result.first["max_id"]
