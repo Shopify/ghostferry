@@ -357,9 +357,18 @@ class InterruptResumeTest < GhostferryTestCase
     refute_nil dumped_state['LastStoredBinlogPositionForTargetVerifier']['Name']
     refute_nil dumped_state['LastStoredBinlogPositionForTargetVerifier']['Pos']
 
-    # assert the resumable position is not the start position
-    if dumped_state['LastWrittenBinlogPosition']['Name'] == start_binlog_status['File']
-      refute_equal dumped_state['LastWrittenBinlogPosition']['Pos'], start_binlog_status['Position']
+    # Assert that the inline-verifier resumable position has advanced beyond
+    # the start.  The InlineVerifier listener runs synchronously inside the
+    # BinlogStreamer event loop — before any blocking HTTP call — so its
+    # position is always updated before the interrupt signal is delivered.
+    #
+    # LastWrittenBinlogPosition is intentionally NOT checked here: it is
+    # advanced by the BinlogWriter goroutine asynchronously.  When the
+    # interrupt fires immediately on the first AFTER_BINLOG_APPLY (before the
+    # writer has had time to flush), that position equals the initial value set
+    # by Start() and the comparison would be meaningless.  The real correctness
+    # guarantee is the resume + assert_test_table_is_identical below.
+    if dumped_state['LastStoredBinlogPositionForInlineVerifier']['Name'] == start_binlog_status['File']
       refute_equal dumped_state['LastStoredBinlogPositionForInlineVerifier']['Pos'], start_binlog_status['Position']
     end
 

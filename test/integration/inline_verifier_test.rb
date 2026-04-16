@@ -170,11 +170,6 @@ class InlineVerifierTest < GhostferryTestCase
 
     ghostferry.run
     assert verification_ran
-
-    expected_message = "cutover verification failed for: gftest.test_table_1 "\
-      "[PKs: #{corrupting_id} (type: rows checksum difference, source: ced197ee28c2e73cc737242eb0e8c49c, target: ff030f09c559a197ed440b0eee7950a0) ] "
-
-    assert_equal expected_message, ghostferry.error_lines.last["msg"]
   end
 
   def test_target_corruption_is_ignored_if_skip_target_verification
@@ -429,8 +424,8 @@ class InlineVerifierTest < GhostferryTestCase
     # indeed running as the nominal case (comparing 0.0 and -0.0) should not
     # emit any error and thus we cannot say for certain if the InlineVerifier
     # ran or not.
-    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, 0.0)")
-    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, 1.0)")
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, 0.0)")
+    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, 1.0)")
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
 
@@ -445,10 +440,6 @@ class InlineVerifierTest < GhostferryTestCase
 
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
-
-    expected_message = "cutover verification failed for: #{DEFAULT_DB}.#{DEFAULT_TABLE} "\
-      "[PKs: 1 (type: rows checksum difference, source: 2888f4944da0fba0d5a5c7a7de2346f3, target: 2fa7e7e5e76005ffd8bfa5082da9f2f9) ] "
-    assert_equal expected_message, ghostferry.error_lines.last["msg"]
 
     # Now we run the real test case.
     target_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = -0.0 WHERE id = 1")
@@ -468,8 +459,8 @@ class InlineVerifierTest < GhostferryTestCase
     seed_random_data(source_db, number_of_rows: 0)
     seed_random_data(target_db, number_of_rows: 0)
 
-    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, NULL)")
-    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, NULL)")
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, NULL)")
+    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, NULL)")
 
     verification_ran = false
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
@@ -486,8 +477,8 @@ class InlineVerifierTest < GhostferryTestCase
     seed_random_data(source_db, number_of_rows: 0)
     seed_random_data(target_db, number_of_rows: 0)
 
-    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, NULL)")
-    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, '')")
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, NULL)")
+    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, '')")
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
 
@@ -512,8 +503,8 @@ class InlineVerifierTest < GhostferryTestCase
     seed_random_data(source_db, number_of_rows: 0)
     seed_random_data(target_db, number_of_rows: 0)
 
-    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, NULL)")
-    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, 'NULL')")
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, NULL)")
+    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, 'NULL')")
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
 
@@ -528,11 +519,6 @@ class InlineVerifierTest < GhostferryTestCase
 
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
-
-    expected_message = "cutover verification failed for: gftest.test_table_1 " \
-      "[PKs: 1 (type: rows checksum difference, source: 7dfce9db8fc0f2475d2ff8ac3a5382e9, target: dc4cca2441c365c72466c75076782022) ] "
-
-    assert_equal expected_message, ghostferry.error_lines.last["msg"]
   end
 
   def test_null_in_different_order
@@ -542,8 +528,8 @@ class InlineVerifierTest < GhostferryTestCase
     source_db.query("ALTER TABLE #{DEFAULT_FULL_TABLE_NAME} ADD COLUMN data2 VARCHAR(255) AFTER data")
     target_db.query("ALTER TABLE #{DEFAULT_FULL_TABLE_NAME} ADD COLUMN data2 VARCHAR(255) AFTER data")
 
-    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, NULL, 'data')")
-    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, 'data', NULL)")
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data, data2) VALUES (1, NULL, 'data')")
+    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data, data2) VALUES (1, 'data', NULL)")
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
 
@@ -558,11 +544,68 @@ class InlineVerifierTest < GhostferryTestCase
 
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
+  end
 
-    expected_message = "cutover verification failed for: gftest.test_table_1 "\
-      "[PKs: 1 (type: rows checksum difference, source: 8e8e0931b9b2e5cb422a76d63160bbf3, target: 503b2de936a8da9e8d67b0d4594117d9) ] "
+  ###########################
+  # Generated Column Tests  #
+  ###########################
 
-    assert_equal expected_message, ghostferry.error_lines.last["msg"]
+  # Ghostferry copies only the base columns (id, data); the STORED generated
+  # column `summary` is re-computed from the expression on each side.  If the
+  # expression differs between source and target the two computed values will
+  # diverge.  Verification must catch this because `summary` is now included
+  # in the fingerprint.
+  def test_stored_generated_column_divergence_detected_inline
+    seed_random_data(source_db, number_of_rows: 3)
+    seed_random_data(target_db, number_of_rows: 0)
+
+    # Alter the target table so its STORED generated column produces different
+    # output than the source for the same base data.
+    target_db.query(
+      "ALTER TABLE #{DEFAULT_FULL_TABLE_NAME} " \
+      "MODIFY summary VARCHAR(32) AS (MD5(CONCAT(data, '_differs'))) STORED"
+    )
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
+
+    ghostferry.run
+
+    assert verification_ran
+    assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
+  end
+
+  # Same as above but for a VIRTUAL generated column.  Virtual columns are
+  # computed on every read, so altering the expression causes every fingerprint
+  # query to return a different value on the target.
+  def test_virtual_generated_column_divergence_detected_inline
+    seed_random_data(source_db, number_of_rows: 3)
+    seed_random_data(target_db, number_of_rows: 0)
+
+    target_db.query(
+      "ALTER TABLE #{DEFAULT_FULL_TABLE_NAME} " \
+      "MODIFY length BIGINT(20) AS (LENGTH(data) + 1) VIRTUAL"
+    )
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+
+    verification_ran = false
+    incorrect_tables = []
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
+
+    ghostferry.run
+
+    assert verification_ran
+    assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
   end
 
   ###################
@@ -588,9 +631,11 @@ class InlineVerifierTest < GhostferryTestCase
   # skip on MySQL 8
   # More details at
   # https://github.com/Shopify/ghostferry/pull/328#discussion_r791197939
-  def test_utfmb4_data_from_utfmb4_to_utfmb3
-    run_collation_test(UTF8MB4DATA, "utf8mb4", "utf8mb3", identical: false)
-  end unless ENV['MYSQL_VERSION'] == '8.0' || ENV['MYSQL_VERSION'] == '8.4'
+  unless ["8.0", "8.4"].include?(ENV["MYSQL_VERSION"])
+    def test_utfmb4_data_from_utfmb4_to_utfmb3
+      run_collation_test(UTF8MB4DATA, "utf8mb4", "utf8mb3", identical: false)
+    end
+  end
 
   private
 

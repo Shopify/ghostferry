@@ -42,14 +42,14 @@ type RowData []interface{}
 // https://github.com/Shopify/ghostferry/issues/165.
 //
 // In summary:
-// - This code receives values from both go-sql-driver/mysql and
-//   go-mysql-org/go-mysql.
-// - go-sql-driver/mysql gives us int64 for signed integer, and uint64 in a byte
-//   slice for unsigned integer.
-// - go-mysql-org/go-mysql gives us int64 for signed integer, and uint64 for
-//   unsigned integer.
-// - We currently make this function deal with both cases. In the future we can
-//   investigate alternative solutions.
+//   - This code receives values from both go-sql-driver/mysql and
+//     go-mysql-org/go-mysql.
+//   - go-sql-driver/mysql gives us int64 for signed integer, and uint64 in a byte
+//     slice for unsigned integer.
+//   - go-mysql-org/go-mysql gives us int64 for signed integer, and uint64 for
+//     unsigned integer.
+//   - We currently make this function deal with both cases. In the future we can
+//     investigate alternative solutions.
 func (r RowData) GetUint64(colIdx int) (uint64, error) {
 	u64, ok := Uint64Value(r[colIdx])
 	if ok {
@@ -168,14 +168,15 @@ func (e *BinlogInsertEvent) NewValues() RowData {
 }
 
 func (e *BinlogInsertEvent) AsSQLString(schemaName, tableName string) (string, error) {
-	if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.newValues); err != nil {
+	filteredNewValues, err := e.table.FilterGeneratedColumnsOnRowData(e.newValues)
+	if err != nil {
 		return "", err
 	}
 
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(schemaName, tableName) +
 		" (" + strings.Join(quotedColumnNames(e.table), ",") + ")" +
-		" VALUES (" + buildStringListForValues(e.table.Columns, e.newValues) + ")"
+		" VALUES (" + buildStringListForValues(e.table, filteredNewValues) + ")"
 
 	return query, nil
 }
@@ -227,8 +228,8 @@ func (e *BinlogUpdateEvent) AsSQLString(schemaName, tableName string) (string, e
 	}
 
 	query := "UPDATE " + QuotedTableNameFromString(schemaName, tableName) +
-		" SET " + buildStringMapForSet(e.table.Columns, e.newValues) +
-		" WHERE " + buildStringMapForWhere(e.table.Columns, e.oldValues)
+		" SET " + buildStringMapForSet(e.table, e.newValues) +
+		" WHERE " + buildStringMapForWhere(e.table, e.oldValues)
 
 	return query, nil
 }
@@ -269,7 +270,7 @@ func (e *BinlogDeleteEvent) AsSQLString(schemaName, tableName string) (string, e
 	}
 
 	query := "DELETE FROM " + QuotedTableNameFromString(schemaName, tableName) +
-		" WHERE " + buildStringMapForWhere(e.table.Columns, e.oldValues)
+		" WHERE " + buildStringMapForWhere(e.table, e.oldValues)
 
 	return query, nil
 }
@@ -281,32 +282,39 @@ func (e *BinlogDeleteEvent) PaginationKey() (string, error) {
 func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, resumablePos mysql.Position, query []byte) ([]DMLEvent, error) {
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
-	for _, row := range rowsEvent.Rows {
-		if len(row) != len(table.Columns) {
+	for i, rawRow := range rowsEvent.Rows {
+		if len(rawRow) != len(table.Columns) {
 			return nil, fmt.Errorf(
 				"table %s.%s has %d columns but event has %d columns instead",
 				table.Schema,
 				table.Name,
 				len(table.Columns),
-				len(row),
+				len(rawRow),
 			)
 		}
-		for i, col := range table.Columns {
+
+		// Normalize signed-to-unsigned integer values in place using
+		// full-schema column indexes.  go-mysql always decodes rows to the
+		// full column width (RowsEvent.decodeImage allocates make([]any,
+		// ColumnCount) and leaves omitted positions as nil), so rawRow is
+		// always len(table.Columns) here and indexing is safe.
+		for j, col := range table.Columns {
 			if col.IsUnsigned {
-				switch v := row[i].(type) {
+				switch v := rawRow[j].(type) {
 				case int64:
-					row[i] = uint64(v)
+					rawRow[j] = uint64(v)
 				case int32:
-					row[i] = uint32(v)
+					rawRow[j] = uint32(v)
 				case int16:
-					row[i] = uint16(v)
+					rawRow[j] = uint16(v)
 				case int8:
-					row[i] = uint8(v)
+					rawRow[j] = uint8(v)
 				case int:
-					row[i] = uint(v)
+					rawRow[j] = uint(v)
 				}
 			}
 		}
+		rowsEvent.Rows[i] = rawRow
 	}
 
 	timestamp := time.Unix(int64(ev.Header.Timestamp), 0)
@@ -324,9 +332,9 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 }
 
 func quotedColumnNames(table *TableSchema) []string {
-	cols := make([]string, len(table.Columns))
-	for i, column := range table.Columns {
-		cols[i] = QuoteField(column.Name)
+	cols := make([]string, 0, len(table.Columns))
+	for _, name := range table.NonGeneratedColumnNames() {
+		cols = append(cols, QuoteField(name))
 	}
 
 	return cols
@@ -347,53 +355,71 @@ func verifyValuesHasTheSameLengthAsColumns(table *TableSchema, values ...RowData
 	return nil
 }
 
-func buildStringListForValues(columns []schema.TableColumn, values []interface{}) string {
+func buildStringListForValues(table *TableSchema, values []interface{}) string {
 	var buffer []byte
 
+	// values contains only non-generated columns (already filtered by the
+	// caller via FilterGeneratedColumnsOnRowData).  Build a matching list of
+	// non-generated column descriptors so that value[i] is paired with the
+	// correct column metadata regardless of where generated columns sit in the
+	// full schema.
+	nonGenerated := make([]schema.TableColumn, 0, len(table.Columns))
+	for _, col := range table.Columns {
+		if !IsColumnGenerated(&col) {
+			nonGenerated = append(nonGenerated, col)
+		}
+	}
+
 	for i, value := range values {
-		if i > 0 {
+		if len(buffer) > 0 {
 			buffer = append(buffer, ',')
 		}
 
-		buffer = appendEscapedValue(buffer, value, columns[i])
+		buffer = appendEscapedValue(buffer, value, nonGenerated[i])
 	}
 
 	return string(buffer)
 }
 
-func buildStringMapForWhere(columns []schema.TableColumn, values []interface{}) string {
+func buildStringMapForWhere(table *TableSchema, values []interface{}) string {
 	var buffer []byte
 
 	for i, value := range values {
-		if i > 0 {
+		if table.IsColumnIndexGenerated(i) {
+			continue
+		}
+		if len(buffer) > 0 {
 			buffer = append(buffer, " AND "...)
 		}
 
-		buffer = append(buffer, QuoteField(columns[i].Name)...)
+		buffer = append(buffer, QuoteField(table.Columns[i].Name)...)
 
 		if isNilValue(value) {
 			// "WHERE value = NULL" will never match rows.
 			buffer = append(buffer, " IS NULL"...)
 		} else {
 			buffer = append(buffer, '=')
-			buffer = appendEscapedValue(buffer, value, columns[i])
+			buffer = appendEscapedValue(buffer, value, table.Columns[i])
 		}
 	}
 
 	return string(buffer)
 }
 
-func buildStringMapForSet(columns []schema.TableColumn, values []interface{}) string {
+func buildStringMapForSet(table *TableSchema, values []interface{}) string {
 	var buffer []byte
 
 	for i, value := range values {
-		if i > 0 {
+		if table.IsColumnIndexGenerated(i) {
+			continue
+		}
+		if len(buffer) > 0 {
 			buffer = append(buffer, ',')
 		}
 
-		buffer = append(buffer, QuoteField(columns[i].Name)...)
+		buffer = append(buffer, QuoteField(table.Columns[i].Name)...)
 		buffer = append(buffer, '=')
-		buffer = appendEscapedValue(buffer, value, columns[i])
+		buffer = appendEscapedValue(buffer, value, table.Columns[i])
 	}
 
 	return string(buffer)
@@ -504,10 +530,10 @@ func Int64Value(value interface{}) (int64, bool) {
 //
 // This is specifically mentioned in the the below link:
 //
-//    When BINARY values are stored, they are right-padded with the pad value
-//    to the specified length. The pad value is 0x00 (the zero byte). Values
-//    are right-padded with 0x00 for inserts, and no trailing bytes are removed
-//    for retrievals.
+//	When BINARY values are stored, they are right-padded with the pad value
+//	to the specified length. The pad value is 0x00 (the zero byte). Values
+//	are right-padded with 0x00 for inserts, and no trailing bytes are removed
+//	for retrievals.
 //
 // ref: https://dev.mysql.com/doc/refman/5.7/en/binary-varbinary.html
 func appendEscapedString(buffer []byte, value string, rightPadToLengthWithZeroBytes int) []byte {

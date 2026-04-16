@@ -86,6 +86,60 @@ func (t *IterativeVerifierTestSuite) TestVerifyOnceWithIgnoredColumns() {
 	t.Require().Equal("", result.Message)
 }
 
+// TestColumnsToVerifyIncludesVirtualGeneratedColumn confirms that a VIRTUAL
+// generated column is included in the iterative-verifier fingerprint.  The
+// proof: source and target differ only in the column that is marked virtual,
+// and verification must fail (the mismatch is visible).
+func (t *IterativeVerifierTestSuite) TestColumnsToVerifyIncludesVirtualGeneratedColumn() {
+	t.InsertRowInDb(42, "source_data", t.Ferry.SourceDB)
+	t.InsertRowInDb(42, "target_data", t.Ferry.TargetDB)
+
+	// Mark the 'data' column as VIRTUAL in the in-memory schema.
+	// columnsToVerify() must still include it so the divergence is detected.
+	t.table.Columns[1].IsVirtual = true
+
+	result, err := t.verifier.VerifyOnce()
+	t.Require().Nil(err)
+	t.Require().NotNil(result)
+	t.Require().False(result.DataCorrect)
+}
+
+// TestColumnsToVerifyIncludesStoredGeneratedColumn is the same as above but for
+// a STORED generated column.
+func (t *IterativeVerifierTestSuite) TestColumnsToVerifyIncludesStoredGeneratedColumn() {
+	t.InsertRowInDb(42, "source_data", t.Ferry.SourceDB)
+	t.InsertRowInDb(42, "target_data", t.Ferry.TargetDB)
+
+	// Mark the 'data' column as STORED in the in-memory schema.
+	t.table.Columns[1].IsStored = true
+
+	result, err := t.verifier.VerifyOnce()
+	t.Require().Nil(err)
+	t.Require().NotNil(result)
+	t.Require().False(result.DataCorrect)
+}
+
+// TestColumnsToVerifyExplicitIgnoreOverridesGeneratedColumn confirms that an
+// explicitly ignored column is still excluded from the fingerprint even when
+// it is marked as a generated column.
+func (t *IterativeVerifierTestSuite) TestColumnsToVerifyExplicitIgnoreOverridesGeneratedColumn() {
+	t.InsertRowInDb(42, "source_data", t.Ferry.SourceDB)
+	t.InsertRowInDb(42, "target_data", t.Ferry.TargetDB)
+
+	// Mark 'data' as virtual AND add it to IgnoredColumns.
+	// The explicit ignore must win: verification should pass despite the
+	// divergence being present in that column.
+	t.table.Columns[1].IsVirtual = true
+	t.verifier.IgnoredColumns = map[string]map[string]struct{}{
+		testhelpers.TestTable1Name: {"data": {}},
+	}
+
+	result, err := t.verifier.VerifyOnce()
+	t.Require().Nil(err)
+	t.Require().NotNil(result)
+	t.Require().True(result.DataCorrect)
+}
+
 func (t *IterativeVerifierTestSuite) TestVerifyOnceFails() {
 	t.InsertRowInDb(42, "foo", t.Ferry.SourceDB)
 	t.InsertRowInDb(42, "bar", t.Ferry.TargetDB)

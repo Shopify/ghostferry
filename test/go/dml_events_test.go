@@ -95,7 +95,7 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventWithWrongColumnsReturnsErro
 
 	_, err = dmlEvents[0].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().NotNil(err)
-	this.Require().Contains(err.Error(), "test_table has 3 columns but event has 1 column")
+	this.Require().Contains(err.Error(), "test_table has 3 columns but row has 1 column")
 }
 
 func (this *DMLEventsTestSuite) TestBinlogInsertEventMetadata() {
@@ -388,6 +388,164 @@ func (this *DMLEventsTestSuite) TestNoRowsQueryEvent() {
 	this.Require().NotNil(err)
 	this.Require().Equal(err.Error(), "could not get query from DML event")
 	this.Require().Equal("", annotation)
+}
+
+// TestNewBinlogDMLEventsUnsignedConversionWithGeneratedColumn exercises two bugs
+// that arise when a virtual column sits before an unsigned integer column.
+//
+// Bug 1 (panic / index out of range): the second commit of the PR compacts the
+// raw row by removing generated column values BEFORE applying the unsigned-integer
+// normalisation loop.  The loop still iterates over table.Columns (full length),
+// so row[i] for the unsigned column indexes into the shortened slice and panics.
+//
+// Bug 2 (wrong value): if the panic is suppressed or the generated column happens
+// to be last, the unsigned normalisation is applied to the wrong row position,
+// leaving int8(-1) serialised as -1 instead of the correct uint8(255).
+func (this *DMLEventsTestSuite) TestNewBinlogDMLEventsUnsignedConversionWithGeneratedColumn() {
+	columns := []schema.TableColumn{
+		{Name: "id"},
+		{Name: "gen", IsVirtual: true},
+		{Name: "u8", IsUnsigned: true},
+	}
+	table := &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema:  "test_schema",
+			Name:    "test_table",
+			Columns: columns,
+		},
+	}
+
+	ev := &replication.BinlogEvent{
+		Header: &replication.EventHeader{EventType: replication.WRITE_ROWS_EVENTv2},
+		Event: &replication.RowsEvent{
+			Rows: [][]interface{}{
+				{int64(1000), "gen_val", int8(-1)},
+			},
+		},
+	}
+
+	dmlEvents, err := ghostferry.NewBinlogDMLEvents(table, ev, mysql.Position{}, mysql.Position{}, nil)
+	this.Require().Nil(err)
+	this.Require().Equal(1, len(dmlEvents))
+
+	q, err := dmlEvents[0].AsSQLString("test_schema", "test_table")
+	this.Require().Nil(err)
+	this.Require().Equal(
+		"INSERT IGNORE INTO `test_schema`.`test_table` (`id`,`u8`) VALUES (1000,255)",
+		q,
+	)
+}
+
+// TestBinlogInsertEventGeneratedColumnBeforeJSONPreservesJSONCasting exercises
+// the metadata misalignment in buildStringListForValues introduced by the PR.
+//
+// AsSQLString filters generated column values out of the row before passing the
+// shortened slice to buildStringListForValues.  That function then uses the loop
+// counter i to index table.Columns, so the JSON column's value (at position 0
+// in the filtered slice) is looked up against table.Columns[0] — the virtual
+// column — which has no JSON type.  As a result the value is emitted as a plain
+// escaped string instead of CAST(... AS JSON).
+func (this *DMLEventsTestSuite) TestBinlogInsertEventGeneratedColumnBeforeJSONPreservesJSONCasting() {
+	columns := []schema.TableColumn{
+		{Name: "gen", IsVirtual: true},
+		{Name: "payload", Type: schema.TYPE_JSON},
+	}
+	table := &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema:  "test_schema",
+			Name:    "test_table",
+			Columns: columns,
+		},
+	}
+	eventBase := ghostferry.NewDMLEventBase(table, mysql.Position{}, mysql.Position{}, nil, time.Unix(1618318965, 0))
+
+	rowsEvent := &replication.RowsEvent{
+		Table: this.tableMapEvent,
+		Rows:  [][]interface{}{{"gen_val", []byte("payload_data")}},
+	}
+
+	dmlEvents, err := ghostferry.NewBinlogInsertEvents(eventBase, rowsEvent)
+	this.Require().Nil(err)
+	this.Require().Equal(1, len(dmlEvents))
+
+	q, err := dmlEvents[0].AsSQLString("test_schema", "test_table")
+	this.Require().Nil(err)
+	this.Require().Equal(
+		"INSERT IGNORE INTO `test_schema`.`test_table` (`payload`) VALUES (CAST('payload_data' AS JSON))",
+		q,
+	)
+}
+
+// TestBinlogUpdateEventExcludesGeneratedColumnFromSetAndWhere verifies that
+// UPDATE events for tables with virtual columns emit SET and WHERE clauses that
+// reference only real (non-generated) columns.
+func (this *DMLEventsTestSuite) TestBinlogUpdateEventExcludesGeneratedColumnFromSetAndWhere() {
+	columns := []schema.TableColumn{
+		{Name: "id"},
+		{Name: "gen", IsVirtual: true},
+		{Name: "data"},
+	}
+	table := &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema:  "test_schema",
+			Name:    "test_table",
+			Columns: columns,
+		},
+	}
+	eventBase := ghostferry.NewDMLEventBase(table, mysql.Position{}, mysql.Position{}, nil, time.Unix(1618318965, 0))
+
+	rowsEvent := &replication.RowsEvent{
+		Table: this.tableMapEvent,
+		Rows: [][]interface{}{
+			{int64(1000), "gen_old", "old_data"},
+			{int64(1000), "gen_new", "new_data"},
+		},
+	}
+
+	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(eventBase, rowsEvent)
+	this.Require().Nil(err)
+	this.Require().Equal(1, len(dmlEvents))
+
+	q, err := dmlEvents[0].AsSQLString("test_schema", "test_table")
+	this.Require().Nil(err)
+	this.Require().Equal(
+		"UPDATE `test_schema`.`test_table` SET `id`=1000,`data`='new_data' WHERE `id`=1000 AND `data`='old_data'",
+		q,
+	)
+}
+
+// TestBinlogDeleteEventExcludesStoredGeneratedColumnFromWhere verifies that
+// DELETE events skip both VIRTUAL and STORED generated columns in the WHERE clause.
+func (this *DMLEventsTestSuite) TestBinlogDeleteEventExcludesStoredGeneratedColumnFromWhere() {
+	columns := []schema.TableColumn{
+		{Name: "id"},
+		{Name: "data"},
+		{Name: "summary", IsStored: true},
+	}
+	table := &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema:  "test_schema",
+			Name:    "test_table",
+			Columns: columns,
+		},
+	}
+	eventBase := ghostferry.NewDMLEventBase(table, mysql.Position{}, mysql.Position{}, nil, time.Unix(1618318965, 0))
+
+	rowsEvent := &replication.RowsEvent{
+		Table: this.tableMapEvent,
+		Rows:  [][]interface{}{{int64(1000), "hello", "abc123"}},
+	}
+
+	dmlEvents, err := ghostferry.NewBinlogDeleteEvents(eventBase, rowsEvent)
+	this.Require().Nil(err)
+	this.Require().Equal(1, len(dmlEvents))
+
+	q, err := dmlEvents[0].AsSQLString("test_schema", "test_table")
+	this.Require().Nil(err)
+	this.Require().Equal(
+		"DELETE FROM `test_schema`.`test_table` WHERE `id`=1000 AND `data`='hello'",
+		q,
+	)
 }
 
 func TestDMLEventsTestSuite(t *testing.T) {

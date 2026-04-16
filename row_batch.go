@@ -14,11 +14,21 @@ type RowBatch struct {
 }
 
 func NewRowBatch(table *TableSchema, values []RowData, paginationKeyIndex int) *RowBatch {
+	return NewRowBatchWithColumns(table, values, ConvertTableColumnsToStrings(table.Columns), paginationKeyIndex)
+}
+
+// NewRowBatchWithColumns creates a RowBatch with an explicit ordered list of
+// selected column names.  Use this when the query that produced the row data
+// returns columns in a different order from the schema — for example, the
+// sharding copy filter issues  SELECT * … JOIN … USING(id)  which moves 'id'
+// to the front of the result set.  The selectedColumns slice must match the
+// order and count of values in each RowData entry.
+func NewRowBatchWithColumns(table *TableSchema, values []RowData, selectedColumns []string, paginationKeyIndex int) *RowBatch {
 	return &RowBatch{
 		values:             values,
 		paginationKeyIndex: paginationKeyIndex,
 		table:              table,
-		columns:            ConvertTableColumnsToStrings(table.Columns),
+		columns:            selectedColumns,
 	}
 }
 
@@ -64,23 +74,42 @@ func (e *RowBatch) AsSQLQuery(schemaName, tableName string) (string, []interface
 		return "", nil, err
 	}
 
-	valuesStr := "(" + strings.Repeat("?,", len(e.columns)-1) + "?)"
+	// Build the INSERT column list from e.columns — the actual query-result
+	// order — skipping generated columns by name.
+	//
+	// We must NOT use table.NonGeneratedColumnNames() here because that
+	// always returns schema order.  When the SELECT query returns columns in a
+	// different order (for example, the sharding copy filter uses
+	//   SELECT * FROM t JOIN (SELECT id …) AS batch USING(id)
+	// which moves 'id' to the front), the column names and row values would
+	// be misaligned, corrupting every row written to the target.
+	insertColumns := make([]string, 0, len(e.columns))
+	for _, col := range e.columns {
+		if e.table.IsColumnNameGenerated(col) {
+			continue
+		}
+		insertColumns = append(insertColumns, col)
+	}
+
+	valuesStr := "(" + strings.Repeat("?,", len(insertColumns)-1) + "?)"
 	valuesStr = strings.Repeat(valuesStr+",", len(e.values)-1) + valuesStr
 
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(schemaName, tableName) +
-		" (" + strings.Join(QuoteFields(e.columns), ",") + ") VALUES " + valuesStr
+		" (" + strings.Join(QuoteFields(insertColumns), ",") + ") VALUES " + valuesStr
 
 	return query, e.flattenRowData(), nil
 }
 
 func (e *RowBatch) flattenRowData() []interface{} {
-	rowSize := len(e.values[0])
-	flattened := make([]interface{}, rowSize*len(e.values))
+	flattened := make([]interface{}, 0, len(e.values)*len(e.columns))
 
-	for rowIdx, row := range e.values {
-		for colIdx, col := range row {
-			flattened[rowIdx*rowSize+colIdx] = col
+	for _, row := range e.values {
+		for colIdx, col := range e.columns {
+			if e.table.IsColumnNameGenerated(col) {
+				continue
+			}
+			flattened = append(flattened, row[colIdx])
 		}
 	}
 

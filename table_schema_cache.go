@@ -45,6 +45,89 @@ type TableSchema struct {
 	rowMd5Query string
 }
 
+// IsColumnGenerated evaluates whether a go_myslq.schema.TableColumn is generated or not.
+func IsColumnGenerated(tc *schema.TableColumn) bool {
+	return tc.IsVirtual || tc.IsStored
+}
+
+// IsColumnIndexGenerated evaluates whether a TableSchema column is generated, by index.
+func (t *TableSchema) IsColumnIndexGenerated(idx int) bool {
+	return IsColumnGenerated(&t.Columns[idx])
+}
+
+// Evaluates whether a TableSchema column is generated, by name.
+func (t *TableSchema) IsColumnNameGenerated(name string) bool {
+	for _, col := range t.Columns {
+		if name == col.Name && IsColumnGenerated(&col) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Returns a count of total, generated and non-generated columns for a TableSchema.
+func (t *TableSchema) ColumnsCount() (int, int, int) {
+	var generated int
+
+	for _, col := range t.Columns {
+		if IsColumnGenerated(&col) {
+			generated += 1
+		}
+	}
+
+	return len(t.Columns), generated, len(t.Columns) - generated
+}
+
+// Returns a list of all non-generated column names for a TableSchema, in schema order.
+func (t *TableSchema) NonGeneratedColumnNames() []string {
+	res := make([]string, 0, len(t.Columns))
+
+	for _, col := range t.Columns {
+		if IsColumnGenerated(&col) {
+			continue
+		}
+		res = append(res, col.Name)
+	}
+
+	return res
+}
+
+// FilterGeneratedColumnsOnRowData takes a row (as slice of RowData elements) and returns
+// a copy with elements for generated columns removed.
+func (t *TableSchema) FilterGeneratedColumnsOnRowData(row []interface{}) ([]interface{}, error) {
+	columnsCount, _, nonGeneratedColumnsCount := t.ColumnsCount()
+
+	if len(row) != columnsCount {
+		return nil, fmt.Errorf(
+			"table %s.%s has %d columns but row has %d columns instead",
+			t.Schema,
+			t.Name,
+			columnsCount,
+			len(row),
+		)
+	}
+
+	res := make([]interface{}, 0, len(row))
+	for i, val := range row {
+		if t.IsColumnIndexGenerated(i) {
+			continue
+		}
+		res = append(res, val)
+	}
+
+	if len(res) != nonGeneratedColumnsCount {
+		return nil, fmt.Errorf(
+			"table %s.%s has %d updatable columns but processed row has %d updatable columns instead",
+			t.Schema,
+			t.Name,
+			nonGeneratedColumnsCount,
+			len(res),
+		)
+	}
+	return res, nil
+}
+
 // This query returns the MD5 hash for a row on this table. This query is valid
 // for both the source and the target shard.
 //
@@ -53,6 +136,11 @@ type TableSchema struct {
 //
 // Any columns specified in IgnoredColumnsForVerification are excluded from the
 // checksum and the raw data will not be returned.
+//
+// Generated columns (VIRTUAL and STORED) are included in the checksum so that
+// any divergence in computed output between source and target is also caught.
+// An operator can still opt out of checking a specific generated column by
+// adding it to IgnoredColumnsForVerification.
 //
 // Note that the MD5 hash should consists of at least 1 column: the paginationKey column.
 // This is to say that there should never be a case where the MD5 hash is
@@ -93,6 +181,10 @@ func (t *TableSchema) RowMd5Query() string {
 		_, isCompressed := t.CompressedColumnsForVerification[column.Name]
 		_, isIgnored := t.IgnoredColumnsForVerification[column.Name]
 
+		// Generated columns (VIRTUAL / STORED) are intentionally included so
+		// that any divergence in computed output between source and target is
+		// caught.  An operator can still exclude a generated column by listing
+		// it in IgnoredColumnsForVerification.
 		if isCompressed || isIgnored {
 			continue
 		}
@@ -150,6 +242,19 @@ func MaxPaginationKeys(db *sql.DB, tables []*TableSchema, logger Logger) (map[*T
 	return tablesWithData, emptyTables, nil
 }
 
+// removeInvisibleIndeces removes all invisible idx references from a go_mysql.schema.Table.
+func removeInvisibleIndexes(ts *schema.Table) {
+	j := 0
+	for i, index := range ts.Indexes {
+		if !index.Visible {
+			continue
+		}
+		ts.Indexes[j] = ts.Indexes[i]
+		j++
+	}
+	ts.Indexes = ts.Indexes[:j]
+}
+
 func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig ColumnCompressionConfig, columnIgnoreConfig ColumnIgnoreConfig, forceIndexConfig ForceIndexConfig, cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (TableSchemaCache, error) {
 	logger := LogWithField("tag", "table_schema_cache")
 
@@ -188,14 +293,8 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 				return tableSchemaCache, err
 			}
 
-			// Filter out invisible indexes
-			visibleIndexes := make([]*schema.Index, 0, len(tableSchema.Indexes))
-			for _, index := range tableSchema.Indexes {
-				if index.Visible {
-					visibleIndexes = append(visibleIndexes, index)
-				}
-			}
-			tableSchema.Indexes = visibleIndexes
+			// filter out unwanted indeces and columns
+			removeInvisibleIndexes(tableSchema)
 
 			tableSchemas = append(tableSchemas, &TableSchema{
 				Table:                            tableSchema,
@@ -261,6 +360,11 @@ func NonBinaryCollationError(schema, table, paginationKey, collation string) err
 	return fmt.Errorf("Pagination Key `%s` for %s has non-binary collation '%s'. Binary columns (BINARY, VARBINARY) or string columns with binary collation (e.g., utf8mb4_bin) are required to ensure consistent ordering between MySQL and Ghostferry", paginationKey, QuotedTableNameFromString(schema, table), collation)
 }
 
+// VirtualPaginationKeyError exported to facilitate black box testing
+func VirtualPaginationKeyError(schema, table, paginationKey string) error {
+	return fmt.Errorf("Pagination Key `%s` for %s is a VIRTUAL generated column. VIRTUAL columns are not stored on disk, so their values are unavailable during data iteration. Use a real column or a STORED generated column as the Pagination Key instead", paginationKey, QuotedTableNameFromString(schema, table))
+}
+
 func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (*schema.TableColumn, int, error) {
 	var err error
 	var paginationKeyColumn *schema.TableColumn
@@ -282,6 +386,13 @@ func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *Casca
 	}
 
 	if paginationKeyColumn != nil {
+		// VIRTUAL generated columns are not stored on disk and cannot be used for
+		// data iteration.  STORED generated columns are physically stored and are
+		// safe to use.
+		if paginationKeyColumn.IsVirtual {
+			return nil, -1, VirtualPaginationKeyError(t.Schema, t.Name, paginationKeyColumn.Name)
+		}
+
 		isNumber := paginationKeyColumn.Type == schema.TYPE_NUMBER || paginationKeyColumn.Type == schema.TYPE_MEDIUM_INT
 		isBinary := paginationKeyColumn.Type == schema.TYPE_BINARY ||
 			paginationKeyColumn.Type == schema.TYPE_STRING

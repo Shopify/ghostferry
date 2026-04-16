@@ -200,6 +200,35 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWhenCascadingPa
 	this.Require().EqualError(err, ghostferry.NonExistingPaginationKeyColumnError(testhelpers.TestSchemaName, table, paginationColumn).Error())
 }
 
+// TestLoadTablesRejectVirtualPaginationKey verifies that using a VIRTUAL
+// generated column as the pagination key is rejected at load time.  VIRTUAL
+// columns are not stored on disk, so they cannot be used reliably for cursor
+// iteration.  STORED generated columns are fine and are not tested here.
+//
+// MySQL prevents VIRTUAL columns from being a PRIMARY KEY, so the only way to
+// reach this code path in practice is via CascadingPaginationColumnConfig.
+func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectVirtualPaginationKey() {
+	table := "virtual_pagination_key"
+	virtualColumn := "vlen"
+	cascadingPaginationColumnConfig := &ghostferry.CascadingPaginationColumnConfig{
+		PerTable: map[string]map[string]string{
+			testhelpers.TestSchemaName: {table: virtualColumn},
+		},
+	}
+
+	query := fmt.Sprintf(
+		"CREATE TABLE %s.%s (id bigint(20) NOT NULL AUTO_INCREMENT, data TEXT, %s BIGINT AS (LENGTH(data)) VIRTUAL, PRIMARY KEY(id))",
+		testhelpers.TestSchemaName, table, virtualColumn,
+	)
+	_, err := this.Ferry.SourceDB.Exec(query)
+	this.Require().Nil(err)
+
+	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, cascadingPaginationColumnConfig)
+
+	this.Require().NotNil(err)
+	this.Require().EqualError(err, ghostferry.VirtualPaginationKeyError(testhelpers.TestSchemaName, table, virtualColumn).Error())
+}
+
 func (this *TableSchemaCacheTestSuite) TestLoadTablesWithPaginationKeyColumnFallback() {
 	table := "pk_fallback_column_present"
 	query := fmt.Sprintf("CREATE TABLE %s.%s (identity bigint(20) not null, data TEXT, primary key(identity))", testhelpers.TestSchemaName, table)
@@ -337,6 +366,46 @@ func (this *TableSchemaCacheTestSuite) TestTableRowMd5Query() {
 	table.CompressedColumnsForVerification = map[string]string{"data": "SNAPPY"}
 	query = table.RowMd5Query()
 	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5", query)
+}
+
+func (this *TableSchemaCacheTestSuite) TestTableRowMd5QueryWithVirtualField() {
+	// A VIRTUAL generated column must be included in the fingerprint so that
+	// divergence in the computed output between source and target is caught.
+	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
+	this.Require().Nil(err)
+
+	tables := tableSchemaCache.AsSlice()
+	table := tables[0]
+	table.Columns[0].IsVirtual = true
+	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')),MD5(COALESCE(`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5", table.RowMd5Query())
+}
+
+func (this *TableSchemaCacheTestSuite) TestTableRowMd5QueryWithStoredField() {
+	// A STORED generated column must be included in the fingerprint so that
+	// divergence in the computed output between source and target is caught.
+	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
+	this.Require().Nil(err)
+
+	tables := tableSchemaCache.AsSlice()
+	table := tables[0]
+	table.Columns[1].IsStored = true
+	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')),MD5(COALESCE(`data`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5", table.RowMd5Query())
+}
+
+func (this *TableSchemaCacheTestSuite) TestTableRowMd5QueryIgnoredGeneratedColumnExcluded() {
+	// An operator can still opt a generated column out of fingerprinting by
+	// listing it in IgnoredColumnsForVerification.  That explicit opt-out takes
+	// priority over the default inclusion of generated columns.
+	tableSchemaCache, err := ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
+	this.Require().Nil(err)
+
+	tables := tableSchemaCache.AsSlice()
+	table := tables[0]
+	table.Columns[1].IsStored = true
+	table.IgnoredColumnsForVerification = map[string]struct{}{"data": {}}
+	// data is stored-generated but also explicitly ignored → must be excluded.
+	// Only id remains.
+	this.Require().Equal("MD5(CONCAT(MD5(COALESCE(`id`, 'NULL_PBj}b]74P@JTo$5G_null')))) AS __ghostferry_row_md5", table.RowMd5Query())
 }
 
 func (this *TableSchemaCacheTestSuite) TestFingerprintQueryWithIgnoredColumns() {

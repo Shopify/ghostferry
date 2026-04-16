@@ -73,6 +73,90 @@ func (this *RowBatchTestSuite) TestRowBatchGeneratesInsertQuery() {
 	this.Require().Equal(expected, v1)
 }
 
+// TestRowBatchReorderedColumnsGeneratesCorrectInsert is a regression test for
+// the gh-285 corruption pattern.
+//
+// The sharding copy filter executes:
+//
+//	SELECT * FROM t JOIN (SELECT id …) AS batch USING(id)
+//
+// MySQL's USING clause moves the join column to the front of the result set,
+// so for a table with schema order (tenant_id, col1, id, d) the query returns
+// columns in result order (id, tenant_id, col1, d).
+//
+// Before the fix, AsSQLQuery used table.NonGeneratedColumnNames() (schema
+// order) for the INSERT column list while values were in result order — every
+// row written to the target had its column values shifted to the wrong columns.
+func (this *RowBatchTestSuite) TestRowBatchReorderedColumnsGeneratesCorrectInsert() {
+	// Schema order: tenant_id(0), col1(1), id(2), d(3)
+	schemaColumns := []schema.TableColumn{
+		{Name: "tenant_id"},
+		{Name: "col1"},
+		{Name: "id"},
+		{Name: "d"},
+	}
+	table := &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema:  "test_schema",
+			Name:    "test_table",
+			Columns: schemaColumns,
+		},
+	}
+
+	// Query result order after USING(id): id, tenant_id, col1, d
+	resultColumns := []string{"id", "tenant_id", "col1", "d"}
+	rowInResultOrder := ghostferry.RowData{int64(2), int64(1), "z", "2021-01-01"}
+
+	batch := ghostferry.NewRowBatchWithColumns(table, []ghostferry.RowData{rowInResultOrder}, resultColumns, 0)
+
+	q, args, err := batch.AsSQLQuery("test_schema", "test_table")
+	this.Require().Nil(err)
+
+	// Column list must follow result order, not schema order.
+	this.Require().Equal(
+		"INSERT IGNORE INTO `test_schema`.`test_table` (`id`,`tenant_id`,`col1`,`d`) VALUES (?,?,?,?)",
+		q,
+	)
+	this.Require().Equal([]interface{}{int64(2), int64(1), "z", "2021-01-01"}, args)
+}
+
+// TestRowBatchReorderedColumnsWithGeneratedColumnFiltersCorrectly combines the
+// gh-285 reordering scenario with generated column filtering: the USING join
+// moves 'id' first, and a VIRTUAL column 'gen' must be excluded from the
+// INSERT while column/value alignment is still preserved for the others.
+func (this *RowBatchTestSuite) TestRowBatchReorderedColumnsWithGeneratedColumnFiltersCorrectly() {
+	// Schema order: tenant_id(0), gen VIRTUAL(1), col1(2), id(3)
+	schemaColumns := []schema.TableColumn{
+		{Name: "tenant_id"},
+		{Name: "gen", IsVirtual: true},
+		{Name: "col1"},
+		{Name: "id"},
+	}
+	table := &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema:  "test_schema",
+			Name:    "test_table",
+			Columns: schemaColumns,
+		},
+	}
+
+	// Query result order after USING(id): id, tenant_id, gen, col1
+	resultColumns := []string{"id", "tenant_id", "gen", "col1"}
+	rowInResultOrder := ghostferry.RowData{int64(2), int64(1), nil, "z"}
+
+	batch := ghostferry.NewRowBatchWithColumns(table, []ghostferry.RowData{rowInResultOrder}, resultColumns, 0)
+
+	q, args, err := batch.AsSQLQuery("test_schema", "test_table")
+	this.Require().Nil(err)
+
+	// 'gen' must be absent from both column list and args.
+	this.Require().Equal(
+		"INSERT IGNORE INTO `test_schema`.`test_table` (`id`,`tenant_id`,`col1`) VALUES (?,?,?)",
+		q,
+	)
+	this.Require().Equal([]interface{}{int64(2), int64(1), "z"}, args)
+}
+
 func (this *RowBatchTestSuite) TestRowBatchWithWrongColumnsReturnsError() {
 	vals := []ghostferry.RowData{
 		ghostferry.RowData{1000, []byte("val0"), true},

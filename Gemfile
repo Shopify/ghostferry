@@ -18,3 +18,4 @@ group :development do
 end
 
 gem "mutex_m", "~> 0.3.0"
+gem "logger"
