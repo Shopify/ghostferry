@@ -42,14 +42,14 @@ type RowData []interface{}
 // https://github.com/Shopify/ghostferry/issues/165.
 //
 // In summary:
-// - This code receives values from both go-sql-driver/mysql and
-//   go-mysql-org/go-mysql.
-// - go-sql-driver/mysql gives us int64 for signed integer, and uint64 in a byte
-//   slice for unsigned integer.
-// - go-mysql-org/go-mysql gives us int64 for signed integer, and uint64 for
-//   unsigned integer.
-// - We currently make this function deal with both cases. In the future we can
-//   investigate alternative solutions.
+//   - This code receives values from both go-sql-driver/mysql and
+//     go-mysql-org/go-mysql.
+//   - go-sql-driver/mysql gives us int64 for signed integer, and uint64 in a byte
+//     slice for unsigned integer.
+//   - go-mysql-org/go-mysql gives us int64 for signed integer, and uint64 for
+//     unsigned integer.
+//   - We currently make this function deal with both cases. In the future we can
+//     investigate alternative solutions.
 func (r RowData) GetUint64(colIdx int) (uint64, error) {
 	u64, ok := Uint64Value(r[colIdx])
 	if ok {
@@ -168,14 +168,16 @@ func (e *BinlogInsertEvent) NewValues() RowData {
 }
 
 func (e *BinlogInsertEvent) AsSQLString(schemaName, tableName string) (string, error) {
-	if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.newValues); err != nil {
+	filteredCols := e.table.NonGeneratedColumns()
+	filteredNewValues, err := e.table.FilterGeneratedColumnsOnRowData(e.newValues)
+	if err != nil {
 		return "", err
 	}
 
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(schemaName, tableName) +
-		" (" + strings.Join(quotedColumnNames(e.table), ",") + ")" +
-		" VALUES (" + buildStringListForValues(e.table.Columns, e.newValues) + ")"
+		" (" + strings.Join(quotedColumnNames(filteredCols), ",") + ")" +
+		" VALUES (" + buildStringListForValues(filteredCols, filteredNewValues) + ")"
 
 	return query, nil
 }
@@ -227,8 +229,8 @@ func (e *BinlogUpdateEvent) AsSQLString(schemaName, tableName string) (string, e
 	}
 
 	query := "UPDATE " + QuotedTableNameFromString(schemaName, tableName) +
-		" SET " + buildStringMapForSet(e.table.Columns, e.newValues) +
-		" WHERE " + buildStringMapForWhere(e.table.Columns, e.oldValues)
+		" SET " + buildStringMapForSet(e.table, e.newValues) +
+		" WHERE " + buildStringMapForWhere(e.table, e.oldValues)
 
 	return query, nil
 }
@@ -269,7 +271,7 @@ func (e *BinlogDeleteEvent) AsSQLString(schemaName, tableName string) (string, e
 	}
 
 	query := "DELETE FROM " + QuotedTableNameFromString(schemaName, tableName) +
-		" WHERE " + buildStringMapForWhere(e.table.Columns, e.oldValues)
+		" WHERE " + buildStringMapForWhere(e.table, e.oldValues)
 
 	return query, nil
 }
@@ -291,7 +293,11 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 				len(row),
 			)
 		}
+
 		for i, col := range table.Columns {
+			if table.IsColumnIndexGenerated(i) {
+				continue
+			}
 			if col.IsUnsigned {
 				switch v := row[i].(type) {
 				case int64:
@@ -323,13 +329,14 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 	}
 }
 
-func quotedColumnNames(table *TableSchema) []string {
-	cols := make([]string, len(table.Columns))
-	for i, column := range table.Columns {
-		cols[i] = QuoteField(column.Name)
+func quotedColumnNames(cols []schema.TableColumn) []string {
+	qnames := make([]string, len(cols))
+
+	for i, col := range cols {
+		qnames[i] = QuoteField(col.Name)
 	}
 
-	return cols
+	return qnames
 }
 
 func verifyValuesHasTheSameLengthAsColumns(table *TableSchema, values ...RowData) error {
@@ -347,53 +354,59 @@ func verifyValuesHasTheSameLengthAsColumns(table *TableSchema, values ...RowData
 	return nil
 }
 
-func buildStringListForValues(columns []schema.TableColumn, values []interface{}) string {
+func buildStringListForValues(cols []schema.TableColumn, values []interface{}) string {
 	var buffer []byte
 
 	for i, value := range values {
-		if i > 0 {
+		if len(buffer) > 0 {
 			buffer = append(buffer, ',')
 		}
 
-		buffer = appendEscapedValue(buffer, value, columns[i])
+		buffer = appendEscapedValue(buffer, value, cols[i])
 	}
 
 	return string(buffer)
 }
 
-func buildStringMapForWhere(columns []schema.TableColumn, values []interface{}) string {
+func buildStringMapForWhere(table *TableSchema, values []interface{}) string {
 	var buffer []byte
 
 	for i, value := range values {
-		if i > 0 {
+		if table.IsColumnIndexGenerated(i) {
+			continue
+		}
+		if len(buffer) > 0 {
 			buffer = append(buffer, " AND "...)
 		}
 
-		buffer = append(buffer, QuoteField(columns[i].Name)...)
+		buffer = append(buffer, QuoteField(table.Columns[i].Name)...)
 
 		if isNilValue(value) {
 			// "WHERE value = NULL" will never match rows.
 			buffer = append(buffer, " IS NULL"...)
 		} else {
 			buffer = append(buffer, '=')
-			buffer = appendEscapedValue(buffer, value, columns[i])
+			buffer = appendEscapedValue(buffer, value, table.Columns[i])
 		}
 	}
 
 	return string(buffer)
 }
 
-func buildStringMapForSet(columns []schema.TableColumn, values []interface{}) string {
+func buildStringMapForSet(table *TableSchema, values []interface{}) string {
 	var buffer []byte
 
 	for i, value := range values {
-		if i > 0 {
+		if table.IsColumnIndexGenerated(i) {
+			continue
+		}
+		if len(buffer) > 0 {
 			buffer = append(buffer, ',')
 		}
 
-		buffer = append(buffer, QuoteField(columns[i].Name)...)
+		buffer = append(buffer, QuoteField(table.Columns[i].Name)...)
 		buffer = append(buffer, '=')
-		buffer = appendEscapedValue(buffer, value, columns[i])
+		buffer = appendEscapedValue(buffer, value, table.Columns[i])
 	}
 
 	return string(buffer)
@@ -504,10 +517,10 @@ func Int64Value(value interface{}) (int64, bool) {
 //
 // This is specifically mentioned in the the below link:
 //
-//    When BINARY values are stored, they are right-padded with the pad value
-//    to the specified length. The pad value is 0x00 (the zero byte). Values
-//    are right-padded with 0x00 for inserts, and no trailing bytes are removed
-//    for retrievals.
+//	When BINARY values are stored, they are right-padded with the pad value
+//	to the specified length. The pad value is 0x00 (the zero byte). Values
+//	are right-padded with 0x00 for inserts, and no trailing bytes are removed
+//	for retrievals.
 //
 // ref: https://dev.mysql.com/doc/refman/5.7/en/binary-varbinary.html
 func appendEscapedString(buffer []byte, value string, rightPadToLengthWithZeroBytes int) []byte {

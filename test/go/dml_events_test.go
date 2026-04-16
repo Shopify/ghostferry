@@ -95,7 +95,7 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventWithWrongColumnsReturnsErro
 
 	_, err = dmlEvents[0].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().NotNil(err)
-	this.Require().Contains(err.Error(), "test_table has 3 columns but event has 1 column")
+	this.Require().Contains(err.Error(), "test_table has 3 columns but row has 1 column")
 }
 
 func (this *DMLEventsTestSuite) TestBinlogInsertEventMetadata() {
@@ -388,6 +388,148 @@ func (this *DMLEventsTestSuite) TestNoRowsQueryEvent() {
 	this.Require().NotNil(err)
 	this.Require().Equal(err.Error(), "could not get query from DML event")
 	this.Require().Equal("", annotation)
+}
+
+// TestNewBinlogDMLEventsUnsignedConversionWithGeneratedColumn verfies that
+// sign conversion logic on tables with generated columns.
+func (this *DMLEventsTestSuite) TestNewBinlogDMLEventsUnsignedConversionWithGeneratedColumn() {
+	columns := []schema.TableColumn{
+		{Name: "id"},
+		{Name: "gen", IsVirtual: true},
+		{Name: "u8", IsUnsigned: true},
+	}
+	table := &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema:  "test_schema",
+			Name:    "test_table",
+			Columns: columns,
+		},
+	}
+
+	ev := &replication.BinlogEvent{
+		Header: &replication.EventHeader{EventType: replication.WRITE_ROWS_EVENTv2},
+		Event: &replication.RowsEvent{
+			Rows: [][]interface{}{
+				{int64(1000), "gen_val", int8(-1)},
+			},
+		},
+	}
+
+	dmlEvents, err := ghostferry.NewBinlogDMLEvents(table, ev, mysql.Position{}, mysql.Position{}, nil)
+	this.Require().Nil(err)
+	this.Require().Equal(1, len(dmlEvents))
+
+	q, err := dmlEvents[0].AsSQLString("test_schema", "test_table")
+	this.Require().Nil(err)
+	this.Require().Equal(
+		"INSERT IGNORE INTO `test_schema`.`test_table` (`id`,`u8`) VALUES (1000,255)",
+		q,
+	)
+}
+
+// TestBinlogInsertEventGeneratedColumnBeforeJSONPreservesJSONCasting verifies
+// JSON metadata aligment when processing events with generated columnns.
+func (this *DMLEventsTestSuite) TestBinlogInsertEventGeneratedColumnBeforeJSONPreservesJSONCasting() {
+	columns := []schema.TableColumn{
+		{Name: "gen", IsVirtual: true},
+		{Name: "payload", Type: schema.TYPE_JSON},
+	}
+	table := &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema:  "test_schema",
+			Name:    "test_table",
+			Columns: columns,
+		},
+	}
+	eventBase := ghostferry.NewDMLEventBase(table, mysql.Position{}, mysql.Position{}, nil, time.Unix(1618318965, 0))
+
+	rowsEvent := &replication.RowsEvent{
+		Table: this.tableMapEvent,
+		Rows:  [][]interface{}{{"gen_val", []byte("payload_data")}},
+	}
+
+	dmlEvents, err := ghostferry.NewBinlogInsertEvents(eventBase, rowsEvent)
+	this.Require().Nil(err)
+	this.Require().Equal(1, len(dmlEvents))
+
+	q, err := dmlEvents[0].AsSQLString("test_schema", "test_table")
+	this.Require().Nil(err)
+	this.Require().Equal(
+		"INSERT IGNORE INTO `test_schema`.`test_table` (`payload`) VALUES (CAST('payload_data' AS JSON))",
+		q,
+	)
+}
+
+// TestBinlogUpdateEventExcludesGeneratedColumnFromSetAndWhere verifies that
+// UPDATE events for tables with virtual columns emit SET and WHERE clauses that
+// reference only real (non-generated) columns.
+func (this *DMLEventsTestSuite) TestBinlogUpdateEventExcludesGeneratedColumnFromSetAndWhere() {
+	columns := []schema.TableColumn{
+		{Name: "id"},
+		{Name: "gen", IsVirtual: true},
+		{Name: "data"},
+	}
+	table := &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema:  "test_schema",
+			Name:    "test_table",
+			Columns: columns,
+		},
+	}
+	eventBase := ghostferry.NewDMLEventBase(table, mysql.Position{}, mysql.Position{}, nil, time.Unix(1618318965, 0))
+
+	rowsEvent := &replication.RowsEvent{
+		Table: this.tableMapEvent,
+		Rows: [][]interface{}{
+			{int64(1000), "gen_old", "old_data"},
+			{int64(1000), "gen_new", "new_data"},
+		},
+	}
+
+	dmlEvents, err := ghostferry.NewBinlogUpdateEvents(eventBase, rowsEvent)
+	this.Require().Nil(err)
+	this.Require().Equal(1, len(dmlEvents))
+
+	q, err := dmlEvents[0].AsSQLString("test_schema", "test_table")
+	this.Require().Nil(err)
+	this.Require().Equal(
+		"UPDATE `test_schema`.`test_table` SET `id`=1000,`data`='new_data' WHERE `id`=1000 AND `data`='old_data'",
+		q,
+	)
+}
+
+// TestBinlogDeleteEventExcludesStoredGeneratedColumnFromWhere verifies that
+// DELETE events skip both VIRTUAL and STORED generated columns in the WHERE clause.
+func (this *DMLEventsTestSuite) TestBinlogDeleteEventExcludesStoredGeneratedColumnFromWhere() {
+	columns := []schema.TableColumn{
+		{Name: "id"},
+		{Name: "data"},
+		{Name: "summary", IsStored: true},
+	}
+	table := &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema:  "test_schema",
+			Name:    "test_table",
+			Columns: columns,
+		},
+	}
+	eventBase := ghostferry.NewDMLEventBase(table, mysql.Position{}, mysql.Position{}, nil, time.Unix(1618318965, 0))
+
+	rowsEvent := &replication.RowsEvent{
+		Table: this.tableMapEvent,
+		Rows:  [][]interface{}{{int64(1000), "hello", "abc123"}},
+	}
+
+	dmlEvents, err := ghostferry.NewBinlogDeleteEvents(eventBase, rowsEvent)
+	this.Require().Nil(err)
+	this.Require().Equal(1, len(dmlEvents))
+
+	q, err := dmlEvents[0].AsSQLString("test_schema", "test_table")
+	this.Require().Nil(err)
+	this.Require().Equal(
+		"DELETE FROM `test_schema`.`test_table` WHERE `id`=1000 AND `data`='hello'",
+		q,
+	)
 }
 
 func TestDMLEventsTestSuite(t *testing.T) {
