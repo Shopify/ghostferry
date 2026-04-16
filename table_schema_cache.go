@@ -80,6 +80,20 @@ func (t *TableSchema) ColumnsCount() (int, int, int) {
 	return len(t.Columns), generated, len(t.Columns) - generated
 }
 
+// Returns a list of all non-generated columns for a TableSchema, in schema order.
+func (t *TableSchema) NonGeneratedColumns() []schema.TableColumn {
+	res := make([]schema.TableColumn, 0, len(t.Columns))
+
+	for _, col := range t.Columns {
+		if IsColumnGenerated(&col) {
+			continue
+		}
+		res = append(res, col)
+	}
+
+	return res
+}
+
 // Returns a list of all non-generated column names for a TableSchema, in schema order.
 func (t *TableSchema) NonGeneratedColumnNames() []string {
 	res := make([]string, 0, len(t.Columns))

@@ -168,6 +168,7 @@ func (e *BinlogInsertEvent) NewValues() RowData {
 }
 
 func (e *BinlogInsertEvent) AsSQLString(schemaName, tableName string) (string, error) {
+	filteredCols := e.table.NonGeneratedColumns()
 	filteredNewValues, err := e.table.FilterGeneratedColumnsOnRowData(e.newValues)
 	if err != nil {
 		return "", err
@@ -175,8 +176,8 @@ func (e *BinlogInsertEvent) AsSQLString(schemaName, tableName string) (string, e
 
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(schemaName, tableName) +
-		" (" + strings.Join(quotedColumnNames(e.table), ",") + ")" +
-		" VALUES (" + buildStringListForValues(e.table, filteredNewValues) + ")"
+		" (" + strings.Join(quotedColumnNames(filteredCols), ",") + ")" +
+		" VALUES (" + buildStringListForValues(filteredCols, filteredNewValues) + ")"
 
 	return query, nil
 }
@@ -282,23 +283,21 @@ func (e *BinlogDeleteEvent) PaginationKey() (string, error) {
 func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, resumablePos mysql.Position, query []byte) ([]DMLEvent, error) {
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
-	for _, rawRow := range rowsEvent.Rows {
-		if len(rawRow) != len(table.Columns) {
+	for _, row := range rowsEvent.Rows {
+		if len(row) != len(table.Columns) {
 			return nil, fmt.Errorf(
 				"table %s.%s has %d columns but event has %d columns instead",
 				table.Schema,
 				table.Name,
 				len(table.Columns),
-				len(rawRow),
+				len(row),
 			)
 		}
 
-		row, err := table.FilterGeneratedColumnsOnRowData(rawRow)
-		if err != nil {
-			return nil, err
-		}
-
 		for i, col := range table.Columns {
+			if table.IsColumnIndexGenerated(i) {
+				continue
+			}
 			if col.IsUnsigned {
 				switch v := row[i].(type) {
 				case int64:
@@ -330,13 +329,14 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 	}
 }
 
-func quotedColumnNames(table *TableSchema) []string {
-	cols := make([]string, 0, len(table.Columns))
-	for _, name := range table.NonGeneratedColumnNames() {
-		cols = append(cols, QuoteField(name))
+func quotedColumnNames(cols []schema.TableColumn) []string {
+	qnames := make([]string, len(cols))
+
+	for i, col := range cols {
+		qnames[i] = QuoteField(col.Name)
 	}
 
-	return cols
+	return qnames
 }
 
 func verifyValuesHasTheSameLengthAsColumns(table *TableSchema, values ...RowData) error {
@@ -354,7 +354,7 @@ func verifyValuesHasTheSameLengthAsColumns(table *TableSchema, values ...RowData
 	return nil
 }
 
-func buildStringListForValues(table *TableSchema, values []interface{}) string {
+func buildStringListForValues(cols []schema.TableColumn, values []interface{}) string {
 	var buffer []byte
 
 	for i, value := range values {
@@ -362,7 +362,7 @@ func buildStringListForValues(table *TableSchema, values []interface{}) string {
 			buffer = append(buffer, ',')
 		}
 
-		buffer = appendEscapedValue(buffer, value, table.Columns[i])
+		buffer = appendEscapedValue(buffer, value, cols[i])
 	}
 
 	return string(buffer)
