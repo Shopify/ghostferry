@@ -282,35 +282,69 @@ func (e *BinlogDeleteEvent) PaginationKey() (string, error) {
 func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, resumablePos mysql.Position, query []byte) ([]DMLEvent, error) {
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
-	for _, rawRow := range rowsEvent.Rows {
-		if len(rawRow) != len(table.Columns) {
+	// Count how many columns MySQL actually emits in binlog row images.
+	// In MySQL 8.0.23+, VIRTUAL generated columns are not stored anywhere and
+	// are therefore absent from binlog ROW events.  STORED generated columns
+	// and all real columns are always present.
+	fullCount := len(table.Columns)
+	nonVirtualCount := 0
+	for _, col := range table.Columns {
+		if !col.IsVirtual {
+			nonVirtualCount++
+		}
+	}
+
+	for i, rawRow := range rowsEvent.Rows {
+		switch len(rawRow) {
+		case fullCount:
+			// All columns present (older MySQL or tables without virtual cols).
+			// Nothing to expand.
+
+		case nonVirtualCount:
+			// Virtual generated columns absent from the binlog row image
+			// (MySQL 8.0.23+ behaviour).  Re-insert nil sentinels at each
+			// virtual column's schema position so that all downstream code
+			// can use unmodified full-schema indexes throughout.
+			expanded := make([]interface{}, fullCount)
+			rowIdx := 0
+			for colIdx, col := range table.Columns {
+				if col.IsVirtual {
+					expanded[colIdx] = nil
+				} else {
+					expanded[colIdx] = rawRow[rowIdx]
+					rowIdx++
+				}
+			}
+			rowsEvent.Rows[i] = expanded
+
+		default:
 			return nil, fmt.Errorf(
-				"table %s.%s has %d columns but event has %d columns instead",
+				"table %s.%s has %d columns (%d non-virtual) but event has %d columns instead",
 				table.Schema,
 				table.Name,
-				len(table.Columns),
+				fullCount,
+				nonVirtualCount,
 				len(rawRow),
 			)
 		}
 
-		row, err := table.FilterGeneratedColumnsOnRowData(rawRow)
-		if err != nil {
-			return nil, err
-		}
-
-		for i, col := range table.Columns {
+		// Normalize signed-to-unsigned integer values in place on the
+		// (possibly expanded) raw row using full-schema column indexes.
+		// Virtual column sentinels (nil) will not match any integer type.
+		row := rowsEvent.Rows[i]
+		for j, col := range table.Columns {
 			if col.IsUnsigned {
-				switch v := row[i].(type) {
+				switch v := row[j].(type) {
 				case int64:
-					row[i] = uint64(v)
+					row[j] = uint64(v)
 				case int32:
-					row[i] = uint32(v)
+					row[j] = uint32(v)
 				case int16:
-					row[i] = uint16(v)
+					row[j] = uint16(v)
 				case int8:
-					row[i] = uint8(v)
+					row[j] = uint8(v)
 				case int:
-					row[i] = uint(v)
+					row[j] = uint(v)
 				}
 			}
 		}
@@ -357,12 +391,24 @@ func verifyValuesHasTheSameLengthAsColumns(table *TableSchema, values ...RowData
 func buildStringListForValues(table *TableSchema, values []interface{}) string {
 	var buffer []byte
 
+	// values contains only non-generated columns (already filtered by the
+	// caller via FilterGeneratedColumnsOnRowData).  Build a matching list of
+	// non-generated column descriptors so that value[i] is paired with the
+	// correct column metadata regardless of where generated columns sit in the
+	// full schema.
+	nonGenerated := make([]schema.TableColumn, 0, len(table.Columns))
+	for _, col := range table.Columns {
+		if !IsColumnGenerated(&col) {
+			nonGenerated = append(nonGenerated, col)
+		}
+	}
+
 	for i, value := range values {
 		if len(buffer) > 0 {
 			buffer = append(buffer, ',')
 		}
 
-		buffer = appendEscapedValue(buffer, value, table.Columns[i])
+		buffer = appendEscapedValue(buffer, value, nonGenerated[i])
 	}
 
 	return string(buffer)

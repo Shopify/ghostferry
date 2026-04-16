@@ -548,6 +548,54 @@ func (this *DMLEventsTestSuite) TestBinlogDeleteEventExcludesStoredGeneratedColu
 	)
 }
 
+// TestNewBinlogDMLEventsVirtualColumnAbsentFromBinlog verifies that ghostferry
+// handles the MySQL 8.0.23+ behaviour where VIRTUAL generated columns are NOT
+// included in binlog ROW events (they are computed on-the-fly and never stored).
+//
+// The test table has three schema columns [id, gen(VIRTUAL), u8(unsigned)].
+// MySQL emits only two values per row: [id_val, u8_val].  NewBinlogDMLEvents
+// must:
+//
+//	(a) accept the 2-value row without raising a column-count mismatch error,
+//	(b) expand it to the full 3-element slice (inserting nil for the virtual
+//	    column) so that full-schema indexes remain valid downstream,
+//	(c) still apply unsigned normalisation correctly (int8(-1) → uint8(255)).
+func (this *DMLEventsTestSuite) TestNewBinlogDMLEventsVirtualColumnAbsentFromBinlog() {
+	columns := []schema.TableColumn{
+		{Name: "id"},
+		{Name: "gen", IsVirtual: true},
+		{Name: "u8", IsUnsigned: true},
+	}
+	table := &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema:  "test_schema",
+			Name:    "test_table",
+			Columns: columns,
+		},
+	}
+
+	// Only two values: virtual column absent (MySQL 8.0.23+ behaviour).
+	ev := &replication.BinlogEvent{
+		Header: &replication.EventHeader{EventType: replication.WRITE_ROWS_EVENTv2},
+		Event: &replication.RowsEvent{
+			Rows: [][]interface{}{
+				{int64(1000), int8(-1)},
+			},
+		},
+	}
+
+	dmlEvents, err := ghostferry.NewBinlogDMLEvents(table, ev, mysql.Position{}, mysql.Position{}, nil)
+	this.Require().Nil(err)
+	this.Require().Equal(1, len(dmlEvents))
+
+	q, err := dmlEvents[0].AsSQLString("test_schema", "test_table")
+	this.Require().Nil(err)
+	this.Require().Equal(
+		"INSERT IGNORE INTO `test_schema`.`test_table` (`id`,`u8`) VALUES (1000,255)",
+		q,
+	)
+}
+
 func TestDMLEventsTestSuite(t *testing.T) {
 	suite.Run(t, new(DMLEventsTestSuite))
 }
