@@ -137,6 +137,11 @@ func (t *TableSchema) FilterGeneratedColumnsOnRowData(row []interface{}) ([]inte
 // Any columns specified in IgnoredColumnsForVerification are excluded from the
 // checksum and the raw data will not be returned.
 //
+// Generated columns (VIRTUAL and STORED) are included in the checksum so that
+// any divergence in computed output between source and target is also caught.
+// An operator can still opt out of checking a specific generated column by
+// adding it to IgnoredColumnsForVerification.
+//
 // Note that the MD5 hash should consists of at least 1 column: the paginationKey column.
 // This is to say that there should never be a case where the MD5 hash is
 // derived from an empty string.
@@ -172,12 +177,15 @@ func (t *TableSchema) RowMd5Query() string {
 	}
 
 	columns := make([]schema.TableColumn, 0, len(t.Columns))
-	for i, column := range t.Columns {
+	for _, column := range t.Columns {
 		_, isCompressed := t.CompressedColumnsForVerification[column.Name]
 		_, isIgnored := t.IgnoredColumnsForVerification[column.Name]
-		isGenerated := t.IsColumnIndexGenerated(i)
 
-		if isCompressed || isIgnored || isGenerated {
+		// Generated columns (VIRTUAL / STORED) are intentionally included so
+		// that any divergence in computed output between source and target is
+		// caught.  An operator can still exclude a generated column by listing
+		// it in IgnoredColumnsForVerification.
+		if isCompressed || isIgnored {
 			continue
 		}
 
@@ -352,6 +360,11 @@ func NonBinaryCollationError(schema, table, paginationKey, collation string) err
 	return fmt.Errorf("Pagination Key `%s` for %s has non-binary collation '%s'. Binary columns (BINARY, VARBINARY) or string columns with binary collation (e.g., utf8mb4_bin) are required to ensure consistent ordering between MySQL and Ghostferry", paginationKey, QuotedTableNameFromString(schema, table), collation)
 }
 
+// VirtualPaginationKeyError exported to facilitate black box testing
+func VirtualPaginationKeyError(schema, table, paginationKey string) error {
+	return fmt.Errorf("Pagination Key `%s` for %s is a VIRTUAL generated column. VIRTUAL columns are not stored on disk, so their values are unavailable during data iteration. Use a real column or a STORED generated column as the Pagination Key instead", paginationKey, QuotedTableNameFromString(schema, table))
+}
+
 func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (*schema.TableColumn, int, error) {
 	var err error
 	var paginationKeyColumn *schema.TableColumn
@@ -373,6 +386,13 @@ func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *Casca
 	}
 
 	if paginationKeyColumn != nil {
+		// VIRTUAL generated columns are not stored on disk and cannot be used for
+		// data iteration.  STORED generated columns are physically stored and are
+		// safe to use.
+		if paginationKeyColumn.IsVirtual {
+			return nil, -1, VirtualPaginationKeyError(t.Schema, t.Name, paginationKeyColumn.Name)
+		}
+
 		isNumber := paginationKeyColumn.Type == schema.TYPE_NUMBER || paginationKeyColumn.Type == schema.TYPE_MEDIUM_INT
 		isBinary := paginationKeyColumn.Type == schema.TYPE_BINARY ||
 			paginationKeyColumn.Type == schema.TYPE_STRING
