@@ -282,72 +282,39 @@ func (e *BinlogDeleteEvent) PaginationKey() (string, error) {
 func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, resumablePos mysql.Position, query []byte) ([]DMLEvent, error) {
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
-	// Count how many columns MySQL actually emits in binlog row images.
-	// In MySQL 8.0.23+, VIRTUAL generated columns are not stored anywhere and
-	// are therefore absent from binlog ROW events.  STORED generated columns
-	// and all real columns are always present.
-	fullCount := len(table.Columns)
-	nonVirtualCount := 0
-	for _, col := range table.Columns {
-		if !col.IsVirtual {
-			nonVirtualCount++
-		}
-	}
-
 	for i, rawRow := range rowsEvent.Rows {
-		switch len(rawRow) {
-		case fullCount:
-			// All columns present (older MySQL or tables without virtual cols).
-			// Nothing to expand.
-
-		case nonVirtualCount:
-			// Virtual generated columns absent from the binlog row image
-			// (MySQL 8.0.23+ behaviour).  Re-insert nil sentinels at each
-			// virtual column's schema position so that all downstream code
-			// can use unmodified full-schema indexes throughout.
-			expanded := make([]interface{}, fullCount)
-			rowIdx := 0
-			for colIdx, col := range table.Columns {
-				if col.IsVirtual {
-					expanded[colIdx] = nil
-				} else {
-					expanded[colIdx] = rawRow[rowIdx]
-					rowIdx++
-				}
-			}
-			rowsEvent.Rows[i] = expanded
-
-		default:
+		if len(rawRow) != len(table.Columns) {
 			return nil, fmt.Errorf(
-				"table %s.%s has %d columns (%d non-virtual) but event has %d columns instead",
+				"table %s.%s has %d columns but event has %d columns instead",
 				table.Schema,
 				table.Name,
-				fullCount,
-				nonVirtualCount,
+				len(table.Columns),
 				len(rawRow),
 			)
 		}
 
-		// Normalize signed-to-unsigned integer values in place on the
-		// (possibly expanded) raw row using full-schema column indexes.
-		// Virtual column sentinels (nil) will not match any integer type.
-		row := rowsEvent.Rows[i]
+		// Normalize signed-to-unsigned integer values in place using
+		// full-schema column indexes.  go-mysql always decodes rows to the
+		// full column width (RowsEvent.decodeImage allocates make([]any,
+		// ColumnCount) and leaves omitted positions as nil), so rawRow is
+		// always len(table.Columns) here and indexing is safe.
 		for j, col := range table.Columns {
 			if col.IsUnsigned {
-				switch v := row[j].(type) {
+				switch v := rawRow[j].(type) {
 				case int64:
-					row[j] = uint64(v)
+					rawRow[j] = uint64(v)
 				case int32:
-					row[j] = uint32(v)
+					rawRow[j] = uint32(v)
 				case int16:
-					row[j] = uint16(v)
+					rawRow[j] = uint16(v)
 				case int8:
-					row[j] = uint8(v)
+					rawRow[j] = uint8(v)
 				case int:
-					row[j] = uint(v)
+					rawRow[j] = uint(v)
 				}
 			}
 		}
+		rowsEvent.Rows[i] = rawRow
 	}
 
 	timestamp := time.Unix(int64(ev.Header.Timestamp), 0)
