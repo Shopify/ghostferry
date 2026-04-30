@@ -122,12 +122,13 @@ type SchemaChangeDetector struct {
 	mu                  sync.RWMutex
 	tableState          map[string]TableState
 	transitionStartedAt map[string]time.Time
-	// clearTargetDone tracks per-table channels closed when the early
-	// target-row DELETE finishes. The DELETE fires at the moment a table
-	// first transitions Normal → InTransition (on either source or target
-	// DDL) so the slow part of recopy is overlapped with whatever DDL is
-	// still pending on the other side. recopy() waits on the channel before
-	// requeuing iteration. Reset to nil when the table returns to Normal.
+	// clearTargetDone tracks per-table channels covering the synchronous
+	// target-row DELETE inside recopy(). The channel is created when
+	// recopy() begins and closed once the DELETE has returned. Its
+	// presence under d.mu lets concurrent recopy() calls deduplicate
+	// (only one DELETE per convergence) and lets TableAction render the
+	// "clearing for recopy" UI state. Cleared in OnTableIterationComplete
+	// when the table returns to Normal.
 	clearTargetDone     map[string]chan struct{}
 	logger              Logger
 	loggerOnce          sync.Once
@@ -350,6 +351,36 @@ func (d *SchemaChangeDetector) IsInTransition(schemaName, tableName string) bool
 	return state == StateInTransition
 }
 
+// TableAction returns a non-empty TableAction* string when the detector has
+// authoritative state for the given table that should override the
+// DataIterator-derived progress action. Returns "" when the table is in
+// StateNormal (or the detector is nil), in which case Ferry.Progress() falls
+// back to its default Completed/Copying/Waiting derivation.
+func (d *SchemaChangeDetector) TableAction(schemaName, tableName string) string {
+	if d == nil {
+		return ""
+	}
+	key := fullTableName(schemaName, tableName)
+	d.mu.RLock()
+	state := d.tableState[key]
+	_, hasClear := d.clearTargetDone[key]
+	d.mu.RUnlock()
+
+	switch state {
+	case StateInTransition:
+		if hasClear {
+			// recopy() has begun the synchronous DELETE — surface this so
+			// the UI doesn't sit on "Awaiting DDL convergence" while the
+			// DELETE is the actual long pole.
+			return TableActionClearingForRecopy
+		}
+		return TableActionAwaitingDDLConvergence
+	case StateRecopying:
+		return TableActionRecopying
+	}
+	return ""
+}
+
 // OnSourceDDL is registered with the source BinlogStreamer's QueryEvent
 // handler. It is invoked synchronously from the streamer goroutine so it must
 // stay non-blocking.
@@ -383,13 +414,10 @@ func (d *SchemaChangeDetector) handleDDL(stmt *DDLStatement, side string) {
 		d.mu.Lock()
 		state := d.tableState[key]
 		transitioned := false
-		var clearDone chan struct{}
 		if state == StateNormal {
 			d.tableState[key] = StateInTransition
 			d.transitionStartedAt[key] = time.Now()
 			transitioned = true
-			clearDone = make(chan struct{})
-			d.clearTargetDone[key] = clearDone
 			d.logger.WithFields(Fields{
 				"table":   key,
 				"side":    side,
@@ -400,59 +428,18 @@ func (d *SchemaChangeDetector) handleDDL(stmt *DDLStatement, side string) {
 
 		if transitioned {
 			d.trace("transition table=%s from=normal to=in_transition side=%s ddlType=%s", key, side, stmt.DDLType)
-			// Spawn the early target DELETE. Runs in parallel with whatever
-			// DDL is still pending on the other side, so by the time the
-			// schemas converge, the slow part of recopy is already done.
-			go d.runClearTarget(ref, clearDone)
 		} else {
 			d.trace("transition_skipped table=%s already_state=%s side=%s", key, state, side)
 		}
 
 		// Convergence check runs in its own goroutine so we never block the
-		// binlog handler on a target schema fetch.
+		// binlog handler on a target schema fetch. The DELETE itself only
+		// fires once both sides have converged on the new schema — running
+		// it earlier overlaps with whatever DDL is still pending on the
+		// other side and contends on metadata locks (e.g. with gh-ost on
+		// the target).
 		go d.checkConvergence(ref)
 	}
-}
-
-// runClearTarget issues the bulk DELETE on target rows for ref, using the
-// currently cached schema for name resolution. Closes done when finished
-// (success or failure). Spawned exactly once per Normal → InTransition
-// transition.
-func (d *SchemaChangeDetector) runClearTarget(ref TableRef, done chan struct{}) {
-	defer close(done)
-
-	key := fullTableName(ref.SchemaName, ref.TableName)
-	logger := d.logger.WithField("table", key)
-
-	// Wait for any in-flight iterateTable goroutine to drain. The iterator
-	// aborts itself via TransitionChecker once it observes InTransition,
-	// but we must not start DELETE until the abort path has actually
-	// returned — concurrent INSERT IGNORE from the iterator would survive
-	// the DELETE and leave inconsistent state.
-	if d.RecopyTrigger != nil {
-		d.RecopyTrigger.AwaitIterationDrained(key)
-	}
-
-	if d.Throttler != nil {
-		WaitForThrottle(d.Throttler)
-	}
-
-	cached := d.SchemaCache[key]
-	if cached == nil {
-		d.trace("clear_target_skipped table=%s reason=no_cached_schema", key)
-		return
-	}
-
-	d.trace("clear_target_start table=%s", key)
-	if err := d.deleteTargetRows(cached); err != nil {
-		logger.WithError(err).Error("clear_target failed")
-		d.trace("clear_target_failed table=%s err=%q", key, err.Error())
-		if d.ErrorHandler != nil {
-			d.ErrorHandler.Fatal("schema_change_detector", err)
-		}
-		return
-	}
-	d.trace("clear_target_done table=%s", key)
 }
 
 // affectedMigratedTables returns the set of migrated tables this DDL touches.
@@ -592,95 +579,110 @@ func (d *SchemaChangeDetector) applyMetadataOnly(ref TableRef, fresh *TableSchem
 	key := fullTableName(ref.SchemaName, ref.TableName)
 	logger := d.logger.WithField("table", key)
 
-	// The early DELETE may have already wiped target rows for this table.
-	// For metadata-only changes we still need to re-iterate to repopulate.
-	// Wait for the DELETE first, then requeue so iteration starts with
-	// clean target.
-	d.mu.RLock()
-	clearDone := d.clearTargetDone[key]
-	d.mu.RUnlock()
-	if clearDone != nil {
-		d.trace("metadata_only_wait_clear_target table=%s", key)
-		<-clearDone
-	}
-
 	d.mu.Lock()
-	if d.SchemaCache != nil {
-		// In-place replace — readers using the *TableSchema pointer continue
-		// to see the old schema for any in-flight call, but new lookups will
-		// resolve the refreshed entry.
-		d.SchemaCache[key] = fresh
+	// Concurrent checkConvergence calls can race here: a parallel recopy()
+	// may have already refreshed SchemaCache[key] to the new schema. From
+	// this caller's vantage point, ClassifyImpact then reports
+	// metadata_only — but the truth is recopy is mid-DELETE. Both
+	// clearTargetDone[key] (DELETE in progress) and StateRecopying
+	// (DELETE finished, iteration running) signal that a recopy already
+	// owns this transition; abort without touching state or cache.
+	if _, clearing := d.clearTargetDone[key]; clearing {
+		d.mu.Unlock()
+		d.trace("metadata_only_skipped table=%s reason=recopy_in_progress", key)
+		return
 	}
 	if d.tableState[key] == StateRecopying {
-		// Another path beat us. Just clean up state and exit.
 		d.mu.Unlock()
 		d.trace("metadata_only_skipped table=%s reason=already_recopying", key)
 		return
 	}
-	requireRequeue := clearDone != nil
-	if requireRequeue {
-		d.tableState[key] = StateRecopying
-	} else {
-		d.tableState[key] = StateNormal
-		delete(d.transitionStartedAt, key)
-	}
-	d.mu.Unlock()
-
-	if !requireRequeue {
-		logger.Info("convergence: metadata-only change applied (no early DELETE); table back to normal")
-		d.trace("metadata_only_applied table=%s state=in_transition→normal", key)
+	if d.tableState[key] != StateInTransition {
+		// Already flipped back to Normal by another path. Nothing to do.
+		d.mu.Unlock()
+		d.trace("metadata_only_skipped table=%s reason=not_in_transition", key)
 		return
 	}
-
-	d.trace("metadata_only_requeue table=%s state=in_transition→recopying", key)
-	if d.RecopyTrigger != nil {
-		if err := d.RecopyTrigger.RequeueTable(fresh); err != nil {
-			logger.WithError(err).Error("metadata_only: failed to requeue after early DELETE")
-			d.trace("metadata_only_requeue_failed table=%s err=%q", key, err.Error())
-			if d.ErrorHandler != nil {
-				d.ErrorHandler.Fatal("schema_change_detector", err)
-			}
-		}
+	if d.SchemaCache != nil {
+		d.SchemaCache[key] = fresh
 	}
+	d.tableState[key] = StateNormal
+	delete(d.transitionStartedAt, key)
+	d.mu.Unlock()
+
+	logger.Info("convergence: metadata-only change applied; table back to normal")
+	d.trace("metadata_only_applied table=%s state=in_transition→normal", key)
 }
 
 func (d *SchemaChangeDetector) recopy(ref TableRef, fresh *TableSchema) {
 	key := fullTableName(ref.SchemaName, ref.TableName)
 	logger := d.logger.WithField("table", key)
 
-	d.trace("recopy step=1_refresh_cache table=%s", key)
+	// Claim the recopy under lock. clearTargetDone[key] is the in-progress
+	// signal: present-and-open while DELETE runs, present-and-closed for
+	// the brief window after DELETE finishes and before state flips, and
+	// absent both before DELETE starts and after the table returns to
+	// Normal. This serves two roles: (1) it deduplicates concurrent recopy
+	// calls when checkConvergence fires more than once for the same table,
+	// and (2) it lets TableAction surface the "clearing" UI state.
 	d.mu.Lock()
+	if d.tableState[key] == StateRecopying {
+		d.mu.Unlock()
+		d.trace("recopy step=0_skipped table=%s reason=already_recopying", key)
+		return
+	}
+	if _, alreadyClearing := d.clearTargetDone[key]; alreadyClearing {
+		d.mu.Unlock()
+		d.trace("recopy step=0_skipped table=%s reason=already_clearing", key)
+		return
+	}
+	clearDone := make(chan struct{})
+	d.clearTargetDone[key] = clearDone
 	if d.SchemaCache != nil {
 		d.SchemaCache[key] = fresh
 	}
-	clearDone := d.clearTargetDone[key]
 	d.mu.Unlock()
+	d.trace("recopy step=1_refresh_cache table=%s", key)
 
 	d.trace("recopy step=2_flush_verifier table=%s verifier_present=%t", key, d.Verifier != nil)
 	if d.Verifier != nil {
 		d.Verifier.FlushTableEntries(ref.SchemaName, ref.TableName)
 	}
 
-	// Wait for the early target DELETE (spawned at first DDL) to finish.
-	// Channel is nil only if no DDL ever fired for this table — defensive,
-	// shouldn't happen since we only get here from checkConvergence.
-	d.trace("recopy step=3_wait_clear_target table=%s clear_present=%t", key, clearDone != nil)
-	if clearDone != nil {
-		<-clearDone
+	// Drain any in-flight iterateTable for this table before issuing the
+	// DELETE. The iterator aborts itself via TransitionChecker once it
+	// observes InTransition, but concurrent INSERT IGNORE would survive
+	// the DELETE and leave inconsistent state.
+	if d.RecopyTrigger != nil {
+		d.RecopyTrigger.AwaitIterationDrained(key)
 	}
-	d.trace("recopy step=3_wait_clear_target_done table=%s", key)
 
-	// Atomically claim the requeue. If a second concurrent recopy() reaches
-	// this point first, it has already flipped the state and we abort —
-	// avoids double-spawning iterateTable goroutines for the same table.
-	d.mu.Lock()
-	if d.tableState[key] == StateRecopying {
+	if d.Throttler != nil {
+		WaitForThrottle(d.Throttler)
+	}
+
+	d.trace("recopy step=3_clear_target_start table=%s", key)
+	if err := d.deleteTargetRows(fresh); err != nil {
+		logger.WithError(err).Error("clear_target failed")
+		d.trace("recopy step=3_clear_target_failed table=%s err=%q", key, err.Error())
+		// Drop the in-progress channel so a future retry can re-enter.
+		// In practice ErrorHandler.Fatal aborts the ferry, but cleanup is
+		// cheap and keeps the state machine well-formed.
+		d.mu.Lock()
+		delete(d.clearTargetDone, key)
 		d.mu.Unlock()
-		d.trace("recopy step=4_skipped table=%s reason=already_recopying", key)
+		close(clearDone)
+		if d.ErrorHandler != nil {
+			d.ErrorHandler.Fatal("schema_change_detector", err)
+		}
 		return
 	}
+	d.trace("recopy step=3_clear_target_done table=%s", key)
+
+	d.mu.Lock()
 	d.tableState[key] = StateRecopying
 	d.mu.Unlock()
+	close(clearDone)
 	d.trace("recopy step=4_state table=%s state=in_transition→recopying", key)
 
 	if d.RecopyTrigger == nil {

@@ -1133,7 +1133,16 @@ func (f *Ferry) Progress() *Progress {
 		tableName := table.String()
 		lastSuccessfulPaginationKeyInterface, foundInProgress := serializedState.LastSuccessfulPaginationKeys[tableName]
 
-		if serializedState.CompletedTables[tableName] {
+		// Detector overrides the default action while a DDL transition is in
+		// flight so shop-mover (and any other consumer of move.stats) can see
+		// "clearing_for_recopy" / "awaiting_ddl_convergence" / "recopying"
+		// instead of stale "completed" or premature "waiting".
+		if override := f.SchemaChangeDetector.TableAction(table.Schema, table.Name); override != "" {
+			currentAction = override
+			if override == TableActionRecopying {
+				s.ActiveDataIterators += 1
+			}
+		} else if serializedState.CompletedTables[tableName] {
 			currentAction = TableActionCompleted
 		} else if foundInProgress {
 			currentAction = TableActionCopying
@@ -1182,6 +1191,12 @@ func (f *Ferry) Progress() *Progress {
 	return s
 }
 
+// callbackHTTPClient bounds the per-call wait so a slow or hung callback
+// receiver cannot wedge the reporter goroutine indefinitely. Without this,
+// a single hung POST stalls all subsequent state/progress callbacks, and
+// shop-mover's stall watchdog fires because no further updates arrive.
+var callbackHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
 func (f *Ferry) ReportProgress() {
 	callback := f.Config.ProgressCallback // make a copy as we need to set the Payload.
 	progress := f.Progress()
@@ -1192,7 +1207,7 @@ func (f *Ferry) ReportProgress() {
 	}
 
 	callback.Payload = string(data)
-	err = callback.Post(&http.Client{})
+	err = callback.Post(callbackHTTPClient)
 	if err != nil {
 		f.logger.WithError(err).Warn("failed to post status, but that's probably okay")
 	}
@@ -1209,7 +1224,7 @@ func (f *Ferry) ReportState() {
 	}
 
 	callback.Payload = string(state)
-	err = callback.Post(&http.Client{})
+	err = callback.Post(callbackHTTPClient)
 	if err != nil {
 		f.logger.WithError(err).Errorf("failed to post state to callback %s", callback.URI)
 	}
