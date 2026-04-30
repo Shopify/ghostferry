@@ -16,6 +16,14 @@ type TransitionChecker interface {
 	IsInTransition(schemaName, tableName string) bool
 }
 
+// DDLTracer (optional) lets DataIterator emit lines into the schema-change
+// detector's trace file at moments only DataIterator can observe — recopy
+// goroutine spawn, recopy iteration completion. Decoupled as an interface to
+// keep data_iterator.go free of the detector type.
+type DDLTracer interface {
+	Trace(format string, args ...interface{})
+}
+
 // errSchemaDriftDetected is the sentinel returned from cursor.Each when we
 // notice column drift between the cached schema and the live SELECT result,
 // or when the table has entered transition mid-iteration. The data iterator
@@ -37,6 +45,10 @@ type DataIterator struct {
 	// table enters StateInTransition or StateRecopying mid-copy. Nil disables
 	// the check (legacy behavior).
 	TransitionChecker TransitionChecker
+
+	// Tracer (optional) emits DDL-trace lines for events the detector cannot
+	// see — recopy goroutine spawn and iteration completion.
+	Tracer DDLTracer
 
 	TargetPaginationKeys     *sync.Map
 	batchListeners           []func(*RowBatch) error
@@ -274,6 +286,9 @@ func (d *DataIterator) iterateTable(table *TableSchema) {
 	}
 
 	logger.Debug("table iteration completed")
+	if d.Tracer != nil {
+		d.Tracer.Trace("iterateTable_completed table=%s", table.String())
+	}
 
 	// Right now the BatchWriter.WriteRowBatch happens synchronously in
 	// this method. If it ever becomes async, this MarkTableAsCompleted
@@ -339,6 +354,9 @@ func (d *DataIterator) RequeueTable(table *TableSchema) error {
 	d.TargetPaginationKeys.Store(table.String(), maxKey)
 
 	logger.Info("requeue: spawning fresh iteration goroutine for table")
+	if d.Tracer != nil {
+		d.Tracer.Trace("RequeueTable goroutine_start table=%s max_pk=%s", table.String(), maxKey.String())
+	}
 	go d.iterateTable(table)
 	return nil
 }

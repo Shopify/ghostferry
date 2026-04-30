@@ -71,6 +71,7 @@ type Ferry struct {
 	// source or target during an active migration.
 	SchemaChangeDetector *SchemaChangeDetector
 	TargetBinlogTail     *TargetBinlogTail
+	ddlTraceFile         *os.File
 
 	StateTracker                       *StateTracker
 	ErrorHandler                       ErrorHandler
@@ -596,9 +597,20 @@ func (f *Ferry) Initialize() (err error) {
 			return err
 		}
 
+		if f.Config.DDLTraceFile != "" {
+			tf, err := os.OpenFile(f.Config.DDLTraceFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+			if err != nil {
+				return fmt.Errorf("open DDLTraceFile %s: %w", f.Config.DDLTraceFile, err)
+			}
+			detector.TraceWriter = tf
+			f.ddlTraceFile = tf
+			f.logger.WithField("path", f.Config.DDLTraceFile).Info("DDL trace file opened")
+		}
+
 		f.SchemaChangeDetector = detector
 		f.BinlogStreamer.SchemaChangeDetector = detector
 		f.DataIterator.TransitionChecker = detector
+		f.DataIterator.Tracer = detector
 		if f.inlineVerifier != nil {
 			f.inlineVerifier.QuiescenceChecker = detector
 		}
@@ -713,6 +725,12 @@ func (f *Ferry) Start() error {
 func (f *Ferry) Run() {
 	f.logger.Info("starting ferry run")
 	f.OverallState.Store(StateCopying)
+
+	defer func() {
+		if f.ddlTraceFile != nil {
+			_ = f.ddlTraceFile.Close()
+		}
+	}()
 
 	if f.Config.EnablePProf {
 		go func() {

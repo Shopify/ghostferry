@@ -825,6 +825,15 @@ type Config struct {
 	// Optional: defaults to 24h.
 	SchemaChangeTransitionTimeout time.Duration
 
+	// DDLTraceFile, when non-empty, makes the schema-change detector append
+	// one structured line per decision (OnSourceDDL, affectedMigratedTables,
+	// state transition, checkConvergence, recopy steps, RequeueTable start,
+	// iterateTable completion, OnTableIterationComplete). Intended for
+	// diagnosing why a recopy did or did not fire — the file stays small
+	// (one short line per decision) so it can be cat'd from a rails console
+	// after the move. Only used when AutomaticDDLHandling is true.
+	DDLTraceFile string
+
 	// ----------------------------------------------------------------------------------------------------------------
 	// Updatable config
 	// The following configs are updatable via the `Config.Update` method and should be passed by pointer
