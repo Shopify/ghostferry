@@ -157,6 +157,38 @@ func (s *BinlogVerifyStore) Add(table *TableSchema, paginationKey string) {
 	}
 }
 
+// RemoveTable drops every reverify entry for a single table. Used by
+// automatic DDL handling: when a table is about to be re-copied, any pending
+// re-verification of its rows would target rows that are about to be deleted
+// and re-inserted with potentially different schemas.
+func (s *BinlogVerifyStore) RemoveTable(schemaName, tableName string) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	dbStore, exists := s.store[schemaName]
+	if !exists {
+		return
+	}
+	tableStore, exists := dbStore[tableName]
+	if !exists {
+		return
+	}
+
+	var removed uint64
+	for _, count := range tableStore {
+		removed += uint64(count)
+	}
+	delete(dbStore, tableName)
+	if len(dbStore) == 0 {
+		delete(s.store, schemaName)
+	}
+	if removed > s.currentRowCount {
+		s.currentRowCount = 0
+	} else {
+		s.currentRowCount -= removed
+	}
+}
+
 func (s *BinlogVerifyStore) RemoveVerifiedBatch(batch BinlogVerifyBatch) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -269,6 +301,13 @@ type InlineVerifier struct {
 	StateTracker *StateTracker
 	ErrorHandler ErrorHandler
 
+	// QuiescenceChecker (optional) reports whether a given table is currently
+	// mid-schema-change. The periodic reverify loop skips batches for such
+	// tables — verifying old reverify entries against a possibly-converged
+	// or just-deleted target would surface spurious mismatches that the
+	// recopy is about to fix anyway. Nil disables the check.
+	QuiescenceChecker TableQuiescenceChecker
+
 	reverifyStore              *BinlogVerifyStore
 	verifyDuringCutoverStarted AtomicBoolean
 
@@ -280,6 +319,24 @@ type InlineVerifier struct {
 	backgroundVerificationResultAndStatus VerificationResultAndStatus
 	backgroundVerificationErr             error
 	backgroundVerificationWg              *sync.WaitGroup
+}
+
+// TableQuiescenceChecker reports whether the inline verifier should skip a
+// table's reverify entries because it is mid-schema-change. Decoupled as an
+// interface to keep InlineVerifier unit-testable without the full detector.
+type TableQuiescenceChecker interface {
+	IsTableQuiesced(schemaName, tableName string) bool
+}
+
+// FlushTableEntries drops every queued re-verification entry for the given
+// table. Called by automatic DDL handling before re-copy so we don't try to
+// re-verify rows that are about to be deleted and re-inserted with a new
+// schema.
+func (v *InlineVerifier) FlushTableEntries(schemaName, tableName string) {
+	if v == nil || v.reverifyStore == nil {
+		return
+	}
+	v.reverifyStore.RemoveTable(schemaName, tableName)
 }
 
 // This is called from the control server, which is triggered by pushing Run
@@ -780,6 +837,17 @@ func (v *InlineVerifier) verifyAllEventsInStore() (bool, map[string]map[string][
 	v.logger.WithField("batches", len(allBatches)).Debug("verifyAllEventsInStore")
 
 	for _, batch := range allBatches {
+		// Skip batches whose table is mid-schema-change. The detector will
+		// flush these entries from reverifyStore as part of recopy; running
+		// the checksum now would compare reverify-time fingerprints against
+		// a target whose rows are about to be deleted (or already are),
+		// surfacing a mismatch the recopy is about to fix. Cutover blocks
+		// on AwaitAllNormal, so deferring until the table returns to normal
+		// is safe.
+		if v.QuiescenceChecker != nil && v.QuiescenceChecker.IsTableQuiesced(batch.SchemaName, batch.TableName) {
+			continue
+		}
+
 		batchMismatches, err := v.verifyBinlogBatch(batch)
 		if err != nil {
 			return false, nil, err
