@@ -3,14 +3,23 @@ package ghostferry
 import (
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/go-mysql-org/go-mysql/replication"
+	"github.com/pingcap/tidb/pkg/parser"
+	"github.com/pingcap/tidb/pkg/parser/ast"
+
+	// test_driver registers the value-expression types the TiDB parser needs.
+	// Despite the name, it is the standard driver every non-TiDB consumer of
+	// the parser uses (sqlc, soar, bytebase, etc.) — the production driver
+	// lives in pkg/types and pulls in the rest of TiDB.
+	_ "github.com/pingcap/tidb/pkg/parser/test_driver"
 )
 
 // DDLStatement represents a parsed DDL statement extracted from a binlog
 // QueryEvent. Only the fields needed to drive schema-change reactions are
-// populated — the parser is intentionally tolerant and does not produce a full
-// AST.
+// populated — we use the TiDB parser to extract them and discard the rest of
+// the AST.
 type DDLStatement struct {
 	// SchemaName is the database the statement targets. Falls back to the
 	// QueryEvent's default schema when the statement does not qualify the table.
@@ -55,35 +64,34 @@ const (
 	ImpactRequiresRecopy
 )
 
-// Match leading SQL comments and whitespace so we can sniff the first keyword
-// reliably.
+// leadingNoiseRe strips MySQL hint comments and SQL-style comments so the
+// keyword sniff in IsDDLQuery can run without a full parse.
+var leadingNoiseRe = regexp.MustCompile(`(?s)^(\s|/\*.*?\*/|--[^\n]*\n|#[^\n]*\n)+`)
+
+// alterLegacyModifierRe strips MariaDB/legacy MySQL keywords (ONLINE, OFFLINE,
+// IGNORE) that may appear between ALTER and TABLE. The TiDB parser does not
+// accept them — real MySQL 5.7+ does not emit them in binlogs either, but
+// older fixtures still carry the syntax so we normalize before parsing.
+var alterLegacyModifierRe = regexp.MustCompile(`(?i)^ALTER(\s+(?:ONLINE|OFFLINE|IGNORE))+\s+TABLE\b`)
+
+// Shadow-table suffixes — these are conventions, not SQL, so a regex is the
+// right tool. gh-ost uses _<original>_gho/_del/_ghc, pt-osc uses _new/_old.
 var (
-	leadingNoiseRe = regexp.MustCompile(`(?s)^(\s|/\*.*?\*/|--[^\n]*\n|#[^\n]*\n)+`)
-
-	// Capture group 1 = optional schema, group 2 = table name. Used by ALTER,
-	// CREATE TABLE, DROP TABLE, TRUNCATE TABLE.
-	identifierPattern = `(?:` + "`" + `([^` + "`" + `]+)` + "`" + `\.)?` + "`" + `?([^` + "`" + ` ,;()]+)` + "`" + `?`
-
-	alterRe    = regexp.MustCompile(`(?is)^ALTER\s+(?:ONLINE\s+|OFFLINE\s+|IGNORE\s+)*TABLE\s+` + identifierPattern)
-	createRe   = regexp.MustCompile(`(?is)^CREATE\s+(?:TEMPORARY\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?` + identifierPattern)
-	dropRe     = regexp.MustCompile(`(?is)^DROP\s+(?:TEMPORARY\s+)?TABLE\s+(?:IF\s+EXISTS\s+)?` + identifierPattern)
-	truncateRe = regexp.MustCompile(`(?is)^TRUNCATE\s+(?:TABLE\s+)?` + identifierPattern)
-	renameRe   = regexp.MustCompile(`(?is)^RENAME\s+TABLE\s+(.+)$`)
-
-	// Used to walk a RENAME TABLE clause list. Each match is one "FROM TO TO TO".
-	renamePairRe = regexp.MustCompile(`(?is)` + identifierPattern + `\s+TO\s+` + identifierPattern)
-
-	// gh-ost shadow tables: _<original>_gho (ghost copy), _<original>_del
-	// (renamed-out original at cutover), _<original>_ghc (changelog).
 	ghostShadowRe = regexp.MustCompile(`^_(.+)_(gho|del|ghc)$`)
-	// pt-online-schema-change shadow tables: _<original>_new and _<original>_old.
 	ptOscShadowRe = regexp.MustCompile(`^_(.+)_(new|old)$`)
 )
+
+// parserPool reuses TiDB parser instances. Per the TiDB docs, a parser is
+// not goroutine-safe and not lightweight to construct, so a sync.Pool keeps
+// allocations bounded under the binlog event rate.
+var parserPool = sync.Pool{
+	New: func() interface{} { return parser.New() },
+}
 
 // IsDDLQuery returns true when the QueryEvent payload is a DDL statement we
 // might react to. Transactional control statements (BEGIN, COMMIT, SAVEPOINT,
 // ROLLBACK) and other non-DDL queries return false so callers can drop them
-// cheaply.
+// without invoking the full parser.
 func IsDDLQuery(query []byte) bool {
 	keyword := firstKeyword(query)
 	if keyword == "" {
@@ -98,59 +106,96 @@ func IsDDLQuery(query []byte) bool {
 
 // ParseDDLFromQueryEvent extracts a DDLStatement from a binlog QueryEvent.
 // Returns nil for non-DDL statements (BEGIN, COMMIT, etc.) and for DDL the
-// parser doesn't recognize.
+// parser doesn't recognize or fails to parse.
 func ParseDDLFromQueryEvent(ev *replication.QueryEvent) *DDLStatement {
 	if ev == nil || len(ev.Query) == 0 {
 		return nil
 	}
 
+	rawQuery := string(ev.Query)
 	defaultSchema := string(ev.Schema)
-	stripped := stripLeadingNoise(ev.Query)
-	keyword := strings.ToUpper(firstKeyword(stripped))
 
-	stmt := &DDLStatement{
-		RawQuery: string(ev.Query),
-		DDLType:  keyword,
+	// Cheap keyword sniff first — skip the full parse for BEGIN/COMMIT/etc.
+	// The binlog stream is mostly transactional control statements; running
+	// the parser on every one would dominate CPU.
+	if !IsDDLQuery(ev.Query) {
+		return nil
 	}
 
-	switch keyword {
-	case "ALTER":
-		if m := alterRe.FindSubmatch(stripped); m != nil {
-			stmt.SchemaName = pickSchema(string(m[1]), defaultSchema)
-			stmt.TableName = string(m[2])
-			return stmt
+	p := parserPool.Get().(*parser.Parser)
+	defer parserPool.Put(p)
+
+	stmtNode, err := p.ParseOneStmt(normalizeForParser(rawQuery), "", "")
+	if err != nil {
+		// Statements the parser can't handle (vendor-specific syntax, etc.)
+		// are dropped silently. Returning nil is consistent with the previous
+		// behavior of returning nil for unrecognized DDL — callers are expected
+		// to fall back to a conservative recopy if they care.
+		return nil
+	}
+
+	switch s := stmtNode.(type) {
+	case *ast.AlterTableStmt:
+		schema, table := tableNameOrDefault(s.Table, defaultSchema)
+		return &DDLStatement{
+			RawQuery:   rawQuery,
+			DDLType:    "ALTER",
+			SchemaName: schema,
+			TableName:  table,
 		}
-	case "CREATE":
-		if m := createRe.FindSubmatch(stripped); m != nil {
-			stmt.SchemaName = pickSchema(string(m[1]), defaultSchema)
-			stmt.TableName = string(m[2])
-			return stmt
+	case *ast.CreateTableStmt:
+		schema, table := tableNameOrDefault(s.Table, defaultSchema)
+		return &DDLStatement{
+			RawQuery:   rawQuery,
+			DDLType:    "CREATE",
+			SchemaName: schema,
+			TableName:  table,
 		}
-	case "DROP":
-		if m := dropRe.FindSubmatch(stripped); m != nil {
-			stmt.SchemaName = pickSchema(string(m[1]), defaultSchema)
-			stmt.TableName = string(m[2])
-			return stmt
+	case *ast.DropTableStmt:
+		// DROP TABLE supports a comma-separated list. The detector only
+		// inspects the primary table, so we surface the first; callers that
+		// need every dropped table can extend AllAffectedTables.
+		if len(s.Tables) == 0 {
+			return nil
 		}
-	case "TRUNCATE":
-		if m := truncateRe.FindSubmatch(stripped); m != nil {
-			stmt.SchemaName = pickSchema(string(m[1]), defaultSchema)
-			stmt.TableName = string(m[2])
-			return stmt
+		schema, table := tableNameOrDefault(s.Tables[0], defaultSchema)
+		return &DDLStatement{
+			RawQuery:   rawQuery,
+			DDLType:    "DROP",
+			SchemaName: schema,
+			TableName:  table,
 		}
-	case "RENAME":
-		if m := renameRe.FindSubmatch(stripped); m != nil {
-			pairs := parseRenamePairs(string(m[1]), defaultSchema)
-			if len(pairs) == 0 {
-				return nil
-			}
-			stmt.RenamePairs = pairs
-			if len(pairs) == 1 {
-				stmt.SchemaName = pairs[0].From.SchemaName
-				stmt.TableName = pairs[0].From.TableName
-			}
-			return stmt
+	case *ast.TruncateTableStmt:
+		schema, table := tableNameOrDefault(s.Table, defaultSchema)
+		return &DDLStatement{
+			RawQuery:   rawQuery,
+			DDLType:    "TRUNCATE",
+			SchemaName: schema,
+			TableName:  table,
 		}
+	case *ast.RenameTableStmt:
+		if len(s.TableToTables) == 0 {
+			return nil
+		}
+		pairs := make([]RenamePair, 0, len(s.TableToTables))
+		for _, t2t := range s.TableToTables {
+			fromSchema, fromTable := tableNameOrDefault(t2t.OldTable, defaultSchema)
+			toSchema, toTable := tableNameOrDefault(t2t.NewTable, defaultSchema)
+			pairs = append(pairs, RenamePair{
+				From: TableRef{SchemaName: fromSchema, TableName: fromTable},
+				To:   TableRef{SchemaName: toSchema, TableName: toTable},
+			})
+		}
+		stmt := &DDLStatement{
+			RawQuery:    rawQuery,
+			DDLType:     "RENAME",
+			RenamePairs: pairs,
+		}
+		if len(pairs) == 1 {
+			stmt.SchemaName = pairs[0].From.SchemaName
+			stmt.TableName = pairs[0].From.TableName
+		}
+		return stmt
 	}
 	return nil
 }
@@ -215,7 +260,6 @@ func ClassifyImpact(oldSchema, newSchema *TableSchema) SchemaImpact {
 		return ImpactRequiresRecopy
 	}
 
-	// Build a name → column lookup so reorders alone don't trigger recopy.
 	newByName := make(map[string]int, len(newCols))
 	for i, c := range newCols {
 		newByName[c.Name] = i
@@ -224,7 +268,6 @@ func ClassifyImpact(oldSchema, newSchema *TableSchema) SchemaImpact {
 	for _, oc := range oldCols {
 		ni, ok := newByName[oc.Name]
 		if !ok {
-			// Column was renamed or replaced — semantics are not preserved.
 			return ImpactRequiresRecopy
 		}
 		nc := newCols[ni]
@@ -236,8 +279,6 @@ func ClassifyImpact(oldSchema, newSchema *TableSchema) SchemaImpact {
 		}
 	}
 
-	// Pagination column must remain the same column at the same position;
-	// changing it mid-flight breaks the cursor invariants.
 	if oldSchema.PaginationKeyIndex != newSchema.PaginationKeyIndex {
 		return ImpactRequiresRecopy
 	}
@@ -246,37 +287,27 @@ func ClassifyImpact(oldSchema, newSchema *TableSchema) SchemaImpact {
 		return ImpactRequiresRecopy
 	}
 
-	// Same set of columns, same raw types, same pagination key — index/comment/
-	// default changes between the two schemas are safely metadata-only.
 	return ImpactMetadataOnly
 }
 
-func parseRenamePairs(clauseList, defaultSchema string) []RenamePair {
-	matches := renamePairRe.FindAllStringSubmatch(clauseList, -1)
-	if len(matches) == 0 {
-		return nil
-	}
-	out := make([]RenamePair, 0, len(matches))
-	for _, m := range matches {
-		// m[1]/m[2] = FROM schema/table; m[3]/m[4] = TO schema/table.
-		from := TableRef{
-			SchemaName: pickSchema(m[1], defaultSchema),
-			TableName:  m[2],
-		}
-		to := TableRef{
-			SchemaName: pickSchema(m[3], defaultSchema),
-			TableName:  m[4],
-		}
-		out = append(out, RenamePair{From: from, To: to})
-	}
-	return out
+// normalizeForParser rewrites legacy ALTER syntax the TiDB parser rejects but
+// older binlog fixtures may still contain.
+func normalizeForParser(sql string) string {
+	return alterLegacyModifierRe.ReplaceAllString(sql, "ALTER TABLE")
 }
 
-func pickSchema(parsed, fallback string) string {
-	if parsed != "" {
-		return parsed
+// tableNameOrDefault extracts (schema, table) from a parsed *ast.TableName,
+// falling back to the QueryEvent's default schema when the SQL did not
+// qualify the table.
+func tableNameOrDefault(t *ast.TableName, defaultSchema string) (string, string) {
+	if t == nil {
+		return defaultSchema, ""
 	}
-	return fallback
+	schema := t.Schema.O
+	if schema == "" {
+		schema = defaultSchema
+	}
+	return schema, t.Name.O
 }
 
 func stripLeadingNoise(q []byte) []byte {

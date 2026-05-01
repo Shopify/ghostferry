@@ -9,6 +9,7 @@ require (
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/golang/snappy v0.0.0-20180518054509-2e65f85255db
 	github.com/gorilla/mux v1.6.1
+	github.com/pingcap/tidb/pkg/parser v0.0.0-20250421232622-526b2c79173d
 	github.com/rs/zerolog v1.35.0
 	github.com/shopspring/decimal v1.2.0
 	github.com/sirupsen/logrus v1.8.1
@@ -31,8 +32,8 @@ require (
 	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/pingcap/errors v0.11.5-0.20250318082626-8f80e5cb09ec // indirect
+	github.com/pingcap/failpoint v0.0.0-20240528011301-b51a646c7c86 // indirect
 	github.com/pingcap/log v1.1.1-0.20241212030209-7e3ff8601a2a // indirect
-	github.com/pingcap/tidb/pkg/parser v0.0.0-20250421232622-526b2c79173d // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
