@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0 - 2026-05-18]
+
+### Added
+- Support generated/readonly columns by @plisandro, @driv3r, @grodowski in #437
+
 ## [1.3.1 - 2026-04-15]
 
 ### Changed

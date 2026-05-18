@@ -5,7 +5,7 @@ require "open3"
 require "thread"
 require "tmpdir"
 require "webrick"
-require "cgi"
+require "uri"
 
 module GhostferryHelper
   GHOSTFERRY_TEMPDIR = File.join(Dir.tmpdir, "ghostferry-integration")
@@ -174,7 +174,11 @@ module GhostferryHelper
             @server.shutdown
           end
 
-          query = CGI::parse(req.body)
+          # CGI::parse was removed in Ruby 4.0; URI.decode_www_form is the
+          # stable stdlib replacement and produces the same key→[values] hash.
+          query = URI.decode_www_form(req.body).each_with_object({}) do |(k, v), h|
+            (h[k] ||= []) << v
+          end
 
           status = Array(query["status"]).first
           data = query["data"]

@@ -268,12 +268,7 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos Pagina
 		}
 	}
 
-	batch = &RowBatch{
-		values:             batchData,
-		paginationKeyIndex: paginationKeyIndex,
-		table:              c.Table,
-		columns:            columns,
-	}
+	batch = NewRowBatchWithColumns(c.Table, batchData, columns, paginationKeyIndex)
 
 	logger.Debugf("found %d rows", batch.Size())
 

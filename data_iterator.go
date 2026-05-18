@@ -122,13 +122,8 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 							rows[i] = rowData[:len(rowData)-1]
 						}
 
-						batch = &RowBatch{
-							values:             rows,
-							paginationKeyIndex: batch.PaginationKeyIndex(),
-							table:              table,
-							fingerprints:       fingerprints,
-							columns:            batch.columns[:len(batch.columns)-1],
-						}
+						batch = NewRowBatchWithColumns(table, rows, batch.columns[:len(batch.columns)-1], batch.PaginationKeyIndex())
+						batch.fingerprints = fingerprints
 					}
 
 					for _, listener := range d.batchListeners {

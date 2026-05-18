@@ -902,7 +902,12 @@ func (f *Ferry) FlushBinlogAndStopStreaming() {
 func (f *Ferry) StopTargetVerifier() {
 	if !f.Config.SkipTargetVerification {
 		f.TargetVerifier.BinlogStreamer.FlushAndStop()
-		f.targetVerifierWg.Wait()
+		// targetVerifierWg is only allocated inside Run().  If the ferry exits
+		// before Run() is reached (e.g. due to an earlier error), the pointer
+		// is still nil and calling Wait() would panic.
+		if f.targetVerifierWg != nil {
+			f.targetVerifierWg.Wait()
+		}
 	}
 }
 
