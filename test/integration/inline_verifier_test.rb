@@ -608,6 +608,29 @@ class InlineVerifierTest < GhostferryTestCase
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
   end
 
+  # Control: with identical generated column expressions on both sides,
+  # verification must pass.  This is what makes the two tests above meaningful
+  # — without it, a passing seed_random_data → ghostferry → verifier flow
+  # could itself be regressed without us noticing.
+  def test_matching_generated_columns_pass_inline_verification
+    seed_random_data(source_db, number_of_rows: 3)
+    seed_random_data(target_db, number_of_rows: 0)
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+
+    verification_ran = false
+    incorrect_tables = nil
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
+      verification_ran = true
+      incorrect_tables = tables
+    end
+
+    ghostferry.run
+
+    assert verification_ran
+    assert_equal [], incorrect_tables
+  end
+
   ###################
   # Collation Tests #
   ###################
