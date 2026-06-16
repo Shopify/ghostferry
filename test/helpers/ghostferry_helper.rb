@@ -34,6 +34,12 @@ module GhostferryHelper
     ExitError = Class.new(Error)
     TimeoutError = Class.new(Error)
 
+    # Maximum time we are willing to wait for the Ghostferry subprocess thread
+    # to finish when joining (during term/kill/cleanup). Bounded so that a
+    # wedged subprocess or a status handler that never returns fails fast with
+    # a diagnostic instead of hanging until the CI job-level timeout.
+    SUBPROCESS_JOIN_TIMEOUT = 60
+
     module Status
       # This should be in sync with integrationferry.go
       READY = "READY"
@@ -61,6 +67,21 @@ module GhostferryHelper
 
       @status_handlers = {}
       @callback_handlers = {}
+
+      # Tracks status handlers that are currently executing in the WEBrick
+      # server thread, keyed by an incrementing id. Used to print which handler
+      # was running (and its backtrace) when a join times out, so a handler
+      # that blocks forever is immediately visible in CI logs.
+      @active_handlers = {}
+      @active_handlers_mutex = Mutex.new
+      @active_handler_seq = 0
+
+      # Controls whether non-JSON subprocess stderr (panic traces, goroutine
+      # dumps, GOTRACEBACK output) is echoed to $stderr in real time. For runs
+      # that are *expected* to interrupt/fail, the resulting panic stack is
+      # noise, so it is suppressed from the live stream (still buffered in
+      # @stderr and the debug log). It is forced on when diagnostics fire.
+      @live_stderr_diagnostics = true
 
       @server_thread = nil
       @server_watchdog_thread = nil
@@ -113,6 +134,10 @@ module GhostferryHelper
     # When using this method, you need to ensure that the datawriter has been
     # stopped properly (if you're using stop_datawriter_during_cutover).
     def run_expecting_interrupt(resuming_state = nil)
+      # The interrupt produces an expected PanicErrorHandler stack on stderr;
+      # suppress it from the live stream to keep CI logs readable. It is still
+      # buffered and printed on actual test failure.
+      @live_stderr_diagnostics = false
       run(resuming_state)
     rescue ExitError
       dumped_state = @stdout.join("")
@@ -124,6 +149,9 @@ module GhostferryHelper
     # Same as above - ensure that the datawriter has been
     # stopped properly (if you're using stop_datawriter_during_cutover).
     def run_expecting_failure(resuming_state = nil)
+      # Same rationale as run_expecting_interrupt: the failure path emits an
+      # expected panic stack that would otherwise be noise.
+      @live_stderr_diagnostics = false
       run(resuming_state)
     rescue ExitError
     else
@@ -186,7 +214,9 @@ module GhostferryHelper
           end
 
           @last_message_time = now
-          @status_handlers[status].each { |f| f.call(*data) } unless @status_handlers[status].nil?
+          unless @status_handlers[status].nil?
+            @status_handlers[status].each { |f| call_tracked_handler(status, f, data) }
+          end
         rescue StandardError => e
           # errors are not reported from WEBrick but the server should fail early
           # as this indicates there is likely a programming error.
@@ -305,12 +335,17 @@ module GhostferryHelper
                   if logline["level"] == "error"
                     @error_lines << logline
                   end
-                else
+                elsif @live_stderr_diagnostics
                   # Non-JSON stderr lines are runtime diagnostics: goroutine
                   # dumps (from SIGQUIT), panic traces, GOTRACEBACK output.
                   # Write them immediately to Ruby's stderr so they appear in
                   # CI logs in real time rather than only inside the
                   # post-failure debug buffer printed by LogCapturer.
+                  #
+                  # Suppressed for runs that are expected to interrupt/fail,
+                  # where the panic stack is noise; those lines are still kept
+                  # in @stderr and the debug log below. Forced back on when
+                  # diagnostics fire (join timeout / watchdog).
                   $stderr.puts(line)
                   $stderr.flush
                 end
@@ -395,12 +430,20 @@ module GhostferryHelper
 
     def term_and_wait_for_exit
       send_signal("TERM")
-      @subprocess_thread.join
+      join_subprocess_thread_or_diagnose("term_and_wait_for_exit")
     end
 
     def kill_and_wait_for_exit
       send_signal("KILL")
-      @subprocess_thread.join
+      join_subprocess_thread_or_diagnose("kill_and_wait_for_exit")
+    end
+
+    # Public entry point for an external watchdog (e.g. the test-level
+    # wall-clock watchdog) to dump diagnostics for this instance and ask the
+    # Go child to print its goroutine stacks.
+    def diagnose!(context)
+      dump_diagnostics(context)
+      send_signal("QUIT")
     end
 
     def kill
@@ -413,13 +456,90 @@ module GhostferryHelper
       @server_watchdog_thread.join if @server_watchdog_thread
 
       begin
-        @subprocess_thread.join if @subprocess_thread
+        join_subprocess_thread_or_diagnose("kill") if @subprocess_thread
       rescue ExitError
         # ignore
       end
     end
 
     private
+
+    # Joins the Ghostferry subprocess thread with a bound. On timeout it dumps
+    # diagnostics (Ruby thread backtraces, currently-running status handlers,
+    # and a Go goroutine dump via SIGQUIT) and raises TimeoutError instead of
+    # blocking forever. This is the safety net for a status handler that never
+    # returns or a subprocess that never exits.
+    def join_subprocess_thread_or_diagnose(context)
+      return if @subprocess_thread.nil?
+      return if @subprocess_thread.join(SUBPROCESS_JOIN_TIMEOUT)
+
+      dump_diagnostics(context)
+
+      # SIGQUIT asks the Go runtime to print all goroutine stacks to its
+      # stderr (captured by our reader loop / forwarded to $stderr). KILL then
+      # guarantees the process actually goes away so the thread can finish.
+      send_signal("QUIT")
+      @subprocess_thread.join(5)
+      send_signal("KILL")
+      @subprocess_thread.join(5)
+
+      raise TimeoutError, "ghostferry subprocess did not exit within #{SUBPROCESS_JOIN_TIMEOUT}s during #{context}"
+    end
+
+    # Wraps a status handler invocation so that, while it runs, it is recorded
+    # in @active_handlers. dump_diagnostics can then report exactly which
+    # handler (and which thread) is currently executing -- e.g. one blocked in
+    # BlockingGate#wait -- when a join times out.
+    def call_tracked_handler(status, handler, data)
+      id = nil
+      @active_handlers_mutex.synchronize do
+        id = (@active_handler_seq += 1)
+        @active_handlers[id] = {
+          status: status,
+          thread: Thread.current,
+          started_at: now,
+        }
+      end
+
+      begin
+        handler.call(*data)
+      ensure
+        @active_handlers_mutex.synchronize { @active_handlers.delete(id) }
+      end
+    end
+
+    # Prints diagnostics for a stuck subprocess/handler directly to $stderr so
+    # they show up in CI logs in real time (not only in the post-failure debug
+    # buffer).
+    def dump_diagnostics(context)
+      # Something is genuinely stuck: re-enable live stderr so the goroutine
+      # dump we are about to request (SIGQUIT) is visible in real time even if
+      # this run had suppressed it as an expected interrupt/failure.
+      @live_stderr_diagnostics = true
+
+      $stderr.puts("\n=== GHOSTFERRY RUBY HARNESS DIAGNOSTICS (#{context}) ===")
+      $stderr.puts("subprocess pid: #{@pid}")
+
+      active = @active_handlers_mutex.synchronize { @active_handlers.values.dup }
+      if active.empty?
+        $stderr.puts("no status handlers currently running")
+      else
+        active.each do |h|
+          elapsed = (now - h[:started_at]).round(1)
+          $stderr.puts("active status handler: #{h[:status]} (running #{elapsed}s)")
+          backtrace = h[:thread].backtrace || []
+          backtrace.each { |line| $stderr.puts("    #{line}") }
+        end
+      end
+
+      $stderr.puts("--- all ruby thread backtraces ---")
+      Thread.list.each do |t|
+        $stderr.puts("thread #{t.object_id} status=#{t.status.inspect}")
+        (t.backtrace || []).each { |line| $stderr.puts("    #{line}") }
+      end
+      $stderr.puts("=== END GHOSTFERRY RUBY HARNESS DIAGNOSTICS ===\n")
+      $stderr.flush
+    end
 
     def json_log_line?(line)
       line.start_with?("{")
