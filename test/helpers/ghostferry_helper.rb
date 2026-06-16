@@ -305,6 +305,14 @@ module GhostferryHelper
                   if logline["level"] == "error"
                     @error_lines << logline
                   end
+                else
+                  # Non-JSON stderr lines are runtime diagnostics: goroutine
+                  # dumps (from SIGQUIT), panic traces, GOTRACEBACK output.
+                  # Write them immediately to Ruby's stderr so they appear in
+                  # CI logs in real time rather than only inside the
+                  # post-failure debug buffer printed by LogCapturer.
+                  $stderr.puts(line)
+                  $stderr.flush
                 end
                 @logger.debug("stderr: #{line}")
               end
@@ -329,6 +337,16 @@ module GhostferryHelper
       @server_watchdog_thread = Thread.new do
         while @subprocess_thread.alive? do
           if (now - @last_message_time) > @message_timeout
+            # Ask the Go process to dump all goroutine stacks to its stderr
+            # before we shut down.  SIGQUIT is the standard Go
+            # goroutine-dump signal (equivalent to pressing Ctrl-\ on the
+            # terminal).  With GOTRACEBACK=all set in the environment, the
+            # runtime will print every goroutine — not just the crashing
+            # one — which is essential for diagnosing stuck tests.
+            @logger.warn("ghostferry watchdog: sending SIGQUIT to #{@pid} for goroutine dump")
+            send_signal("QUIT")
+            sleep 2 # allow the runtime to finish writing the dump to stderr
+
             @server.shutdown
             raise TimeoutError, "ghostferry did not report to the integration test server for the last #{@message_timeout}s"
           end

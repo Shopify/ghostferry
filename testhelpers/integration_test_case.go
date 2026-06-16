@@ -2,13 +2,22 @@ package testhelpers
 
 import (
 	"fmt"
+	"os"
+	"runtime"
 	"sync"
 	"testing"
+	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry"
 )
+
+// integrationTestTimeout is the per-test deadline enforced by startWatchdog.
+// It is intentionally shorter than the -timeout flag passed to go test so
+// that the goroutine dump produced here is visible in CI logs before the
+// test binary is killed by the Go test runner.
+const integrationTestTimeout = 4 * time.Minute
 
 type IntegrationTestCase struct {
 	T *testing.T
@@ -32,9 +41,53 @@ type IntegrationTestCase struct {
 }
 
 func (this *IntegrationTestCase) Run() {
+	watchdogDone := this.startWatchdog()
+	defer close(watchdogDone)
 	defer this.Teardown()
 	this.CopyData()
 	this.VerifyData()
+}
+
+// startWatchdog starts a background goroutine that fires after
+// integrationTestTimeout.  When it fires it writes a full goroutine dump to
+// stderr — the primary diagnostic for a stuck / deadlocked test — then
+// terminates the process with exit code 1 so that CI sees a failure instead
+// of silently waiting for the job-level timeout.
+//
+// The caller must close the returned channel when the test finishes normally
+// so the watchdog goroutine exits cleanly.
+func (this *IntegrationTestCase) startWatchdog() chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-done:
+			return
+		case <-time.After(integrationTestTimeout):
+		}
+
+		// runtime.Stack with true collects stacks for all goroutines, not
+		// just the calling one.  1 MB is enough for hundreds of goroutines.
+		buf := make([]byte, 1<<20)
+		n := runtime.Stack(buf, true)
+
+		// Write directly to stderr so the output is not swallowed by the
+		// test runner's log-capture buffer.
+		fmt.Fprintf(os.Stderr,
+			"\n=== GHOSTFERRY INTEGRATION TEST WATCHDOG FIRED ===\n"+
+				"Test %q has been running for more than %s.\n"+
+				"All goroutines at the time of the hang:\n\n"+
+				"%s\n"+
+				"===================================================\n",
+			this.T.Name(), integrationTestTimeout, buf[:n])
+		os.Stderr.Sync()
+
+		// os.Exit terminates immediately, bypassing deferred teardown.
+		// This is intentional: the test is hung and we want fast CI
+		// failure with the diagnostic above rather than waiting for the
+		// GitHub Actions job timeout.
+		os.Exit(1)
+	}()
+	return done
 }
 
 func (this *IntegrationTestCase) CopyData() {
