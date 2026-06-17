@@ -164,23 +164,29 @@ class GhostferryTestCase < Minitest::Test
   # Covers hangs anywhere in the test lifecycle, including setup, teardown,
   # datawriter joins, and DB queries -- not just inside Ghostferry#run.
   def start_test_watchdog
-    @test_watchdog_done = false
-    @test_watchdog_mutex = Mutex.new
-    @test_watchdog_cond = ConditionVariable.new
+    # A Queue is used purely as a blocking, interruptible timer: the watchdog
+    # thread blocks on pop with a timeout. stop_test_watchdog pushes a token to
+    # release it cleanly. This avoids ConditionVariable timeout subtleties and
+    # captures everything as locals so there is no cross-test ivar aliasing.
+    done_queue = Thread::Queue.new
+    @test_watchdog_done_queue = done_queue
     test_name = "#{self.class.name}##{self.name}"
+    timeout = TEST_WALL_CLOCK_TIMEOUT
+    ghostferry_instances = @ghostferry_instances
+    log_capturer = @log_capturer
 
     @test_watchdog_thread = Thread.new do
-      @test_watchdog_mutex.synchronize do
-        unless @test_watchdog_done
-          @test_watchdog_cond.wait(@test_watchdog_mutex, TEST_WALL_CLOCK_TIMEOUT)
-        end
-        next if @test_watchdog_done
-      end
+      # Thread::Queue#pop(timeout:) returns the pushed value on release, or nil
+      # when the timeout elapses (Ruby 3.2+). A non-nil value means
+      # stop_test_watchdog released us, so we exit quietly. nil means the test
+      # overran its wall-clock budget and we should fire.
+      token = done_queue.pop(timeout: timeout)
+      Thread.exit unless token.nil?
 
       $stderr.puts("\n=== GHOSTFERRY TEST WATCHDOG FIRED ===")
-      $stderr.puts("Test #{test_name.inspect} exceeded #{TEST_WALL_CLOCK_TIMEOUT}s.")
+      $stderr.puts("Test #{test_name.inspect} exceeded #{timeout}s.")
 
-      Array(@ghostferry_instances).each do |ghostferry|
+      Array(ghostferry_instances).each do |ghostferry|
         begin
           ghostferry.diagnose!("test_watchdog: #{test_name}")
         rescue StandardError => e
@@ -198,7 +204,7 @@ class GhostferryTestCase < Minitest::Test
 
       # Give the Go child a moment to flush its goroutine dump before we exit.
       sleep 2
-      @log_capturer.print_output
+      log_capturer.print_output
       $stderr.flush
       exit!(1)
     end
@@ -207,12 +213,10 @@ class GhostferryTestCase < Minitest::Test
   def stop_test_watchdog
     return unless @test_watchdog_thread
 
-    @test_watchdog_mutex.synchronize do
-      @test_watchdog_done = true
-      @test_watchdog_cond.broadcast
-    end
+    @test_watchdog_done_queue&.push(:done)
     @test_watchdog_thread.join(5)
     @test_watchdog_thread = nil
+    @test_watchdog_done_queue = nil
   end
 
   def on_term
