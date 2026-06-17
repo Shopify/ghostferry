@@ -614,6 +614,51 @@ func (s *LoggerTestSuite) TestNewSlogLoggerOutputIsValidJSON() {
 	}
 }
 
+// configWithFunc mimics the shape of go-mysql's BinlogSyncerConfig, which is
+// logged via slog.Any("config", cfg) and contains func fields that cannot be
+// JSON-encoded. See safeFieldValue in slog_handler.go.
+type configWithFunc struct {
+	ServerID uint32
+	Host     string
+	Option   func(conn *struct{}) error
+}
+
+// TestNewSlogLoggerHandlesUnmarshalableFields is a regression test for the
+// "Failed to obtain reader, failed to marshal fields to JSON, json:
+// unsupported type: func(...)" noise that flooded the logs whenever go-mysql's
+// BinlogSyncer logged its config (which contains func fields) through our slog
+// bridge with the logrus JSON formatter.
+func (s *LoggerTestSuite) TestNewSlogLoggerHandlesUnmarshalableFields() {
+	for _, b := range backends {
+		s.Run(string(b), func() {
+			var buf bytes.Buffer
+			useBackend(b, &buf)
+			ghostferry.SetLogJSONFormatter()
+
+			cfg := configWithFunc{
+				ServerID: 42,
+				Host:     "localhost",
+				Option:   func(_ *struct{}) error { return nil },
+			}
+
+			sl := ghostferry.NewSlogLogger(ghostferry.LogWithField("tag", "slog_unmarshalable"))
+			sl.Info("create BinlogSyncer", slog.Any("config", cfg))
+
+			out := buf.String()
+			s.Require().NotContains(out, "failed to marshal fields to JSON", "log line: %s", out)
+			s.Require().NotContains(out, "unsupported type", "log line: %s", out)
+
+			var parsed map[string]any
+			err := json.Unmarshal(buf.Bytes(), &parsed)
+			s.Require().NoError(err, "output should be valid JSON: %s", out)
+			s.Require().Equal("create BinlogSyncer", parsed["msg"])
+			// The config is stringified, so it should be present as a string
+			// field and include the non-func data.
+			s.Require().Contains(fmt.Sprintf("%v", parsed["config"]), "localhost")
+		})
+	}
+}
+
 func TestLoggerTestSuite(t *testing.T) {
 	suite.Run(t, new(LoggerTestSuite))
 }
