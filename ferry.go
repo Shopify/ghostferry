@@ -423,6 +423,7 @@ func (f *Ferry) Initialize() (err error) {
 	// of the MySQL databases.
 	if f.WaitUntilReplicaIsCaughtUpToMaster != nil {
 		f.WaitUntilReplicaIsCaughtUpToMaster.ReplicaDB = f.SourceDB
+		f.WaitUntilReplicaIsCaughtUpToMaster.BinlogCoordinateMode = f.Config.BinlogCoordinateMode
 
 		if f.WaitUntilReplicaIsCaughtUpToMaster.MasterDB == nil {
 			err = errors.New("must specify a MasterDB")
@@ -436,8 +437,16 @@ func (f *Ferry) Initialize() (err error) {
 			return err
 		}
 
-		// Ensures the query to check for position is executable.
-		_, err = f.WaitUntilReplicaIsCaughtUpToMaster.IsCaughtUp(zeroPosition, 1)
+		// Ensures the query to check for the replicated coordinate is
+		// executable. A zero target coordinate of the active mode is used only
+		// as a probe; the boolean result is ignored.
+		var probeTarget BinlogCoordinate
+		if f.Config.BinlogCoordinateMode == BinlogCoordinateGTID {
+			probeTarget = NewGTIDCoordinate("")
+		} else {
+			probeTarget = NewFilePositionCoordinate(zeroPosition)
+		}
+		_, err = f.WaitUntilReplicaIsCaughtUpToMaster.IsCaughtUpToCoordinate(probeTarget, 1)
 		if err != nil {
 			f.logger.WithError(err).Error("cannot check replicated master position on the source database")
 			return err
