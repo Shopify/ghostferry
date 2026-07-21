@@ -147,15 +147,16 @@ func (f *Ferry) newBinlogStreamer(db *sql.DB, dbConf *DatabaseConfig, schemaRewr
 	f.ensureInitialized()
 
 	return &BinlogStreamer{
-		DB:               db,
-		DBConfig:         dbConf,
-		MyServerId:       f.Config.MyServerId,
-		ErrorHandler:     f.ErrorHandler,
-		Filter:           f.CopyFilter,
-		TableSchema:      f.Tables,
-		LogTag:           logTag,
-		DatabaseRewrites: schemaRewrites,
-		TableRewrites:    tableRewrites,
+		DB:                   db,
+		DBConfig:             dbConf,
+		MyServerId:           f.Config.MyServerId,
+		ErrorHandler:         f.ErrorHandler,
+		Filter:               f.CopyFilter,
+		TableSchema:          f.Tables,
+		LogTag:               logTag,
+		DatabaseRewrites:     schemaRewrites,
+		TableRewrites:        tableRewrites,
+		BinlogCoordinateMode: f.Config.BinlogCoordinateMode,
 	}
 }
 
@@ -588,14 +589,21 @@ func (f *Ferry) Start() error {
 	// miss some records that are inserted between the time the
 	// DataIterator determines the range of IDs to copy and the time that
 	// the starting binlog coordinates are determined.
-	var sourcePos siddontangmysql.Position
-	var targetPos siddontangmysql.Position
+	// Resume-from-state currently only supports file/position coordinates.
+	// GTID-based resume is introduced in a later stage once GTID coordinates are
+	// persisted in the serialized state.
+	if f.StateToResumeFrom != nil && f.Config.BinlogCoordinateMode == BinlogCoordinateGTID {
+		return fmt.Errorf("resuming from state is not yet supported in GTID binlog coordinate mode")
+	}
+
+	var sourceCoord BinlogCoordinate
+	var targetCoord BinlogCoordinate
 
 	var err error
 	if f.StateToResumeFrom != nil {
-		sourcePos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.MinSourceBinlogPosition())
+		sourceCoord, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlFromCoordinate(f.StateToResumeFrom.MinSourceBinlogCoordinate())
 	} else {
-		sourcePos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysql()
+		sourceCoord, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlWithCoordinate()
 	}
 	if err != nil {
 		return err
@@ -603,9 +611,11 @@ func (f *Ferry) Start() error {
 
 	if !f.Config.SkipTargetVerification {
 		if f.StateToResumeFrom != nil && f.StateToResumeFrom.LastStoredBinlogPositionForTargetVerifier != zeroPosition {
-			targetPos, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.LastStoredBinlogPositionForTargetVerifier)
+			targetCoord, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlFromCoordinate(
+				NewFilePositionCoordinate(f.StateToResumeFrom.LastStoredBinlogPositionForTargetVerifier),
+			)
 		} else {
-			targetPos, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysql()
+			targetCoord, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlWithCoordinate()
 		}
 	}
 	if err != nil {
@@ -615,13 +625,13 @@ func (f *Ferry) Start() error {
 	// If we don't set this now, there is a race condition where Ghostferry
 	// is terminated with some rows copied but no binlog events are written.
 	// This guarentees that we are able to restart from a valid location.
-	f.StateTracker.UpdateLastResumableSourceBinlogPosition(sourcePos)
+	f.StateTracker.UpdateLastResumableSourceBinlogCoordinate(sourceCoord)
 	if f.inlineVerifier != nil {
-		f.StateTracker.UpdateLastResumableSourceBinlogPositionForInlineVerifier(sourcePos)
+		f.StateTracker.UpdateLastResumableSourceBinlogCoordinateForInlineVerifier(sourceCoord)
 	}
 
 	if !f.Config.SkipTargetVerification {
-		f.StateTracker.UpdateLastResumableBinlogPositionForTargetVerifier(targetPos)
+		f.StateTracker.UpdateLastResumableBinlogCoordinateForTargetVerifier(targetCoord)
 	}
 
 	return nil
