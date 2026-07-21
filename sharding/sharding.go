@@ -264,12 +264,22 @@ func (r *ShardingFerry) initializeWaitUntilReplicaIsCaughtUpToMasterConnection()
 		return err
 	}
 
-	positionFetcher := ghostferry.ReplicatedMasterPositionViaCustomQuery{Query: r.config.ReplicatedMasterPositionQuery}
-
-	r.Ferry.WaitUntilReplicaIsCaughtUpToMaster = &ghostferry.WaitUntilReplicaIsCaughtUpToMaster{
-		MasterDB:                        masterDB,
-		ReplicatedMasterPositionFetcher: positionFetcher,
+	wait := &ghostferry.WaitUntilReplicaIsCaughtUpToMaster{
+		MasterDB:             masterDB,
+		BinlogCoordinateMode: r.config.BinlogCoordinateMode,
 	}
+
+	if r.config.BinlogCoordinateMode == ghostferry.BinlogCoordinateGTID {
+		wait.ReplicatedMasterCoordinateFetcher = ghostferry.ReplicatedMasterGTIDViaCustomQuery{
+			Query: r.config.ReplicatedMasterGTIDQuery,
+		}
+	} else {
+		wait.ReplicatedMasterPositionFetcher = ghostferry.ReplicatedMasterPositionViaCustomQuery{
+			Query: r.config.ReplicatedMasterPositionQuery,
+		}
+	}
+
+	r.Ferry.WaitUntilReplicaIsCaughtUpToMaster = wait
 	return nil
 }
 
