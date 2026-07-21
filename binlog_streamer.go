@@ -749,6 +749,28 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 		return err
 	}
 
+	// In GTID mode, stamp GTID coordinates onto the events so that downstream
+	// consumers (binlog writer, verifiers) advance GTID-based state rather than
+	// file/position. The resumable coordinate is the committed set BEFORE the
+	// current transaction, so an interruption replays the whole transaction.
+	if s.coordinateMode() == BinlogCoordinateGTID {
+		var currentCoord BinlogCoordinate
+		if s.lastStreamedGTIDSet != nil {
+			currentCoord = NewGTIDCoordinate(s.lastStreamedGTIDSet.String())
+		} else {
+			currentCoord = NewGTIDCoordinate("")
+		}
+		var resumableCoord BinlogCoordinate
+		if s.lastResumableGTIDSet != nil {
+			resumableCoord = NewGTIDCoordinate(s.lastResumableGTIDSet.String())
+		} else {
+			resumableCoord = NewGTIDCoordinate("")
+		}
+		for _, dmlEv := range dmlEvs {
+			dmlEv.SetCoordinates(currentCoord, resumableCoord)
+		}
+	}
+
 	events := make([]DMLEvent, 0)
 
 	for _, dmlEv := range dmlEvs {

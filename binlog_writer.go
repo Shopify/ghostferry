@@ -123,7 +123,7 @@ func (b *BinlogWriter) writeEvents(events []DMLEvent) error {
 	}
 
 	if b.StateTracker != nil {
-		b.StateTracker.UpdateLastResumableSourceBinlogPosition(events[len(events)-1].ResumableBinlogPosition())
+		b.StateTracker.UpdateLastResumableSourceBinlogCoordinate(events[len(events)-1].ResumableBinlogCoordinate())
 	}
 
 	b.lastProcessedEventTime = events[len(events)-1].Timestamp()
