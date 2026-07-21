@@ -605,13 +605,6 @@ func (f *Ferry) Start() error {
 	// miss some records that are inserted between the time the
 	// DataIterator determines the range of IDs to copy and the time that
 	// the starting binlog coordinates are determined.
-	// Resume-from-state currently only supports file/position coordinates.
-	// GTID-based resume is introduced in a later stage once GTID coordinates are
-	// persisted in the serialized state.
-	if f.StateToResumeFrom != nil && f.Config.BinlogCoordinateMode == BinlogCoordinateGTID {
-		return fmt.Errorf("resuming from state is not yet supported in GTID binlog coordinate mode")
-	}
-
 	var sourceCoord BinlogCoordinate
 	var targetCoord BinlogCoordinate
 
@@ -626,10 +619,12 @@ func (f *Ferry) Start() error {
 	}
 
 	if !f.Config.SkipTargetVerification {
-		if f.StateToResumeFrom != nil && f.StateToResumeFrom.LastStoredBinlogPositionForTargetVerifier != zeroPosition {
-			targetCoord, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlSinceCoordinate(
-				NewFilePositionCoordinate(f.StateToResumeFrom.LastStoredBinlogPositionForTargetVerifier),
-			)
+		var targetResumeCoord BinlogCoordinate
+		if f.StateToResumeFrom != nil {
+			targetResumeCoord = f.StateToResumeFrom.TargetVerifierBinlogCoordinate()
+		}
+		if f.StateToResumeFrom != nil && !targetResumeCoord.IsZero() {
+			targetCoord, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlSinceCoordinate(targetResumeCoord)
 		} else {
 			targetCoord, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlWithCoordinate()
 		}

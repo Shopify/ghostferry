@@ -84,6 +84,9 @@ type DMLEvent interface {
 	// forward-looking API used while Ghostferry migrates off raw mysql.Position.
 	BinlogCoordinate() BinlogCoordinate
 	ResumableBinlogCoordinate() BinlogCoordinate
+	// SetCoordinates lets the BinlogStreamer stamp non-file/position
+	// coordinates (e.g. GTID) onto the event.
+	SetCoordinates(coordinate, resumableCoordinate BinlogCoordinate)
 	Annotation() (string, error)
 	Timestamp() time.Time
 }
@@ -95,6 +98,23 @@ type DMLEventBase struct {
 	resumablePos mysql.Position
 	query        []byte
 	timestamp    time.Time
+
+	// coordinate and resumableCoordinate optionally carry non-file/position
+	// coordinates (e.g. GTID). When set (non-nil), they take precedence over
+	// the file/position fields in the coordinate accessors. They are stamped by
+	// the BinlogStreamer in GTID mode.
+	coordinate          *BinlogCoordinate
+	resumableCoordinate *BinlogCoordinate
+}
+
+// SetCoordinates overrides the coordinate-typed accessors with explicit
+// coordinates. It is used by the BinlogStreamer to stamp GTID coordinates onto
+// events in GTID mode. The file/position accessors are unaffected.
+func (e *DMLEventBase) SetCoordinates(coordinate, resumableCoordinate BinlogCoordinate) {
+	c := coordinate
+	r := resumableCoordinate
+	e.coordinate = &c
+	e.resumableCoordinate = &r
 }
 
 func (e *DMLEventBase) Database() string {
@@ -118,10 +138,16 @@ func (e *DMLEventBase) ResumableBinlogPosition() mysql.Position {
 }
 
 func (e *DMLEventBase) BinlogCoordinate() BinlogCoordinate {
+	if e.coordinate != nil {
+		return *e.coordinate
+	}
 	return NewFilePositionCoordinate(e.pos)
 }
 
 func (e *DMLEventBase) ResumableBinlogCoordinate() BinlogCoordinate {
+	if e.resumableCoordinate != nil {
+		return *e.resumableCoordinate
+	}
 	return NewFilePositionCoordinate(e.resumablePos)
 }
 
