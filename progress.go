@@ -32,9 +32,15 @@ type Progress struct {
 
 	Tables                  map[string]TableProgress
 	LastSuccessfulBinlogPos mysql.Position
-	BinlogStreamerLag       float64 // This is the amount of seconds the binlog streamer is lagging by (seconds)
-	BinlogWriterLag         float64 // This is the amount of seconds the binlog writer is lagging by (seconds)
-	Throttled               bool
+	// LastSuccessfulBinlogCoordinate is the coordinate-typed counterpart of
+	// LastSuccessfulBinlogPos. It reflects the active BinlogCoordinateMode, so
+	// in GTID mode it carries the streamed GTID set. The legacy
+	// LastSuccessfulBinlogPos field is retained for backward compatibility and
+	// is only meaningful in file/position mode.
+	LastSuccessfulBinlogCoordinate BinlogCoordinate
+	BinlogStreamerLag              float64 // This is the amount of seconds the binlog streamer is lagging by (seconds)
+	BinlogWriterLag                float64 // This is the amount of seconds the binlog writer is lagging by (seconds)
+	Throttled                      bool
 
 	// if the TargetVerifier is enabled, we emit this lag, otherwise this number will be 0
 	TargetBinlogStreamerLag float64
@@ -51,6 +57,9 @@ type Progress struct {
 
 	// These are some variables that are only filled when CurrentState == done.
 	FinalBinlogPos mysql.Position
+	// FinalBinlogCoordinate is the coordinate-typed counterpart of
+	// FinalBinlogPos, reflecting the active BinlogCoordinateMode.
+	FinalBinlogCoordinate BinlogCoordinate
 
 	// A best estimate on the speed at which the copying is taking place. If
 	// there are large gaps in the PaginationKey space, this probably will be inaccurate.
