@@ -30,8 +30,9 @@ func (e *stubDMLEvent) BinlogCoordinate() ghostferry.BinlogCoordinate {
 func (e *stubDMLEvent) ResumableBinlogCoordinate() ghostferry.BinlogCoordinate {
 	return ghostferry.NewFilePositionCoordinate(mysql.Position{})
 }
-func (e *stubDMLEvent) Annotation() (string, error) { return "", nil }
-func (e *stubDMLEvent) Timestamp() time.Time        { return time.Time{} }
+func (e *stubDMLEvent) SetCoordinates(_, _ ghostferry.BinlogCoordinate) {}
+func (e *stubDMLEvent) Annotation() (string, error)                     { return "", nil }
+func (e *stubDMLEvent) Timestamp() time.Time                            { return time.Time{} }
 
 // TestBinlogWriterBufferBinlogEventsBeforeRun verifies that BufferBinlogEvents
 // does not block when called before Run() has started in its own goroutine.

@@ -225,6 +225,41 @@ func (c BinlogCoordinate) String() string {
 	}
 }
 
+// intersectGTIDSets returns the intersection of two MySQL GTID sets, i.e. the
+// GTIDs present in both. go-mysql does not expose an intersection primitive, so
+// this computes A ∩ B = A - (A - B).
+//
+// It operates on clones and does not mutate its inputs. If either input is not
+// a *mysql.MysqlGTIDSet, or an operation fails, it falls back to a clone of a
+// (the first argument) so callers still get a usable, conservative set.
+func intersectGTIDSets(a, b mysql.GTIDSet) mysql.GTIDSet {
+	aMysql, aOK := a.(*mysql.MysqlGTIDSet)
+	bMysql, bOK := b.(*mysql.MysqlGTIDSet)
+	if !aOK || !bOK {
+		return a.Clone()
+	}
+
+	// diff = A - B
+	diff, ok := aMysql.Clone().(*mysql.MysqlGTIDSet)
+	if !ok {
+		return a.Clone()
+	}
+	if err := diff.Minus(*bMysql); err != nil {
+		return a.Clone()
+	}
+
+	// result = A - diff = A ∩ B
+	result, ok := aMysql.Clone().(*mysql.MysqlGTIDSet)
+	if !ok {
+		return a.Clone()
+	}
+	if err := result.Minus(*diff); err != nil {
+		return a.Clone()
+	}
+
+	return result
+}
+
 // serializedBinlogCoordinate is the on-disk / on-wire shape of a
 // BinlogCoordinate. It is deliberately explicit and self-describing so that a
 // future GTID variant can be added as additional fields without breaking

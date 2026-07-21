@@ -46,7 +46,7 @@ func (t *TargetVerifier) BinlogEventListener(evs []DMLEvent) error {
 	}
 
 	if t.StateTracker != nil {
-		t.StateTracker.UpdateLastResumableBinlogPositionForTargetVerifier(evs[len(evs)-1].ResumableBinlogPosition())
+		t.StateTracker.UpdateLastResumableBinlogCoordinateForTargetVerifier(evs[len(evs)-1].ResumableBinlogCoordinate())
 	}
 
 	return nil
