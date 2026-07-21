@@ -203,13 +203,28 @@ class GhostferryTestCase < Minitest::Test
   #
   # To actually assert the validity of the data within the dumped state, you
   # have to do it manually.
+  # Returns the binlog coordinate mode the suite is currently running under.
+  # Defaults to "file_position" when unset.
+  def binlog_coordinate_mode
+    mode = ENV["GHOSTFERRY_BINLOG_COORDINATE_MODE"]
+    (mode.nil? || mode.empty?) ? "file_position" : mode
+  end
+
+  def gtid_coordinate_mode?
+    binlog_coordinate_mode == "gtid"
+  end
+
   def assert_basic_fields_exist_in_dumped_state(dumped_state)
     refute dumped_state.nil?
     refute dumped_state["GhostferryVersion"].nil?
     refute dumped_state["LastKnownTableSchemaCache"].nil?
     refute dumped_state["LastSuccessfulPaginationKeys"].nil?
     refute dumped_state["CompletedTables"].nil?
-    refute dumped_state["LastWrittenBinlogPosition"].nil?
+    if gtid_coordinate_mode?
+      refute dumped_state["LastWrittenBinlogCoordinate"].nil?
+    else
+      refute dumped_state["LastWrittenBinlogPosition"].nil?
+    end
   end
 
   def assert_ghostferry_completed(instance, times:)

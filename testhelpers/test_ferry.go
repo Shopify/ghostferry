@@ -59,6 +59,12 @@ func NewTestConfig() *ghostferry.Config {
 		},
 	}
 
+	// Allow the test suite to run against either binlog coordinate mode by
+	// setting GHOSTFERRY_BINLOG_COORDINATE_MODE. Defaults to file/position.
+	if mode := os.Getenv("GHOSTFERRY_BINLOG_COORDINATE_MODE"); mode != "" {
+		config.BinlogCoordinateMode = ghostferry.BinlogCoordinateType(mode)
+	}
+
 	err := config.ValidateConfig()
 	PanicIfError(err)
 

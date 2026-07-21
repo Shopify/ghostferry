@@ -993,9 +993,11 @@ func (f *Ferry) Progress() *Progress {
 
 	// Binlog Progress
 	s.LastSuccessfulBinlogPos = f.BinlogStreamer.lastStreamedBinlogPosition
+	s.LastSuccessfulBinlogCoordinate = f.BinlogStreamer.GetLastStreamedBinlogCoordinate()
 	s.BinlogStreamerLag = now.Sub(f.BinlogStreamer.lastProcessedEventTime).Seconds()
 	s.BinlogWriterLag = now.Sub(f.BinlogWriter.lastProcessedEventTime).Seconds()
 	s.FinalBinlogPos = f.BinlogStreamer.stopAtBinlogPosition
+	s.FinalBinlogCoordinate = f.BinlogStreamer.GetStopBinlogCoordinate()
 
 	if f.TargetVerifier != nil {
 		s.TargetBinlogStreamerLag = now.Sub(f.TargetVerifier.BinlogStreamer.lastProcessedEventTime).Seconds()
