@@ -45,9 +45,23 @@ type BinlogStreamer struct {
 	DatabaseRewrites map[string]string
 	TableRewrites    map[string]string
 
+	// BinlogCoordinateMode selects whether this streamer tracks file/position
+	// or GTID coordinates. An empty value is treated as file/position for
+	// backwards compatibility.
+	BinlogCoordinateMode BinlogCoordinateType
+
 	lastStreamedBinlogPosition  mysql.Position
 	lastResumableBinlogPosition mysql.Position
 	stopAtBinlogPosition        mysql.Position
+
+	// GTID tracking, only maintained when BinlogCoordinateMode is
+	// BinlogCoordinateGTID. lastStreamedGTIDSet is the committed GTID set seen
+	// so far. lastResumableGTIDSet is the committed GTID set at the last
+	// transaction boundary (a safe resume point). stopAtGTIDSet is the target
+	// executed set to stop at during cutover.
+	lastStreamedGTIDSet  mysql.GTIDSet
+	lastResumableGTIDSet mysql.GTIDSet
+	stopAtGTIDSet        mysql.GTIDSet
 
 	lastProcessedEventTime   time.Time
 	lastLagMetricEmittedTime time.Time
@@ -148,6 +162,94 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFrom(startFromBinlogPositio
 	return s.lastStreamedBinlogPosition, err
 }
 
+// coordinateMode returns the effective coordinate mode, treating the empty
+// value as file/position for backwards compatibility.
+func (s *BinlogStreamer) coordinateMode() BinlogCoordinateType {
+	if s.BinlogCoordinateMode == "" {
+		return BinlogCoordinateFilePosition
+	}
+	return s.BinlogCoordinateMode
+}
+
+// ConnectBinlogStreamerToMysqlWithCoordinate starts streaming from the current
+// server coordinate for the configured BinlogCoordinateMode. It is the
+// coordinate-typed counterpart of ConnectBinlogStreamerToMysql.
+func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlWithCoordinate() (BinlogCoordinate, error) {
+	s.ensureLogger()
+
+	switch s.coordinateMode() {
+	case BinlogCoordinateGTID:
+		coord, err := ReadCurrentGTIDCoordinate(s.DB)
+		if err != nil {
+			s.logger.WithError(err).Error("failed to read current executed GTID set")
+			return BinlogCoordinate{}, err
+		}
+		return s.ConnectBinlogStreamerToMysqlFromCoordinate(coord)
+	default:
+		pos, err := s.ConnectBinlogStreamerToMysql()
+		if err != nil {
+			return BinlogCoordinate{}, err
+		}
+		return NewFilePositionCoordinate(pos), nil
+	}
+}
+
+// ConnectBinlogStreamerToMysqlFromCoordinate starts streaming from the given
+// coordinate. The coordinate type must match the streamer's configured
+// BinlogCoordinateMode.
+func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFromCoordinate(startFrom BinlogCoordinate) (BinlogCoordinate, error) {
+	s.ensureLogger()
+
+	switch s.coordinateMode() {
+	case BinlogCoordinateGTID:
+		if !startFrom.IsGTID() {
+			return BinlogCoordinate{}, fmt.Errorf("binlog streamer in GTID mode requires a GTID coordinate, got %q", startFrom.Type)
+		}
+		return s.connectBinlogStreamerFromGTID(startFrom)
+	default:
+		if !startFrom.IsFilePosition() {
+			return BinlogCoordinate{}, fmt.Errorf("binlog streamer in file/position mode requires a file/position coordinate, got %q", startFrom.Type)
+		}
+		pos, err := s.ConnectBinlogStreamerToMysqlFrom(startFrom.Position())
+		if err != nil {
+			return BinlogCoordinate{}, err
+		}
+		return NewFilePositionCoordinate(pos), nil
+	}
+}
+
+func (s *BinlogStreamer) connectBinlogStreamerFromGTID(startFrom BinlogCoordinate) (BinlogCoordinate, error) {
+	err := s.createBinlogSyncer()
+	if err != nil {
+		return BinlogCoordinate{}, err
+	}
+
+	gtidSet, err := startFrom.ParsedGTIDSet()
+	if err != nil {
+		s.logger.WithError(err).Error("failed to parse starting GTID set")
+		return BinlogCoordinate{}, err
+	}
+
+	// Seed both streamed and resumable GTID sets to the starting set. Clone so
+	// later mutations from event tracking never alias the starting value.
+	s.lastStreamedGTIDSet = gtidSet.Clone()
+	s.lastResumableGTIDSet = gtidSet.Clone()
+
+	s.logger.WithFields(Fields{
+		"gtid_set": gtidSet.String(),
+		"host":     s.DBConfig.Host,
+		"port":     s.DBConfig.Port,
+	}).Info("starting binlog streaming from GTID set")
+
+	s.binlogStreamer, err = s.binlogSyncer.StartSyncGTID(gtidSet)
+	if err != nil {
+		s.logger.WithError(err).Error("unable to start binlog streamer from GTID set")
+		return BinlogCoordinate{}, err
+	}
+
+	return NewGTIDCoordinate(s.lastStreamedGTIDSet.String()), nil
+}
+
 // the default event handler is called for replication binLogEvents that do not have a
 // separate event Handler registered.
 
@@ -227,12 +329,60 @@ func (s *BinlogStreamer) defaultEventHandler(ev *replication.BinlogEvent, query 
 		// last transaction
 		es.isEventPositionResumable = true
 
+		// GTID tracking. go-mysql maintains the current GTID set internally and
+		// attaches it to XIDEvent.GSet at commit boundaries, so we do not need
+		// to reconstruct it from raw GTIDEvent SID/GNO.
+		if s.coordinateMode() == BinlogCoordinateGTID {
+			switch tev := ev.Event.(type) {
+			case *replication.GTIDEvent:
+				// Start of a transaction. A safe resume point is the committed
+				// set that existed BEFORE this transaction, so that an
+				// interruption replays the whole in-flight transaction.
+				if s.lastStreamedGTIDSet != nil {
+					s.lastResumableGTIDSet = s.lastStreamedGTIDSet.Clone()
+				}
+			case *replication.XIDEvent:
+				// End of a transaction. GSet is the committed GTID set through
+				// this transaction. Clone to avoid aliasing go-mysql's mutable
+				// internal set.
+				if tev.GSet != nil {
+					s.lastStreamedGTIDSet = tev.GSet.Clone()
+				}
+			}
+		}
+
 		// Here we also reset the query event as we are either at the beginning
 		// or the end of the current/next transaction. As such, the query will be
 		// reset following the next RowsQueryEvent before the corresponding RowsEvent(s)
 		query = nil
 	}
 	return query, err
+}
+
+// shouldContinueStreaming reports whether the Run loop should keep streaming.
+//
+// It keeps streaming until a stop has been requested AND the stop coordinate
+// has been reached. For file/position that is a position comparison; for GTID
+// it is executed-set containment (we have streamed a committed set that
+// contains the target stop set).
+func (s *BinlogStreamer) shouldContinueStreaming() bool {
+	if !s.stopRequested {
+		return true
+	}
+
+	if s.coordinateMode() == BinlogCoordinateGTID {
+		if s.stopAtGTIDSet == nil {
+			// Stop requested but no target recorded yet; keep going until it is.
+			return true
+		}
+		if s.lastStreamedGTIDSet == nil {
+			return true
+		}
+		// Continue while we have NOT yet reached the stop set.
+		return !s.lastStreamedGTIDSet.Contain(s.stopAtGTIDSet)
+	}
+
+	return s.lastStreamedBinlogPosition.Compare(s.stopAtBinlogPosition) < 0
 }
 
 func (s *BinlogStreamer) Run() {
@@ -242,6 +392,7 @@ func (s *BinlogStreamer) Run() {
 		s.logger.WithFields(Fields{
 			"stopAtBinlogPosition":       s.stopAtBinlogPosition,
 			"lastStreamedBinlogPosition": s.lastStreamedBinlogPosition,
+			"coordinateMode":             s.coordinateMode(),
 		}).Info("exiting binlog streamer")
 		s.binlogSyncer.Close()
 	}()
@@ -252,7 +403,7 @@ func (s *BinlogStreamer) Run() {
 	currentFilename := s.lastStreamedBinlogPosition.Name
 	es.nextFilename = s.lastStreamedBinlogPosition.Name
 	s.logger.Info("starting binlog streamer")
-	for !s.stopRequested || (s.stopRequested && s.lastStreamedBinlogPosition.Compare(s.stopAtBinlogPosition) < 0) {
+	for s.shouldContinueStreaming() {
 		currentFilename = es.nextFilename
 		var ev *replication.BinlogEvent
 		var timedOut bool
@@ -341,8 +492,15 @@ func (s *BinlogStreamer) GetLastStreamedBinlogPosition() mysql.Position {
 }
 
 // GetLastStreamedBinlogCoordinate is the coordinate-typed counterpart of
-// GetLastStreamedBinlogPosition.
+// GetLastStreamedBinlogPosition. It returns a coordinate matching the
+// streamer's configured BinlogCoordinateMode.
 func (s *BinlogStreamer) GetLastStreamedBinlogCoordinate() BinlogCoordinate {
+	if s.coordinateMode() == BinlogCoordinateGTID {
+		if s.lastStreamedGTIDSet == nil {
+			return NewGTIDCoordinate("")
+		}
+		return NewGTIDCoordinate(s.lastStreamedGTIDSet.String())
+	}
 	return NewFilePositionCoordinate(s.lastStreamedBinlogPosition)
 }
 
@@ -352,11 +510,34 @@ func (s *BinlogStreamer) IsAlmostCaughtUp() bool {
 
 func (s *BinlogStreamer) FlushAndStop() {
 	s.logger.Info("requesting binlog streamer to stop")
-	// Must first read the binlog position before requesting stop
-	// Otherwise there is a race condition where the stopRequested is
-	// set to True but the TargetPosition is nil, which would cause
-	// the BinlogStreamer to immediately exit, as it thinks that it has
-	// passed the initial target position.
+	// Must first read the stop coordinate before requesting stop.
+	// Otherwise there is a race condition where stopRequested is set to true
+	// but the stop coordinate is still nil/zero, which would cause the
+	// BinlogStreamer to immediately exit, as it thinks that it has already
+	// passed the stop coordinate.
+	if s.coordinateMode() == BinlogCoordinateGTID {
+		err := WithRetries(100, 600*time.Millisecond, s.logger, "read current executed GTID set", func() error {
+			gtidSet, err := ReadExecutedGTIDSet(s.DB)
+			if err != nil {
+				return err
+			}
+			parsed, err := mysql.ParseMysqlGTIDSet(gtidSet)
+			if err != nil {
+				return err
+			}
+			s.stopAtGTIDSet = parsed
+			return nil
+		})
+
+		if err != nil {
+			s.ErrorHandler.Fatal("binlog_streamer", err)
+		}
+		s.logger.WithField("stop_at_gtid_set", s.stopAtGTIDSet.String()).Info("current stop GTID set was recorded")
+
+		s.stopRequested = true
+		return
+	}
+
 	err := WithRetries(100, 600*time.Millisecond, s.logger, "read current binlog position", func() error {
 		var err error
 		s.stopAtBinlogPosition, err = ShowMasterStatusBinlogPosition(s.DB)
