@@ -76,3 +76,87 @@ func TestBinlogCoordinate_UnmarshalTypedForm(t *testing.T) {
 	assert.Equal(t, "mysql-bin.000050", decoded.Position().Name)
 	assert.Equal(t, uint32(700), decoded.Position().Pos)
 }
+
+const (
+	testGTIDSetA = "3e11fa47-71ca-11e1-9e33-c80aa9429562:1-57"
+	testGTIDSetB = "3e11fa47-71ca-11e1-9e33-c80aa9429562:1-100"
+)
+
+func TestBinlogCoordinate_GTIDBasics(t *testing.T) {
+	coord := ghostferry.NewGTIDCoordinate(testGTIDSetA)
+
+	assert.True(t, coord.IsGTID())
+	assert.False(t, coord.IsFilePosition())
+	assert.False(t, coord.IsZero())
+	assert.Equal(t, "gtid:"+testGTIDSetA, coord.String())
+
+	set, err := coord.ParsedGTIDSet()
+	require.NoError(t, err)
+	assert.Equal(t, testGTIDSetA, set.String())
+}
+
+func TestBinlogCoordinate_GTIDEmptyIsZero(t *testing.T) {
+	coord := ghostferry.NewGTIDCoordinate("")
+
+	assert.True(t, coord.IsGTID())
+	assert.True(t, coord.IsZero())
+}
+
+func TestBinlogCoordinate_GTIDContains(t *testing.T) {
+	larger := ghostferry.NewGTIDCoordinate(testGTIDSetB)
+	smaller := ghostferry.NewGTIDCoordinate(testGTIDSetA)
+
+	contains, err := larger.Contains(smaller)
+	require.NoError(t, err)
+	assert.True(t, contains)
+
+	contains, err = smaller.Contains(larger)
+	require.NoError(t, err)
+	assert.False(t, contains)
+}
+
+func TestBinlogCoordinate_ContainsRejectsFilePosition(t *testing.T) {
+	gtid := ghostferry.NewGTIDCoordinate(testGTIDSetA)
+	filePos := ghostferry.NewFilePositionCoordinate(mysql.Position{Name: "mysql-bin.000001", Pos: 4})
+
+	_, err := gtid.Contains(filePos)
+	assert.Error(t, err)
+}
+
+func TestBinlogCoordinate_ParsedGTIDSetRejectsFilePosition(t *testing.T) {
+	filePos := ghostferry.NewFilePositionCoordinate(mysql.Position{Name: "mysql-bin.000001", Pos: 4})
+
+	_, err := filePos.ParsedGTIDSet()
+	assert.Error(t, err)
+}
+
+func TestBinlogCoordinate_GTIDJSONRoundTrip(t *testing.T) {
+	coord := ghostferry.NewGTIDCoordinate(testGTIDSetA)
+
+	data, err := json.Marshal(coord)
+	require.NoError(t, err)
+
+	var decoded ghostferry.BinlogCoordinate
+	require.NoError(t, json.Unmarshal(data, &decoded))
+
+	assert.True(t, decoded.IsGTID())
+	assert.Equal(t, testGTIDSetA, decoded.GTIDSet)
+}
+
+func TestBinlogCoordinate_CompareRejectsMixedTypes(t *testing.T) {
+	gtid := ghostferry.NewGTIDCoordinate(testGTIDSetA)
+	filePos := ghostferry.NewFilePositionCoordinate(mysql.Position{Name: "mysql-bin.000001", Pos: 4})
+
+	assert.Panics(t, func() {
+		gtid.Compare(filePos)
+	})
+}
+
+func TestBinlogCoordinate_CompareUnsupportedForGTID(t *testing.T) {
+	a := ghostferry.NewGTIDCoordinate(testGTIDSetA)
+	b := ghostferry.NewGTIDCoordinate(testGTIDSetB)
+
+	assert.Panics(t, func() {
+		a.Compare(b)
+	})
+}

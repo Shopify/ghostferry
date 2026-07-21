@@ -201,6 +201,25 @@ func (this *ConfigTestSuite) TestDefaultMarginalia() {
 	this.Require().Equal(ghostferry.DefaultMarginalia, this.config.Target.Marginalia)
 }
 
+func (this *ConfigTestSuite) TestBinlogCoordinateModeDefaultsToFilePosition() {
+	err := this.config.ValidateConfig()
+	this.Require().Nil(err)
+	this.Require().Equal(ghostferry.BinlogCoordinateFilePosition, this.config.BinlogCoordinateMode)
+}
+
+func (this *ConfigTestSuite) TestBinlogCoordinateModeGTIDIsValid() {
+	this.config.BinlogCoordinateMode = ghostferry.BinlogCoordinateGTID
+	err := this.config.ValidateConfig()
+	this.Require().Nil(err)
+	this.Require().Equal(ghostferry.BinlogCoordinateGTID, this.config.BinlogCoordinateMode)
+}
+
+func (this *ConfigTestSuite) TestBinlogCoordinateModeInvalidIsRejected() {
+	this.config.BinlogCoordinateMode = "banana"
+	err := this.config.ValidateConfig()
+	this.Require().EqualError(err, `invalid BinlogCoordinateMode "banana", must be "file_position" or "gtid"`)
+}
+
 func TestConfig(t *testing.T) {
 	testhelpers.SetupTest()
 	suite.Run(t, new(ConfigTestSuite))
