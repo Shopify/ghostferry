@@ -437,6 +437,15 @@ func (f *Ferry) Initialize() (err error) {
 			return err
 		}
 
+		// In GTID mode the master's executed GTID set is the cutover target, so
+		// the master must have GTID mode enabled.
+		if f.Config.BinlogCoordinateMode == BinlogCoordinateGTID {
+			if err = CheckServerGTIDModeEnabled(f.WaitUntilReplicaIsCaughtUpToMaster.MasterDB); err != nil {
+				f.logger.WithError(err).Error("source master is not configured for GTID mode")
+				return err
+			}
+		}
+
 		// Ensures the query to check for the replicated coordinate is
 		// executable. A zero target coordinate of the active mode is used only
 		// as a probe; the boolean result is ignored.
