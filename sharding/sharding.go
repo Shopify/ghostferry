@@ -270,6 +270,9 @@ func (r *ShardingFerry) initializeWaitUntilReplicaIsCaughtUpToMasterConnection()
 	}
 
 	if r.config.BinlogCoordinateMode == ghostferry.BinlogCoordinateGTID {
+		if r.config.ReplicatedMasterGTIDQuery == "" {
+			return fmt.Errorf("ReplicatedMasterGTIDQuery must be set when running from a replica in GTID mode")
+		}
 		wait.ReplicatedMasterCoordinateFetcher = ghostferry.ReplicatedMasterGTIDViaCustomQuery{
 			Query: r.config.ReplicatedMasterGTIDQuery,
 		}
