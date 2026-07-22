@@ -135,59 +135,42 @@ func (c BinlogCoordinate) IsZero() bool {
 	}
 }
 
-// Compare orders two coordinates of the same type.
+// HasReached reports whether this coordinate has reached or passed target,
+// i.e. whether a stream positioned at c has already covered everything up to
+// target. This is the single "have we crossed the finish line?" question used
+// for stop and catchup conditions; it hides the representation-specific
+// mechanics from callers.
 //
-// It returns -1, 0 or 1 following the semantics of mysql.Position.Compare for
-// file/position coordinates. Comparing coordinates of differing types is a
-// programmer error and panics, because there is no meaningful total ordering
-// across representations. Callers that may receive mixed types should branch on
-// the coordinate type first.
+//   - For file/position coordinates it is a position comparison (c >= target).
+//   - For GTID coordinates it is set containment (c's set contains target's
+//     set), because GTID sets do not form a total order.
 //
-// GTID coordinates do not form a total order (a set can contain another, be
-// contained by it, both, or neither). Compare therefore does not support GTID
-// coordinates; use Contains for GTID reachability checks instead. This mirrors
-// the reality that "which GTID set is further ahead" is not well defined.
-func (c BinlogCoordinate) Compare(other BinlogCoordinate) int {
-	if c.resolvedType() != other.resolvedType() {
-		panic(fmt.Sprintf(
+// Both coordinates must be the same type; a mismatch returns an error rather
+// than guessing across representations.
+func (c BinlogCoordinate) HasReached(target BinlogCoordinate) (bool, error) {
+	if c.resolvedType() != target.resolvedType() {
+		return false, fmt.Errorf(
 			"cannot compare binlog coordinates of different types: %q vs %q",
-			c.resolvedType(), other.resolvedType(),
-		))
+			c.resolvedType(), target.resolvedType(),
+		)
 	}
 
 	switch c.resolvedType() {
 	case BinlogCoordinateFilePosition:
-		return c.FilePosition.Compare(other.FilePosition)
+		return c.FilePosition.Compare(target.FilePosition) >= 0, nil
+	case BinlogCoordinateGTID:
+		mine, err := c.ParsedGTIDSet()
+		if err != nil {
+			return false, fmt.Errorf("parsing GTID set %q: %w", c.GTIDSet, err)
+		}
+		theirs, err := target.ParsedGTIDSet()
+		if err != nil {
+			return false, fmt.Errorf("parsing GTID set %q: %w", target.GTIDSet, err)
+		}
+		return mine.Contain(theirs), nil
 	default:
-		panic(fmt.Sprintf("Compare not supported for binlog coordinate type %q; use Contains for GTID", c.resolvedType()))
+		return false, fmt.Errorf("HasReached not supported for binlog coordinate type %q", c.resolvedType())
 	}
-}
-
-// Contains reports whether this GTID coordinate's set fully contains the other
-// GTID coordinate's set. This is the correct "have we reached/passed" check for
-// GTID based stop and catchup conditions.
-//
-// Both coordinates must be GTID coordinates. Calling Contains on file/position
-// coordinates returns an error, since containment is not the file/position
-// reachability model (Compare is).
-func (c BinlogCoordinate) Contains(other BinlogCoordinate) (bool, error) {
-	if c.resolvedType() != BinlogCoordinateGTID || other.resolvedType() != BinlogCoordinateGTID {
-		return false, fmt.Errorf(
-			"Contains is only defined for GTID coordinates, got %q and %q",
-			c.resolvedType(), other.resolvedType(),
-		)
-	}
-
-	mine, err := c.ParsedGTIDSet()
-	if err != nil {
-		return false, fmt.Errorf("parsing GTID set %q: %w", c.GTIDSet, err)
-	}
-	theirs, err := other.ParsedGTIDSet()
-	if err != nil {
-		return false, fmt.Errorf("parsing GTID set %q: %w", other.GTIDSet, err)
-	}
-
-	return mine.Contain(theirs), nil
 }
 
 // String returns a human readable representation for logs and status output.
