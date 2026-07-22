@@ -689,11 +689,18 @@ type Config struct {
 	//
 	// Valid values:
 	//   - "" or "file_position": the classic (file, position) coordinate. This
-	//     is the default and current behavior.
-	//   - "gtid": GTID-set based coordinates (experimental, MySQL only). At this
-	//     stage GTID mode only affects coordinate representation, validation, and
-	//     the ability to read the current GTID set; binlog streaming still uses
-	//     file/position until a later stage wires GTID streaming.
+	//     is the default.
+	//   - "gtid": GTID-set based coordinates (experimental, MySQL only). GTID
+	//     mode drives binlog streaming start/stop, state persistence and resume,
+	//     progress reporting, and replica catchup via executed-set containment.
+	//     It requires @@GLOBAL.gtid_mode=ON on the source (and target when
+	//     target verification is enabled, and the replication master when
+	//     running from a replica).
+	//
+	// Note: in GTID mode the legacy file/position progress fields
+	// (LastSuccessfulBinlogPos, FinalBinlogPos) are not populated; use the
+	// coordinate fields (LastSuccessfulBinlogCoordinate, FinalBinlogCoordinate)
+	// instead.
 	//
 	// Prefer BinlogCoordinateMode over any future boolean flag: it keeps the
 	// file/position and GTID paths cleanly separated and leaves room for
