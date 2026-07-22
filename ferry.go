@@ -601,7 +601,7 @@ func (f *Ferry) Start() error {
 
 	var err error
 	if f.StateToResumeFrom != nil {
-		sourceCoord, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlFromCoordinate(f.StateToResumeFrom.MinSourceBinlogCoordinate())
+		sourceCoord, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlSinceCoordinate(f.StateToResumeFrom.MinSourceBinlogCoordinate())
 	} else {
 		sourceCoord, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlWithCoordinate()
 	}
@@ -611,7 +611,7 @@ func (f *Ferry) Start() error {
 
 	if !f.Config.SkipTargetVerification {
 		if f.StateToResumeFrom != nil && f.StateToResumeFrom.LastStoredBinlogPositionForTargetVerifier != zeroPosition {
-			targetCoord, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlFromCoordinate(
+			targetCoord, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlSinceCoordinate(
 				NewFilePositionCoordinate(f.StateToResumeFrom.LastStoredBinlogPositionForTargetVerifier),
 			)
 		} else {
