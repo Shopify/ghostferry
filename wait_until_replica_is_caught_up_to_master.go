@@ -149,8 +149,8 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUp(targetMasterPos mysql.Po
 }
 
 // IsCaughtUpToCoordinate reports whether the replica has replicated up to the
-// given target coordinate. For file/position it compares positions; for GTID
-// it checks that the replica's executed set contains the target set.
+// given target coordinate. The finish-line check is delegated to
+// BinlogCoordinate.HasReached, so this is identical for file/position and GTID.
 func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUpToCoordinate(targetMaster BinlogCoordinate, retries int) (bool, error) {
 	if w.logger == nil {
 		w.logger = LogWithField("tag", "wait_replica")
@@ -172,25 +172,17 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUpToCoordinate(targetMaster
 		return false, err
 	}
 
-	if targetMaster.IsGTID() {
-		contains, err := current.Contains(targetMaster)
-		if err != nil {
-			return false, err
-		}
-		if contains {
-			w.logger.Infof("target master GTID set reached by replica: %v contains %v\n", current, targetMaster)
-			return true, nil
-		}
-		w.logger.Debugf("replicated master GTID set %v does not yet contain %v\n", current, targetMaster)
-		return false, nil
+	reached, err := current.HasReached(targetMaster)
+	if err != nil {
+		return false, err
 	}
 
-	if current.Compare(targetMaster) >= 0 {
-		w.logger.Infof("target master position reached by replica: %v >= %v\n", current, targetMaster)
+	if reached {
+		w.logger.Infof("target master coordinate reached by replica: %v has reached %v\n", current, targetMaster)
 		return true, nil
 	}
 
-	w.logger.Debugf("replicated master position is: %v < %v\n", current, targetMaster)
+	w.logger.Debugf("replicated master coordinate %v has not yet reached %v\n", current, targetMaster)
 	return false, nil
 }
 
