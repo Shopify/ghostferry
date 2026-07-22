@@ -671,20 +671,15 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 	// file/position. The resumable coordinate is the committed set BEFORE the
 	// current transaction, so an interruption replays the whole transaction.
 	if s.coordinateMode() == BinlogCoordinateGTID {
-		var currentCoord BinlogCoordinate
-		if s.lastStreamedGTIDSet != nil {
-			currentCoord = NewGTIDCoordinate(s.lastStreamedGTIDSet.String())
-		} else {
-			currentCoord = NewGTIDCoordinate("")
-		}
-		var resumableCoord BinlogCoordinate
-		if s.lastResumableGTIDSet != nil {
-			resumableCoord = NewGTIDCoordinate(s.lastResumableGTIDSet.String())
-		} else {
-			resumableCoord = NewGTIDCoordinate("")
-		}
+		currentCoord := NewGTIDCoordinateFromSet(s.lastStreamedGTIDSet)
+		resumableCoord := NewGTIDCoordinateFromSet(s.lastResumableGTIDSet)
 		for _, dmlEv := range dmlEvs {
-			dmlEv.SetCoordinates(currentCoord, resumableCoord)
+			// SetCoordinates is an internal capability (coordinateStamper), not
+			// part of the exported DMLEvent interface; all built-in events
+			// satisfy it via DMLEventBase.
+			if stamper, ok := dmlEv.(coordinateStamper); ok {
+				stamper.SetCoordinates(currentCoord, resumableCoord)
+			}
 		}
 	}
 

@@ -610,7 +610,22 @@ func (f *Ferry) Start() error {
 
 	var err error
 	if f.StateToResumeFrom != nil {
-		sourceCoord, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlSinceCoordinate(f.StateToResumeFrom.MinSourceBinlogCoordinate())
+		// Fail fast if the serialized state was produced in a different binlog
+		// coordinate mode than the current run; resuming across modes would
+		// mis-route the streamer (e.g. seeking a GTID set against a
+		// file/position stream) and could silently skip or replay events.
+		if stateMode := f.StateToResumeFrom.CoordinateMode(); stateMode != f.Config.BinlogCoordinateMode {
+			return fmt.Errorf(
+				"cannot resume: state was saved in %q binlog coordinate mode but this run is configured for %q",
+				stateMode, f.Config.BinlogCoordinateMode,
+			)
+		}
+
+		resumeCoord, resumeErr := f.StateToResumeFrom.MinSourceBinlogCoordinate()
+		if resumeErr != nil {
+			return fmt.Errorf("computing resume coordinate: %w", resumeErr)
+		}
+		sourceCoord, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlSinceCoordinate(resumeCoord)
 	} else {
 		sourceCoord, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlWithCoordinate()
 	}
@@ -619,12 +634,14 @@ func (f *Ferry) Start() error {
 	}
 
 	if !f.Config.SkipTargetVerification {
-		var targetResumeCoord BinlogCoordinate
-		if f.StateToResumeFrom != nil {
-			targetResumeCoord = f.StateToResumeFrom.TargetVerifierBinlogCoordinate()
-		}
-		if f.StateToResumeFrom != nil && !targetResumeCoord.IsZero() {
-			targetCoord, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlSinceCoordinate(targetResumeCoord)
+		// Presence must be checked explicitly, not via IsZero(): in GTID mode an
+		// empty executed set is a valid target-verifier coordinate, and treating
+		// it as absent would reconnect the target verifier at the target's
+		// current position and skip events that occurred before the interrupt.
+		if f.StateToResumeFrom != nil && f.StateToResumeFrom.HasTargetVerifierBinlogCoordinate() {
+			targetCoord, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlSinceCoordinate(
+				f.StateToResumeFrom.TargetVerifierBinlogCoordinate(),
+			)
 		} else {
 			targetCoord, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlWithCoordinate()
 		}
