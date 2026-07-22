@@ -1,29 +1,26 @@
 package ghostferry
 
 import (
-	"context"
-	"crypto/tls"
 	sqlorig "database/sql"
-	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
+	"github.com/go-mysql-org/go-mysql/canal"
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
 )
 
 const caughtUpThreshold = 10 * time.Second
 
-// this is passed into event handlers to keep track of state of the binlog event stream.
-type BinlogEventState struct {
-	evPosition               mysql.Position
-	isEventPositionResumable bool
-	isEventPositionValid     bool
-	nextFilename             string
-}
+// DDLEventHandler is an optional hook invoked for every schema-changing DDL
+// statement observed on the stream (canal's OnDDL). Returning an error aborts
+// the streamer. It replaces the previous raw AddBinlogEventHandler mechanism,
+// whose only real use was intercepting DDL QueryEvents.
+type DDLEventHandler func(schemaName, tableName string, query []byte) error
 
 type BinlogStreamer struct {
 	DB           *sql.DB
@@ -34,9 +31,6 @@ type BinlogStreamer struct {
 
 	TableSchema TableSchemaCache
 	LogTag      string
-
-	binlogSyncer   *replication.BinlogSyncer
-	binlogStreamer *replication.BinlogStreamer
 
 	// These rewrite structures are used specifically for the Target
 	// Verifier as it needs to map events streamed from the Target back
@@ -50,6 +44,11 @@ type BinlogStreamer struct {
 	// or GTID coordinates. An empty value is treated as file/position for
 	// backwards compatibility.
 	BinlogCoordinateMode BinlogCoordinateType
+
+	// DDLEventHandler, if set, is invoked for each schema-changing DDL.
+	DDLEventHandler DDLEventHandler
+
+	canal *canal.Canal
 
 	lastStreamedBinlogPosition  mysql.Position
 	lastResumableBinlogPosition mysql.Position
@@ -71,11 +70,17 @@ type BinlogStreamer struct {
 
 	logger         Logger
 	eventListeners []func([]DMLEvent) error
-	// eventhandlers can be attached to binlog Replication Events
-	// for any event that does not have a specific handler attached, a default eventHandler
-	// is provided (defaultEventHandler). Event handlers are provided the replication binLogEvent
-	// and a state object that carries information about the state of the binlog event stream.
-	eventHandlers map[string]func(*replication.BinlogEvent, []byte, *BinlogEventState) ([]byte, error)
+
+	// stopOnce guards canal.Close so the stop monitor and Run's defer never
+	// double-close the canal (canal.Close is not safe to call concurrently
+	// with itself while run() is tearing down).
+	stopOnce sync.Once
+
+	// query holds the annotated statement from the most recent RowsQueryEvent
+	// so it can be attached to the following RowsEvent (marginalia detection).
+	// canal delivers OnRowsQueryEvent before OnRow, so this is single-writer
+	// within the canal callback goroutine.
+	query []byte
 }
 
 func (s *BinlogStreamer) ensureLogger() {
@@ -88,17 +93,22 @@ func (s *BinlogStreamer) ensureLogger() {
 	}
 }
 
-func (s *BinlogStreamer) createBinlogSyncer() error {
-	var err error
-	var tlsConfig *tls.Config
-
-	if s.DBConfig.TLS != nil {
-		tlsConfig, err = s.DBConfig.TLS.BuildConfig()
-		if err != nil {
-			return err
-		}
+// coordinateMode returns the effective coordinate mode, treating the empty
+// value as file/position for backwards compatibility.
+func (s *BinlogStreamer) coordinateMode() BinlogCoordinateType {
+	if s.BinlogCoordinateMode == "" {
+		return BinlogCoordinateFilePosition
 	}
+	return s.BinlogCoordinateMode
+}
 
+// createCanal builds the canal instance. Unlike canal.NewDefaultConfig, dump
+// mode is explicitly disabled (no ExecutionPath): Ghostferry only streams the
+// binlog and does its own initial copy. Table filtering is left to Ghostferry's
+// TableSchemaCache/Filter rather than canal's include/exclude regex, to keep
+// behavior identical to the previous implementation.
+func (s *BinlogStreamer) createCanal() error {
+	var err error
 	if s.MyServerId == 0 {
 		s.MyServerId, err = s.generateNewServerId()
 		if err != nil {
@@ -107,23 +117,48 @@ func (s *BinlogStreamer) createBinlogSyncer() error {
 		}
 	}
 
-	syncerConfig := replication.BinlogSyncerConfig{
-		ServerID:                 s.MyServerId,
-		Host:                     s.DBConfig.Host,
-		Port:                     s.DBConfig.Port,
-		User:                     s.DBConfig.User,
-		Password:                 s.DBConfig.Pass,
-		TLSConfig:                tlsConfig,
-		UseDecimal:               true,
-		UseFloatWithTrailingZero: true,
-		TimestampStringLocation:  time.UTC,
-		Logger:                   NewSlogLogger(s.logger),
+	cfg := canal.NewDefaultConfig()
+	cfg.ServerID = s.MyServerId
+	cfg.Flavor = mysql.MySQLFlavor
+	cfg.User = s.DBConfig.User
+	cfg.Password = s.DBConfig.Pass
+	cfg.UseDecimal = true
+	cfg.ParseTime = false
+	cfg.TimestampStringLocation = time.UTC
+	cfg.Logger = NewSlogLogger(s.logger)
+	// Disable mysqldump: Ghostferry streams binlog only.
+	cfg.Dump.ExecutionPath = ""
+	// canal owns the event loop, so Ghostferry stops the stream by calling
+	// canal.Close(). Close() must interrupt the syncer goroutine, which
+	// otherwise parks in a blocking socket read with no data (e.g. after the
+	// source goes read-only at cutover). A ReadTimeout wakes that read
+	// periodically so Close() (which waits on the syncer goroutine) cannot
+	// deadlock, and a HeartbeatPeriod keeps an otherwise-idle connection alive.
+	cfg.HeartbeatPeriod = 1 * time.Second
+
+	if s.DBConfig.Net == "unix" {
+		cfg.Addr = s.DBConfig.Host
+	} else {
+		cfg.Addr = fmt.Sprintf("%s:%d", s.DBConfig.Host, s.DBConfig.Port)
 	}
 
-	s.binlogSyncer = replication.NewBinlogSyncer(syncerConfig)
+	if s.DBConfig.TLS != nil {
+		cfg.TLSConfig, err = s.DBConfig.TLS.BuildConfig()
+		if err != nil {
+			return err
+		}
+	}
+
+	s.canal, err = canal.NewCanal(cfg)
+	if err != nil {
+		return err
+	}
+	s.canal.SetEventHandler(&binlogEventHandler{streamer: s})
 	return nil
 }
 
+// ConnectBinlogStreamerToMysql starts streaming from the current server
+// file/position coordinate.
 func (s *BinlogStreamer) ConnectBinlogStreamerToMysql() (mysql.Position, error) {
 	s.ensureLogger()
 
@@ -139,8 +174,7 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysql() (mysql.Position, error) 
 func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFrom(startFromBinlogPosition mysql.Position) (mysql.Position, error) {
 	s.ensureLogger()
 
-	err := s.createBinlogSyncer()
-	if err != nil {
+	if err := s.createCanal(); err != nil {
 		return mysql.Position{}, err
 	}
 
@@ -154,22 +188,7 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlFrom(startFromBinlogPositio
 		"port":     s.DBConfig.Port,
 	}).Info("starting binlog streaming")
 
-	s.binlogStreamer, err = s.binlogSyncer.StartSync(s.lastStreamedBinlogPosition)
-	if err != nil {
-		s.logger.WithError(err).Error("unable to start binlog streamer")
-		return mysql.Position{}, err
-	}
-
-	return s.lastStreamedBinlogPosition, err
-}
-
-// coordinateMode returns the effective coordinate mode, treating the empty
-// value as file/position for backwards compatibility.
-func (s *BinlogStreamer) coordinateMode() BinlogCoordinateType {
-	if s.BinlogCoordinateMode == "" {
-		return BinlogCoordinateFilePosition
-	}
-	return s.BinlogCoordinateMode
+	return s.lastStreamedBinlogPosition, nil
 }
 
 // ConnectBinlogStreamerToMysqlWithCoordinate starts streaming from the current
@@ -220,8 +239,7 @@ func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlSinceCoordinate(startFrom B
 }
 
 func (s *BinlogStreamer) connectBinlogStreamerFromGTID(startFrom BinlogCoordinate) (BinlogCoordinate, error) {
-	err := s.createBinlogSyncer()
-	if err != nil {
+	if err := s.createCanal(); err != nil {
 		return BinlogCoordinate{}, err
 	}
 
@@ -242,145 +260,7 @@ func (s *BinlogStreamer) connectBinlogStreamerFromGTID(startFrom BinlogCoordinat
 		"port":     s.DBConfig.Port,
 	}).Info("starting binlog streaming from GTID set")
 
-	s.binlogStreamer, err = s.binlogSyncer.StartSyncGTID(gtidSet)
-	if err != nil {
-		s.logger.WithError(err).Error("unable to start binlog streamer from GTID set")
-		return BinlogCoordinate{}, err
-	}
-
 	return NewGTIDCoordinate(s.lastStreamedGTIDSet.String()), nil
-}
-
-// the default event handler is called for replication binLogEvents that do not have a
-// separate event Handler registered.
-
-func (s *BinlogStreamer) defaultEventHandler(ev *replication.BinlogEvent, query []byte, es *BinlogEventState) ([]byte, error) {
-	var err error
-	switch e := ev.Event.(type) {
-	case *replication.RotateEvent:
-		// This event is used to keep the "current binlog filename" of the binlog streamer in sync.
-		es.nextFilename = string(e.NextLogName)
-
-		isFakeRotateEvent := ev.Header.LogPos == 0 && ev.Header.Timestamp == 0
-		if isFakeRotateEvent {
-			// Sometimes the RotateEvent is fake and not a real rotation. we want to ignore the log position in the header for those events
-			// https://github.com/percona/percona-server/blob/3ff016a46ce2cde58d8007ec9834f958da53cbea/sql/rpl_binlog_sender.cc#L278-L287
-			// https://github.com/percona/percona-server/blob/3ff016a46ce2cde58d8007ec9834f958da53cbea/sql/rpl_binlog_sender.cc#L904-L907
-
-			// However, we can always advance our lastStreamedBinlogPosition according to its data fields
-			es.evPosition = mysql.Position{
-				Name: string(e.NextLogName),
-				Pos:  uint32(e.Position),
-			}
-		}
-
-		s.logger.WithFields(Fields{
-			"new_position":  es.evPosition.Pos,
-			"new_filename":  es.evPosition.Name,
-			"last_position": s.lastStreamedBinlogPosition.Pos,
-			"last_filename": s.lastStreamedBinlogPosition.Name,
-		}).Info("binlog file rotated")
-	case *replication.FormatDescriptionEvent:
-		// This event is sent:
-		//   1) when our replication client connects to mysql
-		//   2) at the beginning of each binlog file
-		//
-		// For (1), if we are starting the binlog from a position that's greater
-		// than BIN_LOG_HEADER_SIZE (currently, 4th byte), this event's position
-		// is explicitly set to 0 and should not be considered valid according to
-		// the mysql source. See:
-		// https://github.com/percona/percona-server/blob/93165de1451548ff11dd32c3d3e5df0ff28cfcfa/sql/rpl_binlog_sender.cc#L1020-L1026
-		es.isEventPositionValid = ev.Header.LogPos != 0
-	case *replication.RowsQueryEvent:
-		// A RowsQueryEvent will always precede the corresponding RowsEvent
-		// if binlog_rows_query_log_events is enabled, and is used to get
-		// the full query that was executed on the master (with annotations)
-		// that is otherwise not possible to reconstruct
-		query = ev.Event.(*replication.RowsQueryEvent).Query
-	case *replication.RowsEvent:
-		err = s.handleRowsEvent(ev, query)
-		if err != nil {
-			s.logger.WithError(err).Error("failed to handle rows event")
-			s.ErrorHandler.Fatal("binlog_streamer", err)
-		}
-	case *replication.QueryEvent:
-		// DDL and administrative statements (CREATE TABLE, GRANT, etc.) commit
-		// via a QueryEvent rather than an XIDEvent, so their GTID is only
-		// visible here. Without this, the streamed GTID set would never
-		// advance past such a statement and a cutover whose stop target
-		// includes it would hang forever. go-mysql attaches the current
-		// executed GTID set (including this statement's GTID) to the event.
-		//
-		// Transaction-control statements ("BEGIN") also arrive as QueryEvents
-		// but do NOT commit anything; their GTID is captured at the closing
-		// XIDEvent instead, so we must skip them here to avoid advancing the
-		// streamed set before the transaction's rows have been applied.
-		if s.coordinateMode() == BinlogCoordinateGTID {
-			qe := ev.Event.(*replication.QueryEvent)
-			if qe.GSet != nil && !isTransactionControlQuery(qe.Query) {
-				// A DDL/admin statement is its own transaction; the pre-statement
-				// committed set is a safe resume point.
-				if s.lastStreamedGTIDSet != nil {
-					s.lastResumableGTIDSet = s.lastStreamedGTIDSet.Clone()
-				}
-				s.lastStreamedGTIDSet = qe.GSet.Clone()
-			}
-		}
-	case *replication.XIDEvent, *replication.GTIDEvent:
-		// With regards to DMLs, we see (at least) the following sequence
-		// of events in the binlog stream:
-		//
-		// - GTIDEvent  <- START of transaction
-		// - QueryEvent
-		// - RowsQueryEvent
-		// - TableMapEvent
-		// - RowsEvent
-		// - RowsEvent
-		// - XIDEvent   <- END of transaction
-		//
-		// *NOTE*
-		//
-		// First, RowsQueryEvent is only available with `binlog_rows_query_log_events`
-		// set to "ON".
-		//
-		// Second, there will be at least one (but potentially more) RowsEvents
-		// depending on the number of rows updated in the transaction.
-		//
-		// Lastly, GTIDEvents will only be available if they are enabled.
-		//
-		// As a result, the following case will set the last resumable position for
-		// interruption to EITHER the start (if using GTIDs) or the end of the
-		// last transaction
-		es.isEventPositionResumable = true
-
-		// GTID tracking. go-mysql maintains the current GTID set internally and
-		// attaches it to XIDEvent.GSet at commit boundaries, so we do not need
-		// to reconstruct it from raw GTIDEvent SID/GNO.
-		if s.coordinateMode() == BinlogCoordinateGTID {
-			switch tev := ev.Event.(type) {
-			case *replication.GTIDEvent:
-				// Start of a transaction. A safe resume point is the committed
-				// set that existed BEFORE this transaction, so that an
-				// interruption replays the whole in-flight transaction.
-				if s.lastStreamedGTIDSet != nil {
-					s.lastResumableGTIDSet = s.lastStreamedGTIDSet.Clone()
-				}
-			case *replication.XIDEvent:
-				// End of a transaction. GSet is the committed GTID set through
-				// this transaction. Clone to avoid aliasing go-mysql's mutable
-				// internal set.
-				if tev.GSet != nil {
-					s.lastStreamedGTIDSet = tev.GSet.Clone()
-				}
-			}
-		}
-
-		// Here we also reset the query event as we are either at the beginning
-		// or the end of the current/next transaction. As such, the query will be
-		// reset following the next RowsQueryEvent before the corresponding RowsEvent(s)
-		query = nil
-	}
-	return query, err
 }
 
 // shouldContinueStreaming reports whether the Run loop should keep streaming.
@@ -413,6 +293,10 @@ func (s *BinlogStreamer) shouldContinueStreaming() bool {
 	return !reached
 }
 
+// Run drives the canal until the stop coordinate is reached. canal owns the
+// low-level syncer, event loop, reconnect logic, position tracking and DDL
+// parsing; Ghostferry only observes events through binlogEventHandler and
+// decides when to stop.
 func (s *BinlogStreamer) Run() {
 	s.ensureLogger()
 
@@ -422,93 +306,62 @@ func (s *BinlogStreamer) Run() {
 			"lastStreamedBinlogPosition": s.lastStreamedBinlogPosition,
 			"coordinateMode":             s.coordinateMode(),
 		}).Info("exiting binlog streamer")
-		s.binlogSyncer.Close()
+		s.closeCanal()
 	}()
 
-	var query []byte
-	es := BinlogEventState{}
-
-	currentFilename := s.lastStreamedBinlogPosition.Name
-	es.nextFilename = s.lastStreamedBinlogPosition.Name
 	s.logger.Info("starting binlog streamer")
-	for s.shouldContinueStreaming() {
-		currentFilename = es.nextFilename
-		var ev *replication.BinlogEvent
-		var timedOut bool
-		var err error
 
-		// We wrap this code in an anonymous function so the context can be
-		// properly cancelled and not cause a memory leak.
-		func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-			defer cancel()
-			ev, err = s.binlogStreamer.GetEvent(ctx)
-			if err == context.DeadlineExceeded {
-				timedOut = true
-			} else if err != nil {
-				s.ErrorHandler.Fatal("binlog_streamer", err)
+	// canal owns the event loop and has no built-in "stop at coordinate", so
+	// Ghostferry's cutover semantics live in this background monitor. It also
+	// preserves the previous streamer's idle keep-alive: while streaming, it
+	// advances lastProcessedEventTime every tick so IsAlmostCaughtUp stays true
+	// on an idle source (matching the old GetEvent 500ms timeout behavior). Once
+	// the stop coordinate is reached it closes the canal exactly once, which
+	// unblocks RunFrom/StartFromGTID below.
+	stopMonitorDone := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopMonitorDone:
+				return
+			case <-ticker.C:
+				s.lastProcessedEventTime = time.Now()
+				if !s.shouldContinueStreaming() {
+					s.closeCanal()
+					return
+				}
 			}
-		}()
-
-		if timedOut {
-			s.lastProcessedEventTime = time.Now()
-			continue
 		}
+	}()
 
-		es.evPosition = mysql.Position{
-			Name: currentFilename,
-			Pos:  ev.Header.LogPos,
-		}
+	var err error
+	switch s.coordinateMode() {
+	case BinlogCoordinateGTID:
+		err = s.canal.StartFromGTID(s.lastStreamedGTIDSet)
+	default:
+		err = s.canal.RunFrom(s.lastStreamedBinlogPosition)
+	}
 
-		s.logger.WithFields(Fields{
-			"position":                   es.evPosition.Pos,
-			"file":                       es.evPosition.Name,
-			"type":                       fmt.Sprintf("%T", ev.Event),
-			"lastStreamedBinlogPosition": s.lastStreamedBinlogPosition,
-		}).Debug("reached position")
+	close(stopMonitorDone)
 
-		es.isEventPositionResumable = false
-		es.isEventPositionValid = true
-
-		// if there is a handler associated with this eventType, call it
-		eventTypeString := ev.Header.EventType.String()
-		if handler, ok := s.eventHandlers[eventTypeString]; ok {
-			query, err = handler(ev, query, &es)
-			if err != nil {
-				s.logger.WithError(err).Error("failed to handle event")
-				s.ErrorHandler.Fatal("binlog_streamer", err)
-			}
-		} else {
-			// call the default event handler for everything else
-			query, err = s.defaultEventHandler(ev, query, &es)
-		}
-
-		if es.isEventPositionValid {
-			evType := fmt.Sprintf("%T", ev.Event)
-			evTimestamp := ev.Header.Timestamp
-			s.updateLastStreamedPosAndTime(evTimestamp, es.evPosition, evType, es.isEventPositionResumable)
-		}
+	// A deliberate stop closes the canal, which surfaces as a context.Canceled
+	// / closed error from RunFrom. Only treat it as fatal if we were not
+	// stopping.
+	if err != nil && !s.stopRequested {
+		s.ErrorHandler.Fatal("binlog_streamer", err)
 	}
 }
 
-// Attach an event handler to a replication BinLogEvent
-// We only support attaching events to any of the events defined in
-// https://github.com/go-mysql-org/go-mysql/blob/master/replication/const.go
-// custom event handlers are provided the replication BinLogEvent and a state object
-// that carries the current state of the binlog event stream.
-func (s *BinlogStreamer) AddBinlogEventHandler(evType replication.EventType, eh func(*replication.BinlogEvent, []byte, *BinlogEventState) ([]byte, error)) error {
-	// verify that event-type is valid
-	// if eventTypeString is unrecognized, bail
-	eventTypeString := evType.String()
-	if eventTypeString == "UnknownEvent" {
-		return errors.New("Unknown event type")
-	}
-
-	if s.eventHandlers == nil {
-		s.eventHandlers = make(map[string]func(*replication.BinlogEvent, []byte, *BinlogEventState) ([]byte, error))
-	}
-	s.eventHandlers[eventTypeString] = eh
-	return nil
+// closeCanal closes the underlying canal exactly once. It is safe to call from
+// both the stop monitor goroutine and Run's defer.
+func (s *BinlogStreamer) closeCanal() {
+	s.stopOnce.Do(func() {
+		if s.canal != nil {
+			s.canal.Close()
+		}
+	})
 }
 
 func (s *BinlogStreamer) AddEventListener(listener func([]DMLEvent) error) {
@@ -603,20 +456,9 @@ func (s *BinlogStreamer) FlushAndStop() {
 	s.stopRequested = true
 }
 
-func (s *BinlogStreamer) updateLastStreamedPosAndTime(evTimestamp uint32, evPos mysql.Position, evType string, isResumablePosition bool) {
-	if evPos.Pos == 0 {
-		// This shouldn't happen, as the cases where it does happen are excluded and thus signal a programming error
-		s.logger.Panicf("tried to advance to a zero log position: %s %d %T", evPos.Name, evPos.Pos, evType)
-	}
-
-	s.lastStreamedBinlogPosition = evPos
-	if isResumablePosition {
-		s.lastResumableBinlogPosition = evPos
-	}
-
-	// The first couple of events when connecting the binlog syncer (RotateEvent
-	// and FormatDescriptionEvent) have a zero timestamp..  Ignore those for
-	// timing updates
+// updateLag emits the replication lag metric, throttled to once per second. The
+// event time is derived from the binlog event header timestamp.
+func (s *BinlogStreamer) updateLag(evTimestamp uint32) {
 	if evTimestamp == 0 {
 		return
 	}
@@ -631,27 +473,20 @@ func (s *BinlogStreamer) updateLastStreamedPosAndTime(evTimestamp uint32, evPos 
 	}
 }
 
-func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []byte) error {
-	rowsEvent := ev.Event.(*replication.RowsEvent)
-
-	if ev.Header.LogPos == 0 {
-		// This shouldn't happen, as rows events always have a logpos.
-		s.logger.Panicf("logpos: %d %d %T", ev.Header.LogPos, ev.Header.Timestamp, ev.Event)
-	}
-
+// handleRowsEvent converts a canal RowsEvent into Ghostferry DMLEvents, applies
+// rewrites/filtering, stamps coordinates, and fans out to listeners.
+func (s *BinlogStreamer) handleRowsEvent(e *canal.RowsEvent) error {
 	pos := mysql.Position{
-		// The filename is only changed and visible during the RotateEvent, which
-		// is handled transparently in Run().
 		Name: s.lastStreamedBinlogPosition.Name,
-		Pos:  ev.Header.LogPos,
+		Pos:  e.Header.LogPos,
 	}
 
-	db := string(rowsEvent.Table.Schema)
+	db := string(e.Table.Schema)
 	if rewrittenDBName, exists := s.DatabaseRewrites[db]; exists {
 		db = rewrittenDBName
 	}
 
-	table := string(rowsEvent.Table.Table)
+	table := string(e.Table.Name)
 	if rewrittenTableName, exists := s.TableRewrites[table]; exists {
 		table = rewrittenTableName
 	}
@@ -661,7 +496,7 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 		return nil
 	}
 
-	dmlEvs, err := NewBinlogDMLEvents(tableFromSchemaCache, ev, pos, s.lastResumableBinlogPosition, query)
+	dmlEvs, err := NewBinlogDMLEventsFromCanal(tableFromSchemaCache, e, pos, s.lastResumableBinlogPosition, s.query)
 	if err != nil {
 		return err
 	}
@@ -674,9 +509,6 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 		currentCoord := NewGTIDCoordinateFromSet(s.lastStreamedGTIDSet)
 		resumableCoord := NewGTIDCoordinateFromSet(s.lastResumableGTIDSet)
 		for _, dmlEv := range dmlEvs {
-			// SetCoordinates is an internal capability (coordinateStamper), not
-			// part of the exported DMLEvent interface; all built-in events
-			// satisfy it via DMLEventBase.
 			if stamper, ok := dmlEv.(coordinateStamper); ok {
 				stamper.SetCoordinates(currentCoord, resumableCoord)
 			}
@@ -710,8 +542,7 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 	}
 
 	for _, listener := range s.eventListeners {
-		err := listener(events)
-		if err != nil {
+		if err := listener(events); err != nil {
 			return err
 		}
 	}
@@ -799,4 +630,124 @@ func idsOnServer(db *sql.DB) ([]uint32, error) {
 	}
 
 	return server_ids, nil
+}
+
+// binlogEventHandler implements canal.EventHandler. It is the single adapter
+// between canal's callback API and Ghostferry's DMLEvent/coordinate model.
+// This replaces the previous hand-rolled event loop and big event-type switch.
+type binlogEventHandler struct {
+	canal.DummyEventHandler
+	streamer *BinlogStreamer
+}
+
+func (h *binlogEventHandler) OnRotate(header *replication.EventHeader, e *replication.RotateEvent) error {
+	s := h.streamer
+	s.lastStreamedBinlogPosition = mysql.Position{
+		Name: string(e.NextLogName),
+		Pos:  uint32(e.Position),
+	}
+	s.logger.WithFields(Fields{
+		"new_position": s.lastStreamedBinlogPosition.Pos,
+		"new_filename": s.lastStreamedBinlogPosition.Name,
+	}).Info("binlog file rotated")
+	return nil
+}
+
+func (h *binlogEventHandler) OnRowsQueryEvent(e *replication.RowsQueryEvent) error {
+	// A RowsQueryEvent always precedes the corresponding RowsEvent when
+	// binlog_rows_query_log_events=ON. It carries the full query (with
+	// annotations/marginalia) so downstream can attach it to the row events.
+	h.streamer.query = e.Query
+	return nil
+}
+
+func (h *binlogEventHandler) OnRow(e *canal.RowsEvent) error {
+	s := h.streamer
+	s.updateLag(e.Header.Timestamp)
+	if e.Header.LogPos != 0 {
+		s.lastStreamedBinlogPosition.Pos = e.Header.LogPos
+	}
+	if err := s.handleRowsEvent(e); err != nil {
+		s.logger.WithError(err).Error("failed to handle rows event")
+		s.ErrorHandler.Fatal("binlog_streamer", err)
+	}
+	return nil
+}
+
+func (h *binlogEventHandler) OnGTID(header *replication.EventHeader, gtidEvent mysql.BinlogGTIDEvent) error {
+	s := h.streamer
+	s.updateLag(header.Timestamp)
+	if s.coordinateMode() != BinlogCoordinateGTID {
+		return nil
+	}
+	// Start of a transaction. A safe resume point is the committed set that
+	// existed BEFORE this transaction, so an interruption replays the whole
+	// in-flight transaction.
+	if s.lastStreamedGTIDSet != nil {
+		s.lastResumableGTIDSet = s.lastStreamedGTIDSet.Clone()
+	}
+	return nil
+}
+
+func (h *binlogEventHandler) OnXID(header *replication.EventHeader, pos mysql.Position) error {
+	s := h.streamer
+	s.updateLag(header.Timestamp)
+	s.lastResumableBinlogPosition = mysql.Position{Name: s.lastStreamedBinlogPosition.Name, Pos: pos.Pos}
+	if pos.Pos != 0 {
+		s.lastStreamedBinlogPosition.Pos = pos.Pos
+	}
+	// End of a transaction: advance the committed GTID set. canal maintains the
+	// executed set internally and exposes it via SyncedGTIDSet.
+	if s.coordinateMode() == BinlogCoordinateGTID {
+		s.advanceStreamedGTID(s.canal.SyncedGTIDSet())
+	}
+	// A new RowsQueryEvent will set the query before the next RowsEvent.
+	s.query = nil
+	return nil
+}
+
+func (h *binlogEventHandler) OnDDL(header *replication.EventHeader, nextPos mysql.Position, e *replication.QueryEvent) error {
+	s := h.streamer
+	s.updateLag(header.Timestamp)
+	if nextPos.Pos != 0 {
+		s.lastStreamedBinlogPosition.Pos = nextPos.Pos
+	}
+
+	// A DDL/admin statement commits as its own transaction without an XIDEvent,
+	// so advance the committed GTID set here too. Skip transaction-control
+	// statements, which commit at their XIDEvent.
+	if s.coordinateMode() == BinlogCoordinateGTID && !isTransactionControlQuery(e.Query) {
+		s.advanceStreamedGTID(s.canal.SyncedGTIDSet())
+	}
+
+	if s.DDLEventHandler != nil {
+		return s.DDLEventHandler(string(e.Schema), "", e.Query)
+	}
+	return nil
+}
+
+// advanceStreamedGTID advances the committed (streamed) GTID set to committed,
+// recording the previous committed set as the resumable point first so that an
+// interruption replays the whole just-committed transaction. It is a no-op when
+// committed is nil. Extracted so the transaction-boundary GTID logic is unit
+// testable without a live canal.
+func (s *BinlogStreamer) advanceStreamedGTID(committed mysql.GTIDSet) {
+	if committed == nil {
+		return
+	}
+	if s.lastStreamedGTIDSet != nil {
+		s.lastResumableGTIDSet = s.lastStreamedGTIDSet.Clone()
+	}
+	s.lastStreamedGTIDSet = committed.Clone()
+}
+
+func (h *binlogEventHandler) OnPosSynced(header *replication.EventHeader, pos mysql.Position, set mysql.GTIDSet, force bool) error {
+	if pos.Name != "" {
+		h.streamer.lastStreamedBinlogPosition.Name = pos.Name
+	}
+	return nil
+}
+
+func (h *binlogEventHandler) String() string {
+	return "ghostferryBinlogEventHandler"
 }

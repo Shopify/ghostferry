@@ -17,6 +17,7 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
+	github.com/BurntSushi/toml v1.3.2 // indirect
 	github.com/Microsoft/go-winio v0.5.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
@@ -31,6 +32,7 @@ require (
 	github.com/mattn/go-sqlite3 v2.0.3+incompatible // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/pingcap/errors v0.11.5-0.20250318082626-8f80e5cb09ec // indirect
+	github.com/pingcap/failpoint v0.0.0-20240528011301-b51a646c7c86 // indirect
 	github.com/pingcap/log v1.1.1-0.20241212030209-7e3ff8601a2a // indirect
 	github.com/pingcap/tidb/pkg/parser v0.0.0-20250421232622-526b2c79173d // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect

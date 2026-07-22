@@ -5,13 +5,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
 
-	"github.com/go-mysql-org/go-mysql/replication"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -196,18 +196,42 @@ func (this *BinlogStreamerTestSuite) TestBinlogStreamerSetsQueryEventOnRowsEvent
 	this.Require().True(eventAsserted)
 }
 
-func (this *BinlogStreamerTestSuite) TestBinlogStreamerAddEventHandlerEventTypes() {
-	qe := func(ev *replication.BinlogEvent, query []byte, es *ghostferry.BinlogEventState) ([]byte, error) {
-		return query, nil
-	}
-
-	// try attaching a handler to a valid event type
-	err := this.binlogStreamer.AddBinlogEventHandler(replication.TABLE_MAP_EVENT, qe)
+func (this *BinlogStreamerTestSuite) TestBinlogStreamerDDLEventHandler() {
+	_, err := this.binlogStreamer.ConnectBinlogStreamerToMysql()
 	this.Require().Nil(err)
 
-	// try attaching a handler to an invalid event type
-	err = this.binlogStreamer.AddBinlogEventHandler(replication.EventType(byte(0)), qe)
-	this.Require().NotNil(err)
+	ddlSeen := make(chan string, 1)
+	this.binlogStreamer.DDLEventHandler = func(schemaName, tableName string, query []byte) error {
+		select {
+		case ddlSeen <- string(query):
+		default:
+		}
+		return nil
+	}
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		this.binlogStreamer.Run()
+	}()
+
+	_, err = this.sourceDB.Exec("CREATE TABLE gftest.ddl_probe (id bigint primary key)")
+	this.Require().Nil(err)
+
+	var seen string
+	select {
+	case seen = <-ddlSeen:
+	case <-time.After(10 * time.Second):
+		this.Fail("did not observe DDL event")
+	}
+	this.Require().Contains(seen, "ddl_probe")
+
+	this.binlogStreamer.FlushAndStop()
+	wg.Wait()
+
+	_, err = this.sourceDB.Exec("DROP TABLE IF EXISTS gftest.ddl_probe")
+	this.Require().Nil(err)
 }
 
 func TestBinlogStreamerTestSuite(t *testing.T) {

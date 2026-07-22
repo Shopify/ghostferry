@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
-	"github.com/go-mysql-org/go-mysql/replication"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -31,36 +30,34 @@ func TestIsTransactionControlQuery(t *testing.T) {
 	assert.False(t, isTransactionControlQuery([]byte("GRANT ALL ON *.* TO 'x'@'%'")))
 }
 
-// TestQueryEventAdvancesStreamedGTID verifies that a DDL/admin QueryEvent
-// (which commits without an XIDEvent) advances the streamed GTID set, while a
-// BEGIN QueryEvent does not. Without this, a cutover whose stop target includes
-// a trailing DDL would hang forever.
-func TestQueryEventAdvancesStreamedGTID(t *testing.T) {
+// TestAdvanceStreamedGTID verifies the transaction-boundary GTID advancement
+// used by OnXID/OnDDL: the committed set becomes the streamed set, and the
+// previous streamed set is recorded as the resumable point so an interruption
+// replays the whole just-committed transaction.
+func TestAdvanceStreamedGTID(t *testing.T) {
 	s := &BinlogStreamer{BinlogCoordinateMode: BinlogCoordinateGTID}
 	s.logger = LogWithField("tag", "test")
 
-	ddlSet := mustParseGTID(t, gtidSetTarget)
+	s.lastStreamedGTIDSet = mustParseGTID(t, gtidSetLower)
 
-	// A DDL QueryEvent carrying the executed set advances lastStreamedGTIDSet.
-	ddlEvent := &replication.BinlogEvent{
-		Header: &replication.EventHeader{LogPos: 100},
-		Event:  &replication.QueryEvent{Query: []byte("CREATE TABLE t (id int)"), GSet: ddlSet},
-	}
-	es := &BinlogEventState{}
-	_, err := s.defaultEventHandler(ddlEvent, nil, es)
-	require.NoError(t, err)
+	// Advancing to the target moves streamed forward and records the previous
+	// streamed set as resumable.
+	s.advanceStreamedGTID(mustParseGTID(t, gtidSetTarget))
 	require.NotNil(t, s.lastStreamedGTIDSet)
 	assert.Equal(t, gtidSetTarget, s.lastStreamedGTIDSet.String())
+	assert.Equal(t, gtidSetLower, s.lastResumableGTIDSet.String())
 
-	// A BEGIN QueryEvent must NOT advance the streamed set.
-	before := s.lastStreamedGTIDSet.String()
-	beginEvent := &replication.BinlogEvent{
-		Header: &replication.EventHeader{LogPos: 200},
-		Event:  &replication.QueryEvent{Query: []byte("BEGIN"), GSet: mustParseGTID(t, gtidSetPast)},
-	}
-	_, err = s.defaultEventHandler(beginEvent, nil, es)
-	require.NoError(t, err)
-	assert.Equal(t, before, s.lastStreamedGTIDSet.String(), "BEGIN must not advance the streamed GTID set")
+	// A nil committed set is a no-op (e.g. non-GTID server, or set unavailable).
+	s.advanceStreamedGTID(nil)
+	assert.Equal(t, gtidSetTarget, s.lastStreamedGTIDSet.String())
+}
+
+// TestDDLGTIDGatingByTransactionControl documents that OnDDL only advances the
+// committed GTID set for real DDL/admin statements, not transaction-control
+// queries (BEGIN/COMMIT/ROLLBACK), which commit at their XIDEvent.
+func TestDDLGTIDGatingByTransactionControl(t *testing.T) {
+	assert.False(t, isTransactionControlQuery([]byte("CREATE TABLE t (id int)")))
+	assert.True(t, isTransactionControlQuery([]byte("BEGIN")))
 }
 
 func TestCoordinateModeDefaultsToFilePosition(t *testing.T) {

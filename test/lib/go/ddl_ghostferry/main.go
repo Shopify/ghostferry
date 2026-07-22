@@ -3,18 +3,15 @@ package main
 import (
 	"errors"
 
-	"github.com/Shopify/ghostferry"
 	tf "github.com/Shopify/ghostferry/test/lib/go/integrationferry"
-	"github.com/go-mysql-org/go-mysql/replication"
 )
 
-func queryEventHandler(ev *replication.BinlogEvent, query []byte, es *ghostferry.BinlogEventState) ([]byte, error) {
-	query = ev.Event.(*replication.QueryEvent).Query
-	return query, errors.New("Query event")
+func ddlEventHandler(schemaName, tableName string, query []byte) error {
+	return errors.New("Query event")
 }
 
 func AfterInitialize(f *tf.IntegrationFerry) error {
-	f.Ferry.BinlogStreamer.AddBinlogEventHandler(replication.QUERY_EVENT, queryEventHandler)
+	f.Ferry.BinlogStreamer.DDLEventHandler = ddlEventHandler
 	return nil
 }
 

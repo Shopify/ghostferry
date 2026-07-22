@@ -10,8 +10,8 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"github.com/go-mysql-org/go-mysql/canal"
 	"github.com/go-mysql-org/go-mysql/mysql"
-	"github.com/go-mysql-org/go-mysql/replication"
 	"github.com/go-mysql-org/go-mysql/schema"
 )
 
@@ -191,10 +191,10 @@ type BinlogInsertEvent struct {
 	*DMLEventBase
 }
 
-func NewBinlogInsertEvents(eventBase *DMLEventBase, rowsEvent *replication.RowsEvent) ([]DMLEvent, error) {
-	insertEvents := make([]DMLEvent, len(rowsEvent.Rows))
+func NewBinlogInsertEvents(eventBase *DMLEventBase, rows [][]interface{}) ([]DMLEvent, error) {
+	insertEvents := make([]DMLEvent, len(rows))
 
-	for i, row := range rowsEvent.Rows {
+	for i, row := range rows {
 		insertEvents[i] = &BinlogInsertEvent{
 			newValues:    row,
 			DMLEventBase: eventBase,
@@ -235,22 +235,22 @@ type BinlogUpdateEvent struct {
 	*DMLEventBase
 }
 
-func NewBinlogUpdateEvents(eventBase *DMLEventBase, rowsEvent *replication.RowsEvent) ([]DMLEvent, error) {
+func NewBinlogUpdateEvents(eventBase *DMLEventBase, rows [][]interface{}) ([]DMLEvent, error) {
 	// UPDATE events have two rows in the RowsEvent. The first row is the
 	// entries of the old record (for WHERE) and the second row is the
 	// entries of the new record (for SET).
 	// There can be n db rows changed in one RowsEvent, resulting in
 	// 2*n binlog rows.
-	updateEvents := make([]DMLEvent, len(rowsEvent.Rows)/2)
+	updateEvents := make([]DMLEvent, len(rows)/2)
 
-	for i, row := range rowsEvent.Rows {
+	for i, row := range rows {
 		if i%2 == 1 {
 			continue
 		}
 
 		updateEvents[i/2] = &BinlogUpdateEvent{
 			oldValues:    row,
-			newValues:    rowsEvent.Rows[i+1],
+			newValues:    rows[i+1],
 			DMLEventBase: eventBase,
 		}
 	}
@@ -295,10 +295,10 @@ func (e *BinlogDeleteEvent) NewValues() RowData {
 	return nil
 }
 
-func NewBinlogDeleteEvents(eventBase *DMLEventBase, rowsEvent *replication.RowsEvent) ([]DMLEvent, error) {
-	deleteEvents := make([]DMLEvent, len(rowsEvent.Rows))
+func NewBinlogDeleteEvents(eventBase *DMLEventBase, rows [][]interface{}) ([]DMLEvent, error) {
+	deleteEvents := make([]DMLEvent, len(rows))
 
-	for i, row := range rowsEvent.Rows {
+	for i, row := range rows {
 		deleteEvents[i] = &BinlogDeleteEvent{
 			oldValues:    row,
 			DMLEventBase: eventBase,
@@ -323,12 +323,15 @@ func (e *BinlogDeleteEvent) PaginationKey() (string, error) {
 	return paginationKeyFromEventData(e.table, e.oldValues)
 }
 
-func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, resumablePos mysql.Position, query []byte) ([]DMLEvent, error) {
-	rowsEvent := ev.Event.(*replication.RowsEvent)
-
-	for _, row := range rowsEvent.Rows {
+// normalizeUnsignedColumns rewrites signed integer values to their unsigned
+// counterparts for columns that Ghostferry's own schema marks unsigned. The
+// binlog protocol does not carry signedness, so go-mysql surfaces integers as
+// signed; we correct them against our authoritative TableSchema. It also
+// validates the row width against the schema.
+func normalizeUnsignedColumns(table *TableSchema, rows [][]interface{}) error {
+	for _, row := range rows {
 		if len(row) != len(table.Columns) {
-			return nil, fmt.Errorf(
+			return fmt.Errorf(
 				"table %s.%s has %d columns but event has %d columns instead",
 				table.Schema,
 				table.Name,
@@ -353,18 +356,30 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 			}
 		}
 	}
+	return nil
+}
 
-	timestamp := time.Unix(int64(ev.Header.Timestamp), 0)
+// NewBinlogDMLEventsFromCanal builds Ghostferry DMLEvents from a
+// canal.RowsEvent. canal has already normalized event-version differences into
+// a stable {Action, Rows} shape (with UPDATE rows laid out as
+// [before, after, ...]), which lets this constructor be representation-agnostic
+// and drop the per-event-type replication constant switch.
+func NewBinlogDMLEventsFromCanal(table *TableSchema, e *canal.RowsEvent, pos, resumablePos mysql.Position, query []byte) ([]DMLEvent, error) {
+	if err := normalizeUnsignedColumns(table, e.Rows); err != nil {
+		return nil, err
+	}
+
+	timestamp := time.Unix(int64(e.Header.Timestamp), 0)
 	eventBase := NewDMLEventBase(table, pos, resumablePos, query, timestamp)
-	switch ev.Header.EventType {
-	case replication.WRITE_ROWS_EVENTv1, replication.WRITE_ROWS_EVENTv2:
-		return NewBinlogInsertEvents(eventBase, rowsEvent)
-	case replication.DELETE_ROWS_EVENTv1, replication.DELETE_ROWS_EVENTv2:
-		return NewBinlogDeleteEvents(eventBase, rowsEvent)
-	case replication.UPDATE_ROWS_EVENTv1, replication.UPDATE_ROWS_EVENTv2:
-		return NewBinlogUpdateEvents(eventBase, rowsEvent)
+	switch e.Action {
+	case canal.InsertAction:
+		return NewBinlogInsertEvents(eventBase, e.Rows)
+	case canal.DeleteAction:
+		return NewBinlogDeleteEvents(eventBase, e.Rows)
+	case canal.UpdateAction:
+		return NewBinlogUpdateEvents(eventBase, e.Rows)
 	default:
-		return nil, fmt.Errorf("unrecognized rows event: %s", ev.Header.EventType.String())
+		return nil, fmt.Errorf("unrecognized canal rows action: %s", e.Action)
 	}
 }
 

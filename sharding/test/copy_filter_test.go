@@ -300,7 +300,7 @@ func (t *CopyFilterTestSuite) TestShardingValueTypes() {
 	)
 
 	for _, tenantId := range tenantIds {
-		dmlEvents, _ := ghostferry.NewBinlogInsertEvents(eventBase, t.newRowsEvent([]interface{}{1001, tenantId, "data"}))
+		dmlEvents, _ := ghostferry.NewBinlogInsertEvents(eventBase, t.newRowsEvent([]interface{}{1001, tenantId, "data"}).Rows)
 		applicable, err := t.filter.ApplicableEvent(dmlEvents[0])
 		t.Require().Nil(err)
 		t.Require().True(applicable, fmt.Sprintf("value %t wasn't applicable", tenantId))
@@ -316,7 +316,7 @@ func (t *CopyFilterTestSuite) TestInvalidShardingValueTypesErrors() {
 		time.Unix(1618318965, 0),
 	)
 
-	dmlEvents, err := ghostferry.NewBinlogInsertEvents(eventBase, t.newRowsEvent([]interface{}{1001, string("1"), "data"}))
+	dmlEvents, err := ghostferry.NewBinlogInsertEvents(eventBase, t.newRowsEvent([]interface{}{1001, string("1"), "data"}).Rows)
 	_, err = t.filter.ApplicableEvent(dmlEvents[0])
 	t.Require().Equal("parsing new sharding key: invalid type %!t(string=1)", err.Error())
 }
