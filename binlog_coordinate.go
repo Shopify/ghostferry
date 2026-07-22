@@ -229,35 +229,36 @@ func (c BinlogCoordinate) String() string {
 // GTIDs present in both. go-mysql does not expose an intersection primitive, so
 // this computes A ∩ B = A - (A - B).
 //
-// It operates on clones and does not mutate its inputs. If either input is not
-// a *mysql.MysqlGTIDSet, or an operation fails, it falls back to a clone of a
-// (the first argument) so callers still get a usable, conservative set.
-func intersectGTIDSets(a, b mysql.GTIDSet) mysql.GTIDSet {
+// It operates on clones and does not mutate its inputs. It is fail-closed:
+// rather than silently falling back to one side (which could advance a resume
+// floor past what a consumer durably processed and skip events), it returns an
+// error so the caller can refuse to resume.
+func intersectGTIDSets(a, b mysql.GTIDSet) (mysql.GTIDSet, error) {
 	aMysql, aOK := a.(*mysql.MysqlGTIDSet)
 	bMysql, bOK := b.(*mysql.MysqlGTIDSet)
 	if !aOK || !bOK {
-		return a.Clone()
+		return nil, fmt.Errorf("GTID intersection requires MySQL GTID sets, got %T and %T", a, b)
 	}
 
 	// diff = A - B
 	diff, ok := aMysql.Clone().(*mysql.MysqlGTIDSet)
 	if !ok {
-		return a.Clone()
+		return nil, fmt.Errorf("GTID intersection: unexpected clone type %T", aMysql.Clone())
 	}
 	if err := diff.Minus(*bMysql); err != nil {
-		return a.Clone()
+		return nil, fmt.Errorf("GTID intersection (A - B): %w", err)
 	}
 
 	// result = A - diff = A ∩ B
 	result, ok := aMysql.Clone().(*mysql.MysqlGTIDSet)
 	if !ok {
-		return a.Clone()
+		return nil, fmt.Errorf("GTID intersection: unexpected clone type %T", aMysql.Clone())
 	}
 	if err := result.Minus(*diff); err != nil {
-		return a.Clone()
+		return nil, fmt.Errorf("GTID intersection (A - diff): %w", err)
 	}
 
-	return result
+	return result, nil
 }
 
 // serializedBinlogCoordinate is the on-disk / on-wire shape of a
