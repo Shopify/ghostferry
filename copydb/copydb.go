@@ -131,10 +131,16 @@ func (this *CopydbFerry) initializeWaitUntilReplicaIsCaughtUpToMasterConnection(
 	}
 
 	if this.config.BinlogCoordinateMode == ghostferry.BinlogCoordinateGTID {
+		if this.config.ReplicatedMasterGTIDQuery == "" {
+			return fmt.Errorf("ReplicatedMasterGTIDQuery must be set when running from a replica in GTID mode")
+		}
 		wait.ReplicatedMasterCoordinateFetcher = ghostferry.ReplicatedMasterGTIDViaCustomQuery{
 			Query: this.config.ReplicatedMasterGTIDQuery,
 		}
 	} else {
+		if this.config.ReplicatedMasterPositionQuery == "" {
+			return fmt.Errorf("ReplicatedMasterPositionQuery must be set when running from a replica")
+		}
 		wait.ReplicatedMasterPositionFetcher = ghostferry.ReplicatedMasterPositionViaCustomQuery{
 			Query: this.config.ReplicatedMasterPositionQuery,
 		}
