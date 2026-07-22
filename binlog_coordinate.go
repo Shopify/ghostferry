@@ -55,6 +55,13 @@ type BinlogCoordinate struct {
 	// GTIDs" which is distinct from a nil/unset coordinate; callers that need
 	// that distinction should check Type and IsZero together.
 	GTIDSet string
+
+	// parsedGTIDSet is an optional cache of the parsed GTIDSet. It is populated
+	// by NewGTIDCoordinateFromSet (and lazily by parsedSet) so that hot paths
+	// such as the stop-condition check do not re-parse the canonical string on
+	// every binlog event. It is never mutated in place; accessors that hand a
+	// set to callers clone it. It is intentionally excluded from JSON.
+	parsedGTIDSet mysql.GTIDSet
 }
 
 // NewFilePositionCoordinate wraps a mysql.Position in a BinlogCoordinate.
@@ -72,6 +79,23 @@ func NewGTIDCoordinate(gtidSet string) BinlogCoordinate {
 	return BinlogCoordinate{
 		Type:    BinlogCoordinateGTID,
 		GTIDSet: gtidSet,
+	}
+}
+
+// NewGTIDCoordinateFromSet builds a GTID coordinate from an already-parsed
+// mysql.GTIDSet. The set is cloned so the coordinate does not alias (or later
+// mutate) the caller's set, and the clone is cached to avoid re-parsing on hot
+// paths. Prefer this over NewGTIDCoordinate when a parsed set is already in
+// hand (e.g. from go-mysql event tracking).
+func NewGTIDCoordinateFromSet(set mysql.GTIDSet) BinlogCoordinate {
+	if set == nil {
+		return BinlogCoordinate{Type: BinlogCoordinateGTID}
+	}
+	cloned := set.Clone()
+	return BinlogCoordinate{
+		Type:          BinlogCoordinateGTID,
+		GTIDSet:       cloned.String(),
+		parsedGTIDSet: cloned,
 	}
 }
 
@@ -109,10 +133,24 @@ func (c BinlogCoordinate) Position() mysql.Position {
 //
 // It is valid to call this only for GTID coordinates. A fresh mysql.GTIDSet is
 // returned on each call so callers may mutate it freely without affecting the
-// coordinate.
+// coordinate (the internal cache, if any, is cloned before returning).
 func (c BinlogCoordinate) ParsedGTIDSet() (mysql.GTIDSet, error) {
+	set, err := c.parsedSet()
+	if err != nil {
+		return nil, err
+	}
+	return set.Clone(), nil
+}
+
+// parsedSet returns the parsed GTID set, using the cache when present. The
+// returned set MUST NOT be mutated by callers; use ParsedGTIDSet for a
+// mutable clone. This exists so hot paths (HasReached) avoid re-parsing.
+func (c BinlogCoordinate) parsedSet() (mysql.GTIDSet, error) {
 	if c.resolvedType() != BinlogCoordinateGTID {
-		return nil, fmt.Errorf("ParsedGTIDSet called on non-GTID coordinate of type %q", c.resolvedType())
+		return nil, fmt.Errorf("parsedSet called on non-GTID coordinate of type %q", c.resolvedType())
+	}
+	if c.parsedGTIDSet != nil {
+		return c.parsedGTIDSet, nil
 	}
 	return mysql.ParseMysqlGTIDSet(c.GTIDSet)
 }
@@ -159,11 +197,13 @@ func (c BinlogCoordinate) HasReached(target BinlogCoordinate) (bool, error) {
 	case BinlogCoordinateFilePosition:
 		return c.FilePosition.Compare(target.FilePosition) >= 0, nil
 	case BinlogCoordinateGTID:
-		mine, err := c.ParsedGTIDSet()
+		// Use the cached parsed sets (read-only) to avoid re-parsing on hot
+		// paths such as the per-event stop check. Contain does not mutate.
+		mine, err := c.parsedSet()
 		if err != nil {
 			return false, fmt.Errorf("parsing GTID set %q: %w", c.GTIDSet, err)
 		}
-		theirs, err := target.ParsedGTIDSet()
+		theirs, err := target.parsedSet()
 		if err != nil {
 			return false, fmt.Errorf("parsing GTID set %q: %w", target.GTIDSet, err)
 		}
