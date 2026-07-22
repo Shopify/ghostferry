@@ -43,7 +43,15 @@ jobs:
   go-test:
     strategy:
       matrix:
+        # file_position is exercised on every supported MySQL version.
         mysql: ["5.7", "8.0", "8.4"]
+        binlog_coordinate_mode: ["file_position"]
+        include:
+          # GTID coordinate mode is only supported/tested on MySQL 8+.
+          - mysql: "8.0"
+            binlog_coordinate_mode: "gtid"
+          - mysql: "8.4"
+            binlog_coordinate_mode: "gtid"
 
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -52,6 +60,7 @@ jobs:
     env:
       CI: "true"
       MYSQL_VERSION: ${{ matrix.mysql }}
+      GHOSTFERRY_BINLOG_COORDINATE_MODE: ${{ matrix.binlog_coordinate_mode }}
 
     steps:
       - uses: actions/checkout@v6.0.2

@@ -3,6 +3,7 @@ package ghostferry
 import (
 	"container/ring"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -117,13 +118,30 @@ func (s *SerializableState) MinSourceBinlogPosition() mysql.Position {
 	}
 }
 
-// coordinateMode returns the effective coordinate mode for this serialized
+// CoordinateMode returns the effective coordinate mode for this serialized
 // state, treating the empty value as file/position for legacy states.
-func (s *SerializableState) coordinateMode() BinlogCoordinateType {
+func (s *SerializableState) CoordinateMode() BinlogCoordinateType {
 	if s.BinlogCoordinateMode == "" {
 		return BinlogCoordinateFilePosition
 	}
 	return s.BinlogCoordinateMode
+}
+
+// coordinateMode is the unexported alias kept for existing internal callers.
+func (s *SerializableState) coordinateMode() BinlogCoordinateType {
+	return s.CoordinateMode()
+}
+
+// HasTargetVerifierBinlogCoordinate reports whether the serialized state
+// carries a target-verifier resume coordinate at all. This is distinct from
+// whether that coordinate is the zero/empty value: in GTID mode an empty
+// executed set is a valid coordinate, so presence must be checked via the
+// pointer/field rather than IsZero().
+func (s *SerializableState) HasTargetVerifierBinlogCoordinate() bool {
+	if s.coordinateMode() == BinlogCoordinateGTID {
+		return s.LastStoredBinlogCoordinateForTargetVerifier != nil
+	}
+	return s.LastStoredBinlogPositionForTargetVerifier != (mysql.Position{})
 }
 
 // WrittenSourceBinlogCoordinate returns the last written source coordinate as a
@@ -161,37 +179,44 @@ func (s *SerializableState) TargetVerifierBinlogCoordinate() BinlogCoordinate {
 // writer and inline-verifier GTID sets, since resuming must not skip events
 // either consumer had not yet durably processed. When only one side is present,
 // that side is used.
-func (s *SerializableState) MinSourceBinlogCoordinate() BinlogCoordinate {
+//
+// It is fail-closed for GTID: a parse or intersection failure returns an error
+// rather than silently falling back to one side, because a wrong (too-advanced)
+// resume floor would skip binlog events and corrupt the copy.
+func (s *SerializableState) MinSourceBinlogCoordinate() (BinlogCoordinate, error) {
 	if s.coordinateMode() != BinlogCoordinateGTID {
-		return NewFilePositionCoordinate(s.MinSourceBinlogPosition())
+		return NewFilePositionCoordinate(s.MinSourceBinlogPosition()), nil
 	}
 
 	written := s.LastWrittenBinlogCoordinate
 	inline := s.LastStoredBinlogCoordinateForInlineVerifier
 
 	if written == nil && inline == nil {
-		return NewGTIDCoordinate("")
+		return NewGTIDCoordinate(""), nil
 	}
 	if written == nil {
-		return *inline
+		return *inline, nil
 	}
 	if inline == nil {
-		return *written
+		return *written, nil
 	}
 
 	// Safe resume is the intersection: only GTIDs that both the writer and the
 	// inline verifier have durably processed can be skipped on resume.
 	writtenSet, err := written.ParsedGTIDSet()
 	if err != nil {
-		return *written
+		return BinlogCoordinate{}, fmt.Errorf("parsing written GTID coordinate %q: %w", written.GTIDSet, err)
 	}
 	inlineSet, err := inline.ParsedGTIDSet()
 	if err != nil {
-		return *inline
+		return BinlogCoordinate{}, fmt.Errorf("parsing inline-verifier GTID coordinate %q: %w", inline.GTIDSet, err)
 	}
 
-	intersection := intersectGTIDSets(writtenSet, inlineSet)
-	return NewGTIDCoordinate(intersection.String())
+	intersection, err := intersectGTIDSets(writtenSet, inlineSet)
+	if err != nil {
+		return BinlogCoordinate{}, fmt.Errorf("computing safe GTID resume floor: %w", err)
+	}
+	return NewGTIDCoordinateFromSet(intersection), nil
 }
 
 // For tracking the speed of the copy

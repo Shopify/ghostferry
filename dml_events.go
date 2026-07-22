@@ -42,14 +42,14 @@ type RowData []interface{}
 // https://github.com/Shopify/ghostferry/issues/165.
 //
 // In summary:
-// - This code receives values from both go-sql-driver/mysql and
-//   go-mysql-org/go-mysql.
-// - go-sql-driver/mysql gives us int64 for signed integer, and uint64 in a byte
-//   slice for unsigned integer.
-// - go-mysql-org/go-mysql gives us int64 for signed integer, and uint64 for
-//   unsigned integer.
-// - We currently make this function deal with both cases. In the future we can
-//   investigate alternative solutions.
+//   - This code receives values from both go-sql-driver/mysql and
+//     go-mysql-org/go-mysql.
+//   - go-sql-driver/mysql gives us int64 for signed integer, and uint64 in a byte
+//     slice for unsigned integer.
+//   - go-mysql-org/go-mysql gives us int64 for signed integer, and uint64 for
+//     unsigned integer.
+//   - We currently make this function deal with both cases. In the future we can
+//     investigate alternative solutions.
 func (r RowData) GetUint64(colIdx int) (uint64, error) {
 	u64, ok := Uint64Value(r[colIdx])
 	if ok {
@@ -84,11 +84,17 @@ type DMLEvent interface {
 	// forward-looking API used while Ghostferry migrates off raw mysql.Position.
 	BinlogCoordinate() BinlogCoordinate
 	ResumableBinlogCoordinate() BinlogCoordinate
-	// SetCoordinates lets the BinlogStreamer stamp non-file/position
-	// coordinates (e.g. GTID) onto the event.
-	SetCoordinates(coordinate, resumableCoordinate BinlogCoordinate)
 	Annotation() (string, error)
 	Timestamp() time.Time
+}
+
+// coordinateStamper is an internal capability used by the BinlogStreamer to
+// stamp non-file/position coordinates (e.g. GTID) onto events. It is
+// deliberately NOT part of the exported DMLEvent interface so that external
+// implementations of DMLEvent do not have to implement it. All built-in DML
+// events satisfy it via DMLEventBase.
+type coordinateStamper interface {
+	SetCoordinates(coordinate, resumableCoordinate BinlogCoordinate)
 }
 
 // The base of DMLEvent to provide the necessary methods.
