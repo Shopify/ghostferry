@@ -362,27 +362,29 @@ func (s *BinlogStreamer) defaultEventHandler(ev *replication.BinlogEvent, query 
 // shouldContinueStreaming reports whether the Run loop should keep streaming.
 //
 // It keeps streaming until a stop has been requested AND the stop coordinate
-// has been reached. For file/position that is a position comparison; for GTID
-// it is executed-set containment (we have streamed a committed set that
-// contains the target stop set).
+// has been reached. The "have we reached the stop coordinate?" question is
+// answered by BinlogCoordinate.HasReached, so this method is identical for
+// file/position and GTID; the representation-specific mechanics live on the
+// coordinate type.
 func (s *BinlogStreamer) shouldContinueStreaming() bool {
 	if !s.stopRequested {
 		return true
 	}
 
-	if s.coordinateMode() == BinlogCoordinateGTID {
-		if s.stopAtGTIDSet == nil {
-			// Stop requested but no target recorded yet; keep going until it is.
-			return true
-		}
-		if s.lastStreamedGTIDSet == nil {
-			return true
-		}
-		// Continue while we have NOT yet reached the stop set.
-		return !s.lastStreamedGTIDSet.Contain(s.stopAtGTIDSet)
+	stop := s.GetStopBinlogCoordinate()
+	if stop.IsZero() {
+		// Stop requested but no target recorded yet; keep going until it is.
+		return true
 	}
 
-	return s.lastStreamedBinlogPosition.Compare(s.stopAtBinlogPosition) < 0
+	reached, err := s.GetLastStreamedBinlogCoordinate().HasReached(stop)
+	if err != nil {
+		// A mismatch or parse error should not silently stop the stream; log
+		// and keep going so a spurious error can't truncate replication.
+		s.logger.WithError(err).Warn("could not evaluate stop coordinate; continuing to stream")
+		return true
+	}
+	return !reached
 }
 
 func (s *BinlogStreamer) Run() {
@@ -502,6 +504,19 @@ func (s *BinlogStreamer) GetLastStreamedBinlogCoordinate() BinlogCoordinate {
 		return NewGTIDCoordinate(s.lastStreamedGTIDSet.String())
 	}
 	return NewFilePositionCoordinate(s.lastStreamedBinlogPosition)
+}
+
+// GetStopBinlogCoordinate returns the recorded stop coordinate matching the
+// streamer's configured BinlogCoordinateMode. It is zero until FlushAndStop has
+// recorded a stop target.
+func (s *BinlogStreamer) GetStopBinlogCoordinate() BinlogCoordinate {
+	if s.coordinateMode() == BinlogCoordinateGTID {
+		if s.stopAtGTIDSet == nil {
+			return NewGTIDCoordinate("")
+		}
+		return NewGTIDCoordinate(s.stopAtGTIDSet.String())
+	}
+	return NewFilePositionCoordinate(s.stopAtBinlogPosition)
 }
 
 func (s *BinlogStreamer) IsAlmostCaughtUp() bool {
