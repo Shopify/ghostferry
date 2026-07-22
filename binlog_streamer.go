@@ -6,6 +6,7 @@ import (
 	sqlorig "database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -302,6 +303,29 @@ func (s *BinlogStreamer) defaultEventHandler(ev *replication.BinlogEvent, query 
 			s.logger.WithError(err).Error("failed to handle rows event")
 			s.ErrorHandler.Fatal("binlog_streamer", err)
 		}
+	case *replication.QueryEvent:
+		// DDL and administrative statements (CREATE TABLE, GRANT, etc.) commit
+		// via a QueryEvent rather than an XIDEvent, so their GTID is only
+		// visible here. Without this, the streamed GTID set would never
+		// advance past such a statement and a cutover whose stop target
+		// includes it would hang forever. go-mysql attaches the current
+		// executed GTID set (including this statement's GTID) to the event.
+		//
+		// Transaction-control statements ("BEGIN") also arrive as QueryEvents
+		// but do NOT commit anything; their GTID is captured at the closing
+		// XIDEvent instead, so we must skip them here to avoid advancing the
+		// streamed set before the transaction's rows have been applied.
+		if s.coordinateMode() == BinlogCoordinateGTID {
+			qe := ev.Event.(*replication.QueryEvent)
+			if qe.GSet != nil && !isTransactionControlQuery(qe.Query) {
+				// A DDL/admin statement is its own transaction; the pre-statement
+				// committed set is a safe resume point.
+				if s.lastStreamedGTIDSet != nil {
+					s.lastResumableGTIDSet = s.lastStreamedGTIDSet.Clone()
+				}
+				s.lastStreamedGTIDSet = qe.GSet.Clone()
+			}
+		}
 	case *replication.XIDEvent, *replication.GTIDEvent:
 		// With regards to DMLs, we see (at least) the following sequence
 		// of events in the binlog stream:
@@ -371,11 +395,13 @@ func (s *BinlogStreamer) shouldContinueStreaming() bool {
 		return true
 	}
 
+	// Once stopRequested is set, FlushAndStop has already recorded the stop
+	// coordinate. We must NOT treat a zero/empty stop coordinate as "not yet
+	// recorded": on a fresh source the executed GTID set (or binlog position)
+	// can legitimately be empty, and an empty GTID set is a valid stop target
+	// that any streamed set already contains. Deriving presence from IsZero()
+	// here would hang cutover forever in that case.
 	stop := s.GetStopBinlogCoordinate()
-	if stop.IsZero() {
-		// Stop requested but no target recorded yet; keep going until it is.
-		return true
-	}
 
 	reached, err := s.GetLastStreamedBinlogCoordinate().HasReached(stop)
 	if err != nil {
@@ -517,6 +543,16 @@ func (s *BinlogStreamer) GetStopBinlogCoordinate() BinlogCoordinate {
 		return NewGTIDCoordinate(s.stopAtGTIDSet.String())
 	}
 	return NewFilePositionCoordinate(s.stopAtBinlogPosition)
+}
+
+// isTransactionControlQuery reports whether a QueryEvent query is a
+// transaction-control statement that does not itself commit data (BEGIN).
+// Such statements must not advance the committed GTID set; the enclosing
+// transaction commits at its XIDEvent. Note COMMIT/ROLLBACK are normally
+// represented as XIDEvents for InnoDB, but are treated defensively here too.
+func isTransactionControlQuery(query []byte) bool {
+	q := strings.ToUpper(strings.TrimSpace(string(query)))
+	return q == "BEGIN" || q == "COMMIT" || q == "ROLLBACK"
 }
 
 func (s *BinlogStreamer) IsAlmostCaughtUp() bool {

@@ -379,6 +379,13 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
+	if f.Config.BinlogCoordinateMode == BinlogCoordinateGTID {
+		if err = CheckServerGTIDModeEnabled(f.SourceDB); err != nil {
+			f.logger.WithError(err).Error("source db is not configured for GTID mode")
+			return err
+		}
+	}
+
 	f.TargetDB, err = f.Target.SqlDB(f.logger.WithField("dbname", "target"))
 	if err != nil {
 		f.logger.WithError(err).Error("failed to connect to target database")
@@ -389,6 +396,15 @@ func (f *Ferry) Initialize() (err error) {
 	if err != nil {
 		f.logger.WithError(err).Error("target connection checking failed")
 		return err
+	}
+
+	// The target binlog streamer (used by the target verifier) streams in the
+	// same coordinate mode, so the target must also have GTID mode enabled.
+	if f.Config.BinlogCoordinateMode == BinlogCoordinateGTID && !f.Config.SkipTargetVerification {
+		if err = CheckServerGTIDModeEnabled(f.TargetDB); err != nil {
+			f.logger.WithError(err).Error("target db is not configured for GTID mode")
+			return err
+		}
 	}
 
 	if !f.Config.AllowSuperUserOnReadOnly {

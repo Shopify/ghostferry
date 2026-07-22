@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
+	"github.com/go-mysql-org/go-mysql/replication"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,6 +20,47 @@ func mustParseGTID(t *testing.T, s string) mysql.GTIDSet {
 	set, err := mysql.ParseMysqlGTIDSet(s)
 	require.NoError(t, err)
 	return set
+}
+
+func TestIsTransactionControlQuery(t *testing.T) {
+	assert.True(t, isTransactionControlQuery([]byte("BEGIN")))
+	assert.True(t, isTransactionControlQuery([]byte("  begin  ")))
+	assert.True(t, isTransactionControlQuery([]byte("COMMIT")))
+	assert.True(t, isTransactionControlQuery([]byte("ROLLBACK")))
+	assert.False(t, isTransactionControlQuery([]byte("CREATE TABLE t (id int)")))
+	assert.False(t, isTransactionControlQuery([]byte("GRANT ALL ON *.* TO 'x'@'%'")))
+}
+
+// TestQueryEventAdvancesStreamedGTID verifies that a DDL/admin QueryEvent
+// (which commits without an XIDEvent) advances the streamed GTID set, while a
+// BEGIN QueryEvent does not. Without this, a cutover whose stop target includes
+// a trailing DDL would hang forever.
+func TestQueryEventAdvancesStreamedGTID(t *testing.T) {
+	s := &BinlogStreamer{BinlogCoordinateMode: BinlogCoordinateGTID}
+	s.logger = LogWithField("tag", "test")
+
+	ddlSet := mustParseGTID(t, gtidSetTarget)
+
+	// A DDL QueryEvent carrying the executed set advances lastStreamedGTIDSet.
+	ddlEvent := &replication.BinlogEvent{
+		Header: &replication.EventHeader{LogPos: 100},
+		Event:  &replication.QueryEvent{Query: []byte("CREATE TABLE t (id int)"), GSet: ddlSet},
+	}
+	es := &BinlogEventState{}
+	_, err := s.defaultEventHandler(ddlEvent, nil, es)
+	require.NoError(t, err)
+	require.NotNil(t, s.lastStreamedGTIDSet)
+	assert.Equal(t, gtidSetTarget, s.lastStreamedGTIDSet.String())
+
+	// A BEGIN QueryEvent must NOT advance the streamed set.
+	before := s.lastStreamedGTIDSet.String()
+	beginEvent := &replication.BinlogEvent{
+		Header: &replication.EventHeader{LogPos: 200},
+		Event:  &replication.QueryEvent{Query: []byte("BEGIN"), GSet: mustParseGTID(t, gtidSetPast)},
+	}
+	_, err = s.defaultEventHandler(beginEvent, nil, es)
+	require.NoError(t, err)
+	assert.Equal(t, before, s.lastStreamedGTIDSet.String(), "BEGIN must not advance the streamed GTID set")
 }
 
 func TestCoordinateModeDefaultsToFilePosition(t *testing.T) {
@@ -54,10 +96,6 @@ func TestShouldContinueStreaming_GTID(t *testing.T) {
 	assert.True(t, s.shouldContinueStreaming())
 
 	s.stopRequested = true
-
-	// Stop requested but no target recorded yet: keep going.
-	assert.True(t, s.shouldContinueStreaming())
-
 	s.stopAtGTIDSet = mustParseGTID(t, gtidSetTarget)
 
 	// No streamed set yet: keep going.
@@ -73,6 +111,23 @@ func TestShouldContinueStreaming_GTID(t *testing.T) {
 
 	// Streamed set past target: stop.
 	s.lastStreamedGTIDSet = mustParseGTID(t, gtidSetPast)
+	assert.False(t, s.shouldContinueStreaming())
+}
+
+// TestShouldContinueStreaming_GTIDEmptyStopTarget guards the fresh-source
+// case: an empty executed GTID set is a valid stop target (not "unset"), and
+// any streamed set — including an empty one — has already reached it, so the
+// stream must stop rather than hang.
+func TestShouldContinueStreaming_GTIDEmptyStopTarget(t *testing.T) {
+	s := &BinlogStreamer{BinlogCoordinateMode: BinlogCoordinateGTID}
+	s.stopRequested = true
+	s.stopAtGTIDSet = mustParseGTID(t, "") // empty executed set on a fresh source
+
+	// Empty streamed set has reached the empty stop target: stop.
+	assert.False(t, s.shouldContinueStreaming())
+
+	// A non-empty streamed set also trivially contains the empty target: stop.
+	s.lastStreamedGTIDSet = mustParseGTID(t, gtidSetTarget)
 	assert.False(t, s.shouldContinueStreaming())
 }
 
