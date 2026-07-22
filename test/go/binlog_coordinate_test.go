@@ -110,6 +110,38 @@ func TestBinlogCoordinate_GTIDEmptyIsZero(t *testing.T) {
 	assert.True(t, coord.IsZero())
 }
 
+func TestBinlogCoordinate_NewGTIDCoordinateFromSet(t *testing.T) {
+	set, err := mysql.ParseMysqlGTIDSet(testGTIDSetA)
+	require.NoError(t, err)
+
+	coord := ghostferry.NewGTIDCoordinateFromSet(set)
+	assert.True(t, coord.IsGTID())
+	assert.Equal(t, testGTIDSetA, coord.GTIDSet)
+
+	// Mutating the caller's set must not affect the coordinate (it clones).
+	other, err := mysql.ParseMysqlGTIDSet(testGTIDSetB)
+	require.NoError(t, err)
+	require.NoError(t, set.(*mysql.MysqlGTIDSet).Add(*other.(*mysql.MysqlGTIDSet)))
+	assert.Equal(t, testGTIDSetA, coord.GTIDSet, "coordinate must not alias the caller's set")
+
+	// The parsed-set cache is not serialized; JSON only carries the string.
+	data, err := json.Marshal(coord)
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "parsedGTIDSet")
+
+	var decoded ghostferry.BinlogCoordinate
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	reached, err := decoded.HasReached(ghostferry.NewGTIDCoordinate(testGTIDSetA))
+	require.NoError(t, err)
+	assert.True(t, reached)
+}
+
+func TestBinlogCoordinate_NewGTIDCoordinateFromNilSet(t *testing.T) {
+	coord := ghostferry.NewGTIDCoordinateFromSet(nil)
+	assert.True(t, coord.IsGTID())
+	assert.True(t, coord.IsZero())
+}
+
 func TestBinlogCoordinate_HasReachedGTID(t *testing.T) {
 	larger := ghostferry.NewGTIDCoordinate(testGTIDSetB)
 	smaller := ghostferry.NewGTIDCoordinate(testGTIDSetA)
