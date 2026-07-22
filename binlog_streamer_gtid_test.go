@@ -100,11 +100,11 @@ func TestGetLastStreamedBinlogCoordinate_FilePositionMode(t *testing.T) {
 	assert.Equal(t, uint32(100), coord.Position().Pos)
 }
 
-func TestConnectBinlogStreamerFromCoordinate_TypeMismatch(t *testing.T) {
+func TestConnectBinlogStreamerSinceCoordinate_TypeMismatch(t *testing.T) {
 	// GTID mode with a file/position coordinate must be rejected before any DB
 	// interaction.
 	s := &BinlogStreamer{BinlogCoordinateMode: BinlogCoordinateGTID}
-	_, err := s.ConnectBinlogStreamerToMysqlFromCoordinate(
+	_, err := s.ConnectBinlogStreamerToMysqlSinceCoordinate(
 		NewFilePositionCoordinate(mysql.Position{Name: "mysql-bin.000001", Pos: 4}),
 	)
 	require.Error(t, err)
@@ -112,7 +112,7 @@ func TestConnectBinlogStreamerFromCoordinate_TypeMismatch(t *testing.T) {
 
 	// File/position mode with a GTID coordinate must also be rejected.
 	s2 := &BinlogStreamer{}
-	_, err = s2.ConnectBinlogStreamerToMysqlFromCoordinate(NewGTIDCoordinate(gtidSetTarget))
+	_, err = s2.ConnectBinlogStreamerToMysqlSinceCoordinate(NewGTIDCoordinate(gtidSetTarget))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "file/position mode requires a file/position coordinate")
 }
