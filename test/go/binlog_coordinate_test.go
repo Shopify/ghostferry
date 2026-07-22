@@ -28,15 +28,23 @@ func TestBinlogCoordinate_ZeroValueIsFilePosition(t *testing.T) {
 	assert.Equal(t, mysql.Position{}, coord.Position())
 }
 
-func TestBinlogCoordinate_Compare(t *testing.T) {
+func TestBinlogCoordinate_HasReachedFilePosition(t *testing.T) {
 	a := ghostferry.NewFilePositionCoordinate(mysql.Position{Name: "mysql-bin.000001", Pos: 10})
 	b := ghostferry.NewFilePositionCoordinate(mysql.Position{Name: "mysql-bin.000001", Pos: 20})
-	c := ghostferry.NewFilePositionCoordinate(mysql.Position{Name: "mysql-bin.000002", Pos: 5})
 
-	assert.Equal(t, -1, a.Compare(b))
-	assert.Equal(t, 1, b.Compare(a))
-	assert.Equal(t, 0, a.Compare(a))
-	assert.Equal(t, -1, b.Compare(c))
+	// b is ahead of a: b has reached a, a has not reached b.
+	reached, err := b.HasReached(a)
+	require.NoError(t, err)
+	assert.True(t, reached)
+
+	reached, err = a.HasReached(b)
+	require.NoError(t, err)
+	assert.False(t, reached)
+
+	// A coordinate has reached itself (>=).
+	reached, err = a.HasReached(a)
+	require.NoError(t, err)
+	assert.True(t, reached)
 }
 
 func TestBinlogCoordinate_JSONRoundTrip(t *testing.T) {
@@ -102,24 +110,28 @@ func TestBinlogCoordinate_GTIDEmptyIsZero(t *testing.T) {
 	assert.True(t, coord.IsZero())
 }
 
-func TestBinlogCoordinate_GTIDContains(t *testing.T) {
+func TestBinlogCoordinate_HasReachedGTID(t *testing.T) {
 	larger := ghostferry.NewGTIDCoordinate(testGTIDSetB)
 	smaller := ghostferry.NewGTIDCoordinate(testGTIDSetA)
 
-	contains, err := larger.Contains(smaller)
+	// The larger set contains the smaller, so it has reached it.
+	reached, err := larger.HasReached(smaller)
 	require.NoError(t, err)
-	assert.True(t, contains)
+	assert.True(t, reached)
 
-	contains, err = smaller.Contains(larger)
+	reached, err = smaller.HasReached(larger)
 	require.NoError(t, err)
-	assert.False(t, contains)
+	assert.False(t, reached)
 }
 
-func TestBinlogCoordinate_ContainsRejectsFilePosition(t *testing.T) {
+func TestBinlogCoordinate_HasReachedRejectsMixedTypes(t *testing.T) {
 	gtid := ghostferry.NewGTIDCoordinate(testGTIDSetA)
 	filePos := ghostferry.NewFilePositionCoordinate(mysql.Position{Name: "mysql-bin.000001", Pos: 4})
 
-	_, err := gtid.Contains(filePos)
+	_, err := gtid.HasReached(filePos)
+	assert.Error(t, err)
+
+	_, err = filePos.HasReached(gtid)
 	assert.Error(t, err)
 }
 
@@ -141,22 +153,4 @@ func TestBinlogCoordinate_GTIDJSONRoundTrip(t *testing.T) {
 
 	assert.True(t, decoded.IsGTID())
 	assert.Equal(t, testGTIDSetA, decoded.GTIDSet)
-}
-
-func TestBinlogCoordinate_CompareRejectsMixedTypes(t *testing.T) {
-	gtid := ghostferry.NewGTIDCoordinate(testGTIDSetA)
-	filePos := ghostferry.NewFilePositionCoordinate(mysql.Position{Name: "mysql-bin.000001", Pos: 4})
-
-	assert.Panics(t, func() {
-		gtid.Compare(filePos)
-	})
-}
-
-func TestBinlogCoordinate_CompareUnsupportedForGTID(t *testing.T) {
-	a := ghostferry.NewGTIDCoordinate(testGTIDSetA)
-	b := ghostferry.NewGTIDCoordinate(testGTIDSetB)
-
-	assert.Panics(t, func() {
-		a.Compare(b)
-	})
 }
