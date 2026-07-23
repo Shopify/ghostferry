@@ -8,7 +8,11 @@ import (
 )
 
 type DataIterator struct {
-	DB                *sql.DB
+	DB *sql.DB
+	// SourceRuntime, when set, provides the current source connection so a data
+	// iteration run started after a source master failover targets the promoted
+	// writer. When nil, DB is used. Resolved once at the start of Run.
+	SourceRuntime     *SourceRuntime
 	Concurrency       int
 	SelectFingerprint bool
 
@@ -38,8 +42,18 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 		d.StateTracker = NewStateTracker(0)
 	}
 
+	// Resolve the source connection for this run. When a SourceRuntime is
+	// configured it is authoritative (so a run started after a failover uses the
+	// promoted writer); otherwise fall back to the static DB.
+	db := d.DB
+	if d.SourceRuntime != nil {
+		if current := d.SourceRuntime.DB(); current != nil {
+			db = current
+		}
+	}
+
 	d.logger.WithField("tablesCount", len(tables)).Info("starting data iterator run")
-	tablesWithData, emptyTables, err := MaxPaginationKeys(d.DB, tables, d.logger)
+	tablesWithData, emptyTables, err := MaxPaginationKeys(db, tables, d.logger)
 	if err != nil {
 		d.ErrorHandler.Fatal("data_iterator", err)
 	}
