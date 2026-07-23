@@ -261,6 +261,32 @@ func intersectGTIDSets(a, b mysql.GTIDSet) (mysql.GTIDSet, error) {
 	return result, nil
 }
 
+// unionGTIDStringInto returns a new GTID set equal to base with the GTID(s) in
+// add merged in. base may be nil (treated as empty). It never mutates base. It
+// is used by failover recovery to fold an in-flight transaction's GTID into the
+// already-applied set before validating a candidate master.
+func unionGTIDStringInto(base mysql.GTIDSet, add string) (mysql.GTIDSet, error) {
+	var result *mysql.MysqlGTIDSet
+	if base == nil {
+		empty, err := mysql.ParseMysqlGTIDSet("")
+		if err != nil {
+			return nil, err
+		}
+		result = empty.(*mysql.MysqlGTIDSet)
+	} else {
+		clone, ok := base.Clone().(*mysql.MysqlGTIDSet)
+		if !ok {
+			return nil, fmt.Errorf("GTID union requires a MySQL GTID set, got %T", base)
+		}
+		result = clone
+	}
+
+	if err := result.Update(add); err != nil {
+		return nil, fmt.Errorf("GTID union: updating with %q: %w", add, err)
+	}
+	return result, nil
+}
+
 // serializedBinlogCoordinate is the on-disk / on-wire shape of a
 // BinlogCoordinate. It is deliberately explicit and self-describing so that a
 // future GTID variant can be added as additional fields without breaking

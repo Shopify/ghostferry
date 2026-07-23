@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -61,6 +62,39 @@ func TestQueryEventAdvancesStreamedGTID(t *testing.T) {
 	_, err = s.defaultEventHandler(beginEvent, nil, es)
 	require.NoError(t, err)
 	assert.Equal(t, before, s.lastStreamedGTIDSet.String(), "BEGIN must not advance the streamed GTID set")
+}
+
+// TestInFlightGTIDTracking verifies that a GTIDEvent records the in-flight
+// transaction's GTID and the closing XIDEvent clears it. Failover recovery
+// relies on this to validate a candidate master against rows that may have been
+// emitted before the transaction committed.
+func TestInFlightGTIDTracking(t *testing.T) {
+	s := &BinlogStreamer{BinlogCoordinateMode: BinlogCoordinateGTID}
+	s.logger = LogWithField("tag", "test")
+
+	sid, err := uuid.Parse("3e11fa47-71ca-11e1-9e33-c80aa9429562")
+	require.NoError(t, err)
+
+	es := &BinlogEventState{}
+
+	// GTIDEvent starting transaction gno=101 records the in-flight GTID.
+	gtidEvent := &replication.BinlogEvent{
+		Header: &replication.EventHeader{LogPos: 100},
+		Event:  &replication.GTIDEvent{SID: sid[:], GNO: 101},
+	}
+	_, err = s.defaultEventHandler(gtidEvent, nil, es)
+	require.NoError(t, err)
+	assert.Equal(t, "3e11fa47-71ca-11e1-9e33-c80aa9429562:101", s.inFlightGTID)
+
+	// The closing XIDEvent commits and clears the in-flight GTID.
+	xidEvent := &replication.BinlogEvent{
+		Header: &replication.EventHeader{LogPos: 200},
+		Event:  &replication.XIDEvent{GSet: mustParseGTID(t, "3e11fa47-71ca-11e1-9e33-c80aa9429562:1-101")},
+	}
+	_, err = s.defaultEventHandler(xidEvent, nil, es)
+	require.NoError(t, err)
+	assert.Equal(t, "", s.inFlightGTID, "XIDEvent must clear the in-flight GTID")
+	assert.Equal(t, "3e11fa47-71ca-11e1-9e33-c80aa9429562:1-101", s.lastStreamedGTIDSet.String())
 }
 
 func TestCoordinateModeDefaultsToFilePosition(t *testing.T) {
