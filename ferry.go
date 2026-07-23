@@ -89,6 +89,18 @@ type Ferry struct {
 	logger Logger
 
 	rowCopyCompleteCh chan struct{}
+
+	// sourceSwapMu guards the source-side handles that a master failover
+	// repoints (SourceDB, Config.Source, and the DB references held by the data
+	// iterator cursor and verifiers). It serializes the failover swap against
+	// readers that consult those handles. See ferry_failover.go.
+	sourceSwapMu sync.Mutex
+
+	// previousSourceDBs holds source DB handles retained across master
+	// failovers. They are not closed at swap time because in-flight cursors and
+	// cached prepared statements may still reference them; closePreviousSourceDBs
+	// releases them during teardown.
+	previousSourceDBs []*sql.DB
 }
 
 func (f *Ferry) NewDataIterator() *DataIterator {
@@ -129,8 +141,34 @@ func (f *Ferry) NewSourceBinlogStreamer() *BinlogStreamer {
 	streamer := f.newBinlogStreamer(f.SourceDB, f.Config.Source, nil, nil, "source_binlog_streamer")
 	// Master-failover recovery only applies to the source stream: the target
 	// verifier streams from the (stable) target and does not fail over.
-	streamer.MasterFailoverRecovery = f.Config.MasterFailoverRecovery
+	streamer.MasterFailoverRecovery = f.failoverRecoveryConfigForSource()
 	return streamer
+}
+
+// failoverRecoveryConfigForSource returns the failover recovery config to
+// attach to the source streamer. When recovery is enabled it returns a shallow
+// copy of the user's config with an OnFailover callback that repoints the whole
+// Ferry (SourceDB, Config.Source, data iterator, verifiers) at the promoted
+// writer. Any user-supplied OnFailover is preserved and invoked afterwards, so
+// the Ferry-wide swap happens first. The user's original config is never
+// mutated.
+func (f *Ferry) failoverRecoveryConfigForSource() *MasterFailoverRecoveryConfig {
+	if f.Config.MasterFailoverRecovery == nil {
+		return nil
+	}
+
+	cfg := *f.Config.MasterFailoverRecovery // shallow copy
+	userCallback := cfg.OnFailover
+	cfg.OnFailover = func(ev MasterFailoverEvent) error {
+		if err := f.swapSource(ev); err != nil {
+			return err
+		}
+		if userCallback != nil {
+			return userCallback(ev)
+		}
+		return nil
+	}
+	return &cfg
 }
 
 func (f *Ferry) NewTargetBinlogStreamer() (*BinlogStreamer, error) {
