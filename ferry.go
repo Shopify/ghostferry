@@ -109,13 +109,15 @@ func (f *Ferry) NewDataIterator() *DataIterator {
 
 	dataIterator := &DataIterator{
 		DB:                f.SourceDB,
+		SourceRuntime:     f.sourceRuntime,
 		Concurrency:       f.Config.DataIterationConcurrency,
 		SelectFingerprint: f.Config.VerifierType == VerifierTypeInline,
 
 		ErrorHandler: f.ErrorHandler,
 		CursorConfig: &CursorConfig{
-			DB:        f.SourceDB,
-			Throttler: f.Throttler,
+			DB:            f.SourceDB,
+			SourceRuntime: f.sourceRuntime,
+			Throttler:     f.Throttler,
 
 			BatchSize:                 &f.Config.UpdatableConfig.DataIterationBatchSize,
 			BatchSizePerTableOverride: f.Config.DataIterationBatchSizePerTableOverride,
@@ -227,6 +229,7 @@ func (f *Ferry) NewChecksumTableVerifier() *ChecksumTableVerifier {
 
 	return &ChecksumTableVerifier{
 		SourceDB:         f.SourceDB,
+		SourceRuntime:    f.sourceRuntime,
 		TargetDB:         f.TargetDB,
 		DatabaseRewrites: f.Config.DatabaseRewrites,
 		TableRewrites:    f.Config.TableRewrites,
@@ -246,6 +249,7 @@ func (f *Ferry) NewInlineVerifier() *InlineVerifier {
 
 	return &InlineVerifier{
 		SourceDB:                   f.SourceDB,
+		SourceRuntime:              f.sourceRuntime,
 		TargetDB:                   f.TargetDB,
 		DatabaseRewrites:           f.Config.DatabaseRewrites,
 		TableRewrites:              f.Config.TableRewrites,
@@ -319,6 +323,7 @@ func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
 	v := &IterativeVerifier{
 		CursorConfig: &CursorConfig{
 			DB:                        f.SourceDB,
+			SourceRuntime:             f.sourceRuntime,
 			BatchSize:                 &f.Config.UpdatableConfig.DataIterationBatchSize,
 			BatchSizePerTableOverride: f.Config.DataIterationBatchSizePerTableOverride,
 			ReadRetries:               f.Config.DBReadRetries,
@@ -326,6 +331,7 @@ func (f *Ferry) NewIterativeVerifier() (*IterativeVerifier, error) {
 
 		BinlogStreamer:      f.BinlogStreamer,
 		SourceDB:            f.SourceDB,
+		SourceRuntime:       f.sourceRuntime,
 		TargetDB:            f.TargetDB,
 		CompressionVerifier: compressionVerifier,
 
