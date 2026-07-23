@@ -54,6 +54,36 @@ type MasterFailoverRecoveryConfig struct {
 	// RetryWait is how long to wait between recovery attempts. Defaults to
 	// DefaultFailoverRetryWait when zero.
 	RetryWait time.Duration
+
+	// OnFailover, when set, is invoked by the binlog streamer after it has
+	// successfully reconnected to a new master and swapped its own DB/DBConfig.
+	// It lets the embedding application (e.g. Ferry) repoint every other source
+	// consumer — the data iterator, verifiers, SHOW CREATE queries, etc. — at
+	// the promoted writer so the whole run follows the failover, not just the
+	// binlog stream.
+	//
+	// It runs on the streamer's Run goroutine; it must be quick and must not
+	// call back into the streamer. The provided DB handle is owned by the
+	// streamer and must NOT be closed by the callback. Returning an error is
+	// logged but does not abort streaming (the stream has already recovered).
+	OnFailover func(MasterFailoverEvent) error
+}
+
+// MasterFailoverEvent describes a completed source master failover. It is
+// passed to MasterFailoverRecoveryConfig.OnFailover so consumers can repoint at
+// the new writer.
+type MasterFailoverEvent struct {
+	// NewMasterConfig is the DatabaseConfig of the promoted writer the streamer
+	// is now connected to.
+	NewMasterConfig *DatabaseConfig
+
+	// NewMasterDB is the live connection the streamer opened to the new writer.
+	// It is owned by the streamer; callers may use it but must not close it.
+	NewMasterDB *sql.DB
+
+	// PreviousMasterConfig is the DatabaseConfig of the master that was lost. It
+	// may be nil if the streamer had no prior config.
+	PreviousMasterConfig *DatabaseConfig
 }
 
 // DefaultFailoverRetryWait is the wait between failover recovery attempts when

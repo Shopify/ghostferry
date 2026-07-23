@@ -424,6 +424,20 @@ func (s *BinlogStreamer) recoverFromMasterFailover(cause error) error {
 			"resume_set": gtidSetString(resumeSet),
 			"attempt":    attempt,
 		}).Info("master failover recovery succeeded; streaming resumed on new master")
+
+		// Notify the embedding application so it can repoint the rest of the
+		// source consumers (data iterator, verifiers, ...) at the new writer.
+		// A callback error does not abort streaming — the stream has already
+		// recovered — but is surfaced in the logs.
+		if cfg.OnFailover != nil {
+			if cbErr := cfg.OnFailover(MasterFailoverEvent{
+				NewMasterConfig:      candidate,
+				NewMasterDB:          newDB,
+				PreviousMasterConfig: previous,
+			}); cbErr != nil {
+				s.logger.WithError(cbErr).Error("failover: OnFailover callback returned an error; source consumers may still target the old master")
+			}
+		}
 		return nil
 	}
 
