@@ -164,6 +164,69 @@ func TestRunStopsAtGTIDTransactionBoundary(t *testing.T) {
 	}
 }
 
+// Failover validation must include emitted-but-uncommitted transactions even
+// when custom handlers replace the default transaction event handlers.
+func TestRunIncludesInFlightGTIDInFailoverRequirements(t *testing.T) {
+	const sidText = "3e11fa47-71ca-11e1-9e33-c80aa9429562"
+	sid := uuid.MustParse(sidText)
+	for _, finish := range []string{"XID", "COMMIT", "CREATE TABLE t (id int)"} {
+		t.Run(finish, func(t *testing.T) {
+			stream := replication.NewBinlogStreamer()
+			s := &BinlogStreamer{
+				BinlogCoordinateMode: BinlogCoordinateGTID,
+				binlogStreamer:       stream,
+				binlogSyncer:         replication.NewBinlogSyncer(replication.BinlogSyncerConfig{ServerID: 1}),
+			}
+			s.stopRequested.Store(true)
+			s.seedGTIDSets(mustParseGTID(t, sidText+":1-99"))
+			s.setStopGTIDSet(mustParseGTID(t, gtidSetTarget))
+			for _, kind := range []replication.EventType{replication.GTID_EVENT, replication.QUERY_EVENT, replication.XID_EVENT} {
+				require.NoError(t, s.AddBinlogEventHandler(kind, func(_ *replication.BinlogEvent, query []byte, _ *BinlogEventState) ([]byte, error) {
+					return query, nil
+				}))
+			}
+			checked := false
+			require.NoError(t, s.AddBinlogEventHandler(replication.HEARTBEAT_EVENT, func(_ *replication.BinlogEvent, query []byte, _ *BinlogEventState) ([]byte, error) {
+				require.False(t, checked, "stream must stop at the final committed coordinate")
+				checked = true
+				applied, err := s.appliedGTIDSet()
+				require.NoError(t, err)
+				require.True(t, applied.Contain(mustParseGTID(t, sidText+":100")), "failover must require the in-flight GTID")
+				return query, nil
+			}))
+			add := func(kind replication.EventType, event replication.Event) {
+				require.NoError(t, stream.AddEventToStreamer(&replication.BinlogEvent{
+					Header: &replication.EventHeader{EventType: kind, LogPos: 100},
+					Event:  event,
+				}))
+			}
+			add(replication.GTID_EVENT, &replication.GTIDEvent{SID: sid[:], GNO: 100})
+			if finish != "CREATE TABLE t (id int)" {
+				add(replication.QUERY_EVENT, &replication.QueryEvent{Query: []byte("BEGIN"), GSet: mustParseGTID(t, gtidSetTarget)})
+				add(replication.QUERY_EVENT, &replication.QueryEvent{Query: []byte("SAVEPOINT s"), GSet: mustParseGTID(t, gtidSetTarget)})
+			}
+			add(replication.HEARTBEAT_EVENT, &replication.GenericEvent{})
+			if finish == "XID" {
+				add(replication.XID_EVENT, &replication.XIDEvent{GSet: mustParseGTID(t, gtidSetTarget)})
+			} else {
+				add(replication.QUERY_EVENT, &replication.QueryEvent{Query: []byte(finish), GSet: mustParseGTID(t, gtidSetTarget)})
+			}
+			add(replication.HEARTBEAT_EVENT, &replication.GenericEvent{})
+			s.Run()
+			require.True(t, checked)
+			require.Empty(t, s.inFlightGTID, "committed transactions must no longer be in flight")
+		})
+	}
+}
+
+func TestCoordinateModeDefaultsToFilePosition(t *testing.T) {
+	s := &BinlogStreamer{}
+	assert.Equal(t, BinlogCoordinateFilePosition, s.coordinateMode())
+
+	s.BinlogCoordinateMode = BinlogCoordinateGTID
+	assert.Equal(t, BinlogCoordinateGTID, s.coordinateMode())
+}
+
 func TestShouldContinueStreaming_FilePosition(t *testing.T) {
 	s := &BinlogStreamer{}
 
