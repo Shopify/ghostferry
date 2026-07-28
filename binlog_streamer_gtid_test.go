@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
@@ -170,4 +171,50 @@ func TestConnectBinlogStreamerSinceCoordinate_TypeMismatch(t *testing.T) {
 	_, err = s2.ConnectBinlogStreamerToMysqlSinceCoordinate(NewGTIDCoordinate(gtidSetTarget))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "file/position mode requires a file/position coordinate")
+}
+
+// TestGTIDCoordinateAccessorsAreRaceFree reproduces the cross-goroutine hazard
+// that Ferry.Progress() creates: one goroutine advances the streamed/stop GTID
+// sets (as the streaming loop does on every transaction), while another reads
+// them through the coordinate accessors (as Progress does). The underlying
+// mysql.GTIDSet is a map, so unsynchronised String()/Clone() against a
+// concurrent write is a data race (and a potential fatal map panic). Run with
+// -race; it must stay clean.
+func TestGTIDCoordinateAccessorsAreRaceFree(t *testing.T) {
+	s := &BinlogStreamer{BinlogCoordinateMode: BinlogCoordinateGTID}
+	s.logger = LogWithField("tag", "test")
+	s.seedGTIDSets(mustParseGTID(t, gtidSetLower))
+
+	const iterations = 500
+	var wg sync.WaitGroup
+	wg.Add(3)
+
+	// Writer 1: advances the streamed set at commit boundaries (XIDEvent path).
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			s.setResumableToStreamed()
+			s.setLastStreamedGTIDSet(mustParseGTID(t, gtidSetTarget))
+		}
+	}()
+
+	// Writer 2: records the stop target (FlushAndStop path).
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			s.setStopGTIDSet(mustParseGTID(t, gtidSetPast))
+		}
+	}()
+
+	// Reader: mirrors Ferry.Progress() reading both coordinates.
+	go func() {
+		defer wg.Done()
+		for i := 0; i < iterations; i++ {
+			_ = s.GetLastStreamedBinlogCoordinate()
+			_ = s.GetStopBinlogCoordinate()
+			_ = s.resumableGTIDClone()
+		}
+	}()
+
+	wg.Wait()
 }
