@@ -595,6 +595,23 @@ func (s *BinlogStreamer) resumableGTIDClone() mysql.GTIDSet {
 	return s.lastResumableGTIDSet.Clone()
 }
 
+// streamedGTIDCoordinate and resumableGTIDCoordinate return GTID coordinates
+// snapshotted under gtidMu, for stamping onto DML events. They read the sets
+// while holding the lock so the snapshot never races the streaming goroutine's
+// writes. NewGTIDCoordinateFromSet clones internally, so the returned
+// coordinate does not alias the streamer's set.
+func (s *BinlogStreamer) streamedGTIDCoordinate() BinlogCoordinate {
+	s.gtidMu.RLock()
+	defer s.gtidMu.RUnlock()
+	return NewGTIDCoordinateFromSet(s.lastStreamedGTIDSet)
+}
+
+func (s *BinlogStreamer) resumableGTIDCoordinate() BinlogCoordinate {
+	s.gtidMu.RLock()
+	defer s.gtidMu.RUnlock()
+	return NewGTIDCoordinateFromSet(s.lastResumableGTIDSet)
+}
+
 // stopGTIDString returns the stop set as a string under the lock, or "" when
 // unset.
 func (s *BinlogStreamer) stopGTIDString() string {
@@ -754,8 +771,10 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 	// file/position. The resumable coordinate is the committed set BEFORE the
 	// current transaction, so an interruption replays the whole transaction.
 	if s.coordinateMode() == BinlogCoordinateGTID {
-		currentCoord := NewGTIDCoordinateFromSet(s.lastStreamedGTIDSet)
-		resumableCoord := NewGTIDCoordinateFromSet(s.lastResumableGTIDSet)
+		// Snapshot both coordinates under gtidMu so the read does not race the
+		// streaming goroutine's set mutations / Progress()'s reads.
+		currentCoord := s.streamedGTIDCoordinate()
+		resumableCoord := s.resumableGTIDCoordinate()
 		for _, dmlEv := range dmlEvs {
 			// SetCoordinates is an internal capability (coordinateStamper), not
 			// part of the exported DMLEvent interface; all built-in events
