@@ -707,6 +707,15 @@ type Config struct {
 	// additional coordinate sources.
 	BinlogCoordinateMode BinlogCoordinateType
 
+	// MasterFailoverRecovery, when set, enables automatic reconnection of the
+	// source to a new master writer when the source connection is lost (a
+	// topology failover). It requires BinlogCoordinateMode "gtid" (GTID
+	// coordinates are server-independent; file/position cannot be carried across
+	// a failover). The Resolver is supplied by the embedding application to
+	// discover the new writer. Nil keeps the previous behavior: a lost source
+	// connection is fatal.
+	MasterFailoverRecovery *MasterFailoverRecoveryConfig
+
 	// This config is necessary for inline verification for a special case of
 	// Ghostferry:
 	//
@@ -883,6 +892,15 @@ func (c *Config) ValidateConfig() error {
 		// valid
 	default:
 		return fmt.Errorf("invalid BinlogCoordinateMode %q, must be %q or %q", c.BinlogCoordinateMode, BinlogCoordinateFilePosition, BinlogCoordinateGTID)
+	}
+
+	if c.MasterFailoverRecovery != nil {
+		if c.BinlogCoordinateMode != BinlogCoordinateGTID {
+			return fmt.Errorf("MasterFailoverRecovery requires BinlogCoordinateMode %q, got %q", BinlogCoordinateGTID, c.BinlogCoordinateMode)
+		}
+		if c.MasterFailoverRecovery.Resolver == nil {
+			return fmt.Errorf("MasterFailoverRecovery requires a Resolver")
+		}
 	}
 
 	if c.VerifierType == VerifierTypeIterative {

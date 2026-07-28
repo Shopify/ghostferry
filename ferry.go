@@ -141,7 +141,14 @@ func (f *Ferry) NewDataIteratorWithoutStateTracker() *DataIterator {
 }
 
 func (f *Ferry) NewSourceBinlogStreamer() *BinlogStreamer {
-	return f.newBinlogStreamer(f.SourceDB, f.Config.Source, nil, nil, "source_binlog_streamer")
+	streamer := f.newBinlogStreamer(f.SourceDB, f.Config.Source, nil, nil, "source_binlog_streamer")
+	// Master-failover recovery only applies to the source stream: the target
+	// verifier streams from the (stable) target and does not fail over. The
+	// reconnector repoints the whole run via SourceRuntime when a failover
+	// occurs.
+	streamer.MasterFailoverRecovery = f.Config.MasterFailoverRecovery
+	streamer.SourceReconnector = f.newSourceReconnector()
+	return streamer
 }
 
 func (f *Ferry) NewTargetBinlogStreamer() (*BinlogStreamer, error) {
