@@ -3,6 +3,7 @@ package ghostferry
 import (
 	"container/ring"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"time"
 
@@ -40,6 +41,17 @@ type SerializableState struct {
 	BinlogVerifyStore                         BinlogVerifySerializedStore
 	LastStoredBinlogPositionForInlineVerifier mysql.Position
 	LastStoredBinlogPositionForTargetVerifier mysql.Position
+
+	// BinlogCoordinateMode records which coordinate representation the state
+	// below was produced with. Empty means file/position (legacy states).
+	BinlogCoordinateMode BinlogCoordinateType `json:",omitempty"`
+
+	// GTID counterparts of the three binlog positions above. They are only
+	// populated when BinlogCoordinateMode is "gtid". Pointers + omitempty keep
+	// file/position states byte-for-byte compatible with older versions.
+	LastWrittenBinlogCoordinate                 *BinlogCoordinate `json:",omitempty"`
+	LastStoredBinlogCoordinateForInlineVerifier *BinlogCoordinate `json:",omitempty"`
+	LastStoredBinlogCoordinateForTargetVerifier *BinlogCoordinate `json:",omitempty"`
 }
 
 func (s *SerializableState) MarshalJSON() ([]byte, error) {
@@ -106,11 +118,105 @@ func (s *SerializableState) MinSourceBinlogPosition() mysql.Position {
 	}
 }
 
-// MinSourceBinlogCoordinate returns the safe source resume coordinate. It is
-// the coordinate-typed counterpart of MinSourceBinlogPosition and currently
-// delegates to it, wrapping the result as a file/position coordinate.
-func (s *SerializableState) MinSourceBinlogCoordinate() BinlogCoordinate {
-	return NewFilePositionCoordinate(s.MinSourceBinlogPosition())
+// CoordinateMode returns the effective coordinate mode for this serialized
+// state, treating the empty value as file/position for legacy states.
+func (s *SerializableState) CoordinateMode() BinlogCoordinateType {
+	if s.BinlogCoordinateMode == "" {
+		return BinlogCoordinateFilePosition
+	}
+	return s.BinlogCoordinateMode
+}
+
+// coordinateMode is the unexported alias kept for existing internal callers.
+func (s *SerializableState) coordinateMode() BinlogCoordinateType {
+	return s.CoordinateMode()
+}
+
+// HasTargetVerifierBinlogCoordinate reports whether the serialized state
+// carries a target-verifier resume coordinate at all. This is distinct from
+// whether that coordinate is the zero/empty value: in GTID mode an empty
+// executed set is a valid coordinate, so presence must be checked via the
+// pointer/field rather than IsZero().
+func (s *SerializableState) HasTargetVerifierBinlogCoordinate() bool {
+	if s.coordinateMode() == BinlogCoordinateGTID {
+		return s.LastStoredBinlogCoordinateForTargetVerifier != nil
+	}
+	return s.LastStoredBinlogPositionForTargetVerifier != (mysql.Position{})
+}
+
+// WrittenSourceBinlogCoordinate returns the last written source coordinate as a
+// BinlogCoordinate, matching the state's coordinate mode.
+func (s *SerializableState) WrittenSourceBinlogCoordinate() BinlogCoordinate {
+	if s.coordinateMode() == BinlogCoordinateGTID && s.LastWrittenBinlogCoordinate != nil {
+		return *s.LastWrittenBinlogCoordinate
+	}
+	return NewFilePositionCoordinate(s.LastWrittenBinlogPosition)
+}
+
+// InlineVerifierSourceBinlogCoordinate returns the inline verifier's stored
+// source coordinate as a BinlogCoordinate, matching the state's coordinate mode.
+func (s *SerializableState) InlineVerifierSourceBinlogCoordinate() BinlogCoordinate {
+	if s.coordinateMode() == BinlogCoordinateGTID && s.LastStoredBinlogCoordinateForInlineVerifier != nil {
+		return *s.LastStoredBinlogCoordinateForInlineVerifier
+	}
+	return NewFilePositionCoordinate(s.LastStoredBinlogPositionForInlineVerifier)
+}
+
+// TargetVerifierBinlogCoordinate returns the target verifier's stored
+// coordinate as a BinlogCoordinate, matching the state's coordinate mode.
+func (s *SerializableState) TargetVerifierBinlogCoordinate() BinlogCoordinate {
+	if s.coordinateMode() == BinlogCoordinateGTID && s.LastStoredBinlogCoordinateForTargetVerifier != nil {
+		return *s.LastStoredBinlogCoordinateForTargetVerifier
+	}
+	return NewFilePositionCoordinate(s.LastStoredBinlogPositionForTargetVerifier)
+}
+
+// MinSourceBinlogCoordinate returns the safe source resume coordinate.
+//
+// For file/position mode this is the coordinate-typed counterpart of
+// MinSourceBinlogPosition (the earlier of the writer and inline-verifier
+// positions). For GTID mode the safe resume point is the intersection of the
+// writer and inline-verifier GTID sets, since resuming must not skip events
+// either consumer had not yet durably processed. When only one side is present,
+// that side is used.
+//
+// It is fail-closed for GTID: a parse or intersection failure returns an error
+// rather than silently falling back to one side, because a wrong (too-advanced)
+// resume floor would skip binlog events and corrupt the copy.
+func (s *SerializableState) MinSourceBinlogCoordinate() (BinlogCoordinate, error) {
+	if s.coordinateMode() != BinlogCoordinateGTID {
+		return NewFilePositionCoordinate(s.MinSourceBinlogPosition()), nil
+	}
+
+	written := s.LastWrittenBinlogCoordinate
+	inline := s.LastStoredBinlogCoordinateForInlineVerifier
+
+	if written == nil && inline == nil {
+		return NewGTIDCoordinate(""), nil
+	}
+	if written == nil {
+		return *inline, nil
+	}
+	if inline == nil {
+		return *written, nil
+	}
+
+	// Safe resume is the intersection: only GTIDs that both the writer and the
+	// inline verifier have durably processed can be skipped on resume.
+	writtenSet, err := written.ParsedGTIDSet()
+	if err != nil {
+		return BinlogCoordinate{}, fmt.Errorf("parsing written GTID coordinate %q: %w", written.GTIDSet, err)
+	}
+	inlineSet, err := inline.ParsedGTIDSet()
+	if err != nil {
+		return BinlogCoordinate{}, fmt.Errorf("parsing inline-verifier GTID coordinate %q: %w", inline.GTIDSet, err)
+	}
+
+	intersection, err := intersectGTIDSets(writtenSet, inlineSet)
+	if err != nil {
+		return BinlogCoordinate{}, fmt.Errorf("computing safe GTID resume floor: %w", err)
+	}
+	return NewGTIDCoordinateFromSet(intersection), nil
 }
 
 // For tracking the speed of the copy
@@ -146,6 +252,13 @@ type StateTracker struct {
 	lastStoredBinlogPositionForInlineVerifier mysql.Position
 	lastStoredBinlogPositionForTargetVerifier mysql.Position
 
+	// GTID coordinates, only populated when the tracker operates in GTID mode.
+	// They are stored alongside (not instead of) the file/position fields so
+	// that switching the read path is a mode decision, not a data migration.
+	lastWrittenBinlogCoordinate                 *BinlogCoordinate
+	lastStoredBinlogCoordinateForInlineVerifier *BinlogCoordinate
+	lastStoredBinlogCoordinateForTargetVerifier *BinlogCoordinate
+
 	lastSuccessfulPaginationKeys map[string]PaginationKey
 	completedTables              map[string]bool
 
@@ -176,6 +289,9 @@ func NewStateTrackerFromSerializedState(speedLogCount int, serializedState *Seri
 	s.lastWrittenBinlogPosition = serializedState.LastWrittenBinlogPosition
 	s.lastStoredBinlogPositionForInlineVerifier = serializedState.LastStoredBinlogPositionForInlineVerifier
 	s.lastStoredBinlogPositionForTargetVerifier = serializedState.LastStoredBinlogPositionForTargetVerifier
+	s.lastWrittenBinlogCoordinate = serializedState.LastWrittenBinlogCoordinate
+	s.lastStoredBinlogCoordinateForInlineVerifier = serializedState.LastStoredBinlogCoordinateForInlineVerifier
+	s.lastStoredBinlogCoordinateForTargetVerifier = serializedState.LastStoredBinlogCoordinateForTargetVerifier
 	return s
 }
 
@@ -202,20 +318,41 @@ func (s *StateTracker) UpdateLastResumableBinlogPositionForTargetVerifier(pos my
 
 // Coordinate-based accessors and mutators.
 //
-// These are the forward-looking API. They currently delegate to the
-// file/position storage above so behavior is unchanged, but they let callers be
-// written in terms of BinlogCoordinate ahead of introducing a GTID coordinate
-// mode.
+// These are the forward-looking API. For file/position coordinates they store
+// into the existing file/position fields (unchanged behavior). For GTID
+// coordinates they store into dedicated GTID fields, so both representations
+// can coexist and the read path is selected by coordinate mode.
 
 func (s *StateTracker) UpdateLastResumableSourceBinlogCoordinate(coord BinlogCoordinate) {
+	if coord.IsGTID() {
+		s.BinlogRWMutex.Lock()
+		defer s.BinlogRWMutex.Unlock()
+		c := coord
+		s.lastWrittenBinlogCoordinate = &c
+		return
+	}
 	s.UpdateLastResumableSourceBinlogPosition(coord.Position())
 }
 
 func (s *StateTracker) UpdateLastResumableSourceBinlogCoordinateForInlineVerifier(coord BinlogCoordinate) {
+	if coord.IsGTID() {
+		s.BinlogRWMutex.Lock()
+		defer s.BinlogRWMutex.Unlock()
+		c := coord
+		s.lastStoredBinlogCoordinateForInlineVerifier = &c
+		return
+	}
 	s.UpdateLastResumableSourceBinlogPositionForInlineVerifier(coord.Position())
 }
 
 func (s *StateTracker) UpdateLastResumableBinlogCoordinateForTargetVerifier(coord BinlogCoordinate) {
+	if coord.IsGTID() {
+		s.BinlogRWMutex.Lock()
+		defer s.BinlogRWMutex.Unlock()
+		c := coord
+		s.lastStoredBinlogCoordinateForTargetVerifier = &c
+		return
+	}
 	s.UpdateLastResumableBinlogPositionForTargetVerifier(coord.Position())
 }
 
@@ -223,6 +360,9 @@ func (s *StateTracker) LastResumableSourceBinlogCoordinate() BinlogCoordinate {
 	s.BinlogRWMutex.RLock()
 	defer s.BinlogRWMutex.RUnlock()
 
+	if s.lastWrittenBinlogCoordinate != nil {
+		return *s.lastWrittenBinlogCoordinate
+	}
 	return NewFilePositionCoordinate(s.lastWrittenBinlogPosition)
 }
 
@@ -230,6 +370,9 @@ func (s *StateTracker) LastResumableSourceBinlogCoordinateForInlineVerifier() Bi
 	s.BinlogRWMutex.RLock()
 	defer s.BinlogRWMutex.RUnlock()
 
+	if s.lastStoredBinlogCoordinateForInlineVerifier != nil {
+		return *s.lastStoredBinlogCoordinateForInlineVerifier
+	}
 	return NewFilePositionCoordinate(s.lastStoredBinlogPositionForInlineVerifier)
 }
 
@@ -237,6 +380,9 @@ func (s *StateTracker) LastResumableBinlogCoordinateForTargetVerifier() BinlogCo
 	s.BinlogRWMutex.RLock()
 	defer s.BinlogRWMutex.RUnlock()
 
+	if s.lastStoredBinlogCoordinateForTargetVerifier != nil {
+		return *s.lastStoredBinlogCoordinateForTargetVerifier
+	}
 	return NewFilePositionCoordinate(s.lastStoredBinlogPositionForTargetVerifier)
 }
 
@@ -367,6 +513,18 @@ func (s *StateTracker) Serialize(lastKnownTableSchemaCache TableSchemaCache, bin
 		LastWrittenBinlogPosition:                 s.lastWrittenBinlogPosition,
 		LastStoredBinlogPositionForInlineVerifier: s.lastStoredBinlogPositionForInlineVerifier,
 		LastStoredBinlogPositionForTargetVerifier: s.lastStoredBinlogPositionForTargetVerifier,
+
+		LastWrittenBinlogCoordinate:                 s.lastWrittenBinlogCoordinate,
+		LastStoredBinlogCoordinateForInlineVerifier: s.lastStoredBinlogCoordinateForInlineVerifier,
+		LastStoredBinlogCoordinateForTargetVerifier: s.lastStoredBinlogCoordinateForTargetVerifier,
+	}
+
+	// If any GTID coordinate has been recorded, this state was produced in GTID
+	// mode. Marking the mode lets readers select the GTID fields on resume.
+	if s.lastWrittenBinlogCoordinate != nil ||
+		s.lastStoredBinlogCoordinateForInlineVerifier != nil ||
+		s.lastStoredBinlogCoordinateForTargetVerifier != nil {
+		state.BinlogCoordinateMode = BinlogCoordinateGTID
 	}
 
 	if binlogVerifyStore != nil {

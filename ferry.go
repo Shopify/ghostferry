@@ -605,19 +605,27 @@ func (f *Ferry) Start() error {
 	// miss some records that are inserted between the time the
 	// DataIterator determines the range of IDs to copy and the time that
 	// the starting binlog coordinates are determined.
-	// Resume-from-state currently only supports file/position coordinates.
-	// GTID-based resume is introduced in a later stage once GTID coordinates are
-	// persisted in the serialized state.
-	if f.StateToResumeFrom != nil && f.Config.BinlogCoordinateMode == BinlogCoordinateGTID {
-		return fmt.Errorf("resuming from state is not yet supported in GTID binlog coordinate mode")
-	}
-
 	var sourceCoord BinlogCoordinate
 	var targetCoord BinlogCoordinate
 
 	var err error
 	if f.StateToResumeFrom != nil {
-		sourceCoord, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlSinceCoordinate(f.StateToResumeFrom.MinSourceBinlogCoordinate())
+		// Fail fast if the serialized state was produced in a different binlog
+		// coordinate mode than the current run; resuming across modes would
+		// mis-route the streamer (e.g. seeking a GTID set against a
+		// file/position stream) and could silently skip or replay events.
+		if stateMode := f.StateToResumeFrom.CoordinateMode(); stateMode != f.Config.BinlogCoordinateMode {
+			return fmt.Errorf(
+				"cannot resume: state was saved in %q binlog coordinate mode but this run is configured for %q",
+				stateMode, f.Config.BinlogCoordinateMode,
+			)
+		}
+
+		resumeCoord, resumeErr := f.StateToResumeFrom.MinSourceBinlogCoordinate()
+		if resumeErr != nil {
+			return fmt.Errorf("computing resume coordinate: %w", resumeErr)
+		}
+		sourceCoord, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlSinceCoordinate(resumeCoord)
 	} else {
 		sourceCoord, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlWithCoordinate()
 	}
@@ -626,9 +634,13 @@ func (f *Ferry) Start() error {
 	}
 
 	if !f.Config.SkipTargetVerification {
-		if f.StateToResumeFrom != nil && f.StateToResumeFrom.LastStoredBinlogPositionForTargetVerifier != zeroPosition {
+		// Presence must be checked explicitly, not via IsZero(): in GTID mode an
+		// empty executed set is a valid target-verifier coordinate, and treating
+		// it as absent would reconnect the target verifier at the target's
+		// current position and skip events that occurred before the interrupt.
+		if f.StateToResumeFrom != nil && f.StateToResumeFrom.HasTargetVerifierBinlogCoordinate() {
 			targetCoord, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlSinceCoordinate(
-				NewFilePositionCoordinate(f.StateToResumeFrom.LastStoredBinlogPositionForTargetVerifier),
+				f.StateToResumeFrom.TargetVerifierBinlogCoordinate(),
 			)
 		} else {
 			targetCoord, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlWithCoordinate()
@@ -998,9 +1010,11 @@ func (f *Ferry) Progress() *Progress {
 
 	// Binlog Progress
 	s.LastSuccessfulBinlogPos = f.BinlogStreamer.lastStreamedBinlogPosition
+	s.LastSuccessfulBinlogCoordinate = f.BinlogStreamer.GetLastStreamedBinlogCoordinate()
 	s.BinlogStreamerLag = now.Sub(f.BinlogStreamer.lastProcessedEventTime).Seconds()
 	s.BinlogWriterLag = now.Sub(f.BinlogWriter.lastProcessedEventTime).Seconds()
 	s.FinalBinlogPos = f.BinlogStreamer.stopAtBinlogPosition
+	s.FinalBinlogCoordinate = f.BinlogStreamer.GetStopBinlogCoordinate()
 
 	if f.TargetVerifier != nil {
 		s.TargetBinlogStreamerLag = now.Sub(f.TargetVerifier.BinlogStreamer.lastProcessedEventTime).Seconds()
