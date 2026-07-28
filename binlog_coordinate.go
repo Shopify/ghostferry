@@ -28,14 +28,19 @@ const (
 
 // BinlogCoordinate is a representation-agnostic replication coordinate.
 //
-// Today it only wraps a file/position (mysql.Position). It exists so that the
-// rest of Ghostferry can be migrated to talk in terms of "a coordinate" rather
-// than "a file and a position", which is a prerequisite for adding a GTID mode
-// behind a feature flag without a second invasive refactor.
+// It can express either a file/position (mysql.Position) or a GTID set. It
+// exists so that the rest of Ghostferry can be migrated to talk in terms of "a
+// coordinate" rather than "a file and a position", which is a prerequisite for
+// adding a GTID mode behind a feature flag without a second invasive refactor.
 //
 // The zero value is a zero file/position coordinate, matching the previous
 // behavior where an empty mysql.Position was used as the "no coordinate"
 // sentinel.
+//
+// GTID coordinates are stored canonically as the GTID set string. The parsed
+// mysql.GTIDSet is derived on demand; it is intentionally not stored so that
+// the value type stays trivially copyable and comparable-by-value-free (GTID
+// sets are mutable and must be cloned before mutation).
 type BinlogCoordinate struct {
 	// Type selects the active representation. An empty Type is treated as
 	// BinlogCoordinateFilePosition for backwards compatibility.
@@ -43,6 +48,20 @@ type BinlogCoordinate struct {
 
 	// FilePosition holds the coordinate when Type is BinlogCoordinateFilePosition.
 	FilePosition mysql.Position
+
+	// GTIDSet holds the coordinate as a canonical MySQL GTID set string when
+	// Type is BinlogCoordinateGTID, e.g.
+	// "3e11fa47-71ca-11e1-9e33-c80aa9429562:1-57". An empty string means "no
+	// GTIDs" which is distinct from a nil/unset coordinate; callers that need
+	// that distinction should check Type and IsZero together.
+	GTIDSet string
+
+	// parsedGTIDSet is an optional cache of the parsed GTIDSet. It is populated
+	// by NewGTIDCoordinateFromSet (and lazily by parsedSet) so that hot paths
+	// such as the stop-condition check do not re-parse the canonical string on
+	// every binlog event. It is never mutated in place; accessors that hand a
+	// set to callers clone it. It is intentionally excluded from JSON.
+	parsedGTIDSet mysql.GTIDSet
 }
 
 // NewFilePositionCoordinate wraps a mysql.Position in a BinlogCoordinate.
@@ -50,6 +69,33 @@ func NewFilePositionCoordinate(pos mysql.Position) BinlogCoordinate {
 	return BinlogCoordinate{
 		Type:         BinlogCoordinateFilePosition,
 		FilePosition: pos,
+	}
+}
+
+// NewGTIDCoordinate builds a GTID coordinate from a canonical GTID set string.
+// The string is not validated here; use ParsedGTIDSet or the DB read helpers
+// when a parsed/validated set is required.
+func NewGTIDCoordinate(gtidSet string) BinlogCoordinate {
+	return BinlogCoordinate{
+		Type:    BinlogCoordinateGTID,
+		GTIDSet: gtidSet,
+	}
+}
+
+// NewGTIDCoordinateFromSet builds a GTID coordinate from an already-parsed
+// mysql.GTIDSet. The set is cloned so the coordinate does not alias (or later
+// mutate) the caller's set, and the clone is cached to avoid re-parsing on hot
+// paths. Prefer this over NewGTIDCoordinate when a parsed set is already in
+// hand (e.g. from go-mysql event tracking).
+func NewGTIDCoordinateFromSet(set mysql.GTIDSet) BinlogCoordinate {
+	if set == nil {
+		return BinlogCoordinate{Type: BinlogCoordinateGTID}
+	}
+	cloned := set.Clone()
+	return BinlogCoordinate{
+		Type:          BinlogCoordinateGTID,
+		GTIDSet:       cloned.String(),
+		parsedGTIDSet: cloned,
 	}
 }
 
@@ -68,6 +114,11 @@ func (c BinlogCoordinate) IsFilePosition() bool {
 	return c.resolvedType() == BinlogCoordinateFilePosition
 }
 
+// IsGTID reports whether this coordinate is a GTID coordinate.
+func (c BinlogCoordinate) IsGTID() bool {
+	return c.resolvedType() == BinlogCoordinateGTID
+}
+
 // Position returns the underlying mysql.Position.
 //
 // It is valid to call this only for file/position coordinates. This accessor
@@ -78,37 +129,87 @@ func (c BinlogCoordinate) Position() mysql.Position {
 	return c.FilePosition
 }
 
+// ParsedGTIDSet parses and returns the underlying GTID set.
+//
+// It is valid to call this only for GTID coordinates. A fresh mysql.GTIDSet is
+// returned on each call so callers may mutate it freely without affecting the
+// coordinate (the internal cache, if any, is cloned before returning).
+func (c BinlogCoordinate) ParsedGTIDSet() (mysql.GTIDSet, error) {
+	set, err := c.parsedSet()
+	if err != nil {
+		return nil, err
+	}
+	return set.Clone(), nil
+}
+
+// parsedSet returns the parsed GTID set, using the cache when present. The
+// returned set MUST NOT be mutated by callers; use ParsedGTIDSet for a
+// mutable clone. This exists so hot paths (HasReached) avoid re-parsing.
+func (c BinlogCoordinate) parsedSet() (mysql.GTIDSet, error) {
+	if c.resolvedType() != BinlogCoordinateGTID {
+		return nil, fmt.Errorf("parsedSet called on non-GTID coordinate of type %q", c.resolvedType())
+	}
+	if c.parsedGTIDSet != nil {
+		return c.parsedGTIDSet, nil
+	}
+	return mysql.ParseMysqlGTIDSet(c.GTIDSet)
+}
+
 // IsZero reports whether the coordinate carries no meaningful position. This
 // mirrors the previous use of an empty mysql.Position as the "unset" sentinel.
+//
+// For GTID coordinates, an empty GTID set string is considered zero. Note that
+// an empty GTID set is semantically "earlier than everything"; callers that
+// must distinguish "no usable coordinate" from "genuinely empty GTID set"
+// should track that distinction separately (e.g. a nil coordinate pointer).
 func (c BinlogCoordinate) IsZero() bool {
 	switch c.resolvedType() {
 	case BinlogCoordinateFilePosition:
 		return c.FilePosition == (mysql.Position{})
+	case BinlogCoordinateGTID:
+		return c.GTIDSet == ""
 	default:
 		return false
 	}
 }
 
-// Compare orders two coordinates of the same type.
+// HasReached reports whether this coordinate has reached or passed target,
+// i.e. whether a stream positioned at c has already covered everything up to
+// target. This is the single "have we crossed the finish line?" question used
+// for stop and catchup conditions; it hides the representation-specific
+// mechanics from callers.
 //
-// It returns -1, 0 or 1 following the semantics of mysql.Position.Compare for
-// file/position coordinates. Comparing coordinates of differing types is a
-// programmer error and panics, because there is no meaningful total ordering
-// across representations. Callers that may receive mixed types should branch on
-// the coordinate type first.
-func (c BinlogCoordinate) Compare(other BinlogCoordinate) int {
-	if c.resolvedType() != other.resolvedType() {
-		panic(fmt.Sprintf(
+//   - For file/position coordinates it is a position comparison (c >= target).
+//   - For GTID coordinates it is set containment (c's set contains target's
+//     set), because GTID sets do not form a total order.
+//
+// Both coordinates must be the same type; a mismatch returns an error rather
+// than guessing across representations.
+func (c BinlogCoordinate) HasReached(target BinlogCoordinate) (bool, error) {
+	if c.resolvedType() != target.resolvedType() {
+		return false, fmt.Errorf(
 			"cannot compare binlog coordinates of different types: %q vs %q",
-			c.resolvedType(), other.resolvedType(),
-		))
+			c.resolvedType(), target.resolvedType(),
+		)
 	}
 
 	switch c.resolvedType() {
 	case BinlogCoordinateFilePosition:
-		return c.FilePosition.Compare(other.FilePosition)
+		return c.FilePosition.Compare(target.FilePosition) >= 0, nil
+	case BinlogCoordinateGTID:
+		// Use the cached parsed sets (read-only) to avoid re-parsing on hot
+		// paths such as the per-event stop check. Contain does not mutate.
+		mine, err := c.parsedSet()
+		if err != nil {
+			return false, fmt.Errorf("parsing GTID set %q: %w", c.GTIDSet, err)
+		}
+		theirs, err := target.parsedSet()
+		if err != nil {
+			return false, fmt.Errorf("parsing GTID set %q: %w", target.GTIDSet, err)
+		}
+		return mine.Contain(theirs), nil
 	default:
-		panic(fmt.Sprintf("comparison not implemented for binlog coordinate type %q", c.resolvedType()))
+		return false, fmt.Errorf("HasReached not supported for binlog coordinate type %q", c.resolvedType())
 	}
 }
 
@@ -117,6 +218,8 @@ func (c BinlogCoordinate) String() string {
 	switch c.resolvedType() {
 	case BinlogCoordinateFilePosition:
 		return fmt.Sprintf("%s:%d", c.FilePosition.Name, c.FilePosition.Pos)
+	case BinlogCoordinateGTID:
+		return fmt.Sprintf("gtid:%s", c.GTIDSet)
 	default:
 		return fmt.Sprintf("<unknown binlog coordinate type %q>", c.resolvedType())
 	}
@@ -129,6 +232,7 @@ func (c BinlogCoordinate) String() string {
 type serializedBinlogCoordinate struct {
 	Type         BinlogCoordinateType `json:"Type"`
 	FilePosition *mysql.Position      `json:"FilePosition,omitempty"`
+	GTIDSet      string               `json:"GTIDSet,omitempty"`
 }
 
 // MarshalJSON implements json.Marshaler.
@@ -139,6 +243,8 @@ func (c BinlogCoordinate) MarshalJSON() ([]byte, error) {
 	case BinlogCoordinateFilePosition:
 		pos := c.FilePosition
 		out.FilePosition = &pos
+	case BinlogCoordinateGTID:
+		out.GTIDSet = c.GTIDSet
 	default:
 		return nil, fmt.Errorf("cannot marshal binlog coordinate of type %q", c.resolvedType())
 	}
@@ -161,6 +267,9 @@ func (c *BinlogCoordinate) UnmarshalJSON(data []byte) error {
 			} else {
 				c.FilePosition = mysql.Position{}
 			}
+			return nil
+		case BinlogCoordinateGTID:
+			c.GTIDSet = typed.GTIDSet
 			return nil
 		default:
 			return fmt.Errorf("cannot unmarshal binlog coordinate of type %q", typed.Type)
