@@ -70,6 +70,14 @@ type Config struct {
 	// SELECT file, position FROM meta.ptheartbeat WHERE server_id = master_server_id
 	ReplicatedMasterPositionQuery string
 
+	// This is the SQL query used to read the master's executed GTID set that
+	// has been replicated to the Source. It is only used when
+	// BinlogCoordinateMode is "gtid". The query must return a single column
+	// containing the GTID set string, e.g.
+	//
+	// SELECT gtid_executed FROM meta.ptheartbeat WHERE server_id = master_server_id
+	ReplicatedMasterGTIDQuery string
+
 	// The duration to wait for the replication to catchup before aborting. Only use if RunFerryFromReplica is true.
 	WaitForReplicationTimeout string
 
