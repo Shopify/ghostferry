@@ -157,6 +157,37 @@ func (this *RowBatchTestSuite) TestRowBatchReorderedColumnsWithGeneratedColumnFi
 	this.Require().Equal([]interface{}{int64(2), int64(1), "z"}, args)
 }
 
+// TestRowBatchWithOnlyGeneratedColumnsReturnsError covers the case LoadTables
+// cannot: that guard rejects a table whose schema is entirely generated, but
+// this list is built from the columns a SELECT actually returned, so a
+// CopyFilter narrowing ColumnsToSelect or an embedder populating Ferry.Tables
+// directly can still reach here with nothing writable.  The batch is
+// constructed directly for exactly that reason.
+//
+// It must be an error and not a panic: Ghostferry is used as a library, and
+// AsSQLQuery already returns an error, so panicking inside strings.Repeat
+// part-way through a move buys nothing.
+func (this *RowBatchTestSuite) TestRowBatchWithOnlyGeneratedColumnsReturnsError() {
+	table := &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema: "test_schema",
+			Name:   "test_table",
+			Columns: []schema.TableColumn{
+				{Name: "gen_a", IsStored: true},
+				{Name: "gen_b", IsVirtual: true},
+			},
+		},
+	}
+
+	batch := ghostferry.NewRowBatch(table, []ghostferry.RowData{{int64(1), int64(2)}}, 0)
+
+	q, args, err := batch.AsSQLQuery("test_schema", "test_table")
+	this.Require().NotNil(err, "must report an error rather than panicking in strings.Repeat")
+	this.Require().Contains(err.Error(), "has no columns to write")
+	this.Require().Equal("", q)
+	this.Require().Nil(args)
+}
+
 func (this *RowBatchTestSuite) TestRowBatchWithWrongColumnsReturnsError() {
 	vals := []ghostferry.RowData{
 		ghostferry.RowData{1000, []byte("val0"), true},

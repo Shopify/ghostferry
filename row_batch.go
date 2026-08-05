@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -99,6 +100,22 @@ func (e *RowBatch) AsSQLQuery(schemaName, tableName string) (string, []interface
 	insertColumns := make([]string, 0, len(e.nonGeneratedColumnIdxs))
 	for _, i := range e.nonGeneratedColumnIdxs {
 		insertColumns = append(insertColumns, e.columns[i])
+	}
+
+	// LoadTables refuses a table with no writable columns, but it cannot be the
+	// only guard: this list is derived from the columns the SELECT returned, so
+	// a CopyFilter narrowing ColumnsToSelect, or an embedder populating
+	// Ferry.Tables directly, can still arrive here with nothing to write.
+	// Ghostferry is consumed as a library, and this function already returns an
+	// error, so there is no reason for that to be a panic inside strings.Repeat
+	// part-way through a move.
+	if len(insertColumns) == 0 {
+		return "", nil, fmt.Errorf(
+			"table %s.%s has no columns to write: every selected column (%v) is a generated column",
+			e.table.Schema,
+			e.table.Name,
+			e.columns,
+		)
 	}
 
 	valuesStr := "(" + strings.Repeat("?,", len(insertColumns)-1) + "?)"
