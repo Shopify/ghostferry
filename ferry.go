@@ -59,9 +59,6 @@ type Ferry struct {
 	BinlogStreamer *BinlogStreamer
 	BinlogWriter   *BinlogWriter
 
-	// A value rather than a pointer so that it is usable without allocation:
-	// StopTargetVerifier can always Wait(), and a run that never started the
-	// verifier has simply not Add()ed to it.
 	targetVerifierWg sync.WaitGroup
 	TargetVerifier   *TargetVerifier
 

@@ -89,26 +89,20 @@ func (e *RowBatch) AsSQLQuery(schemaName, tableName string) (string, []interface
 		return "", nil, err
 	}
 
-	// The INSERT column list follows e.columns, the order the SELECT actually
-	// returned, and never schema order.  The two differ: the sharding copy
-	// filter issues
-	//   SELECT * FROM t JOIN (SELECT id …) AS batch USING(id)
-	// and MySQL's USING moves 'id' to the front of the result set.  Naming the
-	// columns in schema order while supplying values in result order writes
-	// every value into the wrong column, silently, for every row copied — the
-	// gh-285 corruption pattern.
+	// The INSERT column list must follow e.columns — the order the SELECT
+	// returned — not schema order.  The two differ under the sharding copy
+	// filter, whose JOIN ... USING moves the join column to the front; naming
+	// columns in schema order against result-ordered values silently writes
+	// every value into the wrong column (the gh-285 corruption pattern).
 	insertColumns := make([]string, 0, len(e.nonGeneratedColumnIdxs))
 	for _, i := range e.nonGeneratedColumnIdxs {
 		insertColumns = append(insertColumns, e.columns[i])
 	}
 
-	// LoadTables refuses a table with no writable columns, but it cannot be the
-	// only guard: this list is derived from the columns the SELECT returned, so
-	// a CopyFilter narrowing ColumnsToSelect, or an embedder populating
-	// Ferry.Tables directly, can still arrive here with nothing to write.
-	// Ghostferry is consumed as a library, and this function already returns an
-	// error, so there is no reason for that to be a panic inside strings.Repeat
-	// part-way through a move.
+	// LoadTables refuses a table with no writable columns, but a CopyFilter
+	// narrowing ColumnsToSelect, or an embedder populating Ferry.Tables
+	// directly, can still arrive here with nothing to write.  Without this
+	// check, strings.Repeat below panics on a negative count.
 	if len(insertColumns) == 0 {
 		return "", nil, fmt.Errorf(
 			"table %s.%s has no columns to write: every selected column (%v) is a generated column",

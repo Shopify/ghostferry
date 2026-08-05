@@ -257,12 +257,9 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 			tableLog := dbLog.WithField("table", tableName)
 			tableLog.Debug("caching table schema")
 
-			// Every column being generated leaves Ghostferry with nothing it is
-			// allowed to write, since MySQL rejects assignment to a generated
-			// column.  MySQL does permit such a table, and a STORED generated
-			// column may be its primary key, so it can otherwise look perfectly
-			// copyable.  Refusing it here means an operator finds out before the
-			// move starts rather than through an empty INSERT part-way through.
+			// MySQL permits a table whose every column is generated, but
+			// Ghostferry would have nothing it is allowed to write.  Refusing it
+			// here beats failing part-way through a move.
 			if _, _, nonGeneratedColumnsCount := tableSchema.ColumnsCount(); nonGeneratedColumnsCount == 0 {
 				err := NoNonGeneratedColumnsError(tableSchema.Schema, tableSchema.Name)
 				tableLog.WithError(err).Error("invalid table")
@@ -346,13 +343,10 @@ func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *Casca
 	}
 
 	if paginationKeyColumn != nil {
-		// Pagination needs a column that is unique and can be range-scanned in
-		// order.  MySQL refuses to make a VIRTUAL column a PRIMARY KEY, so one
-		// can only become the pagination key through explicit configuration,
-		// with nothing establishing either property: duplicates would make the
-		// cursor skip or repeat rows, and an unindexed virtual column costs a
-		// full scan and a filesort on every batch.  A STORED column can be a
-		// real primary key, so it is allowed.
+		// MySQL will not let a VIRTUAL column be a PRIMARY KEY, so one arrives
+		// here only through explicit configuration, with nothing establishing
+		// the uniqueness or index-backed order pagination depends on.  A STORED
+		// column can be a real primary key, so it is allowed.
 		if paginationKeyColumn.IsVirtual {
 			return nil, -1, VirtualPaginationKeyError(t.Schema, t.Name, paginationKeyColumn.Name)
 		}

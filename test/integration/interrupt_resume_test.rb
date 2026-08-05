@@ -357,21 +357,15 @@ class InterruptResumeTest < GhostferryTestCase
     refute_nil dumped_state['LastStoredBinlogPositionForTargetVerifier']['Name']
     refute_nil dumped_state['LastStoredBinlogPositionForTargetVerifier']['Pos']
 
-    # The inline verifier's resumable position must have advanced past where
-    # the binlog was before the run: it is updated synchronously inside the
-    # BinlogStreamer event loop, so by the time AFTER_BINLOG_APPLY delivers the
-    # interrupt it has already moved. Compare (file, position) as a pair,
-    # because max_binlog_size is 4096 in the test containers and the two
-    # thousand inserts above rotate the binlog many times; comparing only the
-    # position within a file would be meaningless across a rotation.
+    # The inline verifier's resumable position is updated synchronously inside
+    # the BinlogStreamer event loop, so it has moved by the time
+    # AFTER_BINLOG_APPLY delivers the interrupt.  Compare (file, position) as a
+    # pair: max_binlog_size is 4096 here, so the binlog rotates many times.
     #
-    # LastWrittenBinlogPosition is deliberately NOT checked the same way. It is
-    # advanced by the BinlogWriter goroutine, which is not what
-    # AFTER_BINLOG_APPLY waits on, so when the interrupt fires on the first
-    # applied event it can legitimately still hold the value Start() set.
-    # Asserting it had moved was a real race, not a real guarantee. What we do
-    # still require of it is that resuming from it produces an identical
-    # target, which is the assertion at the end of this test.
+    # LastWrittenBinlogPosition is deliberately NOT checked: the BinlogWriter
+    # goroutine advances it asynchronously, so asserting it had moved was a
+    # race.  What we require of it is that resuming produces an identical
+    # target, asserted at the end of this test.
     resumable_position = [
       dumped_state['LastStoredBinlogPositionForInlineVerifier']['Name'],
       dumped_state['LastStoredBinlogPositionForInlineVerifier']['Pos'],

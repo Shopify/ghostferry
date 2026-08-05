@@ -171,13 +171,10 @@ class InlineVerifierTest < GhostferryTestCase
     ghostferry.run
     assert verification_ran
 
-    # The exact fingerprints are pinned deliberately. They are MD5(CONCAT(...))
-    # over every verified column of the row, so they change if the set of
-    # columns the verifier fingerprints ever changes -- including if generated
-    # columns stop being included. A prefix match would not catch that.
-    # Recomputed here because the default test table now carries `length`
-    # VIRTUAL and `summary` STORED; independently derived from the documented
-    # RowMd5Query expression as well as observed, and the two agree.
+    # The exact fingerprints are pinned deliberately: they change if the set
+    # of columns the verifier fingerprints ever changes -- including if
+    # generated columns stop being included.  A prefix match would not catch
+    # that.
     expected_message = "cutover verification failed for: gftest.test_table_1 "\
       "[PKs: #{corrupting_id} (type: rows checksum difference, source: adcad6f2c7973d35980fcff146107b66, target: 383fc80f185d5ad58c9b828cbac2ea8d) ] "
 

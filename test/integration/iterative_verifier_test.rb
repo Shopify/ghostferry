@@ -28,22 +28,13 @@ class IterativeVerifierTest < GhostferryTestCase
   # Base data (id, data) is identical on both sides; only the STORED generated
   # column expression differs on the target, which must trigger a failure.
   #
-  # Two things about the shape of this test are load-bearing.
-  #
-  # The result is captured in the on_status handler and asserted after
-  # ghostferry.run returns, rather than asserted in the handler itself.
-  # Minitest::Assertion descends from Exception, not StandardError, and the
-  # callback server in ghostferry_helper.rb only rescues StandardError, so an
-  # assertion that fails inside a handler is swallowed and the test passes
-  # regardless.
-  #
-  # There is deliberately no datawriter. With one running, a divergent
-  # generated column on the target also makes replayed binlog UPDATEs match no
-  # row there, so the ordinary `data` column diverges too and the table is
-  # reported for that reason instead. The test then passes even if the verifier
-  # ignores generated columns entirely. On a static source the generated column
-  # is the only possible difference, so the assertion below can only hold if
-  # the verifier really is fingerprinting it.
+  # Two things about the shape of this test are load-bearing.  The result is
+  # asserted after ghostferry.run returns, never inside the handler: a failing
+  # assertion there is swallowed, because Minitest::Assertion descends from
+  # Exception and the callback server only rescues StandardError.  And there
+  # is deliberately no datawriter: with one running, the ordinary `data`
+  # column diverges too and the table is reported for that reason even if the
+  # verifier ignores generated columns entirely.
   def test_iterative_verifier_detects_stored_generated_column_divergence
     target_db.query(
       "ALTER TABLE #{DEFAULT_FULL_TABLE_NAME} " \

@@ -200,14 +200,12 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWhenCascadingPa
 	this.Require().EqualError(err, ghostferry.NonExistingPaginationKeyColumnError(testhelpers.TestSchemaName, table, paginationColumn).Error())
 }
 
-// TestLoadTablesRejectVirtualPaginationKey verifies that using a VIRTUAL
-// generated column as the pagination key is rejected at load time.
-//
-// Pagination needs a column that is unique and can be range-scanned in order.
-// MySQL will not let a VIRTUAL column be a PRIMARY KEY, so nothing establishes
-// either property for one, and the only route to this code path is an explicit
-// CascadingPaginationColumnConfig.  A STORED generated column can be a real
-// primary key and is deliberately allowed.
+// TestLoadTablesRejectVirtualPaginationKey verifies that a VIRTUAL generated
+// column as the pagination key is rejected at load time.  MySQL will not let
+// one be a PRIMARY KEY, so the only route here is an explicit
+// CascadingPaginationColumnConfig, and nothing then establishes the
+// uniqueness or ordering pagination needs.  A STORED generated column can be
+// a real primary key and is deliberately allowed.
 func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectVirtualPaginationKey() {
 	table := "virtual_pagination_key"
 	virtualColumn := "vlen"
@@ -230,22 +228,10 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectVirtualPaginationKey(
 	this.Require().EqualError(err, ghostferry.VirtualPaginationKeyError(testhelpers.TestSchemaName, table, virtualColumn).Error())
 }
 
-// TestLoadTablesRejectTableWithOnlyGeneratedColumns covers the one degenerate
-// shape that filtering generated columns out of writes creates: a table with
-// nothing left to write.
-//
-// It is rare but it is not hypothetical, and MySQL will build it — this DDL
-// runs, it accepts rows, and it hands Ghostferry a perfectly valid pagination
-// key, because a STORED generated column may be a PRIMARY KEY.  Ghostferry
-// would then reach RowBatch.AsSQLQuery with an empty column list and panic
-// inside strings.Repeat on a negative count, part-way through a move.
-// Refusing the table while schemas are loaded turns that into a message an
-// operator can act on, before anything has been copied.
-//
-// The first two assertions are the load-bearing ones: they establish that
-// MySQL really does accept this table and really does accept rows into it, so
-// that the rejection below is guarding something reachable rather than
-// something imagined.
+// TestLoadTablesRejectTableWithOnlyGeneratedColumns: MySQL accepts a table
+// whose every column is generated — the first two assertions prove it — but
+// Ghostferry would have nothing to write.  Refusing it at load time turns a
+// mid-move failure into an actionable startup error.
 func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTableWithOnlyGeneratedColumns() {
 	table := "all_generated"
 

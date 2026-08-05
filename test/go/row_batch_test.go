@@ -73,20 +73,11 @@ func (this *RowBatchTestSuite) TestRowBatchGeneratesInsertQuery() {
 	this.Require().Equal(expected, v1)
 }
 
-// TestRowBatchReorderedColumnsGeneratesCorrectInsert pins the index space of
-// the INSERT column list: it must follow query-result order, never schema
-// order.
-//
-// The sharding copy filter executes:
-//
-//	SELECT * FROM t JOIN (SELECT id …) AS batch USING(id)
-//
-// MySQL's USING clause moves the join column to the front of the result set,
-// so for a table with schema order (tenant_id, col1, id, d) the query returns
-// columns in result order (id, tenant_id, col1, d).  Naming the columns in
-// schema order while supplying values in result order writes every value into
-// the wrong column, silently, for every row copied — the gh-285 corruption
-// pattern.
+// TestRowBatchReorderedColumnsGeneratesCorrectInsert pins the INSERT column
+// list to query-result order, never schema order.  The sharding copy filter's
+// JOIN ... USING moves the join column to the front of the result set, so
+// schema-ordered names against result-ordered values would silently write
+// every value into the wrong column (the gh-285 corruption pattern).
 func (this *RowBatchTestSuite) TestRowBatchReorderedColumnsGeneratesCorrectInsert() {
 	// Schema order: tenant_id(0), col1(1), id(2), d(3)
 	schemaColumns := []schema.TableColumn{
@@ -158,15 +149,9 @@ func (this *RowBatchTestSuite) TestRowBatchReorderedColumnsWithGeneratedColumnFi
 }
 
 // TestRowBatchWithOnlyGeneratedColumnsReturnsError covers the case LoadTables
-// cannot: that guard rejects a table whose schema is entirely generated, but
-// this list is built from the columns a SELECT actually returned, so a
-// CopyFilter narrowing ColumnsToSelect or an embedder populating Ferry.Tables
-// directly can still reach here with nothing writable.  The batch is
-// constructed directly for exactly that reason.
-//
-// It must be an error and not a panic: Ghostferry is used as a library, and
-// AsSQLQuery already returns an error, so panicking inside strings.Repeat
-// part-way through a move buys nothing.
+// cannot: a CopyFilter narrowing ColumnsToSelect, or an embedder populating
+// Ferry.Tables directly, can reach AsSQLQuery with nothing writable.  That
+// must be an error, not a panic inside strings.Repeat.
 func (this *RowBatchTestSuite) TestRowBatchWithOnlyGeneratedColumnsReturnsError() {
 	table := &ghostferry.TableSchema{
 		Table: &schema.Table{

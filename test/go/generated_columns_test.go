@@ -15,16 +15,11 @@ import (
 )
 
 // GeneratedColumnsTestSuite exercises generated-column handling end to end
-// against real MySQL servers: real DDL, real DML, real binlog row images, and
-// the generated SQL actually executed against a real target.
-//
-// The other generated-column tests in this package construct a TableSchema by
-// hand and set IsVirtual/IsStored on an otherwise ordinary column. That is
-// convenient and fast, but it can only prove what Ghostferry does with a flag
-// it was handed; it cannot prove that MySQL sets that flag, that the value
-// survives the binlog, or that the SQL we emit is accepted by a target that
-// really has a generated column. This suite closes that gap, so that the
-// hand-built tests are testing our logic and these are testing our premises.
+// against real MySQL servers: real DDL, real binlog row images, and the
+// generated SQL executed against a real target.  The hand-built TableSchema
+// tests elsewhere in this package test our logic; these test our premises —
+// that MySQL sets the flags, that the values survive the binlog, and that a
+// real target accepts the SQL we emit.
 type GeneratedColumnsTestSuite struct {
 	*testhelpers.GhostferryUnitTestSuite
 
@@ -34,9 +29,8 @@ type GeneratedColumnsTestSuite struct {
 func (this *GeneratedColumnsTestSuite) SetupTest() {
 	this.GhostferryUnitTestSuite.SetupTest()
 
-	// The binlog streamer needs its own connection, separate from the pooled
-	// Ferry.SourceDB, because it hands the connection to the replication
-	// client for the lifetime of the stream.
+	// The binlog streamer needs its own connection: it hands it to the
+	// replication client for the lifetime of the stream.
 	testFerry := testhelpers.NewTestFerry()
 	sourceConfig, err := testFerry.Source.MySQLConfig()
 	this.Require().Nil(err)
@@ -57,8 +51,6 @@ func (this *GeneratedColumnsTestSuite) TearDownTest() {
 	this.GhostferryUnitTestSuite.TearDownTest()
 }
 
-// createOnBothSides runs the same DDL against source and target, mirroring a
-// real move where the target schema is created from the source schema.
 func (this *GeneratedColumnsTestSuite) createOnBothSides(ddl string) {
 	_, err := this.Ferry.SourceDB.Exec(ddl)
 	this.Require().Nil(err)
@@ -94,8 +86,8 @@ func (this *GeneratedColumnsTestSuite) loadTables() ghostferry.TableSchemaCache 
 }
 
 // captureBinlogEvents streams the source binlog while mutate() runs, and
-// returns the DMLEvents Ghostferry decodes from it. This is the whole point of
-// the suite: the row images are produced by MySQL, not by us.
+// returns the DMLEvents Ghostferry decodes from it — row images produced by
+// MySQL, not by us.
 func (this *GeneratedColumnsTestSuite) captureBinlogEvents(mutate func()) []ghostferry.DMLEvent {
 	testFerry := testhelpers.NewTestFerry()
 	streamer := &ghostferry.BinlogStreamer{
@@ -117,7 +109,7 @@ func (this *GeneratedColumnsTestSuite) captureBinlogEvents(mutate func()) []ghos
 	})
 
 	done := make(chan struct{})
-	wg := &sync.WaitGroup{}
+	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -175,12 +167,9 @@ func (this *GeneratedColumnsTestSuite) queryStrings(db *sql.DB, query string) []
 	return out
 }
 
-// docsDDL is Milan's table from the PR #437 review, with the collation pinned
-// so the test proves the same thing whatever the server default is.
-//
-// A content-addressed table like this is the motivating case for supporting
-// STORED generated columns at all: the primary key is a hash of the body, so
-// the body is the only other column and nothing else can tell two rows apart.
+// docsDDL is the content-addressed table from the PR #437 review: the primary
+// key is a hash of the body, so nothing else can tell two rows apart.  The
+// collation is pinned so the test does not depend on the server default.
 const docsDDL = "CREATE TABLE %s.docs (" +
 	"doc TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL," +
 	"doc_hash BINARY(32) AS (UNHEX(SHA2(doc, 256))) STORED," +
@@ -188,22 +177,17 @@ const docsDDL = "CREATE TABLE %s.docs (" +
 
 func (this *GeneratedColumnsTestSuite) seedDocs() {
 	this.createOnBothSides(fmt.Sprintf(docsDDL, testhelpers.TestSchemaName))
-	// Four rows, four distinct hashes, one equivalence class as far as `=` on
-	// `doc` is concerned.  utf8mb4_unicode_ci — Ghostferry's own configured
-	// collation — is accent-insensitive and PAD SPACE as well as
-	// case-insensitive, so the trailing-space row belongs to the class too.
-	// That one matters most: stray trailing whitespace arrives in real data by
-	// accident, where deliberate case variants usually do not.
+	// Four rows, four distinct hashes, one equivalence class under `=` on
+	// `doc`: utf8mb4_unicode_ci is case-insensitive, accent-insensitive and
+	// PAD SPACE.
 	this.execOnBothSides(fmt.Sprintf(
 		"INSERT INTO %s.docs (doc) VALUES ('cafe'), ('caf\u00e9'), ('CAFE'), ('cafe  ')",
 		testhelpers.TestSchemaName,
 	))
 }
 
-// assertDocsMatch states the only thing that really matters after a replay:
-// the target is indistinguishable from the source.  It catches removing too
-// much and removing too little in one assertion, without depending on row
-// order.
+// assertDocsMatch asserts the target is indistinguishable from the source,
+// catching over- and under-deletion in one order-independent assertion.
 func (this *GeneratedColumnsTestSuite) assertDocsMatch() {
 	query := fmt.Sprintf(
 		"SELECT doc, HEX(doc_hash) AS h FROM %s.docs ORDER BY h",
@@ -216,9 +200,8 @@ func (this *GeneratedColumnsTestSuite) targetDocCount() int {
 	return len(this.targetStrings(fmt.Sprintf("SELECT doc FROM %s.docs", testhelpers.TestSchemaName)))
 }
 
-// sourceCount exists so that comparing source against target cannot pass
-// vacuously.  If a mutation silently failed to affect the source, the two
-// sides would agree on the unchanged data and the comparison would say nothing.
+// sourceCount guards against a vacuous pass: if a mutation silently failed on
+// the source, source and target would agree on the unchanged data.
 func (this *GeneratedColumnsTestSuite) sourceCount(table string) int {
 	var n int
 	row := this.Ferry.SourceDB.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s.%s", testhelpers.TestSchemaName, table))
@@ -227,15 +210,9 @@ func (this *GeneratedColumnsTestSuite) sourceCount(table string) int {
 }
 
 // TestBinlogDeleteAffectsExactlyTheRowThatWasDeleted is the data-loss
-// regression test for the WHERE clause.
-//
-// A generated column is a deterministic function of the other columns in the
-// row, which makes it tempting to conclude that omitting it from the WHERE
-// clause selects the same rows. It does not. SQL `=` compares under the
-// column's collation, which is coarser than value equality, so the remaining
-// columns need not identify the row uniquely. Here `doc='hello'` matches all
-// three rows and only `doc_hash` separates them, so a WHERE clause without it
-// turns a one-row delete on the source into a three-row delete on the target.
+// regression test for the WHERE clause.  SQL `=` compares under the column's
+// collation, so without `doc_hash` in the predicate a one-row delete on the
+// source becomes a multi-row delete on the target.
 func (this *GeneratedColumnsTestSuite) TestBinlogDeleteAffectsExactlyTheRowThatWasDeleted() {
 	this.seedDocs()
 
@@ -255,17 +232,11 @@ func (this *GeneratedColumnsTestSuite) TestBinlogDeleteAffectsExactlyTheRowThatW
 	this.assertDocsMatch()
 }
 
-// TestBinlogDeleteOnCompositeKeyAffectsExactlyOneRow is the same failure in a
-// shape that looks like an ordinary application table rather than a minimal
-// reproduction: several ordinary columns, a composite unique key, and the
-// generated column as only one part of it.
-//
-// It is here because the tempting summary of the bug — "only tables whose
-// primary key IS a generated column" — is too narrow, and a fixture built to
-// that summary passes against the broken code and proves nothing.  The real
-// condition is that after removing every generated column, no remaining subset
-// still forms a unique key.  Here `tenant`, `label` and `payload` are all in
-// the WHERE clause and still fail to separate the two rows.
+// TestBinlogDeleteOnCompositeKeyAffectsExactlyOneRow is the same failure in
+// an ordinary-looking table.  The exposure is not limited to "the primary key
+// IS a generated column": it is that after removing every generated column,
+// no remaining subset forms a unique key.  Here `tenant`, `label` and
+// `payload` are all in the WHERE clause and still fail to separate the rows.
 func (this *GeneratedColumnsTestSuite) TestBinlogDeleteOnCompositeKeyAffectsExactlyOneRow() {
 	this.createOnBothSides(fmt.Sprintf(
 		"CREATE TABLE %s.composite ("+
@@ -302,12 +273,10 @@ func (this *GeneratedColumnsTestSuite) TestBinlogDeleteOnCompositeKeyAffectsExac
 	testhelpers.AssertTwoQueriesHaveEqualResult(this.T(), this.Ferry, query, query)
 }
 
-// TestBinlogUpdateAffectsExactlyTheRowThatWasUpdated is the UPDATE counterpart
-// of the delete test above. The over-match is the same; the consequence
-// differs, because rewriting all three rows to the same body makes their
-// generated primary keys collide, so this one fails loudly rather than
-// silently. Both outcomes are wrong and both are fixed by the same WHERE
-// clause.
+// TestBinlogUpdateAffectsExactlyTheRowThatWasUpdated is the UPDATE
+// counterpart: the same over-match, but rewriting every matched row to the
+// same body makes the generated primary keys collide, so it fails loudly
+// rather than silently.
 func (this *GeneratedColumnsTestSuite) TestBinlogUpdateAffectsExactlyTheRowThatWasUpdated() {
 	this.seedDocs()
 
@@ -331,11 +300,9 @@ func (this *GeneratedColumnsTestSuite) TestBinlogUpdateAffectsExactlyTheRowThatW
 	this.assertDocsMatch()
 }
 
-// TestStoredPaginationKeyIsUsedInBinlogWhereClause is the assertion Milan
-// attached to his review of PR #437. The tests above cover the correctness
-// consequence of dropping the key from the WHERE clause; this one covers the
-// operational one, which is that every replayed statement would otherwise scan
-// the whole table instead of seeking on the primary key.
+// TestStoredPaginationKeyIsUsedInBinlogWhereClause covers the operational
+// consequence of dropping the key from the WHERE clause: every replayed
+// statement would scan the table instead of seeking on the primary key.
 func (this *GeneratedColumnsTestSuite) TestStoredPaginationKeyIsUsedInBinlogWhereClause() {
 	this.seedDocs()
 
@@ -355,11 +322,8 @@ func (this *GeneratedColumnsTestSuite) TestStoredPaginationKeyIsUsedInBinlogWher
 	stmt, err := events[0].AsSQLString(events[0].Database(), events[0].Table())
 	this.Require().Nil(err)
 
-	// Asserted as an exact prefix rather than as separate Contains/NotContains
-	// checks: it pins the whole SET clause and the start of the WHERE clause in
-	// one go, and it fails if either stops filtering correctly.  Only the raw
-	// SHA-256 bytes of the key are left unpinned — go-mysql hands BINARY back as
-	// a string, so they are emitted as a plain quoted literal.
+	// An exact prefix pins the whole SET clause and the start of WHERE in one
+	// go; only the raw SHA-256 bytes of the key are left unpinned.
 	this.Require().True(
 		strings.HasPrefix(stmt,
 			"UPDATE `gftest`.`docs` SET `doc`=_binary'greetings'"+
@@ -368,10 +332,9 @@ func (this *GeneratedColumnsTestSuite) TestStoredPaginationKeyIsUsedInBinlogWher
 	)
 }
 
-// itemsDDL carries one VIRTUAL and one STORED generated column, positioned
-// between ordinary columns so that any index-space confusion between schema
-// order and filtered order shows up as a wrong value rather than as a
-// coincidentally correct one.
+// itemsDDL places one VIRTUAL and one STORED generated column between
+// ordinary columns, so index-space confusion shows up as a wrong value rather
+// than a coincidentally correct one.
 const itemsDDL = "CREATE TABLE %s.items (" +
 	"id BIGINT NOT NULL AUTO_INCREMENT," +
 	"body VARCHAR(64) NOT NULL," +
@@ -384,9 +347,6 @@ func (this *GeneratedColumnsTestSuite) seedItems() {
 	this.createOnBothSides(fmt.Sprintf(itemsDDL, testhelpers.TestSchemaName))
 }
 
-// assertItemsMatch is the only assertion that really matters for a move: the
-// target row is indistinguishable from the source row, generated columns
-// included.
 func (this *GeneratedColumnsTestSuite) assertItemsMatch() {
 	query := fmt.Sprintf(
 		"SELECT id, body, body_len, note, body_upper FROM %s.items ORDER BY id",
@@ -395,10 +355,9 @@ func (this *GeneratedColumnsTestSuite) assertItemsMatch() {
 	testhelpers.AssertTwoQueriesHaveEqualResult(this.T(), this.Ferry, query, query)
 }
 
-// TestBinlogInsertReplayLetsTargetComputeGeneratedColumns proves the INSERT
-// side of the policy: we must not name the generated columns (MySQL rejects
-// the assignment outright, see the 3105 test below), and we do not need to,
-// because the target computes identical values from the columns we do send.
+// TestBinlogInsertReplayLetsTargetComputeGeneratedColumns: the INSERT must
+// not name the generated columns, and need not — the target computes
+// identical values from the columns we do send.
 func (this *GeneratedColumnsTestSuite) TestBinlogInsertReplayLetsTargetComputeGeneratedColumns() {
 	this.seedItems()
 
@@ -415,11 +374,9 @@ func (this *GeneratedColumnsTestSuite) TestBinlogInsertReplayLetsTargetComputeGe
 	this.assertItemsMatch()
 }
 
-// TestBinlogUpdateReplayMatchesOnGeneratedColumnValues proves the WHERE side of
-// the policy against real MySQL: the VIRTUAL and STORED values Ghostferry reads
-// out of the source's binlog row image do match the values the target computed
-// for itself, so predicating on them finds the row rather than silently
-// matching nothing.
+// TestBinlogUpdateReplayMatchesOnGeneratedColumnValues: the VIRTUAL and
+// STORED values read from the source's row image match what the target
+// computed for itself, so predicating on them finds the row.
 func (this *GeneratedColumnsTestSuite) TestBinlogUpdateReplayMatchesOnGeneratedColumnValues() {
 	this.seedItems()
 	this.execOnBothSides(fmt.Sprintf(
@@ -446,7 +403,7 @@ func (this *GeneratedColumnsTestSuite) TestBinlogUpdateReplayMatchesOnGeneratedC
 }
 
 // TestBinlogDeleteReplayMatchesOnGeneratedColumnValues is the DELETE
-// counterpart: a delete whose WHERE clause includes both generated columns must
+// counterpart: the WHERE clause includes both generated columns and must
 // still remove the row on the target.
 func (this *GeneratedColumnsTestSuite) TestBinlogDeleteReplayMatchesOnGeneratedColumnValues() {
 	this.seedItems()
@@ -471,11 +428,8 @@ func (this *GeneratedColumnsTestSuite) TestBinlogDeleteReplayMatchesOnGeneratedC
 	)
 }
 
-// TestMySQLRejectsAssignmentToGeneratedColumns records the premise the INSERT
-// and SET filtering rests on, so that a future reader does not have to take it
-// on faith. MySQL error 3105 is raised for both VIRTUAL and STORED columns,
-// which is why the filtering there cannot be narrowed the way the WHERE clause
-// can.
+// TestMySQLRejectsAssignmentToGeneratedColumns pins the premise the INSERT
+// and SET filtering rests on: error 3105, for VIRTUAL and STORED alike.
 func (this *GeneratedColumnsTestSuite) TestMySQLRejectsAssignmentToGeneratedColumns() {
 	this.seedItems()
 
@@ -494,16 +448,12 @@ func (this *GeneratedColumnsTestSuite) TestMySQLRejectsAssignmentToGeneratedColu
 	this.Require().Contains(err.Error(), "3105", "assigning a STORED generated column must be rejected")
 }
 
-// TestUnsignedGeneratedColumnsAreNormalisedBeforeUse guards an invariant that
-// a future tidy-up would plausibly break.
-//
-// go-mysql hands back an unsigned column as a negative signed integer, and it
-// does so for generated columns exactly as for ordinary ones.  Ghostferry
-// normalises the whole row before rendering any SQL.  Skipping generated
-// columns there — for the appealing but wrong reason that INSERT and SET skip
-// them too — would emit `WHERE v = -1` for a column holding
-// 18446744073709551615, which matches no row, so every replayed UPDATE and
-// DELETE for the table would quietly do nothing.
+// TestUnsignedGeneratedColumnsAreNormalisedBeforeUse: go-mysql hands back an
+// unsigned generated column as a negative signed integer, like any other
+// unsigned column.  Skipping generated columns during normalisation — to
+// match the INSERT and SET filtering — would emit `WHERE v = -1` for a column
+// holding 18446744073709551615, and every replayed UPDATE and DELETE for the
+// table would quietly do nothing.
 func (this *GeneratedColumnsTestSuite) TestUnsignedGeneratedColumnsAreNormalisedBeforeUse() {
 	this.createOnBothSides(fmt.Sprintf(
 		"CREATE TABLE %s.bignum ("+
@@ -540,27 +490,20 @@ func (this *GeneratedColumnsTestSuite) TestUnsignedGeneratedColumnsAreNormalised
 	this.Require().Empty(this.targetStrings(fmt.Sprintf("SELECT id FROM %s.bignum", testhelpers.TestSchemaName)))
 }
 
-// copyEverythingToTarget runs Ghostferry's real copy path — DataIterator,
-// Cursor, RowBatch, BatchWriter — over every loaded table.  It also turns on
-// the inline verifier in enforcing mode, so a batch whose row fingerprints
-// disagree between source and target fails the copy rather than being reported
-// later.  Generated columns are part of that fingerprint, so this checks the
-// values the target computed, not just the columns we sent.
+// copyEverythingToTarget runs Ghostferry's real copy path over every loaded
+// table, with the inline verifier enforcing.  Generated columns are part of
+// the row fingerprint, so this checks the values the target computed, not
+// just the columns we sent.
 func (this *GeneratedColumnsTestSuite) copyEverythingToTarget() {
 	this.Ferry.Tables = this.loadTables()
 	err := this.Ferry.RunStandaloneDataCopy(this.Ferry.Tables.AsSlice())
 	this.Require().Nil(err)
 }
 
-// TestCopyTableWithStoredGeneratedPrimaryKey covers the copy path for the shape
-// the binlog tests above are built around.
-//
-// The copy path and the binlog path filter generated columns independently —
-// one from query-result order, one from schema order — so passing on one says
-// nothing about the other.  Getting it wrong here does not merely misplace a
-// value: the pagination key is a generated column, so a batch that failed to
-// filter would be rejected outright by MySQL and a batch that filtered the
-// wrong position would write every value into the wrong column.
+// TestCopyTableWithStoredGeneratedPrimaryKey covers the copy path for the
+// docs table.  The copy path and the binlog path filter generated columns
+// independently — one from query-result order, one from schema order — so
+// passing on one says nothing about the other.
 func (this *GeneratedColumnsTestSuite) TestCopyTableWithStoredGeneratedPrimaryKey() {
 	this.createOnBothSides(fmt.Sprintf(docsDDL, testhelpers.TestSchemaName))
 	_, err := this.Ferry.SourceDB.Exec(fmt.Sprintf(
@@ -575,10 +518,9 @@ func (this *GeneratedColumnsTestSuite) TestCopyTableWithStoredGeneratedPrimaryKe
 	this.assertDocsMatch()
 }
 
-// TestCopyTableWithGeneratedColumnsBetweenOrdinaryOnes places a VIRTUAL and a
-// STORED column in the middle of the schema so that dropping the wrong
-// position shifts every later value by one, rather than happening to land
-// correctly as it would if the generated columns were last.
+// TestCopyTableWithGeneratedColumnsBetweenOrdinaryOnes: with the generated
+// columns mid-schema, dropping the wrong position shifts every later value by
+// one instead of coincidentally landing correctly.
 func (this *GeneratedColumnsTestSuite) TestCopyTableWithGeneratedColumnsBetweenOrdinaryOnes() {
 	this.seedItems()
 	_, err := this.Ferry.SourceDB.Exec(fmt.Sprintf(

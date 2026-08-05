@@ -1,17 +1,13 @@
 require "test_helper"
 
-# End-to-end coverage for tables carrying MySQL generated (computed) columns.
-#
-# The default integration table (see DbHelper#seed_random_data) already carries
-# one VIRTUAL and one STORED generated column, so the whole suite exercises the
-# common case: an ordinary integer primary key with generated columns alongside
-# it. This file covers the shape that table cannot express -- a table whose row
-# identity is carried by a generated column -- because that is where replaying
-# a binlog event can affect more rows on the target than it did on the source.
+# End-to-end coverage for tables whose row identity is carried by a generated
+# column -- the shape where replaying a binlog event can affect more rows on
+# the target than it did on the source.  The common case, generated columns
+# alongside an ordinary primary key, is exercised by the whole suite through
+# the default table (see DbHelper#seed_random_data).
 class GeneratedColumnsTest < GhostferryTestCase
   # A content-addressed table: the primary key is a STORED generated column
-  # derived from the only other column. This is the table reported by
-  # milanatshopify on PR #437, reproduced verbatim.
+  # derived from the only other column (from the PR #437 review).
   CONTENT_ADDRESSED_TABLE = "test_content_addressed"
   CONTENT_ADDRESSED_FULL_TABLE_NAME = DbHelper.full_table_name(DbHelper::DEFAULT_DB, CONTENT_ADDRESSED_TABLE)
 
@@ -24,57 +20,33 @@ class GeneratedColumnsTest < GhostferryTestCase
   TENANT_LABELS_TABLE = "test_tenant_labels"
   TENANT_LABELS_FULL_TABLE_NAME = DbHelper.full_table_name(DbHelper::DEFAULT_DB, TENANT_LABELS_TABLE)
 
-  # Four values that are DISTINCT as bytes -- so SHA2 gives them four distinct
-  # keys and MySQL stores four separate rows -- but EQUAL under
-  # utf8mb4_unicode_ci, which is the collation Ghostferry itself connects with
-  # and the server default on both test containers.
-  #
-  # That collation is accent-insensitive, case-insensitive and PAD SPACE, so
-  # all four of these are one equivalence class. Trailing whitespace is the
-  # variant most likely to occur by accident in real data; the others are here
-  # to show the class is wide, not exotic.
-  #
-  # This is the whole point of the fixture. `WHERE label = 'cafe'` is collation
-  # equality, not byte equality, so it selects all four.
+  # Four values DISTINCT as bytes -- four hashes, four rows -- but EQUAL under
+  # utf8mb4_unicode_ci, which is case-insensitive, accent-insensitive and PAD
+  # SPACE.  `WHERE doc = 'cafe'` is collation equality, so it selects all four;
+  # that is the whole point of the fixture.
   SIBLING_DOCUMENTS = ["cafe", "café", "CAFE", "cafe  "].freeze
 
   # The one we delete or update on the source in each test.
   CHOSEN_DOCUMENT = "cafe"
 
-  # A value outside the equivalence class, used as a control: it must survive
-  # every statement below. Without it, a test that wiped the whole table would
-  # look the same as a test that over-matched within the class.
+  # A control outside the equivalence class: without it, wiping the whole
+  # table would look the same as over-matching within the class.
   UNRELATED_DOCUMENT = "tea"
 
-  ###############################################################
-  # Collation over-match: binlog WHERE clauses must be exact     #
-  ###############################################################
+  # If a replayed WHERE clause omits the generated columns, the remaining
+  # predicate is only as selective as the column collation allows.  Three
+  # things keep these tests from passing by accident:
   #
-  # Ghostferry replays a source row change onto the target by reconstructing a
-  # WHERE clause from the binlog row image. If that WHERE clause omits the
-  # generated columns, the remaining predicate is only as selective as the
-  # column collation allows. When the generated column is what makes the row
-  # unique, omitting it turns a single-row change on the source into a
-  # multi-row change on the target.
+  #   * The sibling rows differ on no non-generated column.  A fixture with an
+  #     id, a timestamp or a differing payload would pick out one row even
+  #     against the broken code, and prove nothing.
   #
-  # These tests are deliberately built so that they CANNOT pass by accident:
+  #   * Each test first asserts that the SOURCE changed exactly one row, so a
+  #     multi-row source statement cannot make both sides equally wrong.
   #
-  #   * The sibling rows are indistinguishable on every non-generated column.
-  #     The precise condition for exposure is that after removing every
-  #     generated column, no remaining subset of columns still forms a unique
-  #     key. A fixture that violates that -- one carrying an id, a timestamp or
-  #     a differing payload -- produces a WHERE clause that picks out exactly
-  #     one row, passes against the broken code, and proves nothing.
-  #
-  #   * Each test first asserts that the SOURCE changed exactly one row. Without
-  #     that guard a test that accidentally issued a multi-row source statement
-  #     would compare an equally-wrong source and target and report success.
-  #
-  #   * Nothing is asserted inside an on_status handler. Minitest::Assertion
-  #     descends from Exception rather than StandardError, and the callback
-  #     server only rescues StandardError, so an assertion that fails in a
-  #     handler is swallowed and the test passes regardless. Observations are
-  #     captured into locals and asserted after ghostferry.run returns.
+  #   * Nothing is asserted inside an on_status handler.  Minitest::Assertion
+  #     descends from Exception, and the callback server only rescues
+  #     StandardError, so a failing assertion in a handler is swallowed.
 
   # DELETE is the silent case: over-matching removes rows from the target that
   # still exist on the source, nothing errors, and Ghostferry reports success.
@@ -85,12 +57,10 @@ class GeneratedColumnsTest < GhostferryTestCase
 
     docs_on_target_before_delete = nil
     ghostferry.on_status(Ghostferry::Status::ROW_COPY_COMPLETED) do
-      # Row copy has finished, so every row is already on the target and the
-      # DELETE below can only reach the target through the binlog.
       docs_on_target_before_delete = content_addressed_docs(target_db)
 
-      # Delete exactly ONE row, addressed by its primary key. Note that
-      # `WHERE doc = 'cafe'` would delete all four here too -- on the source.
+      # Delete exactly ONE row, addressed by its primary key; this can only
+      # reach the target through the binlog.
       source_db.query(
         "DELETE FROM #{CONTENT_ADDRESSED_FULL_TABLE_NAME} " \
         "WHERE doc_hash = UNHEX(SHA2('#{CHOSEN_DOCUMENT}', 256))"
@@ -116,16 +86,10 @@ class GeneratedColumnsTest < GhostferryTestCase
       "#{target_docs.length}"
   end
 
-  # UPDATE over-matches for the same reason, but it does not corrupt quietly.
-  # A replayed UPDATE assigns EVERY non-generated column its after-image value,
-  # including the column feeding the generated expression, whether or not the
-  # source statement touched it. So all over-matched rows are rewritten to the
-  # same content, recompute the same key, and MySQL rejects the second one with
-  # a duplicate-entry error. Ghostferry then aborts the move.
-  #
-  # Loud rather than silent, but still a failed shop move caused by a statement
-  # that should only ever have touched one row, so the requirement is the same:
-  # the target must match the source and the run must not error.
+  # UPDATE over-matches for the same reason, but loudly: a replayed UPDATE
+  # assigns every non-generated column its after-image value, so over-matched
+  # rows are rewritten to the same content, their generated keys collide, and
+  # Ghostferry aborts on the duplicate-entry error.
   def test_binlog_update_must_not_over_match_rows_equal_under_the_column_collation
     seed_content_addressed_payload_table
 
@@ -164,13 +128,10 @@ class GeneratedColumnsTest < GhostferryTestCase
       "binlog UPDATE over-matched on the target"
   end
 
-  # The two tests above use a minimal two-column table, which invites the
-  # response that no real schema looks like that. This one does not: it has a
-  # tenant, a human-readable label, a payload, a content hash for the primary
-  # key and a natural unique key over (tenant, hash). Ordinary columns really
-  # are present in the reconstructed WHERE clause, and they still do not save
-  # it, because once the generated column is removed nothing that remains is
-  # unique. `tenant` and `payload` are shared across the sibling rows.
+  # Same failure in an ordinary-looking table: tenant, label, payload, and a
+  # content hash as primary key.  The ordinary columns are in the WHERE clause
+  # and still do not save it, because once the generated column is removed
+  # nothing that remains is unique.
   def test_binlog_delete_over_matches_even_when_ordinary_columns_are_present
     seed_tenant_labels_table
 
@@ -206,10 +167,8 @@ class GeneratedColumnsTest < GhostferryTestCase
 
   private
 
-  # `doc`/`label` are TEXT so that the first fixture matches the table in the
-  # review comment verbatim. The collation is stated explicitly rather than
-  # inherited so the test cannot quietly stop testing anything if a server
-  # default changes.
+  # The collation is stated explicitly so the test cannot quietly stop testing
+  # anything if a server default changes.
   COLLATED_TEXT = "TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL".freeze
 
   def seed_content_addressed_table
@@ -266,16 +225,15 @@ class GeneratedColumnsTest < GhostferryTestCase
     end
   end
 
-  # Sorted in Ruby, byte-wise. Ordering in SQL by the text column would be
-  # ambiguous under a case-insensitive collation, and ordering by the hash
-  # would make the expected values in each test unreadable.
+  # Sorted in Ruby, byte-wise: ordering in SQL by the text column would be
+  # ambiguous under a case-insensitive collation.
   def content_addressed_docs(db)
     db.query("SELECT doc FROM #{CONTENT_ADDRESSED_FULL_TABLE_NAME}").map { |row| row["doc"] }.sort
   end
 
   def content_addressed_payload_rows(db)
     db.query("SELECT doc, payload FROM #{CONTENT_ADDRESSED_PAYLOAD_FULL_TABLE_NAME}")
-      .each_with_object({}) { |row, acc| acc[row["doc"]] = row["payload"] }
+      .to_h { |row| [row["doc"], row["payload"]] }
   end
 
   def tenant_labels(db)

@@ -390,20 +390,14 @@ func (this *DMLEventsTestSuite) TestNoRowsQueryEvent() {
 	this.Require().Equal("", annotation)
 }
 
-// TestNewBinlogDMLEventsUnsignedConversionWithGeneratedColumn pins the index
-// space that unsigned normalisation runs in.
-//
-// Binlog row images are always full width, so the normalisation loop indexes
-// the full schema.  Compacting the row first — dropping generated values to
-// match what INSERT and SET emit — would leave the loop reading the wrong
-// positions: here it would either run off the end of the shortened slice or
-// leave int8(-1) serialised as -1 rather than uint8(255).  Filtering happens
-// at SQL construction, never before.
+// TestNewBinlogDMLEventsUnsignedConversionWithGeneratedColumn pins unsigned
+// normalisation to full-schema indexes.  Compacting the row before
+// normalising would read the wrong positions, leaving int8(-1) serialised as
+// -1 rather than uint8(255).  Filtering happens at SQL construction, never
+// before.
 func (this *DMLEventsTestSuite) TestNewBinlogDMLEventsUnsignedConversionWithGeneratedColumn() {
-	// Do not reorder these into a more natural shape.  'gen' has to sit BEFORE
-	// 'u8' for this test to detect anything: the two index spaces only diverge
-	// after the first generated column, so with 'gen' last every index would
-	// coincide and the test would pass against the very bug it exists to catch.
+	// 'gen' must sit BEFORE 'u8': the index spaces only diverge after the
+	// first generated column, so with 'gen' last the test detects nothing.
 	columns := []schema.TableColumn{
 		{Name: "id"},
 		{Name: "gen", IsVirtual: true},
@@ -439,20 +433,13 @@ func (this *DMLEventsTestSuite) TestNewBinlogDMLEventsUnsignedConversionWithGene
 }
 
 // TestBinlogInsertEventGeneratedColumnBeforeJSONPreservesJSONCasting pins the
-// pairing between a value and the column metadata used to escape it.
-//
-// buildStringListForValues receives values with the generated ones already
-// removed, so its value index and its schema index diverge as soon as a
-// generated column appears.  Using the value index to look up column metadata
-// would escape this JSON payload against the virtual column's metadata and
-// emit a plain quoted string instead of CAST(... AS JSON).
+// pairing between a value and the column metadata used to escape it.  Pairing
+// a filtered row against the full schema would escape this JSON payload with
+// the virtual column's metadata and emit a plain quoted string instead of
+// CAST(... AS JSON).
 func (this *DMLEventsTestSuite) TestBinlogInsertEventGeneratedColumnBeforeJSONPreservesJSONCasting() {
-	// Do not reorder these into a more natural shape.  'gen' has to sit BEFORE
-	// 'payload' for this test to detect anything: the two index spaces only
-	// diverge after the first generated column, so with 'gen' last every index
-	// would coincide and the test would pass against the very bug it exists to
-	// catch.  The name of the test says "GeneratedColumnBeforeJSON" for this
-	// reason and not as a description of the fixture.
+	// 'gen' must sit BEFORE 'payload': the index spaces only diverge after the
+	// first generated column, so with 'gen' last the test detects nothing.
 	columns := []schema.TableColumn{
 		{Name: "gen", IsVirtual: true},
 		{Name: "payload", Type: schema.TYPE_JSON},
@@ -483,11 +470,9 @@ func (this *DMLEventsTestSuite) TestBinlogInsertEventGeneratedColumnBeforeJSONPr
 	)
 }
 
-// TestBinlogUpdateEventExcludesGeneratedColumnFromSetOnly verifies the
-// asymmetry between the two clauses of a replayed UPDATE: the SET clause must
-// omit the generated column, because MySQL rejects the assignment, while the
-// WHERE clause must keep it, because it may be the only thing distinguishing
-// this row from its neighbours.  See buildStringMapForWhere in dml_events.go.
+// TestBinlogUpdateEventExcludesGeneratedColumnFromSetOnly pins the asymmetry
+// of a replayed UPDATE: SET must omit the generated column, WHERE must keep
+// it.  See buildStringMapForWhere in dml_events.go.
 func (this *DMLEventsTestSuite) TestBinlogUpdateEventExcludesGeneratedColumnFromSetOnly() {
 	columns := []schema.TableColumn{
 		{Name: "id"},
@@ -523,11 +508,9 @@ func (this *DMLEventsTestSuite) TestBinlogUpdateEventExcludesGeneratedColumnFrom
 	)
 }
 
-// TestBinlogDeleteEventKeepsStoredGeneratedColumnInWhere pins the narrowest
-// possible DELETE predicate.  A STORED generated column is allowed to be the
-// primary key, so dropping it from the WHERE clause both loses the index and,
-// where the remaining columns only compare equal under a collation, deletes
-// rows that were never deleted on the source.
+// TestBinlogDeleteEventKeepsStoredGeneratedColumnInWhere pins the DELETE
+// predicate.  A STORED generated column may be the primary key, so dropping
+// it from the WHERE clause can delete rows never deleted on the source.
 func (this *DMLEventsTestSuite) TestBinlogDeleteEventKeepsStoredGeneratedColumnInWhere() {
 	columns := []schema.TableColumn{
 		{Name: "id"},
