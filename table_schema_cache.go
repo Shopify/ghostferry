@@ -55,52 +55,28 @@ func (t *TableSchema) IsColumnIndexGenerated(idx int) bool {
 	return IsColumnGenerated(&t.Columns[idx])
 }
 
-// Evaluates whether a TableSchema column is generated, by name.
+// IsColumnNameGenerated evaluates whether a TableSchema column is generated, by name.
 func (t *TableSchema) IsColumnNameGenerated(name string) bool {
-	for _, col := range t.Columns {
-		if name == col.Name && IsColumnGenerated(&col) {
-			return true
+	for i := range t.Columns {
+		if name == t.Columns[i].Name {
+			return IsColumnGenerated(&t.Columns[i])
 		}
 	}
 
 	return false
 }
 
-// Returns a count of total, generated and non-generated columns for a TableSchema.
+// ColumnsCount returns a count of total, generated and non-generated columns for a TableSchema.
 func (t *TableSchema) ColumnsCount() (int, int, int) {
 	var generated int
 
-	for _, col := range t.Columns {
-		if IsColumnGenerated(&col) {
+	for i := range t.Columns {
+		if IsColumnGenerated(&t.Columns[i]) {
 			generated += 1
 		}
 	}
 
 	return len(t.Columns), generated, len(t.Columns) - generated
-}
-
-// FilterGeneratedColumnsOnRowData takes a row (as slice of RowData elements) and returns
-// a copy with elements for generated columns removed.
-func (t *TableSchema) FilterGeneratedColumnsOnRowData(row []interface{}) ([]interface{}, error) {
-	if len(row) != len(t.Columns) {
-		return nil, fmt.Errorf(
-			"table %s.%s has %d columns but event has %d columns instead",
-			t.Schema,
-			t.Name,
-			len(t.Columns),
-			len(row),
-		)
-	}
-
-	res := make([]interface{}, 0, len(row))
-	for i, val := range row {
-		if t.IsColumnIndexGenerated(i) {
-			continue
-		}
-		res = append(res, val)
-	}
-
-	return res, nil
 }
 
 // This query returns the MD5 hash for a row on this table. This query is valid

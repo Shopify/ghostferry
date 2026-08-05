@@ -172,15 +172,10 @@ func (e *BinlogInsertEvent) AsSQLString(schemaName, tableName string) (string, e
 		return "", err
 	}
 
-	filteredNewValues, err := e.table.FilterGeneratedColumnsOnRowData(e.newValues)
-	if err != nil {
-		return "", err
-	}
-
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(schemaName, tableName) +
 		" (" + strings.Join(quotedColumnNames(e.table), ",") + ")" +
-		" VALUES (" + buildStringListForValues(e.table, filteredNewValues) + ")"
+		" VALUES (" + buildStringListForValues(e.table, e.newValues) + ")"
 
 	return query, nil
 }
@@ -370,17 +365,17 @@ func verifyValuesHasTheSameLengthAsColumns(table *TableSchema, values ...RowData
 	return nil
 }
 
-// values holds only the non-generated columns, in schema order, because the
-// caller filtered it with FilterGeneratedColumnsOnRowData.  Walking the schema
-// and consuming one value per non-generated column pairs each value with its
-// own column's metadata, which appendEscapedValue needs to decide on JSON
-// casting and BINARY right-padding.  Doing it this way rather than
-// materialising a filtered []schema.TableColumn keeps this off the allocator:
-// it runs once per row of every binlog INSERT event.
+// values is a full-width row in schema order, the same space table.Columns is
+// in, so one index selects both the value to emit and the column metadata that
+// appendEscapedValue needs to decide on JSON casting and BINARY right-padding.
+//
+// Taking the row unfiltered is what keeps that true.  Filtering the generated
+// values out first would put the row in a second index space and oblige this
+// loop to track a separate cursor into it — for no gain, since the loop has to
+// walk the full schema regardless in order to know which columns to skip.
 func buildStringListForValues(table *TableSchema, values []interface{}) string {
 	var buffer []byte
 
-	valueIdx := 0
 	for i := range table.Columns {
 		if table.IsColumnIndexGenerated(i) {
 			continue
@@ -390,8 +385,7 @@ func buildStringListForValues(table *TableSchema, values []interface{}) string {
 			buffer = append(buffer, ',')
 		}
 
-		buffer = appendEscapedValue(buffer, values[valueIdx], table.Columns[i])
-		valueIdx++
+		buffer = appendEscapedValue(buffer, values[i], table.Columns[i])
 	}
 
 	return string(buffer)
