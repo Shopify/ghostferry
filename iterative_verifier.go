@@ -565,15 +565,17 @@ func (v *IterativeVerifier) columnsToVerify(table *TableSchema) []schema.TableCo
 
 	// Generated columns (VIRTUAL / STORED) are intentionally included so that
 	// any divergence in computed output between source and target is caught.
-	// Explicitly ignored columns still take priority over this inclusion.
+	// They need no handling to achieve that — table.Columns already contains
+	// them, and only an explicit ignore removes a column from this list.
+	if !containsIgnoredColumns {
+		return table.Columns
+	}
+
 	var columns []schema.TableColumn
 	for _, column := range table.Columns {
-		if containsIgnoredColumns {
-			if _, isIgnored := ignoredColsSet[column.Name]; isIgnored {
-				continue
-			}
+		if _, isIgnored := ignoredColsSet[column.Name]; !isIgnored {
+			columns = append(columns, column)
 		}
-		columns = append(columns, column)
 	}
 
 	return columns
