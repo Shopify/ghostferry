@@ -22,6 +22,21 @@ All notable changes to this project will be documented in this file.
   are *all* generated is now rejected when schemas are loaded. Both fail at startup with an
   explanatory error rather than part-way through a move.
 
+### Fixed
+
+- `StopTargetVerifier` no longer panics when the ferry stops before `Run` starts the target
+  verifier. `targetVerifierWg` is held by value, so `Wait` on a verifier that never started is
+  a no-op. This affects embedders that defer `StopTargetVerifier` around `Run`.
+
+- `RowBatch.AsSQLQuery` returns an error instead of panicking when every selected column is
+  generated.
+
+### API
+
+New exported surface for embedders: `NewRowBatchWithColumns`, `IsColumnGenerated`,
+`TableSchema.IsColumnIndexGenerated`, `TableSchema.IsColumnNameGenerated`,
+`TableSchema.ColumnsCount`, `NoNonGeneratedColumnsError` and `VirtualPaginationKeyError`.
+
 ## [1.3.1 - 2026-04-15]
 
 ### Changed
