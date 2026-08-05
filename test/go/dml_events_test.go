@@ -400,6 +400,10 @@ func (this *DMLEventsTestSuite) TestNoRowsQueryEvent() {
 // leave int8(-1) serialised as -1 rather than uint8(255).  Filtering happens
 // at SQL construction, never before.
 func (this *DMLEventsTestSuite) TestNewBinlogDMLEventsUnsignedConversionWithGeneratedColumn() {
+	// Do not reorder these into a more natural shape.  'gen' has to sit BEFORE
+	// 'u8' for this test to detect anything: the two index spaces only diverge
+	// after the first generated column, so with 'gen' last every index would
+	// coincide and the test would pass against the very bug it exists to catch.
 	columns := []schema.TableColumn{
 		{Name: "id"},
 		{Name: "gen", IsVirtual: true},
@@ -443,6 +447,12 @@ func (this *DMLEventsTestSuite) TestNewBinlogDMLEventsUnsignedConversionWithGene
 // would escape this JSON payload against the virtual column's metadata and
 // emit a plain quoted string instead of CAST(... AS JSON).
 func (this *DMLEventsTestSuite) TestBinlogInsertEventGeneratedColumnBeforeJSONPreservesJSONCasting() {
+	// Do not reorder these into a more natural shape.  'gen' has to sit BEFORE
+	// 'payload' for this test to detect anything: the two index spaces only
+	// diverge after the first generated column, so with 'gen' last every index
+	// would coincide and the test would pass against the very bug it exists to
+	// catch.  The name of the test says "GeneratedColumnBeforeJSON" for this
+	// reason and not as a description of the fixture.
 	columns := []schema.TableColumn{
 		{Name: "gen", IsVirtual: true},
 		{Name: "payload", Type: schema.TYPE_JSON},
