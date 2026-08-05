@@ -73,8 +73,9 @@ func (this *RowBatchTestSuite) TestRowBatchGeneratesInsertQuery() {
 	this.Require().Equal(expected, v1)
 }
 
-// TestRowBatchReorderedColumnsGeneratesCorrectInsert is a regression test for
-// the gh-285 corruption pattern.
+// TestRowBatchReorderedColumnsGeneratesCorrectInsert pins the index space of
+// the INSERT column list: it must follow query-result order, never schema
+// order.
 //
 // The sharding copy filter executes:
 //
@@ -82,11 +83,10 @@ func (this *RowBatchTestSuite) TestRowBatchGeneratesInsertQuery() {
 //
 // MySQL's USING clause moves the join column to the front of the result set,
 // so for a table with schema order (tenant_id, col1, id, d) the query returns
-// columns in result order (id, tenant_id, col1, d).
-//
-// Before the fix, AsSQLQuery used table.NonGeneratedColumnNames() (schema
-// order) for the INSERT column list while values were in result order — every
-// row written to the target had its column values shifted to the wrong columns.
+// columns in result order (id, tenant_id, col1, d).  Naming the columns in
+// schema order while supplying values in result order writes every value into
+// the wrong column, silently, for every row copied — the gh-285 corruption
+// pattern.
 func (this *RowBatchTestSuite) TestRowBatchReorderedColumnsGeneratesCorrectInsert() {
 	// Schema order: tenant_id(0), col1(1), id(2), d(3)
 	schemaColumns := []schema.TableColumn{

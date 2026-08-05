@@ -88,15 +88,14 @@ func (e *RowBatch) AsSQLQuery(schemaName, tableName string) (string, []interface
 		return "", nil, err
 	}
 
-	// Build the INSERT column list from e.columns — the actual query-result
-	// order — skipping generated columns by precomputed index.
-	//
-	// We must NOT use table.NonGeneratedColumnNames() here because that
-	// always returns schema order.  When the SELECT query returns columns in a
-	// different order (for example, the sharding copy filter uses
+	// The INSERT column list follows e.columns, the order the SELECT actually
+	// returned, and never schema order.  The two differ: the sharding copy
+	// filter issues
 	//   SELECT * FROM t JOIN (SELECT id …) AS batch USING(id)
-	// which moves 'id' to the front), the column names and row values would
-	// be misaligned, corrupting every row written to the target.
+	// and MySQL's USING moves 'id' to the front of the result set.  Naming the
+	// columns in schema order while supplying values in result order writes
+	// every value into the wrong column, silently, for every row copied — the
+	// gh-285 corruption pattern.
 	insertColumns := make([]string, 0, len(e.nonGeneratedColumnIdxs))
 	for _, i := range e.nonGeneratedColumnIdxs {
 		insertColumns = append(insertColumns, e.columns[i])

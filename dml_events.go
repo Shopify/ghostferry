@@ -168,6 +168,10 @@ func (e *BinlogInsertEvent) NewValues() RowData {
 }
 
 func (e *BinlogInsertEvent) AsSQLString(schemaName, tableName string) (string, error) {
+	if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.newValues); err != nil {
+		return "", err
+	}
+
 	filteredNewValues, err := e.table.FilterGeneratedColumnsOnRowData(e.newValues)
 	if err != nil {
 		return "", err
@@ -282,39 +286,45 @@ func (e *BinlogDeleteEvent) PaginationKey() (string, error) {
 func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, resumablePos mysql.Position, query []byte) ([]DMLEvent, error) {
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
-	for i, rawRow := range rowsEvent.Rows {
-		if len(rawRow) != len(table.Columns) {
+	for _, row := range rowsEvent.Rows {
+		if len(row) != len(table.Columns) {
 			return nil, fmt.Errorf(
 				"table %s.%s has %d columns but event has %d columns instead",
 				table.Schema,
 				table.Name,
 				len(table.Columns),
-				len(rawRow),
+				len(row),
 			)
 		}
 
 		// Normalize signed-to-unsigned integer values in place using
 		// full-schema column indexes.  go-mysql always decodes rows to the
 		// full column width (RowsEvent.decodeImage allocates make([]any,
-		// ColumnCount) and leaves omitted positions as nil), so rawRow is
-		// always len(table.Columns) here and indexing is safe.
-		for j, col := range table.Columns {
+		// ColumnCount) and leaves omitted positions as nil), so row is always
+		// len(table.Columns) here and indexing is safe.
+		//
+		// Generated columns are normalised too, and must be: go-mysql hands
+		// back an unsigned generated column as a negative signed integer just
+		// like any other unsigned column, and these values reach the WHERE
+		// clause of replayed UPDATEs and DELETEs.  Skipping them here to match
+		// the filtering that INSERT and SET do would emit `WHERE v=-1` for a
+		// column holding 18446744073709551615, which matches nothing.
+		for i, col := range table.Columns {
 			if col.IsUnsigned {
-				switch v := rawRow[j].(type) {
+				switch v := row[i].(type) {
 				case int64:
-					rawRow[j] = uint64(v)
+					row[i] = uint64(v)
 				case int32:
-					rawRow[j] = uint32(v)
+					row[i] = uint32(v)
 				case int16:
-					rawRow[j] = uint16(v)
+					row[i] = uint16(v)
 				case int8:
-					rawRow[j] = uint8(v)
+					row[i] = uint8(v)
 				case int:
-					rawRow[j] = uint(v)
+					row[i] = uint(v)
 				}
 			}
 		}
-		rowsEvent.Rows[i] = rawRow
 	}
 
 	timestamp := time.Unix(int64(ev.Header.Timestamp), 0)
@@ -331,10 +341,15 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 	}
 }
 
+// Generated columns are left out of the INSERT column list for the reason
+// given on buildStringMapForSet: MySQL rejects assignment to them.
 func quotedColumnNames(table *TableSchema) []string {
 	cols := make([]string, 0, len(table.Columns))
-	for _, name := range table.NonGeneratedColumnNames() {
-		cols = append(cols, QuoteField(name))
+	for i := range table.Columns {
+		if table.IsColumnIndexGenerated(i) {
+			continue
+		}
+		cols = append(cols, QuoteField(table.Columns[i].Name))
 	}
 
 	return cols
@@ -355,40 +370,61 @@ func verifyValuesHasTheSameLengthAsColumns(table *TableSchema, values ...RowData
 	return nil
 }
 
+// values holds only the non-generated columns, in schema order, because the
+// caller filtered it with FilterGeneratedColumnsOnRowData.  Walking the schema
+// and consuming one value per non-generated column pairs each value with its
+// own column's metadata, which appendEscapedValue needs to decide on JSON
+// casting and BINARY right-padding.  Doing it this way rather than
+// materialising a filtered []schema.TableColumn keeps this off the allocator:
+// it runs once per row of every binlog INSERT event.
 func buildStringListForValues(table *TableSchema, values []interface{}) string {
 	var buffer []byte
 
-	// values contains only non-generated columns (already filtered by the
-	// caller via FilterGeneratedColumnsOnRowData).  Build a matching list of
-	// non-generated column descriptors so that value[i] is paired with the
-	// correct column metadata regardless of where generated columns sit in the
-	// full schema.
-	nonGenerated := make([]schema.TableColumn, 0, len(table.Columns))
-	for _, col := range table.Columns {
-		if !IsColumnGenerated(&col) {
-			nonGenerated = append(nonGenerated, col)
+	valueIdx := 0
+	for i := range table.Columns {
+		if table.IsColumnIndexGenerated(i) {
+			continue
 		}
-	}
 
-	for i, value := range values {
 		if len(buffer) > 0 {
 			buffer = append(buffer, ',')
 		}
 
-		buffer = appendEscapedValue(buffer, value, nonGenerated[i])
+		buffer = appendEscapedValue(buffer, values[valueIdx], table.Columns[i])
+		valueIdx++
 	}
 
 	return string(buffer)
 }
 
+// The WHERE clause of a replayed UPDATE or DELETE names every column,
+// generated ones included, even though the SET clause and the INSERT column
+// list must leave them out.  The asymmetry is deliberate: MySQL forbids
+// assigning to a generated column, but nothing forbids predicating on one.
+//
+// Omitting them here would be wrong twice over.  It widens the statement's
+// blast radius, because SQL `=` compares under the column's collation rather
+// than by value, so the columns that remain need not identify the row.  Take
+// docs(doc TEXT, doc_hash BINARY(32) AS (UNHEX(SHA2(doc,256))) STORED,
+// PRIMARY KEY (doc_hash)) holding 'cafe', 'cafe' with an acute accent, 'CAFE'
+// and 'cafe  '.  Under utf8mb4_unicode_ci, which is accent-insensitive and PAD
+// SPACE as well as case-insensitive, those are four distinct primary keys that
+// all answer to doc='cafe', so replaying a one-row delete without doc_hash
+// empties the table.  It also discards the pagination key of precisely the
+// tables this support exists for, since a STORED generated column is often the
+// primary key, leaving every replayed statement to scan the table and lock far
+// more than the row it changes.
+//
+// The cost is that the target is filtered using values the source computed, so
+// a target that computes the expression differently matches nothing and the
+// statement becomes a no-op.  That is already true of any ordinary column
+// whose value has diverged, and the row fingerprint covers generated columns,
+// so the verifier, where one is enabled, reports it.
 func buildStringMapForWhere(table *TableSchema, values []interface{}) string {
 	var buffer []byte
 
 	for i, value := range values {
-		if table.IsColumnIndexGenerated(i) {
-			continue
-		}
-		if len(buffer) > 0 {
+		if i > 0 {
 			buffer = append(buffer, " AND "...)
 		}
 
@@ -406,6 +442,11 @@ func buildStringMapForWhere(table *TableSchema, values []interface{}) string {
 	return string(buffer)
 }
 
+// A generated column cannot be assigned to: MySQL rejects any attempt with
+// error 3105, VIRTUAL and STORED alike, so naming one here would abort the
+// whole statement.  Leaving them out costs nothing, because the target derives
+// them from the columns that are assigned.  See buildStringMapForWhere for why
+// the WHERE clause does not filter the same way.
 func buildStringMapForSet(table *TableSchema, values []interface{}) string {
 	var buffer []byte
 
