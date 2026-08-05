@@ -357,20 +357,33 @@ class InterruptResumeTest < GhostferryTestCase
     refute_nil dumped_state['LastStoredBinlogPositionForTargetVerifier']['Name']
     refute_nil dumped_state['LastStoredBinlogPositionForTargetVerifier']['Pos']
 
-    # Assert that the inline-verifier resumable position has advanced beyond
-    # the start.  The InlineVerifier listener runs synchronously inside the
-    # BinlogStreamer event loop — before any blocking HTTP call — so its
-    # position is always updated before the interrupt signal is delivered.
+    # The inline verifier's resumable position must have advanced past where
+    # the binlog was before the run: it is updated synchronously inside the
+    # BinlogStreamer event loop, so by the time AFTER_BINLOG_APPLY delivers the
+    # interrupt it has already moved. Compare (file, position) as a pair,
+    # because max_binlog_size is 4096 in the test containers and the two
+    # thousand inserts above rotate the binlog many times; comparing only the
+    # position within a file would be meaningless across a rotation.
     #
-    # LastWrittenBinlogPosition is intentionally NOT checked here: it is
-    # advanced by the BinlogWriter goroutine asynchronously.  When the
-    # interrupt fires immediately on the first AFTER_BINLOG_APPLY (before the
-    # writer has had time to flush), that position equals the initial value set
-    # by Start() and the comparison would be meaningless.  The real correctness
-    # guarantee is the resume + assert_test_table_is_identical below.
-    if dumped_state['LastStoredBinlogPositionForInlineVerifier']['Name'] == start_binlog_status['File']
-      refute_equal dumped_state['LastStoredBinlogPositionForInlineVerifier']['Pos'], start_binlog_status['Position']
-    end
+    # LastWrittenBinlogPosition is deliberately NOT checked the same way. It is
+    # advanced by the BinlogWriter goroutine, which is not what
+    # AFTER_BINLOG_APPLY waits on, so when the interrupt fires on the first
+    # applied event it can legitimately still hold the value Start() set.
+    # Asserting it had moved was a real race, not a real guarantee. What we do
+    # still require of it is that resuming from it produces an identical
+    # target, which is the assertion at the end of this test.
+    resumable_position = [
+      dumped_state['LastStoredBinlogPositionForInlineVerifier']['Name'],
+      dumped_state['LastStoredBinlogPositionForInlineVerifier']['Pos'],
+    ]
+    position_before_run = [start_binlog_status['File'], start_binlog_status['Position']]
+
+    assert_operator(
+      resumable_position <=> position_before_run, :>, 0,
+      "the inline verifier's resumable position #{resumable_position.inspect} did " \
+      "not advance past #{position_before_run.inspect}, where the binlog was " \
+      "before the run started",
+    )
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
     # if we did not resume at a proper state, this invocation of ghostferry

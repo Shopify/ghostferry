@@ -409,6 +409,124 @@ class TypesTest < GhostferryTestCase
     end
   end
 
+  ###########################
+  # Generated Columns        #
+  ###########################
+  #
+  # Exercises the binlog DML path with VIRTUAL and STORED generated columns
+  # (seed_random_data creates `length VIRTUAL` and `summary STORED`).  The
+  # initial seed is copied via the data iterator — already covered by the
+  # generated-column unit tests in test/go and by the divergence tests in
+  # inline_verifier_test.rb.  The rows we INSERT/UPDATE/DELETE on the source
+  # *after* ROW_COPY_COMPLETED flow only through the binlog streamer, so these
+  # tests are what validate dml_events.go end-to-end.
+  #
+  # These tables have an ordinary `id` primary key, so the WHERE clause of a
+  # replayed UPDATE or DELETE identifies exactly one row whatever it does with
+  # the generated columns.  The case where that is not true — a table whose
+  # only identity is a generated column — is covered separately in
+  # generated_columns_test.rb.
+
+  def test_binlog_insert_with_generated_columns
+    seed_random_data(source_db, number_of_rows: 1)
+    seed_random_data(target_db, number_of_rows: 0)
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+
+    # Multi-row INSERT lands in MySQL as a single ROW event carrying all rows
+    # in one rowsEvent.Rows slice — this exercises the for-loop in
+    # NewBinlogDMLEvents (dml_events.go) and the flattenRowData / SQL-list
+    # construction across more than one row per event, which a single-row
+    # test would not catch.  Generated columns must be filtered out per row,
+    # not just for the event as a whole.
+    inserts = (1..3).map { |i| "(#{1000 + i}, 'binlog-insert-#{i}')" }.join(",")
+
+    ghostferry.on_status(Ghostferry::Status::BINLOG_STREAMING_STARTED) do
+      # Only base columns specified — `length` and `summary` are computed by
+      # MySQL on each side from the table's own expressions.
+      source_db.query(
+        "INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES #{inserts}",
+      )
+    end
+
+    ghostferry.run
+
+    assert_nil ghostferry.error
+    assert_test_table_is_identical
+
+    (1..3).each do |i|
+      row = target_db.query(
+        "SELECT data, length, summary FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{1000 + i}",
+      ).first
+      refute_nil row, "binlog INSERT for id=#{1000 + i} did not propagate to target"
+      assert_equal "binlog-insert-#{i}", row["data"]
+      # The target must compute these from its own expressions, having been
+      # sent only the base columns.
+      assert_equal "binlog-insert-#{i}".length, row["length"]
+      assert_equal Digest::MD5.hexdigest("binlog-insert-#{i}"), row["summary"]
+    end
+  end
+
+  def test_binlog_update_with_generated_columns
+    seed_random_data(source_db, number_of_rows: 1)
+    seed_random_data(target_db, number_of_rows: 0)
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+
+    ghostferry.on_status(Ghostferry::Status::ROW_COPY_COMPLETED) do
+      # The replayed UPDATE must leave generated columns out of the SET clause,
+      # because MySQL rejects any assignment to one with error 3105, and must
+      # KEEP them in the WHERE clause. Do not "tidy up" the asymmetry: the
+      # binlog row image carries generated column values on every supported
+      # MySQL version, and dropping them from WHERE makes the statement match
+      # by collation on whatever columns remain, which need not identify the
+      # row. See the comment on buildStringMapForWhere in dml_events.go, and
+      # generated_columns_test.rb for the rows that get destroyed when it does.
+      source_db.query(
+        "UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'binlog-update' WHERE id = 1",
+      )
+    end
+
+    ghostferry.run
+
+    assert_nil ghostferry.error
+    assert_test_table_is_identical
+
+    row = target_db.query(
+      "SELECT data, length, summary FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = 1",
+    ).first
+    refute_nil row, "row 1 missing from target after binlog UPDATE"
+    assert_equal "binlog-update", row["data"]
+    assert_equal "binlog-update".length, row["length"]
+    assert_equal Digest::MD5.hexdigest("binlog-update"), row["summary"]
+  end
+
+  def test_binlog_delete_with_generated_columns
+    seed_random_data(source_db, number_of_rows: 2)
+    seed_random_data(target_db, number_of_rows: 0)
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+
+    ghostferry.on_status(Ghostferry::Status::ROW_COPY_COMPLETED) do
+      source_db.query("DELETE FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = 1")
+    end
+
+    ghostferry.run
+
+    assert_nil ghostferry.error
+    assert_test_table_is_identical
+
+    deleted = target_db.query(
+      "SELECT id FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = 1",
+    ).first
+    assert_nil deleted, "binlog DELETE did not propagate to target"
+
+    remaining = target_db.query(
+      "SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}",
+    ).first
+    assert_equal 1, remaining["cnt"]
+  end
+
   private
 
   def format_float_based_on_mysql_version(value)
@@ -488,116 +606,4 @@ class TypesTest < GhostferryTestCase
 
   end
 
-  ###########################
-  # Generated Columns        #
-  ###########################
-  #
-  # Exercises the binlog DML path with VIRTUAL and STORED generated columns
-  # (seed_random_data creates `length VIRTUAL` and `summary STORED`).  The
-  # initial seed is copied via the data iterator — already covered by the
-  # generated-column unit tests in test/go and by the divergence tests in
-  # inline_verifier_test.rb.  The rows we INSERT/UPDATE/DELETE on the source
-  # *after* ROW_COPY_COMPLETED flow only through the binlog streamer, so this
-  # test is what validates dml_events.go end-to-end.
-  #
-  # On MySQL 8.0.23+ virtual columns are omitted from the binlog image; the
-  # length check in NewBinlogDMLEvents (dml_events.go) only passes if go-mysql
-  # pads omitted positions back to the full schema width.  The 8.0 and 8.4 CI
-  # matrices exercise that path; 5.7 exercises the pre-omission path.
-
-  def test_binlog_insert_with_generated_columns
-    seed_random_data(source_db, number_of_rows: 1)
-    seed_random_data(target_db, number_of_rows: 0)
-
-    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
-
-    # Multi-row INSERT lands in MySQL as a single ROW event carrying all rows
-    # in one rowsEvent.Rows slice — this exercises the for-loop in
-    # NewBinlogDMLEvents (dml_events.go) and the flattenRowData / SQL-list
-    # construction across more than one row per event, which a single-row
-    # test would not catch.  Generated columns must be filtered out per row,
-    # not just for the event as a whole.
-    inserts = (1..3).map { |i| "(#{1000 + i}, 'binlog-insert-#{i}')" }.join(",")
-
-    ghostferry.on_status(Ghostferry::Status::BINLOG_STREAMING_STARTED) do
-      # Only base columns specified — `length` and `summary` are computed by
-      # MySQL on each side from the table's own expressions.
-      source_db.query(
-        "INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES #{inserts}",
-      )
-    end
-
-    ghostferry.run
-
-    assert_nil ghostferry.error
-    assert_test_table_is_identical
-
-    (1..3).each do |i|
-      row = target_db.query(
-        "SELECT data, length, summary FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{1000 + i}",
-      ).first
-      refute_nil row, "binlog INSERT for id=#{1000 + i} did not propagate to target"
-      assert_equal "binlog-insert-#{i}", row["data"]
-      # Generated column values must match the source's expression output, not
-      # whatever happened to be in the binlog image.
-      assert_equal "binlog-insert-#{i}".length, row["length"]
-      assert_equal Digest::MD5.hexdigest("binlog-insert-#{i}"), row["summary"]
-    end
-  end
-
-  def test_binlog_update_with_generated_columns
-    seed_random_data(source_db, number_of_rows: 1)
-    seed_random_data(target_db, number_of_rows: 0)
-
-    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
-
-    ghostferry.on_status(Ghostferry::Status::ROW_COPY_COMPLETED) do
-      # buildStringMapForSet must skip generated columns from the SET clause
-      # (MySQL rejects assignments to generated columns) and buildStringMapForWhere
-      # must skip them from the WHERE clause (the old image may contain stale
-      # or NULL values for virtual columns).
-      source_db.query(
-        "UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 'binlog-update' WHERE id = 1",
-      )
-    end
-
-    ghostferry.run
-
-    assert_nil ghostferry.error
-    assert_test_table_is_identical
-
-    row = target_db.query(
-      "SELECT data, length, summary FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = 1",
-    ).first
-    refute_nil row, "row 1 missing from target after binlog UPDATE"
-    assert_equal "binlog-update", row["data"]
-    assert_equal "binlog-update".length, row["length"]
-    assert_equal Digest::MD5.hexdigest("binlog-update"), row["summary"]
-  end
-
-  def test_binlog_delete_with_generated_columns
-    seed_random_data(source_db, number_of_rows: 2)
-    seed_random_data(target_db, number_of_rows: 0)
-
-    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
-
-    ghostferry.on_status(Ghostferry::Status::ROW_COPY_COMPLETED) do
-      source_db.query("DELETE FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = 1")
-    end
-
-    ghostferry.run
-
-    assert_nil ghostferry.error
-    assert_test_table_is_identical
-
-    deleted = target_db.query(
-      "SELECT id FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = 1",
-    ).first
-    assert_nil deleted, "binlog DELETE did not propagate to target"
-
-    remaining = target_db.query(
-      "SELECT COUNT(*) AS cnt FROM #{DEFAULT_FULL_TABLE_NAME}",
-    ).first
-    assert_equal 1, remaining["cnt"]
-  end
 end
