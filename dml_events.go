@@ -228,7 +228,7 @@ func (e *BinlogUpdateEvent) AsSQLString(schemaName, tableName string) (string, e
 
 	query := "UPDATE " + QuotedTableNameFromString(schemaName, tableName) +
 		" SET " + buildStringMapForSet(e.table, e.newValues) +
-		" WHERE " + buildStringMapForWhere(e.table, e.oldValues)
+		" WHERE " + buildStringMapForWhere(e.table.Columns, e.oldValues)
 
 	return query, nil
 }
@@ -269,7 +269,7 @@ func (e *BinlogDeleteEvent) AsSQLString(schemaName, tableName string) (string, e
 	}
 
 	query := "DELETE FROM " + QuotedTableNameFromString(schemaName, tableName) +
-		" WHERE " + buildStringMapForWhere(e.table, e.oldValues)
+		" WHERE " + buildStringMapForWhere(e.table.Columns, e.oldValues)
 
 	return query, nil
 }
@@ -386,7 +386,7 @@ func buildStringListForValues(table *TableSchema, values []interface{}) string {
 // need not identify the row.  A STORED generated column is also often the
 // primary key, and losing it from the predicate costs a table scan per event.
 // See test/go/generated_columns_test.go for the rows this loses.
-func buildStringMapForWhere(table *TableSchema, values []interface{}) string {
+func buildStringMapForWhere(columns []schema.TableColumn, values []interface{}) string {
 	var buffer []byte
 
 	for i, value := range values {
@@ -394,14 +394,14 @@ func buildStringMapForWhere(table *TableSchema, values []interface{}) string {
 			buffer = append(buffer, " AND "...)
 		}
 
-		buffer = append(buffer, QuoteField(table.Columns[i].Name)...)
+		buffer = append(buffer, QuoteField(columns[i].Name)...)
 
 		if isNilValue(value) {
 			// "WHERE value = NULL" will never match rows.
 			buffer = append(buffer, " IS NULL"...)
 		} else {
 			buffer = append(buffer, '=')
-			buffer = appendEscapedValue(buffer, value, table.Columns[i])
+			buffer = appendEscapedValue(buffer, value, columns[i])
 		}
 	}
 
