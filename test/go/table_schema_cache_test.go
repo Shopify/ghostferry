@@ -201,12 +201,13 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWhenCascadingPa
 }
 
 // TestLoadTablesRejectVirtualPaginationKey verifies that using a VIRTUAL
-// generated column as the pagination key is rejected at load time.  VIRTUAL
-// columns are not stored on disk, so they cannot be used reliably for cursor
-// iteration.  STORED generated columns are fine and are not tested here.
+// generated column as the pagination key is rejected at load time.
 //
-// MySQL prevents VIRTUAL columns from being a PRIMARY KEY, so the only way to
-// reach this code path in practice is via CascadingPaginationColumnConfig.
+// Pagination needs a column that is unique and can be range-scanned in order.
+// MySQL will not let a VIRTUAL column be a PRIMARY KEY, so nothing establishes
+// either property for one, and the only route to this code path is an explicit
+// CascadingPaginationColumnConfig.  A STORED generated column can be a real
+// primary key and is deliberately allowed.
 func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectVirtualPaginationKey() {
 	table := "virtual_pagination_key"
 	virtualColumn := "vlen"
@@ -227,6 +228,40 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectVirtualPaginationKey(
 
 	this.Require().NotNil(err)
 	this.Require().EqualError(err, ghostferry.VirtualPaginationKeyError(testhelpers.TestSchemaName, table, virtualColumn).Error())
+}
+
+// TestLoadTablesRejectTableWithOnlyGeneratedColumns covers the one degenerate
+// shape that filtering generated columns out of writes creates: a table with
+// nothing left to write.
+//
+// It is rare but it is not hypothetical, and MySQL will build it — this DDL
+// runs, it accepts rows, and it hands Ghostferry a perfectly valid pagination
+// key, because a STORED generated column may be a PRIMARY KEY.  Ghostferry
+// would then reach RowBatch.AsSQLQuery with an empty column list and panic
+// inside strings.Repeat on a negative count, part-way through a move.
+// Refusing the table while schemas are loaded turns that into a message an
+// operator can act on, before anything has been copied.
+//
+// The first two assertions are the load-bearing ones: they establish that
+// MySQL really does accept this table and really does accept rows into it, so
+// that the rejection below is guarding something reachable rather than
+// something imagined.
+func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTableWithOnlyGeneratedColumns() {
+	table := "all_generated"
+
+	_, err := this.Ferry.SourceDB.Exec(fmt.Sprintf(
+		"CREATE TABLE %s.%s (a BIGINT AS (1) STORED, b BIGINT AS (2) STORED, PRIMARY KEY (a))",
+		testhelpers.TestSchemaName, table,
+	))
+	this.Require().Nil(err, "MySQL is expected to accept a table whose columns are all generated")
+
+	_, err = this.Ferry.SourceDB.Exec(fmt.Sprintf("INSERT INTO %s.%s () VALUES ()", testhelpers.TestSchemaName, table))
+	this.Require().Nil(err, "and to accept rows into it")
+
+	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
+
+	this.Require().NotNil(err)
+	this.Require().EqualError(err, ghostferry.NoNonGeneratedColumnsError(testhelpers.TestSchemaName, table).Error())
 }
 
 func (this *TableSchemaCacheTestSuite) TestLoadTablesWithPaginationKeyColumnFallback() {
