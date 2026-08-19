@@ -498,7 +498,7 @@ func (this *ControlServer) startScriptInBackground(scriptName string, scriptCmd 
 				LogWithFields(Fields{
 					"scriptName": scriptName,
 					"error":      err.Error(),
-					"exitCode":   exitError.ExitCode(),
+					"exitCode":   defaultExitCode,
 				}).Error("custom script ran with errors but could not determine the exit code")
 			}
 		} else {
