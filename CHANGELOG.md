@@ -18,8 +18,9 @@ All notable changes to this project will be documented in this file.
   definitions differ from the source's is reported as a mismatch. A specific column can be excluded
   with `IgnoredColumnsForVerification`.
 
-- A `VIRTUAL` generated column is no longer accepted as a pagination key, and a table whose columns
-  are *all* generated is now rejected when schemas are loaded. Both fail at startup with an
+- A `VIRTUAL` generated column is accepted as an explicitly configured pagination key when it is
+  `NOT NULL` and has a visible single-column `UNIQUE` index. A table whose columns are *all*
+  generated is rejected when schemas are loaded. Unsupported table shapes fail at startup with an
   explanatory error rather than part-way through a move.
 
 ### Fixed

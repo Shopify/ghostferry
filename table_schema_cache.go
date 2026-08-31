@@ -266,7 +266,7 @@ func LoadTables(db *sql.DB, tableFilter TableFilter, columnCompressionConfig Col
 				return tableSchemaCache, err
 			}
 
-			paginationKeyColumn, paginationKeyIndex, err := tableSchema.paginationKeyColumn(cascadingPaginationColumnConfig)
+			paginationKeyColumn, paginationKeyIndex, err := tableSchema.paginationKeyColumn(db, cascadingPaginationColumnConfig)
 			if err != nil {
 				logger.WithError(err).Error("invalid table")
 				return tableSchemaCache, err
@@ -319,10 +319,10 @@ func NoNonGeneratedColumnsError(schema, table string) error {
 
 // VirtualPaginationKeyError exported to facilitate black box testing
 func VirtualPaginationKeyError(schema, table, paginationKey string) error {
-	return fmt.Errorf("Pagination Key `%s` for %s is a VIRTUAL generated column, which is unsupported as a Pagination Key. MySQL does not allow a VIRTUAL column to be a PRIMARY KEY, so neither the uniqueness nor the index-backed ordering that pagination depends on can be guaranteed for one. Use a real column, or a STORED generated column, as the Pagination Key instead", paginationKey, QuotedTableNameFromString(schema, table))
+	return fmt.Errorf("Pagination Key `%s` for %s is a VIRTUAL generated column that is not declared NOT NULL with a visible single-column UNIQUE index. Add those constraints, or use a real column or STORED generated column as the Pagination Key instead", paginationKey, QuotedTableNameFromString(schema, table))
 }
 
-func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (*schema.TableColumn, int, error) {
+func (t *TableSchema) paginationKeyColumn(db *sql.DB, cascadingPaginationColumnConfig *CascadingPaginationColumnConfig) (*schema.TableColumn, int, error) {
 	var err error
 	var paginationKeyColumn *schema.TableColumn
 	var paginationKeyIndex int
@@ -343,12 +343,32 @@ func (t *TableSchema) paginationKeyColumn(cascadingPaginationColumnConfig *Casca
 	}
 
 	if paginationKeyColumn != nil {
-		// MySQL will not let a VIRTUAL column be a PRIMARY KEY, so one arrives
-		// here only through explicit configuration, with nothing establishing
-		// the uniqueness or index-backed order pagination depends on.  A STORED
-		// column can be a real primary key, so it is allowed.
 		if paginationKeyColumn.IsVirtual {
-			return nil, -1, VirtualPaginationKeyError(t.Schema, t.Name, paginationKeyColumn.Name)
+			hasUniqueIndex := false
+			for _, index := range t.Indexes {
+				if index.NoneUnique == 0 && len(index.Columns) == 1 && index.Columns[0] == paginationKeyColumn.Name {
+					hasUniqueIndex = true
+					break
+				}
+			}
+
+			if !hasUniqueIndex {
+				return nil, -1, VirtualPaginationKeyError(t.Schema, t.Name, paginationKeyColumn.Name)
+			}
+
+			var isNullable string
+			err = db.QueryRow(
+				"SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+				t.Schema,
+				t.Name,
+				paginationKeyColumn.Name,
+			).Scan(&isNullable)
+			if err != nil {
+				return nil, -1, err
+			}
+			if strings.EqualFold(isNullable, "YES") {
+				return nil, -1, VirtualPaginationKeyError(t.Schema, t.Name, paginationKeyColumn.Name)
+			}
 		}
 
 		isNumber := paginationKeyColumn.Type == schema.TYPE_NUMBER || paginationKeyColumn.Type == schema.TYPE_MEDIUM_INT
