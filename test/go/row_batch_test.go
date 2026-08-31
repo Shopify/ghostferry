@@ -111,6 +111,20 @@ func (this *RowBatchTestSuite) TestRowBatchReorderedColumnsGeneratesCorrectInser
 	this.Require().Equal([]interface{}{int64(2), int64(1), "z", "2021-01-01"}, args)
 }
 
+func (this *RowBatchTestSuite) TestRowBatchSelectedColumnSubsetGeneratesCorrectInsert() {
+	selectedColumns := []string{"col1", "col3"}
+	rows := []ghostferry.RowData{{int64(1000), true}}
+	batch := ghostferry.NewRowBatchWithColumns(this.sourceTable, rows, selectedColumns, 0)
+
+	query, args, err := batch.AsSQLQuery(this.targetTable.Schema, this.targetTable.Name)
+	this.Require().Nil(err)
+	this.Require().Equal(
+		"INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col3`) VALUES (?,?)",
+		query,
+	)
+	this.Require().Equal([]interface{}{int64(1000), true}, args)
+}
+
 // TestRowBatchReorderedColumnsWithGeneratedColumnFiltersCorrectly combines the
 // gh-285 reordering scenario with generated column filtering: the USING join
 // moves 'id' first, and a VIRTUAL column 'gen' must be excluded from the
@@ -158,13 +172,19 @@ func (this *RowBatchTestSuite) TestRowBatchWithOnlyGeneratedColumnsReturnsError(
 			Schema: "test_schema",
 			Name:   "test_table",
 			Columns: []schema.TableColumn{
+				{Name: "base"},
 				{Name: "gen_a", IsStored: true},
 				{Name: "gen_b", IsVirtual: true},
 			},
 		},
 	}
 
-	batch := ghostferry.NewRowBatch(table, []ghostferry.RowData{{int64(1), int64(2)}}, 0)
+	batch := ghostferry.NewRowBatchWithColumns(
+		table,
+		[]ghostferry.RowData{{int64(1), int64(2)}},
+		[]string{"gen_a", "gen_b"},
+		0,
+	)
 
 	q, args, err := batch.AsSQLQuery("test_schema", "test_table")
 	this.Require().NotNil(err, "must report an error rather than panicking in strings.Repeat")
@@ -183,7 +203,7 @@ func (this *RowBatchTestSuite) TestRowBatchWithWrongColumnsReturnsError() {
 
 	_, _, err := batch.AsSQLQuery(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().NotNil(err)
-	this.Require().Contains(err.Error(), "test_table has 3 columns but event has 1 column")
+	this.Require().Contains(err.Error(), "test_table has 3 selected columns but row has 1 value")
 }
 
 func (this *RowBatchTestSuite) TestRowBatchMetadata() {

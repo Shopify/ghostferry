@@ -429,7 +429,7 @@ class TypesTest < GhostferryTestCase
     # must be filtered per row, not just per event.
     inserts = (1..3).map { |i| "(#{1000 + i}, 'binlog-insert-#{i}')" }.join(",")
 
-    ghostferry.on_status(Ghostferry::Status::BINLOG_STREAMING_STARTED) do
+    ghostferry.on_status(Ghostferry::Status::ROW_COPY_COMPLETED) do
       source_db.query(
         "INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES #{inserts}",
       )

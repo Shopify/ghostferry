@@ -85,8 +85,16 @@ func (e *RowBatch) Fingerprints() map[string][]byte {
 }
 
 func (e *RowBatch) AsSQLQuery(schemaName, tableName string) (string, []interface{}, error) {
-	if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.values...); err != nil {
-		return "", nil, err
+	for _, row := range e.values {
+		if len(e.columns) != len(row) {
+			return "", nil, fmt.Errorf(
+				"table %s.%s has %d selected columns but row has %d values",
+				e.table.Schema,
+				e.table.Name,
+				len(e.columns),
+				len(row),
+			)
+		}
 	}
 
 	// The INSERT column list must follow e.columns — the order the SELECT
