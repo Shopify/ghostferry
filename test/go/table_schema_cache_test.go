@@ -200,14 +200,10 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTablesWhenCascadingPa
 	this.Require().EqualError(err, ghostferry.NonExistingPaginationKeyColumnError(testhelpers.TestSchemaName, table, paginationColumn).Error())
 }
 
-// TestLoadTablesRejectVirtualPaginationKey verifies that using a VIRTUAL
-// generated column as the pagination key is rejected at load time.  VIRTUAL
-// columns are not stored on disk, so they cannot be used reliably for cursor
-// iteration.  STORED generated columns are fine and are not tested here.
-//
-// MySQL prevents VIRTUAL columns from being a PRIMARY KEY, so the only way to
-// reach this code path in practice is via CascadingPaginationColumnConfig.
-func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectVirtualPaginationKey() {
+// A VIRTUAL pagination key must be NOT NULL and have its own visible UNIQUE
+// index. Without both, the configured column does not provide the uniqueness
+// and index-backed ordering pagination requires.
+func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectNonUniqueVirtualPaginationKey() {
 	table := "virtual_pagination_key"
 	virtualColumn := "vlen"
 	cascadingPaginationColumnConfig := &ghostferry.CascadingPaginationColumnConfig{
@@ -217,8 +213,8 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectVirtualPaginationKey(
 	}
 
 	query := fmt.Sprintf(
-		"CREATE TABLE %s.%s (id bigint(20) NOT NULL AUTO_INCREMENT, data TEXT, %s BIGINT AS (LENGTH(data)) VIRTUAL, PRIMARY KEY(id))",
-		testhelpers.TestSchemaName, table, virtualColumn,
+		"CREATE TABLE %s.%s (id bigint(20) NOT NULL AUTO_INCREMENT, data TEXT, %s BIGINT AS (LENGTH(data)) VIRTUAL NOT NULL, PRIMARY KEY(id), KEY (%s))",
+		testhelpers.TestSchemaName, table, virtualColumn, virtualColumn,
 	)
 	_, err := this.Ferry.SourceDB.Exec(query)
 	this.Require().Nil(err)
@@ -227,6 +223,87 @@ func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectVirtualPaginationKey(
 
 	this.Require().NotNil(err)
 	this.Require().EqualError(err, ghostferry.VirtualPaginationKeyError(testhelpers.TestSchemaName, table, virtualColumn).Error())
+}
+
+func (this *TableSchemaCacheTestSuite) TestLoadTablesAllowsUniqueVirtualPaginationKey() {
+	table := "unique_virtual_pagination_key"
+	virtualColumn := "virtual_id"
+	cascadingPaginationColumnConfig := &ghostferry.CascadingPaginationColumnConfig{
+		PerTable: map[string]map[string]string{
+			testhelpers.TestSchemaName: {table: virtualColumn},
+		},
+	}
+
+	query := fmt.Sprintf(
+		"CREATE TABLE %s.%s (id BIGINT NOT NULL, data TEXT, %s BIGINT AS (id + 1) VIRTUAL NOT NULL, PRIMARY KEY(id), UNIQUE KEY (%s))",
+		testhelpers.TestSchemaName, table, virtualColumn, virtualColumn,
+	)
+	_, err := this.Ferry.SourceDB.Exec(query)
+	this.Require().Nil(err)
+
+	this.assertLoadTablesWithCascadingPaginationColumnConfig(table, virtualColumn, cascadingPaginationColumnConfig)
+}
+
+func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectsVirtualPaginationKeyWithCompositeUniqueIndex() {
+	table := "composite_unique_virtual_pagination_key"
+	virtualColumn := "vlen"
+	cascadingPaginationColumnConfig := &ghostferry.CascadingPaginationColumnConfig{
+		PerTable: map[string]map[string]string{
+			testhelpers.TestSchemaName: {table: virtualColumn},
+		},
+	}
+
+	query := fmt.Sprintf(
+		"CREATE TABLE %s.%s (id BIGINT NOT NULL, data TEXT, %s BIGINT AS (LENGTH(data)) VIRTUAL NOT NULL, PRIMARY KEY(id), UNIQUE KEY (%s, id))",
+		testhelpers.TestSchemaName, table, virtualColumn, virtualColumn,
+	)
+	_, err := this.Ferry.SourceDB.Exec(query)
+	this.Require().Nil(err)
+
+	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, cascadingPaginationColumnConfig)
+	this.Require().EqualError(err, ghostferry.VirtualPaginationKeyError(testhelpers.TestSchemaName, table, virtualColumn).Error())
+}
+
+func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectsNullableUniqueVirtualPaginationKey() {
+	table := "nullable_unique_virtual_pagination_key"
+	virtualColumn := "virtual_id"
+	cascadingPaginationColumnConfig := &ghostferry.CascadingPaginationColumnConfig{
+		PerTable: map[string]map[string]string{
+			testhelpers.TestSchemaName: {table: virtualColumn},
+		},
+	}
+
+	query := fmt.Sprintf(
+		"CREATE TABLE %s.%s (id BIGINT NOT NULL, data TEXT, %s BIGINT AS (NULLIF(id, 0)) VIRTUAL, PRIMARY KEY(id), UNIQUE KEY (%s))",
+		testhelpers.TestSchemaName, table, virtualColumn, virtualColumn,
+	)
+	_, err := this.Ferry.SourceDB.Exec(query)
+	this.Require().Nil(err)
+
+	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, cascadingPaginationColumnConfig)
+	this.Require().EqualError(err, ghostferry.VirtualPaginationKeyError(testhelpers.TestSchemaName, table, virtualColumn).Error())
+}
+
+// TestLoadTablesRejectTableWithOnlyGeneratedColumns: MySQL accepts a table
+// whose every column is generated — the first two assertions prove it — but
+// Ghostferry would have nothing to write.  Refusing it at load time turns a
+// mid-move failure into an actionable startup error.
+func (this *TableSchemaCacheTestSuite) TestLoadTablesRejectTableWithOnlyGeneratedColumns() {
+	table := "all_generated"
+
+	_, err := this.Ferry.SourceDB.Exec(fmt.Sprintf(
+		"CREATE TABLE %s.%s (a BIGINT AS (1) STORED, b BIGINT AS (2) STORED, PRIMARY KEY (a))",
+		testhelpers.TestSchemaName, table,
+	))
+	this.Require().Nil(err, "MySQL is expected to accept a table whose columns are all generated")
+
+	_, err = this.Ferry.SourceDB.Exec(fmt.Sprintf("INSERT INTO %s.%s () VALUES ()", testhelpers.TestSchemaName, table))
+	this.Require().Nil(err, "and to accept rows into it")
+
+	_, err = ghostferry.LoadTables(this.Ferry.SourceDB, this.tableFilter, nil, nil, nil, nil)
+
+	this.Require().NotNil(err)
+	this.Require().EqualError(err, ghostferry.NoNonGeneratedColumnsError(testhelpers.TestSchemaName, table).Error())
 }
 
 func (this *TableSchemaCacheTestSuite) TestLoadTablesWithPaginationKeyColumnFallback() {

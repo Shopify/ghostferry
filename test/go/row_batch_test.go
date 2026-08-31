@@ -73,20 +73,11 @@ func (this *RowBatchTestSuite) TestRowBatchGeneratesInsertQuery() {
 	this.Require().Equal(expected, v1)
 }
 
-// TestRowBatchReorderedColumnsGeneratesCorrectInsert is a regression test for
-// the gh-285 corruption pattern.
-//
-// The sharding copy filter executes:
-//
-//	SELECT * FROM t JOIN (SELECT id …) AS batch USING(id)
-//
-// MySQL's USING clause moves the join column to the front of the result set,
-// so for a table with schema order (tenant_id, col1, id, d) the query returns
-// columns in result order (id, tenant_id, col1, d).
-//
-// Before the fix, AsSQLQuery used table.NonGeneratedColumnNames() (schema
-// order) for the INSERT column list while values were in result order — every
-// row written to the target had its column values shifted to the wrong columns.
+// TestRowBatchReorderedColumnsGeneratesCorrectInsert pins the INSERT column
+// list to query-result order, never schema order.  The sharding copy filter's
+// JOIN ... USING moves the join column to the front of the result set, so
+// schema-ordered names against result-ordered values would silently write
+// every value into the wrong column (the gh-285 corruption pattern).
 func (this *RowBatchTestSuite) TestRowBatchReorderedColumnsGeneratesCorrectInsert() {
 	// Schema order: tenant_id(0), col1(1), id(2), d(3)
 	schemaColumns := []schema.TableColumn{
@@ -118,6 +109,20 @@ func (this *RowBatchTestSuite) TestRowBatchReorderedColumnsGeneratesCorrectInser
 		q,
 	)
 	this.Require().Equal([]interface{}{int64(2), int64(1), "z", "2021-01-01"}, args)
+}
+
+func (this *RowBatchTestSuite) TestRowBatchSelectedColumnSubsetGeneratesCorrectInsert() {
+	selectedColumns := []string{"col1", "col3"}
+	rows := []ghostferry.RowData{{int64(1000), true}}
+	batch := ghostferry.NewRowBatchWithColumns(this.sourceTable, rows, selectedColumns, 0)
+
+	query, args, err := batch.AsSQLQuery(this.targetTable.Schema, this.targetTable.Name)
+	this.Require().Nil(err)
+	this.Require().Equal(
+		"INSERT IGNORE INTO `target_schema`.`target_table` (`col1`,`col3`) VALUES (?,?)",
+		query,
+	)
+	this.Require().Equal([]interface{}{int64(1000), true}, args)
 }
 
 // TestRowBatchReorderedColumnsWithGeneratedColumnFiltersCorrectly combines the
@@ -157,6 +162,37 @@ func (this *RowBatchTestSuite) TestRowBatchReorderedColumnsWithGeneratedColumnFi
 	this.Require().Equal([]interface{}{int64(2), int64(1), "z"}, args)
 }
 
+// TestRowBatchWithOnlyGeneratedColumnsReturnsError covers the case LoadTables
+// cannot: a CopyFilter narrowing ColumnsToSelect, or an embedder populating
+// Ferry.Tables directly, can reach AsSQLQuery with nothing writable.  That
+// must be an error, not a panic inside strings.Repeat.
+func (this *RowBatchTestSuite) TestRowBatchWithOnlyGeneratedColumnsReturnsError() {
+	table := &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema: "test_schema",
+			Name:   "test_table",
+			Columns: []schema.TableColumn{
+				{Name: "base"},
+				{Name: "gen_a", IsStored: true},
+				{Name: "gen_b", IsVirtual: true},
+			},
+		},
+	}
+
+	batch := ghostferry.NewRowBatchWithColumns(
+		table,
+		[]ghostferry.RowData{{int64(1), int64(2)}},
+		[]string{"gen_a", "gen_b"},
+		0,
+	)
+
+	q, args, err := batch.AsSQLQuery("test_schema", "test_table")
+	this.Require().NotNil(err, "must report an error rather than panicking in strings.Repeat")
+	this.Require().Contains(err.Error(), "has no columns to write")
+	this.Require().Equal("", q)
+	this.Require().Nil(args)
+}
+
 func (this *RowBatchTestSuite) TestRowBatchWithWrongColumnsReturnsError() {
 	vals := []ghostferry.RowData{
 		ghostferry.RowData{1000, []byte("val0"), true},
@@ -167,7 +203,7 @@ func (this *RowBatchTestSuite) TestRowBatchWithWrongColumnsReturnsError() {
 
 	_, _, err := batch.AsSQLQuery(this.targetTable.Schema, this.targetTable.Name)
 	this.Require().NotNil(err)
-	this.Require().Contains(err.Error(), "test_table has 3 columns but event has 1 column")
+	this.Require().Contains(err.Error(), "test_table has 3 selected columns but row has 1 value")
 }
 
 func (this *RowBatchTestSuite) TestRowBatchMetadata() {

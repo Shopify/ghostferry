@@ -2,10 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.4.0 - 2026-05-18]
+## [1.4.0 - Unreleased]
 
 ### Added
-- Support generated/readonly columns by @plisandro, @driv3r, @grodowski in #437
+
+- Support MySQL generated columns (`VIRTUAL` and `STORED`) by @plisandro, @driv3r, @grodowski in #437.
+  Ghostferry no longer writes to generated columns: they are excluded from the column list of
+  every `INSERT` and from the `SET` clause of every replayed `UPDATE`, so the target recomputes
+  them from its own column definitions. They remain in `WHERE` clauses and in verification
+  fingerprints.
+
+### Changed
+
+- Generated columns are included in verification fingerprints, so a target whose generated column
+  definitions differ from the source's is reported as a mismatch. A specific column can be excluded
+  with `IgnoredColumnsForVerification`.
+
+- A `VIRTUAL` generated column is accepted as an explicitly configured pagination key when it is
+  `NOT NULL` and has a visible single-column `UNIQUE` index. A table whose columns are *all*
+  generated is rejected when schemas are loaded. Unsupported table shapes fail at startup with an
+  explanatory error rather than part-way through a move.
+
+### Fixed
+
+- `StopTargetVerifier` no longer panics when the ferry stops before `Run` starts the target
+  verifier. `targetVerifierWg` is held by value, so `Wait` on a verifier that never started is
+  a no-op. This affects embedders that defer `StopTargetVerifier` around `Run`.
+
+- `RowBatch.AsSQLQuery` returns an error instead of panicking when every selected column is
+  generated.
+
+### API
+
+New exported surface for embedders: `NewRowBatchWithColumns`, `IsColumnGenerated`,
+`TableSchema.IsColumnIndexGenerated`, `TableSchema.IsColumnNameGenerated`,
+`TableSchema.ColumnsCount`, `NoNonGeneratedColumnsError` and `VirtualPaginationKeyError`.
 
 ## [1.3.1 - 2026-04-15]
 

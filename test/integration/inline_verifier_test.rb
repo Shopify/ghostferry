@@ -170,6 +170,15 @@ class InlineVerifierTest < GhostferryTestCase
 
     ghostferry.run
     assert verification_ran
+
+    # The exact fingerprints are pinned deliberately: they change if the set
+    # of columns the verifier fingerprints ever changes -- including if
+    # generated columns stop being included.  A prefix match would not catch
+    # that.
+    expected_message = "cutover verification failed for: gftest.test_table_1 "\
+      "[PKs: #{corrupting_id} (type: rows checksum difference, source: adcad6f2c7973d35980fcff146107b66, target: 383fc80f185d5ad58c9b828cbac2ea8d) ] "
+
+    assert_equal expected_message, ghostferry.error_lines.last["msg"]
   end
 
   def test_target_corruption_is_ignored_if_skip_target_verification
@@ -441,6 +450,10 @@ class InlineVerifierTest < GhostferryTestCase
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
 
+    expected_message = "cutover verification failed for: #{DEFAULT_DB}.#{DEFAULT_TABLE} "\
+      "[PKs: 1 (type: rows checksum difference, source: db0885c88b8ddb28777dceb902ee2d57, target: ef777e4d0c30b1fd01db82f5d39f209e) ] "
+    assert_equal expected_message, ghostferry.error_lines.last["msg"]
+
     # Now we run the real test case.
     target_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = -0.0 WHERE id = 1")
 
@@ -519,6 +532,11 @@ class InlineVerifierTest < GhostferryTestCase
 
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
+
+    expected_message = "cutover verification failed for: gftest.test_table_1 " \
+      "[PKs: 1 (type: rows checksum difference, source: 999119a8e3435fafe2de01fe01383b40, target: c4aa9a09fc8588badfaeeb1d7d42a9e6) ] "
+
+    assert_equal expected_message, ghostferry.error_lines.last["msg"]
   end
 
   def test_null_in_different_order
@@ -544,6 +562,11 @@ class InlineVerifierTest < GhostferryTestCase
 
     assert verification_ran
     assert_equal ["#{DEFAULT_DB}.#{DEFAULT_TABLE}"], incorrect_tables
+
+    expected_message = "cutover verification failed for: gftest.test_table_1 "\
+      "[PKs: 1 (type: rows checksum difference, source: 9b4ffa1cadf5b2fb5a0ca681f9f342e5, target: c18e2e5548da5b1becd1067e74d7fbc0) ] "
+
+    assert_equal expected_message, ghostferry.error_lines.last["msg"]
   end
 
   ###########################

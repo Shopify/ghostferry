@@ -59,7 +59,7 @@ type Ferry struct {
 	BinlogStreamer *BinlogStreamer
 	BinlogWriter   *BinlogWriter
 
-	targetVerifierWg *sync.WaitGroup
+	targetVerifierWg sync.WaitGroup
 	TargetVerifier   *TargetVerifier
 
 	DataIterator *DataIterator
@@ -747,7 +747,6 @@ func (f *Ferry) Run() {
 	}()
 
 	if !f.Config.SkipTargetVerification {
-		f.targetVerifierWg = &sync.WaitGroup{}
 		f.targetVerifierWg.Add(1)
 		go func() {
 			defer f.targetVerifierWg.Done()
@@ -902,12 +901,7 @@ func (f *Ferry) FlushBinlogAndStopStreaming() {
 func (f *Ferry) StopTargetVerifier() {
 	if !f.Config.SkipTargetVerification {
 		f.TargetVerifier.BinlogStreamer.FlushAndStop()
-		// targetVerifierWg is only allocated inside Run().  If the ferry exits
-		// before Run() is reached (e.g. due to an earlier error), the pointer
-		// is still nil and calling Wait() would panic.
-		if f.targetVerifierWg != nil {
-			f.targetVerifierWg.Wait()
-		}
+		f.targetVerifierWg.Wait()
 	}
 }
 

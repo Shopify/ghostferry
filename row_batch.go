@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -84,22 +85,39 @@ func (e *RowBatch) Fingerprints() map[string][]byte {
 }
 
 func (e *RowBatch) AsSQLQuery(schemaName, tableName string) (string, []interface{}, error) {
-	if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.values...); err != nil {
-		return "", nil, err
+	for _, row := range e.values {
+		if len(e.columns) != len(row) {
+			return "", nil, fmt.Errorf(
+				"table %s.%s has %d selected columns but row has %d values",
+				e.table.Schema,
+				e.table.Name,
+				len(e.columns),
+				len(row),
+			)
+		}
 	}
 
-	// Build the INSERT column list from e.columns — the actual query-result
-	// order — skipping generated columns by precomputed index.
-	//
-	// We must NOT use table.NonGeneratedColumnNames() here because that
-	// always returns schema order.  When the SELECT query returns columns in a
-	// different order (for example, the sharding copy filter uses
-	//   SELECT * FROM t JOIN (SELECT id …) AS batch USING(id)
-	// which moves 'id' to the front), the column names and row values would
-	// be misaligned, corrupting every row written to the target.
+	// The INSERT column list must follow e.columns — the order the SELECT
+	// returned — not schema order.  The two differ under the sharding copy
+	// filter, whose JOIN ... USING moves the join column to the front; naming
+	// columns in schema order against result-ordered values silently writes
+	// every value into the wrong column (the gh-285 corruption pattern).
 	insertColumns := make([]string, 0, len(e.nonGeneratedColumnIdxs))
 	for _, i := range e.nonGeneratedColumnIdxs {
 		insertColumns = append(insertColumns, e.columns[i])
+	}
+
+	// LoadTables refuses a table with no writable columns, but a CopyFilter
+	// narrowing ColumnsToSelect, or an embedder populating Ferry.Tables
+	// directly, can still arrive here with nothing to write.  Without this
+	// check, strings.Repeat below panics on a negative count.
+	if len(insertColumns) == 0 {
+		return "", nil, fmt.Errorf(
+			"table %s.%s has no columns to write: every selected column (%v) is a generated column",
+			e.table.Schema,
+			e.table.Name,
+			e.columns,
+		)
 	}
 
 	valuesStr := "(" + strings.Repeat("?,", len(insertColumns)-1) + "?)"

@@ -27,26 +27,33 @@ class IterativeVerifierTest < GhostferryTestCase
   # that divergence in computed output between source and target is detected.
   # Base data (id, data) is identical on both sides; only the STORED generated
   # column expression differs on the target, which must trigger a failure.
+  #
+  # Two things about the shape of this test are load-bearing.  The result is
+  # asserted after ghostferry.run returns, never inside the handler: a failing
+  # assertion there is swallowed, because Minitest::Assertion descends from
+  # Exception and the callback server only rescues StandardError.  And there
+  # is deliberately no datawriter: with one running, the ordinary `data`
+  # column diverges too and the table is reported for that reason even if the
+  # verifier ignores generated columns entirely.
   def test_iterative_verifier_detects_stored_generated_column_divergence
     target_db.query(
       "ALTER TABLE #{DEFAULT_FULL_TABLE_NAME} " \
       "MODIFY summary VARCHAR(32) AS (MD5(CONCAT(data, '_differs'))) STORED"
     )
 
-    datawriter = new_source_datawriter
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Iterative" })
 
-    start_datawriter_with_ghostferry(datawriter, ghostferry)
-    stop_datawriter_during_cutover(datawriter, ghostferry)
-
     verification_ran = false
-    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*incorrect_tables|
+    incorrect_tables = nil
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
       verification_ran = true
-      assert_equal ["gftest.test_table_1"], incorrect_tables
+      incorrect_tables = tables
     end
 
     ghostferry.run
+
     assert verification_ran
+    assert_equal ["gftest.test_table_1"], incorrect_tables
   end
 
   # Same but for a VIRTUAL generated column.
@@ -56,20 +63,19 @@ class IterativeVerifierTest < GhostferryTestCase
       "MODIFY length BIGINT(20) AS (LENGTH(data) + 1) VIRTUAL"
     )
 
-    datawriter = new_source_datawriter
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Iterative" })
 
-    start_datawriter_with_ghostferry(datawriter, ghostferry)
-    stop_datawriter_during_cutover(datawriter, ghostferry)
-
     verification_ran = false
-    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*incorrect_tables|
+    incorrect_tables = nil
+    ghostferry.on_status(Ghostferry::Status::VERIFIED) do |*tables|
       verification_ran = true
-      assert_equal ["gftest.test_table_1"], incorrect_tables
+      incorrect_tables = tables
     end
 
     ghostferry.run
+
     assert verification_ran
+    assert_equal ["gftest.test_table_1"], incorrect_tables
   end
 
   def test_iterative_verifier_fails_if_binlog_streamer_incorrectly_copies_data

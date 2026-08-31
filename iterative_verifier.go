@@ -563,17 +563,18 @@ func (v *IterativeVerifier) tableIsIgnored(table *TableSchema) bool {
 func (v *IterativeVerifier) columnsToVerify(table *TableSchema) []schema.TableColumn {
 	ignoredColsSet, containsIgnoredColumns := v.IgnoredColumns[table.Name]
 
-	// Generated columns (VIRTUAL / STORED) are intentionally included so that
-	// any divergence in computed output between source and target is caught.
-	// Explicitly ignored columns still take priority over this inclusion.
+	// Generated columns are deliberately verified, so that divergence in
+	// computed output between source and target is caught.  Only an explicit
+	// ignore removes a column from this list.
+	if !containsIgnoredColumns {
+		return table.Columns
+	}
+
 	var columns []schema.TableColumn
 	for _, column := range table.Columns {
-		if containsIgnoredColumns {
-			if _, isIgnored := ignoredColsSet[column.Name]; isIgnored {
-				continue
-			}
+		if _, isIgnored := ignoredColsSet[column.Name]; !isIgnored {
+			columns = append(columns, column)
 		}
-		columns = append(columns, column)
 	}
 
 	return columns

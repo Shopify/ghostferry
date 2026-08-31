@@ -168,15 +168,14 @@ func (e *BinlogInsertEvent) NewValues() RowData {
 }
 
 func (e *BinlogInsertEvent) AsSQLString(schemaName, tableName string) (string, error) {
-	filteredNewValues, err := e.table.FilterGeneratedColumnsOnRowData(e.newValues)
-	if err != nil {
+	if err := verifyValuesHasTheSameLengthAsColumns(e.table, e.newValues); err != nil {
 		return "", err
 	}
 
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(schemaName, tableName) +
 		" (" + strings.Join(quotedColumnNames(e.table), ",") + ")" +
-		" VALUES (" + buildStringListForValues(e.table, filteredNewValues) + ")"
+		" VALUES (" + buildStringListForValues(e.table, e.newValues) + ")"
 
 	return query, nil
 }
@@ -229,7 +228,7 @@ func (e *BinlogUpdateEvent) AsSQLString(schemaName, tableName string) (string, e
 
 	query := "UPDATE " + QuotedTableNameFromString(schemaName, tableName) +
 		" SET " + buildStringMapForSet(e.table, e.newValues) +
-		" WHERE " + buildStringMapForWhere(e.table, e.oldValues)
+		" WHERE " + buildStringMapForWhere(e.table.Columns, e.oldValues)
 
 	return query, nil
 }
@@ -270,7 +269,7 @@ func (e *BinlogDeleteEvent) AsSQLString(schemaName, tableName string) (string, e
 	}
 
 	query := "DELETE FROM " + QuotedTableNameFromString(schemaName, tableName) +
-		" WHERE " + buildStringMapForWhere(e.table, e.oldValues)
+		" WHERE " + buildStringMapForWhere(e.table.Columns, e.oldValues)
 
 	return query, nil
 }
@@ -282,39 +281,37 @@ func (e *BinlogDeleteEvent) PaginationKey() (string, error) {
 func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, resumablePos mysql.Position, query []byte) ([]DMLEvent, error) {
 	rowsEvent := ev.Event.(*replication.RowsEvent)
 
-	for i, rawRow := range rowsEvent.Rows {
-		if len(rawRow) != len(table.Columns) {
+	for _, row := range rowsEvent.Rows {
+		if len(row) != len(table.Columns) {
 			return nil, fmt.Errorf(
 				"table %s.%s has %d columns but event has %d columns instead",
 				table.Schema,
 				table.Name,
 				len(table.Columns),
-				len(rawRow),
+				len(row),
 			)
 		}
 
-		// Normalize signed-to-unsigned integer values in place using
-		// full-schema column indexes.  go-mysql always decodes rows to the
-		// full column width (RowsEvent.decodeImage allocates make([]any,
-		// ColumnCount) and leaves omitted positions as nil), so rawRow is
-		// always len(table.Columns) here and indexing is safe.
-		for j, col := range table.Columns {
+		// Normalise signed-to-unsigned integer values in place.  Generated
+		// columns must be normalised too — their values reach the WHERE
+		// clause of replayed UPDATEs and DELETEs, and skipping them would
+		// emit a negative value there that matches nothing.
+		for i, col := range table.Columns {
 			if col.IsUnsigned {
-				switch v := rawRow[j].(type) {
+				switch v := row[i].(type) {
 				case int64:
-					rawRow[j] = uint64(v)
+					row[i] = uint64(v)
 				case int32:
-					rawRow[j] = uint32(v)
+					row[i] = uint32(v)
 				case int16:
-					rawRow[j] = uint16(v)
+					row[i] = uint16(v)
 				case int8:
-					rawRow[j] = uint8(v)
+					row[i] = uint8(v)
 				case int:
-					rawRow[j] = uint(v)
+					row[i] = uint(v)
 				}
 			}
 		}
-		rowsEvent.Rows[i] = rawRow
 	}
 
 	timestamp := time.Unix(int64(ev.Header.Timestamp), 0)
@@ -331,10 +328,15 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 	}
 }
 
+// Generated columns are excluded from the INSERT column list because MySQL
+// rejects assignment to them (see buildStringMapForSet).
 func quotedColumnNames(table *TableSchema) []string {
 	cols := make([]string, 0, len(table.Columns))
-	for _, name := range table.NonGeneratedColumnNames() {
-		cols = append(cols, QuoteField(name))
+	for i := range table.Columns {
+		if table.IsColumnIndexGenerated(i) {
+			continue
+		}
+		cols = append(cols, QuoteField(table.Columns[i].Name))
 	}
 
 	return cols
@@ -355,57 +357,61 @@ func verifyValuesHasTheSameLengthAsColumns(table *TableSchema, values ...RowData
 	return nil
 }
 
+// values is a full-width row in schema order, so a single index pairs each
+// value with the column metadata appendEscapedValue needs.  Filtering the row
+// first would split the two index spaces and misalign that pairing.
 func buildStringListForValues(table *TableSchema, values []interface{}) string {
 	var buffer []byte
 
-	// values contains only non-generated columns (already filtered by the
-	// caller via FilterGeneratedColumnsOnRowData).  Build a matching list of
-	// non-generated column descriptors so that value[i] is paired with the
-	// correct column metadata regardless of where generated columns sit in the
-	// full schema.
-	nonGenerated := make([]schema.TableColumn, 0, len(table.Columns))
-	for _, col := range table.Columns {
-		if !IsColumnGenerated(&col) {
-			nonGenerated = append(nonGenerated, col)
+	for i := range table.Columns {
+		if table.IsColumnIndexGenerated(i) {
+			continue
 		}
-	}
 
-	for i, value := range values {
 		if len(buffer) > 0 {
 			buffer = append(buffer, ',')
 		}
 
-		buffer = appendEscapedValue(buffer, value, nonGenerated[i])
+		buffer = appendEscapedValue(buffer, values[i], table.Columns[i])
 	}
 
 	return string(buffer)
 }
 
-func buildStringMapForWhere(table *TableSchema, values []interface{}) string {
+// The WHERE clause of a replayed UPDATE or DELETE keeps generated columns,
+// even though the SET clause and the INSERT column list must drop them.  The
+// asymmetry is deliberate: MySQL forbids assigning to a generated column, not
+// predicating on one, and dropping them here destroys rows on the target —
+// SQL `=` compares under the column's collation, so the remaining columns
+// need not identify the row.  A STORED generated column is also often the
+// primary key, and losing it from the predicate costs a table scan per event.
+// See test/go/generated_columns_test.go for the rows this loses.
+func buildStringMapForWhere(columns []schema.TableColumn, values []interface{}) string {
 	var buffer []byte
 
 	for i, value := range values {
-		if table.IsColumnIndexGenerated(i) {
-			continue
-		}
-		if len(buffer) > 0 {
+		if i > 0 {
 			buffer = append(buffer, " AND "...)
 		}
 
-		buffer = append(buffer, QuoteField(table.Columns[i].Name)...)
+		buffer = append(buffer, QuoteField(columns[i].Name)...)
 
 		if isNilValue(value) {
 			// "WHERE value = NULL" will never match rows.
 			buffer = append(buffer, " IS NULL"...)
 		} else {
 			buffer = append(buffer, '=')
-			buffer = appendEscapedValue(buffer, value, table.Columns[i])
+			buffer = appendEscapedValue(buffer, value, columns[i])
 		}
 	}
 
 	return string(buffer)
 }
 
+// Generated columns are excluded: MySQL rejects any assignment to one with
+// error 3105, VIRTUAL and STORED alike.  The target derives them from the
+// columns that are assigned.  See buildStringMapForWhere for why the WHERE
+// clause keeps them.
 func buildStringMapForSet(table *TableSchema, values []interface{}) string {
 	var buffer []byte
 
