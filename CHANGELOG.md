@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 
 - Extend `DMLEvent` with `BinlogCoordinate()` and `ResumableBinlogCoordinate()`. `DMLEventBase` implements both; custom implementations must provide these methods.
 - Replace `BinlogCoordinate.Compare` with `HasReached`, using file/position ordering or GTID-set containment. Comparing different coordinate types now returns an error instead of panicking.
+- Compare parsed GTID sets directly during cutover, eliminating per-event GTID serialization and parsing.
 - Updated golang to 1.27.2
 - Updated go packages:
   - `github.com/sirupsen/logrus` to v1.10.2
@@ -32,8 +33,10 @@ All notable changes to this project will be documented in this file.
 
 - Reject malformed typed binlog coordinates instead of silently decoding them as an unset position.
 - Clear cached GTID sets and inactive fields when decoding into an existing `BinlogCoordinate`, preventing stale reachability results.
-- Keep GTID cutover aligned with transaction boundaries, including savepoints, DDL, and empty transaction commits, without bypassing coordinate tracking when custom event handlers are registered.
+- Keep GTID cutover aligned with transaction boundaries, including savepoints, DDL, empty transaction commits, and XA prepare/one-phase commit markers, without bypassing coordinate tracking when custom event handlers are registered.
 - Synchronize GTID coordinate snapshots and updates across goroutines.
+- Finish replayed GTID transactions before stopping at cutover, even when their GTIDs were already streamed before a reconnect.
+- Publish binlog stop requests atomically after recording the stop coordinate, including reads from the control server.
 
 ## [1.3.1 - 2026-04-15]
 
