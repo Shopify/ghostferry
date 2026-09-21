@@ -6,6 +6,7 @@ import (
 	sqlorig "database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
+	"github.com/google/uuid"
 )
 
 const caughtUpThreshold = 10 * time.Second
@@ -436,7 +438,11 @@ func (s *BinlogStreamer) Run() {
 
 		// Track coordinates even when a custom handler replaces the default, and only after it succeeds.
 		if err == nil && s.coordinateMode() == BinlogCoordinateGTID {
-			s.updateGTIDState(ev, &es)
+			if err := s.updateGTIDState(ev, &es); err != nil {
+				s.logger.WithError(err).Error("failed to update GTID state")
+				s.ErrorHandler.Fatal("binlog_streamer", err)
+				return
+			}
 		}
 
 		if es.isEventPositionValid {
@@ -485,12 +491,32 @@ func (s *BinlogStreamer) setLastStreamedGTIDSet(set mysql.GTIDSet) {
 	s.lastStreamedGTIDSet = set.Clone()
 }
 
-func (s *BinlogStreamer) setResumableToStreamed() {
+// setResumableBeforeGTID excludes the incoming transaction from the committed
+// set so checkpoints remain safe even when go-mysql replays a committed GTID.
+func (s *BinlogStreamer) setResumableBeforeGTID(event *replication.GTIDEvent) error {
+	sid, err := uuid.FromBytes(event.SID)
+	if err != nil {
+		return fmt.Errorf("invalid GTID SID: %w", err)
+	}
+	if event.GNO <= 0 || event.GNO == math.MaxInt64 {
+		return fmt.Errorf("invalid GTID sequence number %d", event.GNO)
+	}
+
 	s.gtidMu.Lock()
 	defer s.gtidMu.Unlock()
-	if s.lastStreamedGTIDSet != nil {
-		s.lastResumableGTIDSet = s.lastStreamedGTIDSet.Clone()
+	if s.lastStreamedGTIDSet == nil {
+		s.lastResumableGTIDSet = &mysql.MysqlGTIDSet{Sets: make(map[string]*mysql.UUIDSet)}
+		return nil
 	}
+	committed, ok := s.lastStreamedGTIDSet.(*mysql.MysqlGTIDSet)
+	if !ok || committed == nil {
+		return fmt.Errorf("GTID resume floor requires a MySQL GTID set, got %T", s.lastStreamedGTIDSet)
+	}
+	floor := committed.Clone().(*mysql.MysqlGTIDSet)
+	singleton := mysql.UUIDSet{SID: sid, Intervals: mysql.IntervalSlice{{Start: event.GNO, Stop: event.GNO + 1}}}
+	floor.MinusSet(&singleton)
+	s.lastResumableGTIDSet = floor
+	return nil
 }
 
 func (s *BinlogStreamer) seedGTIDSets(set mysql.GTIDSet) {
@@ -568,25 +594,25 @@ func (s *BinlogStreamer) GetStopBinlogCoordinate() BinlogCoordinate {
 // updateGTIDState tracks transaction boundaries independently of event handlers.
 // go-mysql's GSet includes the in-flight GTID even on BEGIN and SAVEPOINT, so
 // QueryEvents inside an explicit transaction must not advance the committed set.
-func (s *BinlogStreamer) updateGTIDState(ev *replication.BinlogEvent, es *BinlogEventState) {
+func (s *BinlogStreamer) updateGTIDState(ev *replication.BinlogEvent, es *BinlogEventState) error {
 	// XA_PREPARE_LOG_EVENT (decoded as GenericEvent) terminates the GTID group;
 	// XA END does not, so its snapshot is retained until this marker.
 	if ev.Header.EventType == replication.XA_PREPARE_LOG_EVENT {
 		s.commitGTIDState(es.queryGTIDSet, es)
-		return
+		return nil
 	}
 	switch e := ev.Event.(type) {
 	case *replication.GTIDEvent:
 		es.transactionOpen = true
 		es.inTransaction = false
 		es.queryGTIDSet = nil
-		s.setResumableToStreamed()
+		return s.setResumableBeforeGTID(e)
 	case *replication.QueryEvent:
 		es.queryGTIDSet = e.GSet
 		query := strings.TrimSpace(string(e.Query))
 		if strings.EqualFold(query, "BEGIN") || isXAStart(query) {
 			es.inTransaction = true
-			return
+			return nil
 		}
 		if strings.EqualFold(query, "COMMIT") || strings.EqualFold(query, "ROLLBACK") {
 			es.inTransaction = false
@@ -597,6 +623,7 @@ func (s *BinlogStreamer) updateGTIDState(ev *replication.BinlogEvent, es *Binlog
 	case *replication.XIDEvent:
 		s.commitGTIDState(e.GSet, es)
 	}
+	return nil
 }
 
 func isXAStart(query string) bool {
@@ -736,8 +763,8 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 
 	// In GTID mode, stamp GTID coordinates onto the events so that downstream
 	// consumers (binlog writer, verifiers) advance GTID-based state rather than
-	// file/position. The resumable coordinate is the committed set BEFORE the
-	// current transaction, so an interruption replays the whole transaction.
+	// file/position. The resumable coordinate excludes the current transaction
+	// from the committed set, so an interruption replays the whole transaction.
 	if s.coordinateMode() == BinlogCoordinateGTID {
 		// Snapshot both coordinates under gtidMu so the read does not race the
 		// streaming goroutine's set mutations / Progress()'s reads.
