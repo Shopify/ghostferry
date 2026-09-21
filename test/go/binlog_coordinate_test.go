@@ -139,18 +139,31 @@ func TestBinlogCoordinate_NewGTIDCoordinateFromSet(t *testing.T) {
 	other, err := mysql.ParseMysqlGTIDSet(testGTIDSetB)
 	require.NoError(t, err)
 	require.NoError(t, set.(*mysql.MysqlGTIDSet).Add(*other.(*mysql.MysqlGTIDSet)))
-	assert.Equal(t, testGTIDSetA, coord.GTIDSet, "coordinate must not alias the caller's set")
-
-	// The parsed-set cache is not serialized; JSON only carries the string.
-	data, err := json.Marshal(coord)
+	reached, err := coord.HasReached(ghostferry.NewGTIDCoordinate(testGTIDSetB))
 	require.NoError(t, err)
-	assert.NotContains(t, string(data), "parsedGTIDSet")
+	assert.False(t, reached, "coordinate must not alias the caller's set")
+}
 
-	var decoded ghostferry.BinlogCoordinate
-	require.NoError(t, json.Unmarshal(data, &decoded))
-	reached, err := decoded.HasReached(ghostferry.NewGTIDCoordinate(testGTIDSetA))
+func TestBinlogCoordinate_UnmarshalReplacesCachedGTIDSet(t *testing.T) {
+	set, err := mysql.ParseMysqlGTIDSet(testGTIDSetB)
+	require.NoError(t, err)
+	coord := ghostferry.NewGTIDCoordinateFromSet(set)
+
+	data, err := json.Marshal(ghostferry.NewGTIDCoordinate(testGTIDSetA))
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(data, &coord))
+
+	parsed, err := coord.ParsedGTIDSet()
+	require.NoError(t, err)
+	assert.Equal(t, testGTIDSetA, parsed.String())
+
+	reached, err := coord.HasReached(ghostferry.NewGTIDCoordinate(testGTIDSetA))
 	require.NoError(t, err)
 	assert.True(t, reached)
+
+	reached, err = coord.HasReached(ghostferry.NewGTIDCoordinate(testGTIDSetB))
+	require.NoError(t, err)
+	assert.False(t, reached)
 }
 
 func TestBinlogCoordinate_NewGTIDCoordinateFromNilSet(t *testing.T) {
