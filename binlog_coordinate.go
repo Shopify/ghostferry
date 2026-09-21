@@ -23,7 +23,7 @@ type BinlogCoordinate struct {
 
 	GTIDSet string
 
-	// parsedGTIDSet caches the parsed set; callers must not mutate it (accessors clone).
+	// parsedGTIDSet is a read-only cache (accessors clone); not serialized, reset on decode.
 	parsedGTIDSet mysql.GTIDSet
 }
 

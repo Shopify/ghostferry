@@ -692,7 +692,9 @@ type Config struct {
 	// Make sure you have binlog_row_image=FULL when turning on this
 	SkipBinlogRowImageCheck bool
 
-	// BinlogCoordinateMode is "file_position" (default) or "gtid".
+	// BinlogCoordinateMode is "file_position" (default) or "gtid" (experimental;
+	// requires gtid_mode=ON on the source, and on the target when target
+	// verification is enabled). Resume from state is not yet supported in gtid mode.
 	BinlogCoordinateMode BinlogCoordinateType
 
 	// This config is necessary for inline verification for a special case of

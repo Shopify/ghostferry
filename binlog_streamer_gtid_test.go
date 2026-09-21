@@ -23,45 +23,114 @@ func mustParseGTID(t *testing.T, s string) mysql.GTIDSet {
 	return set
 }
 
-func TestIsTransactionControlQuery(t *testing.T) {
-	assert.True(t, isTransactionControlQuery([]byte("BEGIN")))
-	assert.True(t, isTransactionControlQuery([]byte("  begin  ")))
-	assert.True(t, isTransactionControlQuery([]byte("COMMIT")))
-	assert.True(t, isTransactionControlQuery([]byte("ROLLBACK")))
-	assert.False(t, isTransactionControlQuery([]byte("CREATE TABLE t (id int)")))
-	assert.False(t, isTransactionControlQuery([]byte("GRANT ALL ON *.* TO 'x'@'%'")))
-}
-
-// TestQueryEventAdvancesStreamedGTID verifies that a DDL/admin QueryEvent
-// (which commits without an XIDEvent) advances the streamed GTID set, while a
-// BEGIN QueryEvent does not. Without this, a cutover whose stop target includes
-// a trailing DDL would hang forever.
-func TestQueryEventAdvancesStreamedGTID(t *testing.T) {
-	s := &BinlogStreamer{BinlogCoordinateMode: BinlogCoordinateGTID}
-	s.logger = LogWithField("tag", "test")
-
-	ddlSet := mustParseGTID(t, gtidSetTarget)
-
-	// A DDL QueryEvent carrying the executed set advances lastStreamedGTIDSet.
-	ddlEvent := &replication.BinlogEvent{
-		Header: &replication.EventHeader{LogPos: 100},
-		Event:  &replication.QueryEvent{Query: []byte("CREATE TABLE t (id int)"), GSet: ddlSet},
+func TestRunStopsAtGTIDTransactionBoundary(t *testing.T) {
+	target := mustParseGTID(t, gtidSetTarget)
+	gtid := func() *replication.BinlogEvent {
+		return &replication.BinlogEvent{
+			Header: &replication.EventHeader{EventType: replication.GTID_EVENT},
+			Event:  &replication.GTIDEvent{},
+		}
 	}
-	es := &BinlogEventState{}
-	_, err := s.defaultEventHandler(ddlEvent, nil, es)
-	require.NoError(t, err)
-	require.NotNil(t, s.lastStreamedGTIDSet)
-	assert.Equal(t, gtidSetTarget, s.lastStreamedGTIDSet.String())
-
-	// A BEGIN QueryEvent must NOT advance the streamed set.
-	before := s.lastStreamedGTIDSet.String()
-	beginEvent := &replication.BinlogEvent{
-		Header: &replication.EventHeader{LogPos: 200},
-		Event:  &replication.QueryEvent{Query: []byte("BEGIN"), GSet: mustParseGTID(t, gtidSetPast)},
+	query := func(statement string) *replication.BinlogEvent {
+		return &replication.BinlogEvent{
+			Header: &replication.EventHeader{EventType: replication.QUERY_EVENT},
+			Event:  &replication.QueryEvent{Query: []byte(statement), GSet: target},
+		}
 	}
-	_, err = s.defaultEventHandler(beginEvent, nil, es)
-	require.NoError(t, err)
-	assert.Equal(t, before, s.lastStreamedGTIDSet.String(), "BEGIN must not advance the streamed GTID set")
+	rows := func(id int) *replication.BinlogEvent {
+		return &replication.BinlogEvent{
+			Header: &replication.EventHeader{EventType: replication.WRITE_ROWS_EVENTv2},
+			Event:  &replication.RowsEvent{Rows: [][]interface{}{{id}}},
+		}
+	}
+	xid := func() *replication.BinlogEvent {
+		return &replication.BinlogEvent{
+			Header: &replication.EventHeader{EventType: replication.XID_EVENT},
+			Event:  &replication.XIDEvent{GSet: target},
+		}
+	}
+
+	for _, tc := range []struct {
+		name           string
+		events         []*replication.BinlogEvent
+		customHandlers []replication.EventType
+		wantRows       [][]interface{}
+	}{
+		{
+			name: "savepoints do not commit",
+			events: []*replication.BinlogEvent{
+				gtid(), query("BEGIN"), rows(1), query("SAVEPOINT `s`"),
+				query("ROLLBACK TO SAVEPOINT `s`"), query("RELEASE SAVEPOINT `s`"), rows(2), xid(),
+			},
+			wantRows: [][]interface{}{{1}, {2}},
+		},
+		{
+			name:   "empty transaction commits without XID",
+			events: []*replication.BinlogEvent{gtid(), query("BEGIN"), query("COMMIT")},
+		},
+		{
+			name:   "rollback closes transaction without XID",
+			events: []*replication.BinlogEvent{gtid(), query("BEGIN"), query("ROLLBACK")},
+		},
+		{
+			name:   "standalone DDL commits without XID",
+			events: []*replication.BinlogEvent{gtid(), query("CREATE TABLE t (id int)")},
+		},
+		{
+			name:           "custom query handler preserves DDL commit",
+			events:         []*replication.BinlogEvent{gtid(), query("CREATE TABLE t (id int)")},
+			customHandlers: []replication.EventType{replication.QUERY_EVENT},
+		},
+		{
+			name:           "custom transaction handlers preserve commit",
+			events:         []*replication.BinlogEvent{gtid(), query("BEGIN"), rows(1), xid()},
+			customHandlers: []replication.EventType{replication.GTID_EVENT, replication.QUERY_EVENT, replication.XID_EVENT},
+			wantRows:       [][]interface{}{{1}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stream := replication.NewBinlogStreamer()
+			s := &BinlogStreamer{
+				BinlogCoordinateMode: BinlogCoordinateGTID,
+				binlogStreamer:       stream,
+				binlogSyncer:         replication.NewBinlogSyncer(replication.BinlogSyncerConfig{ServerID: 1}),
+				stopRequested:        true,
+			}
+			s.seedGTIDSets(mustParseGTID(t, gtidSetLower))
+			s.setStopGTIDSet(target)
+
+			var deliveredRows [][]interface{}
+			require.NoError(t, s.AddBinlogEventHandler(replication.WRITE_ROWS_EVENTv2, func(ev *replication.BinlogEvent, query []byte, es *BinlogEventState) ([]byte, error) {
+				deliveredRows = append(deliveredRows, ev.Event.(*replication.RowsEvent).Rows...)
+				return query, nil
+			}))
+			for _, eventType := range tc.customHandlers {
+				require.NoError(t, s.AddBinlogEventHandler(eventType, func(ev *replication.BinlogEvent, query []byte, es *BinlogEventState) ([]byte, error) {
+					return query, nil
+				}))
+			}
+			// Fail deterministically instead of polling forever if the commit is missed.
+			require.NoError(t, s.AddBinlogEventHandler(replication.HEARTBEAT_EVENT, func(ev *replication.BinlogEvent, query []byte, es *BinlogEventState) ([]byte, error) {
+				t.Fatal("stream continued past the transaction's stop GTID")
+				return nil, nil
+			}))
+			for i, ev := range tc.events {
+				ev.Header.LogPos = uint32(100 + i)
+				require.NoError(t, stream.AddEventToStreamer(ev))
+			}
+			require.NoError(t, stream.AddEventToStreamer(&replication.BinlogEvent{
+				Header: &replication.EventHeader{EventType: replication.HEARTBEAT_EVENT},
+				Event:  &replication.GenericEvent{},
+			}))
+
+			s.Run()
+
+			assert.Equal(t, tc.wantRows, deliveredRows)
+			reached, err := s.GetLastStreamedBinlogCoordinate().HasReached(NewGTIDCoordinate(gtidSetTarget))
+			require.NoError(t, err)
+			assert.True(t, reached)
+		})
+	}
 }
 
 func TestCoordinateModeDefaultsToFilePosition(t *testing.T) {
