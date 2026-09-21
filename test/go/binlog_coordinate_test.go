@@ -76,3 +76,20 @@ func TestBinlogCoordinate_UnmarshalTypedForm(t *testing.T) {
 	assert.Equal(t, "mysql-bin.000050", decoded.Position().Name)
 	assert.Equal(t, uint32(700), decoded.Position().Pos)
 }
+
+func TestBinlogCoordinate_UnmarshalRejectsMalformedTypedForm(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+	}{
+		{"negative position", `{"Type":"file_position","FilePosition":{"Name":"mysql-bin.000050","Pos":-1}}`},
+		{"overflowing position", `{"Type":"file_position","FilePosition":{"Name":"mysql-bin.000050","Pos":4294967296}}`},
+		{"invalid type", `{"Type":7,"FilePosition":{"Name":"mysql-bin.000050","Pos":700}}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var decoded ghostferry.BinlogCoordinate
+			require.Error(t, json.Unmarshal([]byte(tc.raw), &decoded))
+		})
+	}
+}

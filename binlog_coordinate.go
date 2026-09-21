@@ -152,7 +152,10 @@ func (c BinlogCoordinate) MarshalJSON() ([]byte, error) {
 // compatibility, a bare mysql.Position object of the form {"Name":...,"Pos":...}.
 func (c *BinlogCoordinate) UnmarshalJSON(data []byte) error {
 	var typed serializedBinlogCoordinate
-	if err := json.Unmarshal(data, &typed); err == nil && typed.Type != "" {
+	if err := json.Unmarshal(data, &typed); err != nil {
+		return err
+	}
+	if typed.Type != "" {
 		c.Type = typed.Type
 		switch typed.Type {
 		case BinlogCoordinateFilePosition:

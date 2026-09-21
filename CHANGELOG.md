@@ -4,8 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Introduce `BinlogCoordinate` to wrap MySQL file/position coordinates with comparison, zero-value detection, and typed JSON serialization. Decoding also accepts the legacy bare `mysql.Position` JSON format. The GTID coordinate type is reserved; GTID replication is not yet supported.
+- Add coordinate-based APIs to `BinlogStreamer`, `StateTracker`, and `SerializableState`, retaining the existing file/position APIs and resume behavior.
+
 ### Changed
 
+- Extend `DMLEvent` with `BinlogCoordinate()` and `ResumableBinlogCoordinate()`. `DMLEventBase` implements both; custom implementations must provide these methods.
 - Updated golang to 1.27.2
 - Updated go packages:
   - `github.com/sirupsen/logrus` to v1.10.2
@@ -17,6 +23,10 @@ All notable changes to this project will be documented in this file.
   - indirect: `golang.org/x/sys`, `golang.org/x/text`, `filippo.io/edwards25519`, `go.uber.org/zap`, `go.uber.org/atomic`
 - Updated ruby to 4.0.7 and bundler to 4.0.22 (test dependency)
 - Updated ruby gems, including `minitest` to v6 and `minitest-fail-fast` to v0.2 (test and docs dependencies)
+
+### Fixed
+
+- Reject malformed typed binlog coordinates instead of silently decoding them as an unset position.
 
 ## [1.3.1 - 2026-04-15]
 
