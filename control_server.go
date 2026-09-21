@@ -242,7 +242,7 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 	status.ETA = time.Duration(status.Progress.ETA) * time.Second
 
 	status.AutomaticCutover = this.F.Config.AutomaticCutover
-	status.BinlogStreamerStopRequested = this.F.BinlogStreamer.stopRequested
+	status.BinlogStreamerStopRequested = this.F.BinlogStreamer.stopRequested.Load()
 
 	// Getting all table statuses
 	status.TableStatuses = make([]*ControlServerTableStatus, 0, len(status.Tables))

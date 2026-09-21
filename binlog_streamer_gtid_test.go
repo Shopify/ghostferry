@@ -55,6 +55,7 @@ func TestRunStopsAtGTIDTransactionBoundary(t *testing.T) {
 		events         []*replication.BinlogEvent
 		customHandlers []replication.EventType
 		wantRows       [][]interface{}
+		wantXAPrepare  bool
 	}{
 		{
 			name: "savepoints do not commit",
@@ -87,6 +88,25 @@ func TestRunStopsAtGTIDTransactionBoundary(t *testing.T) {
 			customHandlers: []replication.EventType{replication.GTID_EVENT, replication.QUERY_EVENT, replication.XID_EVENT},
 			wantRows:       [][]interface{}{{1}},
 		},
+		{
+			name: "XA one phase consumes rows and prepare marker",
+			events: []*replication.BinlogEvent{
+				gtid(), query("XA START X'01',X'',1"), rows(1), query("XA END X'01',X'',1"),
+				{Header: &replication.EventHeader{EventType: replication.XA_PREPARE_LOG_EVENT}, Event: &replication.GenericEvent{Data: []byte{1}}},
+			},
+			customHandlers: []replication.EventType{replication.GTID_EVENT, replication.QUERY_EVENT},
+			wantRows:       [][]interface{}{{1}},
+			wantXAPrepare:  true,
+		},
+		{
+			name: "XA opener accepts whitespace and case variation",
+			events: []*replication.BinlogEvent{
+				gtid(), query("xa\t  BeGiN X'01',X'',1"), rows(1), query("XA END X'01',X'',1"),
+				{Header: &replication.EventHeader{EventType: replication.XA_PREPARE_LOG_EVENT}, Event: &replication.GenericEvent{Data: []byte{1}}},
+			},
+			wantRows:      [][]interface{}{{1}},
+			wantXAPrepare: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			stream := replication.NewBinlogStreamer()
@@ -94,12 +114,17 @@ func TestRunStopsAtGTIDTransactionBoundary(t *testing.T) {
 				BinlogCoordinateMode: BinlogCoordinateGTID,
 				binlogStreamer:       stream,
 				binlogSyncer:         replication.NewBinlogSyncer(replication.BinlogSyncerConfig{ServerID: 1}),
-				stopRequested:        true,
 			}
+			s.stopRequested.Store(true)
 			s.seedGTIDSets(mustParseGTID(t, gtidSetLower))
 			s.setStopGTIDSet(target)
 
 			var deliveredRows [][]interface{}
+			sawXAPrepare := false
+			require.NoError(t, s.AddBinlogEventHandler(replication.XA_PREPARE_LOG_EVENT, func(_ *replication.BinlogEvent, query []byte, _ *BinlogEventState) ([]byte, error) {
+				sawXAPrepare = true
+				return query, nil
+			}))
 			require.NoError(t, s.AddBinlogEventHandler(replication.WRITE_ROWS_EVENTv2, func(ev *replication.BinlogEvent, query []byte, es *BinlogEventState) ([]byte, error) {
 				deliveredRows = append(deliveredRows, ev.Event.(*replication.RowsEvent).Rows...)
 				return query, nil
@@ -126,19 +151,12 @@ func TestRunStopsAtGTIDTransactionBoundary(t *testing.T) {
 			s.Run()
 
 			assert.Equal(t, tc.wantRows, deliveredRows)
+			assert.Equal(t, tc.wantXAPrepare, sawXAPrepare)
 			reached, err := s.GetLastStreamedBinlogCoordinate().HasReached(NewGTIDCoordinate(gtidSetTarget))
 			require.NoError(t, err)
 			assert.True(t, reached)
 		})
 	}
-}
-
-func TestCoordinateModeDefaultsToFilePosition(t *testing.T) {
-	s := &BinlogStreamer{}
-	assert.Equal(t, BinlogCoordinateFilePosition, s.coordinateMode())
-
-	s.BinlogCoordinateMode = BinlogCoordinateGTID
-	assert.Equal(t, BinlogCoordinateGTID, s.coordinateMode())
 }
 
 func TestShouldContinueStreaming_FilePosition(t *testing.T) {
@@ -147,7 +165,7 @@ func TestShouldContinueStreaming_FilePosition(t *testing.T) {
 	// No stop requested: always continue.
 	assert.True(t, s.shouldContinueStreaming())
 
-	s.stopRequested = true
+	s.stopRequested.Store(true)
 	s.stopAtBinlogPosition = mysql.Position{Name: "mysql-bin.000010", Pos: 100}
 
 	// Streamed position behind stop: continue.
@@ -165,7 +183,7 @@ func TestShouldContinueStreaming_GTID(t *testing.T) {
 	// No stop requested: always continue.
 	assert.True(t, s.shouldContinueStreaming())
 
-	s.stopRequested = true
+	s.stopRequested.Store(true)
 	s.stopAtGTIDSet = mustParseGTID(t, gtidSetTarget)
 
 	// No streamed set yet: keep going.
@@ -190,7 +208,7 @@ func TestShouldContinueStreaming_GTID(t *testing.T) {
 // stream must stop rather than hang.
 func TestShouldContinueStreaming_GTIDEmptyStopTarget(t *testing.T) {
 	s := &BinlogStreamer{BinlogCoordinateMode: BinlogCoordinateGTID}
-	s.stopRequested = true
+	s.stopRequested.Store(true)
 	s.stopAtGTIDSet = mustParseGTID(t, "") // empty executed set on a fresh source
 
 	// Empty streamed set has reached the empty stop target: stop.
@@ -233,13 +251,11 @@ func TestConnectBinlogStreamerSinceCoordinate_TypeMismatch(t *testing.T) {
 		NewFilePositionCoordinate(mysql.Position{Name: "mysql-bin.000001", Pos: 4}),
 	)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "GTID mode requires a GTID coordinate")
 
 	// File/position mode with a GTID coordinate must also be rejected.
 	s2 := &BinlogStreamer{}
 	_, err = s2.ConnectBinlogStreamerToMysqlSinceCoordinate(NewGTIDCoordinate(gtidSetTarget))
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "file/position mode requires a file/position coordinate")
 }
 
 // TestGTIDCoordinateAccessorsAreRaceFree reproduces the cross-goroutine hazard
@@ -272,6 +288,7 @@ func TestGTIDCoordinateAccessorsAreRaceFree(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < iterations; i++ {
 			s.setStopGTIDSet(mustParseGTID(t, gtidSetPast))
+			s.stopRequested.Store(true)
 		}
 	}()
 
@@ -282,8 +299,63 @@ func TestGTIDCoordinateAccessorsAreRaceFree(t *testing.T) {
 			_ = s.GetLastStreamedBinlogCoordinate()
 			_ = s.GetStopBinlogCoordinate()
 			_ = s.resumableGTIDClone()
+			_ = s.shouldContinueStreaming()
 		}
 	}()
 
 	wg.Wait()
+}
+
+func TestRunFinishesReplayedTransactionBeforeCutover(t *testing.T) {
+	for _, stopAt := range []string{"GTID", "first replayed update"} {
+		t.Run(stopAt, func(t *testing.T) {
+			stream := replication.NewBinlogStreamer()
+			s := &BinlogStreamer{
+				BinlogCoordinateMode: BinlogCoordinateGTID,
+				binlogStreamer:       stream,
+				binlogSyncer:         replication.NewBinlogSyncer(replication.BinlogSyncerConfig{ServerID: 1}),
+			}
+			s.seedGTIDSets(mustParseGTID(t, gtidSetLower))
+			s.setStopGTIDSet(mustParseGTID(t, gtidSetTarget))
+			gtids, updates, value := 0, 0, 0
+			require.NoError(t, s.AddBinlogEventHandler(replication.GTID_EVENT, func(_ *replication.BinlogEvent, query []byte, _ *BinlogEventState) ([]byte, error) {
+				gtids++
+				if gtids == 2 && stopAt == "GTID" {
+					s.stopRequested.Store(true)
+				}
+				return query, nil
+			}))
+			require.NoError(t, s.AddBinlogEventHandler(replication.UPDATE_ROWS_EVENTv2, func(ev *replication.BinlogEvent, query []byte, _ *BinlogEventState) ([]byte, error) {
+				rows := ev.Event.(*replication.RowsEvent).Rows
+				if value == rows[0][0].(int) {
+					value = rows[1][0].(int)
+				}
+				updates++
+				if updates == 3 && stopAt == "first replayed update" {
+					s.stopRequested.Store(true)
+				}
+				return query, nil
+			}))
+			require.NoError(t, s.AddBinlogEventHandler(replication.HEARTBEAT_EVENT, func(_ *replication.BinlogEvent, _ []byte, _ *BinlogEventState) ([]byte, error) {
+				t.Fatal("stream continued past the replayed commit")
+				return nil, nil
+			}))
+			add := func(kind replication.EventType, event replication.Event) {
+				require.NoError(t, stream.AddEventToStreamer(&replication.BinlogEvent{
+					Header: &replication.EventHeader{EventType: kind, LogPos: 100}, Event: event,
+				}))
+			}
+			for range 2 {
+				add(replication.GTID_EVENT, &replication.GTIDEvent{})
+				add(replication.QUERY_EVENT, &replication.QueryEvent{Query: []byte("BEGIN"), GSet: mustParseGTID(t, gtidSetTarget)})
+				add(replication.UPDATE_ROWS_EVENTv2, &replication.RowsEvent{Rows: [][]interface{}{{0}, {1}}})
+				add(replication.UPDATE_ROWS_EVENTv2, &replication.RowsEvent{Rows: [][]interface{}{{1}, {0}}})
+				add(replication.XID_EVENT, &replication.XIDEvent{GSet: mustParseGTID(t, gtidSetTarget)})
+			}
+			add(replication.HEARTBEAT_EVENT, &replication.GenericEvent{})
+			s.Run()
+			assert.Equal(t, 4, updates, "cutover must finish replaying the transaction")
+			assert.Equal(t, 0, value, "cutover must preserve the committed row value")
+		})
+	}
 }

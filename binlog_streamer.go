@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -25,6 +26,10 @@ type BinlogEventState struct {
 	isEventPositionValid     bool
 	nextFilename             string
 	inTransaction            bool
+	// A GTID group is open from GTIDEvent through its terminating event,
+	// including when an already committed group is replayed after reconnect.
+	transactionOpen bool
+	queryGTIDSet    mysql.GTIDSet
 }
 
 type BinlogStreamer struct {
@@ -78,7 +83,7 @@ type BinlogStreamer struct {
 	lastProcessedEventTime   time.Time
 	lastLagMetricEmittedTime time.Time
 
-	stopRequested bool
+	stopRequested atomic.Bool
 
 	logger         Logger
 	eventListeners []func([]DMLEvent) error
@@ -351,13 +356,11 @@ func (s *BinlogStreamer) defaultEventHandler(ev *replication.BinlogEvent, query 
 
 // shouldContinueStreaming reports whether the Run loop should keep streaming.
 //
-// It keeps streaming until a stop has been requested AND the stop coordinate
-// has been reached. The "have we reached the stop coordinate?" question is
-// answered by BinlogCoordinate.HasReached, so this method is identical for
-// file/position and GTID; the representation-specific mechanics live on the
-// coordinate type.
+// The Run loop separately finishes any open GTID group before stopping.
+// Compare the parsed GTID sets under their lock instead of serializing and
+// parsing both sets for every event during cutover.
 func (s *BinlogStreamer) shouldContinueStreaming() bool {
-	if !s.stopRequested {
+	if !s.stopRequested.Load() {
 		return true
 	}
 
@@ -367,6 +370,18 @@ func (s *BinlogStreamer) shouldContinueStreaming() bool {
 	// can legitimately be empty, and an empty GTID set is a valid stop target
 	// that any streamed set already contains. Deriving presence from IsZero()
 	// here would hang cutover forever in that case.
+	if s.coordinateMode() == BinlogCoordinateGTID {
+		s.gtidMu.RLock()
+		defer s.gtidMu.RUnlock()
+		if s.stopAtGTIDSet == nil {
+			return false
+		}
+		if s.lastStreamedGTIDSet == nil {
+			var empty mysql.MysqlGTIDSet
+			return !empty.Contain(s.stopAtGTIDSet)
+		}
+		return !s.lastStreamedGTIDSet.Contain(s.stopAtGTIDSet)
+	}
 	stop := s.GetStopBinlogCoordinate()
 
 	reached, err := s.GetLastStreamedBinlogCoordinate().HasReached(stop)
@@ -397,7 +412,7 @@ func (s *BinlogStreamer) Run() {
 	currentFilename := s.lastStreamedBinlogPosition.Name
 	es.nextFilename = s.lastStreamedBinlogPosition.Name
 	s.logger.Info("starting binlog streamer")
-	for s.shouldContinueStreaming() {
+	for es.transactionOpen || s.shouldContinueStreaming() {
 		currentFilename = es.nextFilename
 		var ev *replication.BinlogEvent
 		var timedOut bool
@@ -594,32 +609,62 @@ func (s *BinlogStreamer) GetStopBinlogCoordinate() BinlogCoordinate {
 // go-mysql's GSet includes the in-flight GTID even on BEGIN and SAVEPOINT, so
 // QueryEvents inside an explicit transaction must not advance the committed set.
 func (s *BinlogStreamer) updateGTIDState(ev *replication.BinlogEvent, es *BinlogEventState) {
+	// go-mysql decodes XA_PREPARE_LOG_EVENT as a GenericEvent. It terminates
+	// the GTID group for both XA PREPARE and XA COMMIT ONE PHASE. XA END does
+	// not; retain its GTID snapshot until this marker has been consumed.
+	if ev.Header.EventType == replication.XA_PREPARE_LOG_EVENT {
+		s.commitGTIDState(es.queryGTIDSet, es)
+		return
+	}
 	switch e := ev.Event.(type) {
 	case *replication.GTIDEvent:
-		// A GTID prefixes both BEGIN-delimited transactions and standalone DDL.
+		es.transactionOpen = true
 		es.inTransaction = false
+		es.queryGTIDSet = nil
 		s.setResumableToStreamed()
 	case *replication.QueryEvent:
+		es.queryGTIDSet = e.GSet
 		query := strings.TrimSpace(string(e.Query))
-		if strings.EqualFold(query, "BEGIN") {
+		if strings.EqualFold(query, "BEGIN") || isXAStart(query) {
 			es.inTransaction = true
 			return
 		}
 		if strings.EqualFold(query, "COMMIT") || strings.EqualFold(query, "ROLLBACK") {
-			// Empty and non-transactional-engine transactions have a QueryEvent
-			// commit marker rather than an XIDEvent.
 			es.inTransaction = false
 		}
 		if !es.inTransaction && e.GSet != nil {
-			// Outside BEGIN/COMMIT, a DDL/admin statement commits on its own.
-			s.setLastStreamedGTIDSet(e.GSet)
+			s.commitGTIDState(e.GSet, es)
 		}
 	case *replication.XIDEvent:
-		es.inTransaction = false
-		if e.GSet != nil {
-			s.setLastStreamedGTIDSet(e.GSet)
-		}
+		s.commitGTIDState(e.GSet, es)
 	}
+}
+
+func isXAStart(query string) bool {
+	if len(query) < 2 || !strings.EqualFold(query[:2], "XA") {
+		return false
+	}
+	first := true
+	for token := range strings.FieldsSeq(query) {
+		if first {
+			if !strings.EqualFold(token, "XA") {
+				return false
+			}
+			first = false
+			continue
+		}
+		return strings.EqualFold(token, "START") || strings.EqualFold(token, "BEGIN")
+	}
+	return false
+}
+
+func (s *BinlogStreamer) commitGTIDState(set mysql.GTIDSet, es *BinlogEventState) {
+	if set != nil {
+		s.setLastStreamedGTIDSet(set)
+	}
+	es.inTransaction = false
+	es.transactionOpen = false
+	es.queryGTIDSet = nil
 }
 
 func (s *BinlogStreamer) IsAlmostCaughtUp() bool {
@@ -654,7 +699,7 @@ func (s *BinlogStreamer) FlushAndStop() {
 		}
 		s.logger.WithField("stop_at_gtid_set", s.stopGTIDString()).Info("current stop GTID set was recorded")
 
-		s.stopRequested = true
+		s.stopRequested.Store(true)
 		return
 	}
 
@@ -669,7 +714,7 @@ func (s *BinlogStreamer) FlushAndStop() {
 	}
 	s.logger.WithField("stop_at_position", s.stopAtBinlogPosition).Info("current stop binlog position was recorded")
 
-	s.stopRequested = true
+	s.stopRequested.Store(true)
 }
 
 func (s *BinlogStreamer) updateLastStreamedPosAndTime(evTimestamp uint32, evPos mysql.Position, evType string, isResumablePosition bool) {
