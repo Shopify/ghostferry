@@ -696,10 +696,10 @@ type Config struct {
 	//     target verification is enabled, and the replication master when
 	//     running from a replica).
 	//
-	// Note: in GTID mode the legacy file/position progress fields
-	// (LastSuccessfulBinlogPos, FinalBinlogPos) are not populated; use the
-	// coordinate fields (LastSuccessfulBinlogCoordinate, FinalBinlogCoordinate)
-	// instead.
+	// In GTID mode, LastSuccessfulBinlogPos still reports the streamed
+	// file/position, while FinalBinlogPos remains unset. These legacy fields
+	// are not authoritative for GTID comparisons; use
+	// LastSuccessfulBinlogCoordinate and FinalBinlogCoordinate instead.
 	//
 	// Prefer BinlogCoordinateMode over any future boolean flag: it keeps the
 	// file/position and GTID paths cleanly separated and leaves room for
