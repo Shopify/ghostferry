@@ -8,8 +8,9 @@ All notable changes to this project will be documented in this file.
 
 - Introduce `BinlogCoordinate` for MySQL file/position and GTID-set coordinates, with zero-value detection and typed JSON serialization. Decoding also accepts the legacy bare `mysql.Position` JSON format.
 - Add coordinate-based APIs to `BinlogStreamer`, `StateTracker`, and `SerializableState`, retaining the existing file/position APIs and resume behavior.
-- Add `BinlogCoordinateMode` with `file_position` as the default and experimental MySQL-only `gtid` as a valid option. Binlog streaming remains file/position-based; GTID streaming is not yet supported.
+- Experimental MySQL GTID binlog streaming with `BinlogCoordinateMode: "gtid"` for source and target-verification streams. File/position streaming remains the default.
 - Add helpers to read `@@GLOBAL.GTID_EXECUTED` as a GTID coordinate and check that the server's `gtid_mode` is `ON`.
+- GTID cutover uses set containment. GTID mode requires `gtid_mode=ON` on the source and, when target verification is enabled, on the target. Resuming from serialized state is not yet supported in GTID mode and is explicitly rejected.
 
 ### Changed
 
@@ -20,6 +21,8 @@ All notable changes to this project will be documented in this file.
 
 - Reject malformed typed binlog coordinates instead of silently decoding them as an unset position.
 - Clear cached GTID sets and inactive fields when decoding into an existing `BinlogCoordinate`, preventing stale reachability results.
+- Keep GTID cutover aligned with transaction boundaries, including savepoints, DDL, and empty transaction commits, without bypassing coordinate tracking when custom event handlers are registered.
+- Synchronize GTID coordinate snapshots and updates across goroutines.
 
 ## [1.3.1 - 2026-04-15]
 

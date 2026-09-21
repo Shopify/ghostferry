@@ -24,6 +24,7 @@ type BinlogEventState struct {
 	isEventPositionResumable bool
 	isEventPositionValid     bool
 	nextFilename             string
+	inTransaction            bool
 }
 
 type BinlogStreamer struct {
@@ -313,28 +314,6 @@ func (s *BinlogStreamer) defaultEventHandler(ev *replication.BinlogEvent, query 
 			s.logger.WithError(err).Error("failed to handle rows event")
 			s.ErrorHandler.Fatal("binlog_streamer", err)
 		}
-	case *replication.QueryEvent:
-		// DDL and administrative statements (CREATE TABLE, GRANT, etc.) commit
-		// via a QueryEvent rather than an XIDEvent, so their GTID is only
-		// visible here. Without this, the streamed GTID set would never
-		// advance past such a statement and a cutover whose stop target
-		// includes it would hang forever. go-mysql attaches the current
-		// executed GTID set (including this statement's GTID) to the event.
-		//
-		// Transaction-control statements ("BEGIN") also arrive as QueryEvents
-		// but do NOT commit anything; their GTID is captured at the closing
-		// XIDEvent instead, so we must skip them here to avoid advancing the
-		// streamed set before the transaction's rows have been applied.
-		if s.coordinateMode() == BinlogCoordinateGTID {
-			qe := ev.Event.(*replication.QueryEvent)
-			if qe.GSet != nil && !isTransactionControlQuery(qe.Query) {
-				// A DDL/admin statement is its own transaction; the pre-statement
-				// committed set is a safe resume point. Guarded so the swap does
-				// not race Progress()'s String() read.
-				s.setResumableToStreamed()
-				s.setLastStreamedGTIDSet(qe.GSet)
-			}
-		}
 	case *replication.XIDEvent, *replication.GTIDEvent:
 		// With regards to DMLs, we see (at least) the following sequence
 		// of events in the binlog stream:
@@ -361,27 +340,6 @@ func (s *BinlogStreamer) defaultEventHandler(ev *replication.BinlogEvent, query 
 		// interruption to EITHER the start (if using GTIDs) or the end of the
 		// last transaction
 		es.isEventPositionResumable = true
-
-		// GTID tracking. go-mysql maintains the current GTID set internally and
-		// attaches it to XIDEvent.GSet at commit boundaries, so we do not need
-		// to reconstruct it from raw GTIDEvent SID/GNO.
-		if s.coordinateMode() == BinlogCoordinateGTID {
-			switch tev := ev.Event.(type) {
-			case *replication.GTIDEvent:
-				// Start of a transaction. A safe resume point is the committed
-				// set that existed BEFORE this transaction, so that an
-				// interruption replays the whole in-flight transaction.
-				s.setResumableToStreamed()
-			case *replication.XIDEvent:
-				// End of a transaction. GSet is the committed GTID set through
-				// this transaction. setLastStreamedGTIDSet clones under gtidMu to
-				// avoid aliasing go-mysql's mutable internal set and to avoid
-				// racing Progress()'s read.
-				if tev.GSet != nil {
-					s.setLastStreamedGTIDSet(tev.GSet)
-				}
-			}
-		}
 
 		// Here we also reset the query event as we are either at the beginning
 		// or the end of the current/next transaction. As such, the query will be
@@ -489,6 +447,12 @@ func (s *BinlogStreamer) Run() {
 		} else {
 			// call the default event handler for everything else
 			query, err = s.defaultEventHandler(ev, query, &es)
+		}
+
+		// Coordinate tracking must run even when a custom handler replaces the
+		// default handler, but only after the event has been handled successfully.
+		if err == nil && s.coordinateMode() == BinlogCoordinateGTID {
+			s.updateGTIDState(ev, &es)
 		}
 
 		if es.isEventPositionValid {
@@ -626,14 +590,36 @@ func (s *BinlogStreamer) GetStopBinlogCoordinate() BinlogCoordinate {
 	return NewFilePositionCoordinate(s.stopAtBinlogPosition)
 }
 
-// isTransactionControlQuery reports whether a QueryEvent query is a
-// transaction-control statement that does not itself commit data (BEGIN).
-// Such statements must not advance the committed GTID set; the enclosing
-// transaction commits at its XIDEvent. Note COMMIT/ROLLBACK are normally
-// represented as XIDEvents for InnoDB, but are treated defensively here too.
-func isTransactionControlQuery(query []byte) bool {
-	q := strings.ToUpper(strings.TrimSpace(string(query)))
-	return q == "BEGIN" || q == "COMMIT" || q == "ROLLBACK"
+// updateGTIDState tracks transaction boundaries independently of event handlers.
+// go-mysql's GSet includes the in-flight GTID even on BEGIN and SAVEPOINT, so
+// QueryEvents inside an explicit transaction must not advance the committed set.
+func (s *BinlogStreamer) updateGTIDState(ev *replication.BinlogEvent, es *BinlogEventState) {
+	switch e := ev.Event.(type) {
+	case *replication.GTIDEvent:
+		// A GTID prefixes both BEGIN-delimited transactions and standalone DDL.
+		es.inTransaction = false
+		s.setResumableToStreamed()
+	case *replication.QueryEvent:
+		query := strings.TrimSpace(string(e.Query))
+		if strings.EqualFold(query, "BEGIN") {
+			es.inTransaction = true
+			return
+		}
+		if strings.EqualFold(query, "COMMIT") || strings.EqualFold(query, "ROLLBACK") {
+			// Empty and non-transactional-engine transactions have a QueryEvent
+			// commit marker rather than an XIDEvent.
+			es.inTransaction = false
+		}
+		if !es.inTransaction && e.GSet != nil {
+			// Outside BEGIN/COMMIT, a DDL/admin statement commits on its own.
+			s.setLastStreamedGTIDSet(e.GSet)
+		}
+	case *replication.XIDEvent:
+		es.inTransaction = false
+		if e.GSet != nil {
+			s.setLastStreamedGTIDSet(e.GSet)
+		}
+	}
 }
 
 func (s *BinlogStreamer) IsAlmostCaughtUp() bool {
