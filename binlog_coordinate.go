@@ -262,17 +262,16 @@ func (c *BinlogCoordinate) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	if typed.Type != "" {
-		c.Type = typed.Type
 		switch typed.Type {
 		case BinlogCoordinateFilePosition:
+			var pos mysql.Position
 			if typed.FilePosition != nil {
-				c.FilePosition = *typed.FilePosition
-			} else {
-				c.FilePosition = mysql.Position{}
+				pos = *typed.FilePosition
 			}
+			*c = NewFilePositionCoordinate(pos)
 			return nil
 		case BinlogCoordinateGTID:
-			c.GTIDSet = typed.GTIDSet
+			*c = NewGTIDCoordinate(typed.GTIDSet)
 			return nil
 		default:
 			return fmt.Errorf("cannot unmarshal binlog coordinate of type %q", typed.Type)
@@ -284,7 +283,6 @@ func (c *BinlogCoordinate) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &pos); err != nil {
 		return err
 	}
-	c.Type = BinlogCoordinateFilePosition
-	c.FilePosition = pos
+	*c = NewFilePositionCoordinate(pos)
 	return nil
 }

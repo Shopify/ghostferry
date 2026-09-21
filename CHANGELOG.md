@@ -6,16 +6,20 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Introduce `BinlogCoordinate` to wrap MySQL file/position coordinates with comparison, zero-value detection, and typed JSON serialization. Decoding also accepts the legacy bare `mysql.Position` JSON format. The GTID coordinate type is reserved; GTID replication is not yet supported.
+- Introduce `BinlogCoordinate` for MySQL file/position and GTID-set coordinates, with zero-value detection and typed JSON serialization. Decoding also accepts the legacy bare `mysql.Position` JSON format.
 - Add coordinate-based APIs to `BinlogStreamer`, `StateTracker`, and `SerializableState`, retaining the existing file/position APIs and resume behavior.
+- Add `BinlogCoordinateMode` with `file_position` as the default and experimental MySQL-only `gtid` as a valid option. Binlog streaming remains file/position-based; GTID streaming is not yet supported.
+- Add helpers to read `@@GLOBAL.GTID_EXECUTED` as a GTID coordinate and check that the server's `gtid_mode` is `ON`.
 
 ### Changed
 
 - Extend `DMLEvent` with `BinlogCoordinate()` and `ResumableBinlogCoordinate()`. `DMLEventBase` implements both; custom implementations must provide these methods.
+- Replace `BinlogCoordinate.Compare` with `HasReached`, using file/position ordering or GTID-set containment. Comparing different coordinate types now returns an error instead of panicking.
 
 ### Fixed
 
 - Reject malformed typed binlog coordinates instead of silently decoding them as an unset position.
+- Clear cached GTID sets and inactive fields when decoding into an existing `BinlogCoordinate`, preventing stale reachability results.
 
 ## [1.3.1 - 2026-04-15]
 
