@@ -9,9 +9,10 @@ import (
 
 type DataIterator struct {
 	DB *sql.DB
-	// SourceRuntime, when set, provides the current source connection so a data
-	// iteration run started after a source master failover targets the promoted
-	// writer. When nil, DB is used. Resolved once at the start of Run.
+	// SourceRuntime, when set, provides the current source connection for the
+	// data iterator's own metadata reads (pagination bounds, table sizing) so
+	// they follow a source master failover. When nil, DB is used. Cursors
+	// resolve their own handle at creation via CursorConfig.
 	SourceRuntime     *SourceRuntime
 	Concurrency       int
 	SelectFingerprint bool
@@ -32,6 +33,18 @@ type TableMaxPaginationKey struct {
 	MaxPaginationKey PaginationKey
 }
 
+// currentSourceDB resolves the source connection for the iterator's metadata
+// reads from SourceRuntime when configured, otherwise the static DB. It is
+// resolved at each point of use so a swap between reads is observed.
+func (d *DataIterator) currentSourceDB() *sql.DB {
+	if d.SourceRuntime != nil {
+		if db := d.SourceRuntime.DB(); db != nil {
+			return db
+		}
+	}
+	return d.DB
+}
+
 func (d *DataIterator) Run(tables []*TableSchema) {
 	d.logger = LogWithField("tag", "data_iterator")
 
@@ -42,15 +55,7 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 		d.StateTracker = NewStateTracker(0)
 	}
 
-	// Resolve the source connection for this run. When a SourceRuntime is
-	// configured it is authoritative (so a run started after a failover uses the
-	// promoted writer); otherwise fall back to the static DB.
-	db := d.DB
-	if d.SourceRuntime != nil {
-		if current := d.SourceRuntime.DB(); current != nil {
-			db = current
-		}
-	}
+	db := d.currentSourceDB()
 
 	d.logger.WithField("tablesCount", len(tables)).Info("starting data iterator run")
 	tablesWithData, emptyTables, err := MaxPaginationKeys(db, tables, d.logger)

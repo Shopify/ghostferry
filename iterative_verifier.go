@@ -157,7 +157,7 @@ func (v *IterativeVerifier) SanityCheckParameters() error {
 		return errors.New("BinlogStreamer must not be nil")
 	}
 
-	if v.SourceDB == nil {
+	if v.currentSourceDB() == nil {
 		return errors.New("SourceDB must not be nil")
 	}
 

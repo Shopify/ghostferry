@@ -533,14 +533,12 @@ func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 
 // currentSourceDB returns the source connection inline verification should use,
 // resolving it from SourceRuntime when configured so a failover is followed. If
-// the source handle changed since the last call, the source statement cache is
-// reset because cached prepared statements are bound to the previous DB.
-// currentSourceDB returns the source connection inline verification should use,
-// resolving it from SourceRuntime when configured so a failover is followed. If
-// the source handle changed since the last call, the source statement cache is
-// reset because cached prepared statements are bound to the previous DB. The
-// resolved DB and its matching statement cache are returned together under a
-// lock so concurrent verification workers stay consistent.
+// the source handle changed since the last call, a fresh source statement cache
+// is installed because cached prepared statements are bound to the previous DB.
+// The resolved DB and its matching statement cache are returned together under
+// a lock so concurrent verification workers stay consistent. The previous cache
+// is not closed here: in-flight workers may still hold its (db, cache) pair, and
+// its statements are released with the retired DB by SourceRuntime.CloseRetired.
 func (v *InlineVerifier) currentSourceDB() (*sql.DB, *StmtCache) {
 	v.sourceDBMu.Lock()
 	defer v.sourceDBMu.Unlock()

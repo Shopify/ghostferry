@@ -226,7 +226,7 @@ func (v *ChecksumTableVerifier) fetchChecksumValueFromRow(row *sqlorig.Row) (int
 }
 
 func (v *ChecksumTableVerifier) StartInBackground() error {
-	if v.SourceDB == nil || v.TargetDB == nil {
+	if v.currentSourceDB() == nil || v.TargetDB == nil {
 		return errors.New("must specify source and target db")
 	}
 
