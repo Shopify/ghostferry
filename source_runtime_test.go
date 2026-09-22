@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"context"
 	"testing"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -12,6 +13,17 @@ import (
 // not dial), so Replace can install a real handle without a live server.
 func runtimeTestConfig(host string) *DatabaseConfig {
 	return &DatabaseConfig{Host: host, Port: 3306, User: "root", Net: "tcp"}
+}
+
+// isClosed reports whether db rejects work because it was closed. A cancelled
+// context makes an open lazily-dialed handle fail fast without dialing.
+func isClosed(t *testing.T, db *sql.DB) bool {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := db.PingContext(ctx)
+	require.Error(t, err)
+	return err != context.Canceled
 }
 
 func TestSourceRuntimeAccessors(t *testing.T) {
@@ -54,18 +66,30 @@ func TestSourceRuntimeReplaceRetainsAllPriorHandles(t *testing.T) {
 	assert.Len(t, rt.retired, 2)
 }
 
-func TestSourceRuntimeCloseRetiredDrains(t *testing.T) {
-	// Use real (lazily-opened, undialed) handles so Close has an underlying DB.
-	dbA, err := runtimeTestConfig("a").SqlDB(nil)
+func TestSourceRuntimeCloseRetiredClosesOnlyRetiredHandles(t *testing.T) {
+	initial, err := runtimeTestConfig("gen0").SqlDB(nil)
 	require.NoError(t, err)
-	dbB, err := runtimeTestConfig("b").SqlDB(nil)
+	rt := NewSourceRuntime(initial, runtimeTestConfig("gen0"))
+
+	replaced, err := rt.Replace(runtimeTestConfig("gen1"), nil)
 	require.NoError(t, err)
+	current, err := rt.Replace(runtimeTestConfig("gen2"), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, current.Close()) })
 
-	rt := NewSourceRuntime(nil, nil)
-	rt.retired = []*sql.DB{dbA, dbB}
+	// Retiring must not close handles that in-flight work may still use.
+	assert.False(t, isClosed(t, initial))
+	assert.False(t, isClosed(t, replaced))
 
-	assert.NotPanics(t, func() { rt.CloseRetired() })
-	assert.Empty(t, rt.retired, "retired handles must be drained")
+	rt.CloseRetired()
+	assert.True(t, isClosed(t, initial), "initial handle must be closed")
+	assert.True(t, isClosed(t, replaced), "intermediate handle must be closed")
+	assert.False(t, isClosed(t, current), "current handle must stay open")
+	assert.Same(t, current, rt.DB())
+
+	// Draining is idempotent and never touches the current handle.
+	rt.CloseRetired()
+	assert.False(t, isClosed(t, current))
 }
 
 func TestSourceRuntimeNilInitial(t *testing.T) {
