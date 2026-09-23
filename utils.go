@@ -252,7 +252,11 @@ func NewMysqlPosition(file string, position uint32, err error, db *sql.DB) (mysq
 }
 
 func CheckDbIsAReplica(db *sql.DB) (bool, error) {
-	row := db.QueryRow("SELECT @@read_only")
+	return checkDbIsAReplicaContext(context.Background(), db)
+}
+
+func checkDbIsAReplicaContext(ctx context.Context, db *sql.DB) (bool, error) {
+	row := db.QueryRowContext(ctx, "SELECT @@read_only")
 	var isReadOnly bool
 	err := row.Scan(&isReadOnly)
 	return isReadOnly, err
@@ -261,8 +265,12 @@ func CheckDbIsAReplica(db *sql.DB) (bool, error) {
 // ReadExecutedGTIDSet reads @@GLOBAL.GTID_EXECUTED; an empty result is valid,
 // not an error.
 func ReadExecutedGTIDSet(db *sql.DB) (string, error) {
+	return readExecutedGTIDSetContext(context.Background(), db)
+}
+
+func readExecutedGTIDSetContext(ctx context.Context, db *sql.DB) (string, error) {
 	var gtidSet string
-	row := db.QueryRow("SELECT @@GLOBAL.GTID_EXECUTED")
+	row := db.QueryRowContext(ctx, "SELECT @@GLOBAL.GTID_EXECUTED")
 	if err := row.Scan(&gtidSet); err != nil {
 		return "", fmt.Errorf("reading @@GLOBAL.GTID_EXECUTED: %w", err)
 	}
@@ -286,8 +294,12 @@ func ReadCurrentGTIDCoordinate(db *sql.DB) (BinlogCoordinate, error) {
 
 // CheckServerGTIDModeEnabled verifies @@GLOBAL.gtid_mode is ON.
 func CheckServerGTIDModeEnabled(db *sql.DB) error {
+	return checkServerGTIDModeEnabledContext(context.Background(), db)
+}
+
+func checkServerGTIDModeEnabledContext(ctx context.Context, db *sql.DB) error {
 	var gtidMode string
-	row := db.QueryRow("SELECT @@GLOBAL.gtid_mode")
+	row := db.QueryRowContext(ctx, "SELECT @@GLOBAL.gtid_mode")
 	if err := row.Scan(&gtidMode); err != nil {
 		return fmt.Errorf("reading @@GLOBAL.gtid_mode: %w", err)
 	}

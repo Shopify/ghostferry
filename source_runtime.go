@@ -6,7 +6,12 @@ import (
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 )
 
-// SourceRuntime owns the source connection and its config; safe for concurrent use.
+// SourceRuntime owns the current source connection so a master failover
+// repoints every consumer through one Replace.
+//
+// Consumers resolve at their point of use, but a cursor snapshots the handle
+// at creation: a scan stays on one server and is not rebound mid-scan, so it
+// fails through its ordinary read retries if that server goes away.
 type SourceRuntime struct {
 	mu     sync.RWMutex
 	db     *sql.DB
@@ -77,8 +82,10 @@ func (r *SourceRuntime) ReplaceValidated(config *DatabaseConfig, logger Logger, 
 	return newDB, nil
 }
 
-// CloseRetired closes the handles retired by Replace; callers must ensure no
-// source work is still in flight.
+// Callers must first join Ferry.Run, any standalone source-copy workers and
+// any verifier they started, and stop using handles captured earlier: the
+// library cannot prove embedder-owned cursors are quiescent. Candidates that
+// were never published are closed at rejection and never appear here.
 func (r *SourceRuntime) CloseRetired() {
 	r.mu.Lock()
 	retired := r.retired

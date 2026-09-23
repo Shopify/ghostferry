@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -86,43 +87,42 @@ func (c *MasterFailoverRecoveryConfig) retryWait() time.Duration {
 	return c.RetryWait
 }
 
-// SourceReconnector reconnects the source after the binlog streamer loses its
-// connection. It is the single seam between the streamer (which only knows "I
-// lost the source and here is the safe GTID set I must not fall behind") and
-// the Ferry (which owns the SourceRuntime and therefore how the whole run
-// repoints at a promoted writer).
+var errNilStreamVerifier = errors.New("failover: missing stream validation callback")
+
+// SourceReconnector is the seam between the streamer (which knows the GTID
+// set it must not fall behind) and the Ferry (which owns the SourceRuntime).
+// Implementations must fail closed: a source not containing requiredGTIDSet
+// would silently diverge the target or wait forever for a stop target.
 //
-// Reconnect is called on the streamer's Run goroutine when a non-timeout
-// GetEvent error occurs. appliedGTIDSet is everything the streamer has already
-// emitted downstream (committed set plus any in-flight transaction); the
-// implementation must guarantee the returned source contains it, or fail
-// closed, so recovery never resumes against a master that lost applied
-// transactions (which would silently diverge the target).
+// verifyStream is mandatory because StartSyncGTID returns as soon as
+// COM_BINLOG_DUMP_GTID is written — a refusal surfaces only through GetEvent.
+// Only a successful callback may publish the connection, and a requirement it
+// added must be revalidated against the server first.
 //
-// On success it returns the new source connection and the config it was opened
-// from; the streamer rebuilds its binlog syncer against them. Returning an
-// error means this attempt failed and the streamer will retry (subject to
-// MaxAttempts).
+// On failure it returns the config of the candidate it attempted, or nil when
+// resolution itself failed.
 type SourceReconnector interface {
-	Reconnect(previous *DatabaseConfig, appliedGTIDSet mysql.GTIDSet) (*sql.DB, *DatabaseConfig, error)
+	Reconnect(previous *DatabaseConfig, requiredGTIDSet mysql.GTIDSet,
+		verifyStream func(*sql.DB, *DatabaseConfig) (mysql.GTIDSet, error),
+	) (*sql.DB, *DatabaseConfig, error)
 }
 
-// validateFailoverTarget verifies that db (already opened against candidate) is
-// a safe source to resume streaming from:
-//
-//   - it is a writer (@@read_only = OFF), not a demoted master or replica;
-//   - GTID mode is enabled (@@GLOBAL.gtid_mode = ON); and
-//   - its executed GTID set contains appliedSet, i.e. everything already
-//     emitted downstream. A candidate missing any applied transaction is
-//     rejected (fail closed) so recovery cannot silently diverge the target.
-//
-// It does not close db; the caller owns its lifecycle.
-func validateFailoverTarget(db *sql.DB, candidate *DatabaseConfig, appliedSet mysql.GTIDSet) error {
+// A parsed but empty requiredSet is valid (a fresh source has executed
+// nothing); a nil set is not, because it cannot be told apart from an
+// uninitialised caller. ctx bounds every query, including the first lazy
+// dial. It does not close db.
+func validateFailoverTarget(ctx context.Context, db *sql.DB, candidate *DatabaseConfig, requiredSet mysql.GTIDSet) error {
 	if candidate == nil {
 		return fmt.Errorf("failover: nil candidate master config")
 	}
+	if db == nil {
+		return fmt.Errorf("failover: nil candidate master connection")
+	}
+	if requiredSet == nil {
+		return fmt.Errorf("failover: nil required GTID set; refusing to validate candidate master %s:%d", candidate.Host, candidate.Port)
+	}
 
-	isReadOnly, err := CheckDbIsAReplica(db)
+	isReadOnly, err := checkDbIsAReplicaContext(ctx, db)
 	if err != nil {
 		return fmt.Errorf("failover: checking candidate master %s:%d read_only: %w", candidate.Host, candidate.Port, err)
 	}
@@ -130,11 +130,11 @@ func validateFailoverTarget(db *sql.DB, candidate *DatabaseConfig, appliedSet my
 		return fmt.Errorf("failover: candidate master %s:%d is read_only (not a writer); rejecting", candidate.Host, candidate.Port)
 	}
 
-	if err := CheckServerGTIDModeEnabled(db); err != nil {
+	if err := checkServerGTIDModeEnabledContext(ctx, db); err != nil {
 		return fmt.Errorf("failover: candidate master %s:%d rejected: %w", candidate.Host, candidate.Port, err)
 	}
 
-	candidateSetStr, err := ReadExecutedGTIDSet(db)
+	candidateSetStr, err := readExecutedGTIDSetContext(ctx, db)
 	if err != nil {
 		return fmt.Errorf("failover: reading candidate master executed GTID set: %w", err)
 	}
@@ -143,10 +143,10 @@ func validateFailoverTarget(db *sql.DB, candidate *DatabaseConfig, appliedSet my
 		return fmt.Errorf("failover: parsing candidate master executed GTID set %q: %w", candidateSetStr, err)
 	}
 
-	if appliedSet != nil && !candidateSet.Contain(appliedSet) {
+	if !candidateSet.Contain(requiredSet) {
 		return fmt.Errorf(
-			"failover: candidate master %s:%d executed set %q does not contain already-applied set %q; resuming there would diverge from the source",
-			candidate.Host, candidate.Port, candidateSet.String(), appliedSet.String(),
+			"failover: candidate master %s:%d executed set %q does not contain required GTID set %q; refusing to resume",
+			candidate.Host, candidate.Port, candidateSet.String(), requiredSet.String(),
 		)
 	}
 

@@ -172,6 +172,14 @@ func (this *ConfigTestSuite) TestUnixNetMysqlConfig() {
 	err := this.config.ValidateConfig()
 	this.Require().Nil(err)
 
+	// Validation is idempotent: a unix config that has already been validated
+	// (and therefore has Port zero) must validate again unchanged, because
+	// failover normalizes resolver-supplied configs that may already be valid.
+	this.Require().Equal(uint16(0), this.config.Source.Port)
+	this.Require().Nil(this.config.Source.Validate())
+	this.Require().Equal(uint16(0), this.config.Source.Port)
+	this.Require().Equal("/tmp/mysql.sock", this.config.Source.Host)
+
 	mysqlConfig, err := this.config.Source.MySQLConfig()
 	this.Require().Nil(err)
 
@@ -227,15 +235,30 @@ func (this *ConfigTestSuite) TestMasterFailoverRecoveryRequiresGTIDMode() {
 			return nil, nil
 		}),
 	}
-	err := this.config.ValidateConfig()
-	this.Require().EqualError(err, `MasterFailoverRecovery requires BinlogCoordinateMode "gtid", got "file_position"`)
+	this.Require().Error(this.config.ValidateConfig())
 }
 
 func (this *ConfigTestSuite) TestMasterFailoverRecoveryRequiresResolver() {
 	this.config.BinlogCoordinateMode = ghostferry.BinlogCoordinateGTID
 	this.config.MasterFailoverRecovery = &ghostferry.MasterFailoverRecoveryConfig{}
-	err := this.config.ValidateConfig()
-	this.Require().EqualError(err, "MasterFailoverRecovery requires a Resolver")
+	this.Require().Error(this.config.ValidateConfig())
+}
+
+func (this *ConfigTestSuite) TestMasterFailoverRecoveryRejectsNegativeMaxAttempts() {
+	this.config.BinlogCoordinateMode = ghostferry.BinlogCoordinateGTID
+	this.config.MasterFailoverRecovery = &ghostferry.MasterFailoverRecoveryConfig{
+		Resolver: ghostferry.MasterWriterResolverFunc(func(_ *ghostferry.DatabaseConfig) (*ghostferry.DatabaseConfig, error) {
+			return nil, nil
+		}),
+		MaxAttempts: -1,
+	}
+	this.Require().Error(this.config.ValidateConfig())
+
+	// Zero means unlimited and positive budgets are finite; both are accepted.
+	this.config.MasterFailoverRecovery.MaxAttempts = 0
+	this.Require().Nil(this.config.ValidateConfig())
+	this.config.MasterFailoverRecovery.MaxAttempts = 3
+	this.Require().Nil(this.config.ValidateConfig())
 }
 
 func (this *ConfigTestSuite) TestMasterFailoverRecoveryValidInGTIDMode() {

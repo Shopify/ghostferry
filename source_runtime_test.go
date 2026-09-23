@@ -2,6 +2,7 @@ package ghostferry
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"testing"
 
@@ -87,24 +88,33 @@ func TestSourceRuntimeCloseRetiredClosesOnlyRetiredHandles(t *testing.T) {
 }
 
 func TestSourceRuntimeReplaceValidatedFailureDoesNotPublish(t *testing.T) {
-	oldDB := &sql.DB{Marginalia: "old"}
+	// A real (lazily dialed) handle, so "still works" is an observable query.
+	oldDB := newSourceRuntimeQueryDB(t, []string{"id"}, [][]driver.Value{{int64(1)}})
 	oldCfg := runtimeTestConfig("old-host")
 	rt := NewSourceRuntime(oldDB, oldCfg)
 
 	validateErr := errors.New("candidate rejected")
-	_, err := rt.ReplaceValidated(runtimeTestConfig("bad-host"), nil, func(_ *sql.DB) error {
+	var rejected *sql.DB
+	_, err := rt.ReplaceValidated(runtimeTestConfig("bad-host"), nil, func(db *sql.DB) error {
+		rejected = db
 		return validateErr
 	})
 	assert.ErrorIs(t, err, validateErr)
 
-	// The current source must be unchanged and nothing retired.
+	// An unpublished candidate is nobody else's to close.
+	require.NotNil(t, rejected)
+	assert.True(t, isClosed(t, rejected), "rejected candidate handle must be closed")
+
 	assert.Same(t, oldDB, rt.DB())
 	assert.Same(t, oldCfg, rt.Config())
 	assert.Empty(t, rt.retired)
+	var id int64
+	require.NoError(t, oldDB.QueryRow("SELECT 1").Scan(&id))
+	assert.Equal(t, int64(1), id)
 }
 
 func TestSourceRuntimeReplaceValidatedSuccessPublishes(t *testing.T) {
-	oldDB := &sql.DB{Marginalia: "old"}
+	oldDB := newSourceRuntimeQueryDB(t, []string{"id"}, [][]driver.Value{{int64(1)}})
 	rt := NewSourceRuntime(oldDB, runtimeTestConfig("old-host"))
 
 	validated := false
@@ -115,10 +125,17 @@ func TestSourceRuntimeReplaceValidatedSuccessPublishes(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = newDB.Close() })
 	assert.True(t, validated)
 	assert.Same(t, newDB, rt.DB())
 	assert.Same(t, newCfg, rt.Config())
 	assert.Contains(t, rt.retired, oldDB)
+
+	// Displaced work keeps running until the embedder calls CloseRetired.
+	var id int64
+	require.NoError(t, oldDB.QueryRow("SELECT 1").Scan(&id))
+	rt.CloseRetired()
+	assert.True(t, isClosed(t, oldDB), "explicit retirement releases the displaced handle")
 }
 
 func TestSourceRuntimeNilInitial(t *testing.T) {

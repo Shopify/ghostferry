@@ -22,6 +22,8 @@ type TestFerry struct {
 var (
 	TestSourcePort = getPortFromEnv("N1_PORT", 29291)
 	TestTargetPort = getPortFromEnv("N2_PORT", 29292)
+	// mysql-3 in the docker-compose files.
+	TestFutureMasterPort = getPortFromEnv("N3_PORT", 29293)
 
 	ApplicableTestDbs = []string{"gftest", "gftest1", "gftest2"}
 )

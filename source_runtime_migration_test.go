@@ -20,9 +20,13 @@ import (
 var errUnsupportedSourceRuntimeTestOp = errors.New("unsupported source runtime test operation")
 
 // sourceRuntimeQueryConnector returns the configured rows for every query, prepared or not.
+//
+// A non-nil query answers per statement instead of with the static rows;
+// prepared statements retain their text so they take the same path.
 type sourceRuntimeQueryConnector struct {
 	columns []string
 	data    [][]driver.Value
+	query   func(context.Context, string) (driver.Rows, error)
 }
 
 func (c *sourceRuntimeQueryConnector) Connect(ctx context.Context) (driver.Conn, error) {
@@ -38,6 +42,13 @@ func (c *sourceRuntimeQueryConnector) rows() *sourceRuntimeQueryRows {
 	return &sourceRuntimeQueryRows{columns: c.columns, data: c.data}
 }
 
+func (c *sourceRuntimeQueryConnector) resultFor(ctx context.Context, query string) (driver.Rows, error) {
+	if c.query != nil {
+		return c.query(ctx, query)
+	}
+	return c.rows(), nil
+}
+
 type sourceRuntimeQueryDriver struct{}
 
 func (sourceRuntimeQueryDriver) Open(string) (driver.Conn, error) {
@@ -48,8 +59,8 @@ type sourceRuntimeQueryConn struct {
 	connector *sourceRuntimeQueryConnector
 }
 
-func (c *sourceRuntimeQueryConn) Prepare(string) (driver.Stmt, error) {
-	return &sourceRuntimeQueryStmt{connector: c.connector}, nil
+func (c *sourceRuntimeQueryConn) Prepare(query string) (driver.Stmt, error) {
+	return &sourceRuntimeQueryStmt{connector: c.connector, query: query}, nil
 }
 
 func (c *sourceRuntimeQueryConn) Close() error { return nil }
@@ -58,15 +69,16 @@ func (c *sourceRuntimeQueryConn) Begin() (driver.Tx, error) {
 	return nil, errUnsupportedSourceRuntimeTestOp
 }
 
-func (c *sourceRuntimeQueryConn) QueryContext(ctx context.Context, _ string, _ []driver.NamedValue) (driver.Rows, error) {
+func (c *sourceRuntimeQueryConn) QueryContext(ctx context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return c.connector.rows(), nil
+	return c.connector.resultFor(ctx, query)
 }
 
 type sourceRuntimeQueryStmt struct {
 	connector *sourceRuntimeQueryConnector
+	query     string
 }
 
 func (s *sourceRuntimeQueryStmt) Close() error  { return nil }
@@ -77,7 +89,7 @@ func (s *sourceRuntimeQueryStmt) Exec([]driver.Value) (driver.Result, error) {
 }
 
 func (s *sourceRuntimeQueryStmt) Query([]driver.Value) (driver.Rows, error) {
-	return s.connector.rows(), nil
+	return s.connector.resultFor(context.Background(), s.query)
 }
 
 type sourceRuntimeQueryRows struct {
@@ -101,6 +113,14 @@ func (r *sourceRuntimeQueryRows) Next(dest []driver.Value) error {
 func newSourceRuntimeQueryDB(t *testing.T, columns []string, data [][]driver.Value) *sql.DB {
 	t.Helper()
 	db := &sql.DB{DB: sqlorig.OpenDB(&sourceRuntimeQueryConnector{columns: columns, data: data})}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
+// Closed when the test ends.
+func newSourceRuntimeQueryDBWithQuery(t *testing.T, query func(context.Context, string) (driver.Rows, error)) *sql.DB {
+	t.Helper()
+	db := &sql.DB{DB: sqlorig.OpenDB(&sourceRuntimeQueryConnector{query: query})}
 	t.Cleanup(func() { _ = db.Close() })
 	return db
 }

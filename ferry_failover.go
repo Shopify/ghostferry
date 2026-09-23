@@ -1,63 +1,113 @@
 package ghostferry
 
 import (
+	"context"
+	"fmt"
+	"maps"
+	"time"
+
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 )
 
-// ferrySourceReconnector implements SourceReconnector for the Ferry. It is the
-// single place a source master failover repoints the whole run: it resolves the
-// promoted writer, opens one Ferry-owned connection to it via SourceRuntime
-// (which atomically becomes the source for every consumer that starts new work
-// afterwards — data iterator, verifiers, ...), validates it is a safe target,
-// and hands the connection back to the binlog streamer.
-//
-// Because every source consumer already reads its connection from the
-// SourceRuntime, there is nothing to hand-repoint here: the Replace is the swap.
+// Bounds the candidate's SQL validation including its first lazy dial. It
+// does not bound the resolver: a MasterWriterResolver owns its own deadline.
+const failoverValidationTimeout = 10 * time.Second
+
+// Publication through SourceRuntime is the swap: consumers already resolve
+// their connection from it. Work bound to the previous handle keeps it until
+// the embedding application calls SourceRuntime.CloseRetired.
 type ferrySourceReconnector struct {
 	ferry    *Ferry
 	resolver MasterWriterResolver
 }
 
-// Reconnect satisfies SourceReconnector. previous is the config the streamer
-// last used; appliedGTIDSet is everything already emitted downstream, which the
-// promoted writer must contain.
-func (r *ferrySourceReconnector) Reconnect(previous *DatabaseConfig, appliedGTIDSet mysql.GTIDSet) (*sql.DB, *DatabaseConfig, error) {
+// Validate mutates its receiver and Params, so it runs against a copy: the
+// resolver keeps ownership of what it returned, and a bare host/port still
+// picks up Ghostferry's mandatory session settings.
+func normalizeFailoverCandidate(candidate *DatabaseConfig) (*DatabaseConfig, error) {
+	if candidate == nil {
+		return nil, errNilCandidate
+	}
+
+	normalized := *candidate
+	normalized.Params = maps.Clone(candidate.Params)
+	if candidate.TLS != nil {
+		tlsCopy := *candidate.TLS
+		normalized.TLS = &tlsCopy
+	}
+
+	if err := normalized.Validate(); err != nil {
+		return nil, fmt.Errorf("failover: invalid candidate master config: %w", err)
+	}
+	return &normalized, nil
+}
+
+func (r *ferrySourceReconnector) Reconnect(
+	previous *DatabaseConfig,
+	requiredGTIDSet mysql.GTIDSet,
+	verifyStream func(*sql.DB, *DatabaseConfig) (mysql.GTIDSet, error),
+) (*sql.DB, *DatabaseConfig, error) {
+	if verifyStream == nil {
+		return nil, nil, errNilStreamVerifier
+	}
+
 	candidate, err := r.resolver.ResolveCurrentMaster(previous)
 	if err != nil {
 		return nil, nil, err
 	}
-	if candidate == nil {
-		return nil, nil, errNilCandidate
-	}
 
-	// Install the candidate as the current source ONLY if it validates. Fail
-	// closed: the promoted writer must be a writable server with GTID mode on
-	// and must contain everything already applied downstream. A candidate that
-	// fails validation is never published to consumers. On success the old
-	// handle is retired (retained, not closed), since in-flight cursors / cached
-	// statements may still reference it.
-	newDB, err := r.ferry.sourceRuntime.ReplaceValidated(
-		candidate,
-		r.ferry.logger.WithField("dbname", "source_failover"),
-		func(db *sql.DB) error {
-			return validateFailoverTarget(db, candidate, appliedGTIDSet)
-		},
-	)
+	normalized, err := normalizeFailoverCandidate(candidate)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	// Fail closed: a candidate that fails any check is never published, and
+	// ReplaceValidated closes the handle it opened for validation.
+	newDB, err := r.ferry.sourceRuntime.ReplaceValidated(
+		normalized,
+		r.ferry.logger.WithField("dbname", "source_failover"),
+		func(db *sql.DB) error {
+			if err := r.validateCandidateServer(db, normalized, requiredGTIDSet); err != nil {
+				return err
+			}
+
+			finalRequired, err := verifyStream(db, normalized)
+			if err != nil {
+				return err
+			}
+			if finalRequired == nil {
+				return fmt.Errorf("failover: stream validation returned a nil required GTID set")
+			}
+
+			// The trial can raise the bar (a stop target recorded mid-trial,
+			// further rows emitted), and the server was not checked for that.
+			if requiredGTIDSet != nil && requiredGTIDSet.Contain(finalRequired) {
+				return nil
+			}
+			return r.validateCandidateServer(db, normalized, finalRequired)
+		},
+	)
+	if err != nil {
+		// So the caller can tell the resolver which host it just tried.
+		return nil, normalized, err
+	}
+
 	r.ferry.logger.WithFields(Fields{
-		"new_host": candidate.Host,
-		"new_port": candidate.Port,
+		"new_host": normalized.Host,
+		"new_port": normalized.Port,
 	}).Info("source repointed at promoted master after failover")
-	return newDB, candidate, nil
+	return newDB, normalized, nil
 }
 
-// newSourceReconnector builds the reconnector wired to this Ferry, or nil when
-// failover recovery is not configured.
+// The context is cancelled before the caller's open-ended stream trial.
+func (r *ferrySourceReconnector) validateCandidateServer(db *sql.DB, candidate *DatabaseConfig, required mysql.GTIDSet) error {
+	ctx, cancel := context.WithTimeout(context.Background(), failoverValidationTimeout)
+	defer cancel()
+	return validateFailoverTarget(ctx, db, candidate, required)
+}
+
 func (f *Ferry) newSourceReconnector() SourceReconnector {
 	if f.Config.MasterFailoverRecovery == nil || f.Config.MasterFailoverRecovery.Resolver == nil {
 		return nil

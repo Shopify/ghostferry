@@ -97,6 +97,17 @@ func (f *Ferry) SourceRuntime() *SourceRuntime {
 	return f.sourceRuntime
 }
 
+// Resolve at the point of use so a failover swap is observed; an
+// already-running cursor deliberately does not rebind.
+func (f *Ferry) CurrentSourceDB() *sql.DB {
+	if f.sourceRuntime != nil {
+		if db := f.sourceRuntime.DB(); db != nil {
+			return db
+		}
+	}
+	return f.SourceDB
+}
+
 func (f *Ferry) NewDataIterator() *DataIterator {
 	f.ensureInitialized()
 
@@ -376,6 +387,15 @@ func (f *Ferry) Initialize() (err error) {
 			ErrorCallback:            f.Config.ErrorCallback,
 			DumpStateToStdoutOnError: f.Config.DumpStateToStdoutOnError,
 		}
+	}
+
+	// The resolver discovers a writer, not a replacement replica plus its
+	// separately configured upstream master, so repointing one half of that
+	// pair would compare progress across unrelated servers.
+	if f.Config.MasterFailoverRecovery != nil && f.WaitUntilReplicaIsCaughtUpToMaster != nil {
+		err = fmt.Errorf("MasterFailoverRecovery cannot be combined with WaitUntilReplicaIsCaughtUpToMaster")
+		f.logger.WithError(err).Error("unsupported source configuration")
+		return err
 	}
 
 	// Connect to the source and target databases and check the validity

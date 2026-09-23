@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Shopify/ghostferry"
 	sth "github.com/Shopify/ghostferry/sharding/testhelpers"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"github.com/Shopify/ghostferry/testhelpers"
 	"github.com/stretchr/testify/suite"
 )
@@ -90,10 +92,84 @@ func (t *PrimaryKeyTableTestSuite) TestPrimaryKeyTableVerificationFailure() {
 
 	t.Ferry.Run()
 
-	t.Require().NotNil(errHandler.LastError)
+	err := errHandler.Err()
+	t.Require().NotNil(err)
 
-	t.Require().True(strings.HasPrefix(errHandler.LastError.Error(), "row fingerprints for paginationKeys [{2"))
-	t.Require().True(strings.HasSuffix(errHandler.LastError.Error(), "on gftest1.tenants_table do not match"))
+	t.Require().True(strings.HasPrefix(err.Error(), "row fingerprints for paginationKeys [{2"))
+	t.Require().True(strings.HasSuffix(err.Error(), "on gftest1.tenants_table do not match"))
+}
+
+// VerifyDuringCutover is the last hook before copyPrimaryKeyTables, and runs
+// after Ferry.Run has joined: the only safe point to fake a source failover.
+type sourceRuntimeSwappingVerifier struct {
+	ghostferry.Verifier
+	afterCutover func() error
+}
+
+func (v *sourceRuntimeSwappingVerifier) VerifyDuringCutover() (ghostferry.VerificationResult, error) {
+	result, err := v.Verifier.VerifyDuringCutover()
+	if err != nil || !result.DataCorrect {
+		return result, err
+	}
+	return result, v.afterCutover()
+}
+
+// Regression: copyPrimaryKeyTables read schemas from the Initialize-time
+// handle, which a failover leaves stale.
+func (t *PrimaryKeyTableTestSuite) TestPrimaryKeyTablesUseSourceRuntime() {
+	f := t.Ferry.Ferry
+	errorHandler := &testhelpers.ErrorHandler{}
+	f.ErrorHandler = errorHandler
+
+	staticSourceDB := f.SourceDB
+	var replacement *sql.DB
+
+	original := f.Verifier
+	t.Require().NotNil(original)
+	f.Verifier = &sourceRuntimeSwappingVerifier{
+		Verifier: original,
+		afterCutover: func() error {
+			// Swap the way failover recovery does, and retire the handle the
+			// run was initialized with.
+			newDB, err := f.SourceRuntime().Replace(f.Config.Source, nil)
+			if err != nil {
+				return err
+			}
+			replacement = newDB
+			return staticSourceDB.Close()
+		},
+	}
+
+	t.Ferry.Run()
+
+	// Ferry goroutines have joined, so the recorded error is stable.
+	t.Require().Nil(errorHandler.Err())
+	t.Require().NotNil(replacement)
+
+	// The suite teardown writes through this handle.
+	f.SourceDB = replacement
+	t.T().Cleanup(func() {
+		f.SourceRuntime().CloseRetired()
+		_ = replacement.Close()
+	})
+
+	var count int
+	row := f.TargetDB.QueryRow("SELECT count(*) FROM gftest2.tenants_table")
+	testhelpers.PanicIfError(row.Scan(&count))
+	t.Require().Equal(1, count)
+
+	var id int
+	row = f.TargetDB.QueryRow("SELECT id FROM gftest2.tenants_table")
+	testhelpers.PanicIfError(row.Scan(&id))
+	t.Require().Equal(2, id)
+
+	// The suite's own handle, which the swap did not touch.
+	var expected, actual string
+	row = t.SourceDB.QueryRow("SELECT data FROM gftest1.tenants_table WHERE id = 2")
+	testhelpers.PanicIfError(row.Scan(&expected))
+	row = f.TargetDB.QueryRow("SELECT data FROM gftest2.tenants_table")
+	testhelpers.PanicIfError(row.Scan(&actual))
+	t.Require().Equal(expected, actual)
 }
 
 func TestPrimaryKeyTableTestSuite(t *testing.T) {

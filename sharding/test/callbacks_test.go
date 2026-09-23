@@ -43,8 +43,9 @@ func (t *CallbacksTestSuite) TestFailsRunOnUnlockError() {
 
 	t.Require().True(callbackReceived)
 
-	t.Require().NotNil(t.errHandler.LastError)
-	t.Require().Equal("callback returned 500 Internal Server Error", t.errHandler.LastError.Error())
+	err := t.errHandler.Err()
+	t.Require().NotNil(err)
+	t.Require().Equal("callback returned 500 Internal Server Error", err.Error())
 }
 
 func (t *CallbacksTestSuite) TestRetriesOnLockError() {
@@ -60,8 +61,9 @@ func (t *CallbacksTestSuite) TestRetriesOnLockError() {
 
 	t.Require().Equal(callbacksReceived, t.Ferry.Ferry.Config.MaxCutoverRetries)
 
-	t.Require().NotNil(t.errHandler.LastError)
-	t.Require().Equal("callback returned 500 Internal Server Error", t.errHandler.LastError.Error())
+	err := t.errHandler.Err()
+	t.Require().NotNil(err)
+	t.Require().Equal("callback returned 500 Internal Server Error", err.Error())
 }
 
 func (t *CallbacksTestSuite) TestSucceedsOnLockRetry() {
@@ -94,8 +96,9 @@ func (t *CallbacksTestSuite) TestSucceedsOnLockRetry() {
 
 	t.Require().Equal(lockCallbacksReceived, 2)
 
-	t.Require().NotNil(t.errHandler.LastError)
-	t.Require().Equal("callback returned 500 Internal Server Error", t.errHandler.LastError.Error())
+	err := t.errHandler.Err()
+	t.Require().NotNil(err)
+	t.Require().Equal("callback returned 500 Internal Server Error", err.Error())
 
 	t.Require().True(lockReceived)
 	t.Require().True(unlockReceived)
@@ -114,8 +117,9 @@ func (t *CallbacksTestSuite) TestFailsRunOnLockError() {
 
 	t.Require().True(callbackReceived)
 
-	t.Require().NotNil(t.errHandler.LastError)
-	t.Require().Equal("callback returned 500 Internal Server Error", t.errHandler.LastError.Error())
+	err := t.errHandler.Err()
+	t.Require().NotNil(err)
+	t.Require().Equal("callback returned 500 Internal Server Error", err.Error())
 }
 
 func (t *CallbacksTestSuite) TestFailsRunOnPanicError() {

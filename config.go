@@ -133,7 +133,9 @@ func (c *DatabaseConfig) Validate() error {
 		return fmt.Errorf("host is empty")
 	}
 
-	if c.Port == 0 {
+	// Unix configs legitimately have no port (reset below), so requiring one
+	// here would make Validate non-idempotent for them.
+	if c.Port == 0 && c.Net != "unix" {
 		return fmt.Errorf("port is not specified")
 	}
 
@@ -714,6 +716,11 @@ type Config struct {
 	// a failover). The Resolver is supplied by the embedding application to
 	// discover the new writer. Nil keeps the previous behavior: a lost source
 	// connection is fatal.
+	//
+	// Covers the binlog stream and source work created after the swap; a
+	// row-copy cursor already bound to the dead server exhausts its read
+	// retries and fails. Initialize rejects it alongside
+	// WaitUntilReplicaIsCaughtUpToMaster.
 	MasterFailoverRecovery *MasterFailoverRecoveryConfig
 
 	// This config is necessary for inline verification for a special case of
@@ -906,6 +913,10 @@ func (c *Config) ValidateConfig() error {
 		}
 		if c.MasterFailoverRecovery.Resolver == nil {
 			return fmt.Errorf("MasterFailoverRecovery requires a Resolver")
+		}
+		// A negative budget would silently disable recovery.
+		if c.MasterFailoverRecovery.MaxAttempts < 0 {
+			return fmt.Errorf("MasterFailoverRecovery.MaxAttempts must be >= 0")
 		}
 	}
 

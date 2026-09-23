@@ -1,6 +1,8 @@
 package test
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -18,46 +20,236 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The promoted-writer ("future master") MySQL. It exists in the docker-compose
-// files as mysql-3 and is started by .github/workflows/start-mysql.sh. There is
-// no N3_PORT helper, so hardcode it (matching the Ruby harness convention).
-const futureMasterPort = 29293
+// Selects the destructive scenario when this binary is re-executed as a
+// child. The scenario leaves Ferry goroutines running on failure and
+// Ghostferry has no Ferry.Cancel, so only a separate process can be killed.
+const failoverChildEnv = "GHOSTFERRY_FAILOVER_TEST_CHILD"
 
-// TestMasterFailoverRecoveryReconnectsToPromotedMaster drives a full source
-// master failover and asserts Ghostferry reconnects to the promoted writer and
-// finishes the move against it.
-//
-// It is GTID-only (failover recovery requires server-independent coordinates)
-// and needs a container tool (docker/podman) to stop the source, so it skips
-// when either precondition is absent.
+const (
+	childScenarioSuccess       = "success"
+	childScenarioFailAfterStop = "fail_after_stop"
+)
+
+// GTID-only, and needs docker/podman to stop the source; skips otherwise.
+// As a parent it runs the child and restores the environment; with
+// failoverChildEnv set it runs the scenario itself.
 func TestMasterFailoverRecoveryReconnectsToPromotedMaster(t *testing.T) {
+	if scenario := os.Getenv(failoverChildEnv); scenario != "" {
+		runFailoverScenario(t, scenario)
+		return
+	}
+
+	parent := newFailoverParent(t)
+	output, err := parent.runChild(childScenarioSuccess)
+	if err != nil {
+		t.Errorf("failover child failed: %v\n%s", err, output)
+	}
+	// A skipped child would exit zero and prove nothing.
+	assert.Contains(t, output, "--- PASS: TestMasterFailoverRecoveryReconnectsToPromotedMaster",
+		"the child must have run the scenario, not skipped it")
+
+	require.NoError(t, parent.cleanup(), "environment restoration failed")
+	parent.assertEnvironmentRestored()
+}
+
+// A child that dies with the source down must not contaminate later tests.
+func TestMasterFailoverRecoveryCleansUpAfterFailure(t *testing.T) {
+	if os.Getenv(failoverChildEnv) != "" {
+		t.Skip("the child process runs only the failover scenario")
+	}
+
+	parent := newFailoverParent(t)
+	output, err := parent.runChild(childScenarioFailAfterStop)
+	require.Error(t, err, "the child must fail:\n%s", output)
+	assert.Contains(t, output, "--- FAIL: TestMasterFailoverRecoveryReconnectsToPromotedMaster",
+		"the child must have failed inside the scenario, not skipped it")
+
+	// Proves the child reached the stopped-source phase rather than failing
+	// early for an unrelated reason.
+	pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.Error(t, parent.sourceDB.PingContext(pingCtx),
+		"the source must still be down before restoration:\n%s", output)
+
+	require.NoError(t, parent.cleanup(), "environment restoration failed")
+	parent.assertEnvironmentRestored()
+
+	testcase := &testhelpers.IntegrationTestCase{
+		T:           t,
+		SetupAction: setupSingleTableDatabase,
+		Ferry:       testhelpers.NewTestFerry(),
+	}
+	testcase.Run()
+}
+
+type failoverParent struct {
+	t    *testing.T
+	tool string
+	// Captured before the child stops it: restoration must not depend on the
+	// container still being listable.
+	sourceContainer string
+
+	sourceDB   *sqlwrapper.DB
+	targetDB   *sqlwrapper.DB
+	promotedDB *sqlwrapper.DB
+
+	cleanupOnce sync.Once
+	cleanupErr  error
+}
+
+func newFailoverParent(t *testing.T) *failoverParent {
+	t.Helper()
+
 	if binlogModeFromEnv() != ghostferry.BinlogCoordinateGTID {
 		t.Skip("master failover recovery is only supported in gtid mode")
 	}
-	tool := containerTool(t)
+	tool := containerTool()
 	if tool == "" {
 		t.Skip("master failover test requires docker or podman to stop the source container")
 	}
+	name := sourceContainerName(tool)
+	require.NotEmpty(t, name, "source container must exist")
 
-	sourcePort := testhelpers.TestSourcePort
-	targetPort := testhelpers.TestTargetPort
+	p := &failoverParent{t: t, tool: tool, sourceContainer: name}
+	p.sourceDB = openControlDB(t, testhelpers.TestSourcePort)
+	p.targetDB = openControlDB(t, testhelpers.TestTargetPort)
+	p.promotedDB = openControlDB(t, testhelpers.TestFutureMasterPort)
 
-	sourceDB := openDB(t, sourcePort)
-	defer sourceDB.Close()
-	targetDB := openDB(t, targetPort)
-	defer targetDB.Close()
-	promotedDB := openDB(t, uint64(futureMasterPort))
-	defer promotedDB.Close()
+	// Registered after the handles, so it runs before they are closed.
+	t.Cleanup(func() {
+		if err := p.cleanup(); err != nil {
+			t.Errorf("environment restoration failed: %v", err)
+		}
+	})
+	return p
+}
 
-	// Clean slate on all three.
+func (p *failoverParent) runChild(scenario string) (string, error) {
+	p.t.Helper()
+
+	executable, err := os.Executable()
+	require.NoError(p.t, err)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, executable,
+		"-test.run=^TestMasterFailoverRecoveryReconnectsToPromotedMaster$",
+		"-test.v",
+		"-test.timeout=210s",
+	)
+	cmd.Env = append(os.Environ(), failoverChildEnv+"="+scenario)
+	cmd.WaitDelay = 5 * time.Second
+
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// Runs both as an explicit post-child step and as a t.Cleanup.
+func (p *failoverParent) cleanup() error {
+	p.cleanupOnce.Do(func() { p.cleanupErr = p.restoreEnvironment() })
+	return p.cleanupErr
+}
+
+func (p *failoverParent) restoreEnvironment() error {
+	var errs []error
+
+	if err := runContainerCommand(p.tool, 30*time.Second, "start", p.sourceContainer); err != nil {
+		errs = append(errs, fmt.Errorf("restarting %s: %w", p.sourceContainer, err))
+	}
+	if err := waitUntilPingable(p.sourceDB, 180*time.Second); err != nil {
+		errs = append(errs, fmt.Errorf("source did not accept connections again: %w", err))
+	}
+
+	// State dependent (mysql-3 may not be a replica at all), so their
+	// failures are not cleanup failures.
+	execControlIgnoringError(p.promotedDB, "STOP REPLICA")
+	execControlIgnoringError(p.promotedDB, "RESET REPLICA ALL")
+	// super_read_only must be cleared before read_only.
+	if err := execControl(p.promotedDB, "SET GLOBAL super_read_only = OFF"); err != nil {
+		errs = append(errs, err)
+	}
+	if err := execControl(p.promotedDB, "SET GLOBAL read_only = OFF"); err != nil {
+		errs = append(errs, err)
+	}
+
+	// Source/target GTID history is deliberately left alone: other tests
+	// resume from it.
+	for name, db := range p.servers() {
+		for _, schema := range testhelpers.ApplicableTestDbs {
+			if err := execControl(db, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", schema)); err != nil {
+				errs = append(errs, fmt.Errorf("dropping %s on %s: %w", schema, name, err))
+			}
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+func (p *failoverParent) servers() map[string]*sqlwrapper.DB {
+	return map[string]*sqlwrapper.DB{
+		"source":   p.sourceDB,
+		"target":   p.targetDB,
+		"promoted": p.promotedDB,
+	}
+}
+
+func (p *failoverParent) assertEnvironmentRestored() {
+	p.t.Helper()
+
+	for name, db := range p.servers() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := db.PingContext(ctx); err != nil {
+			p.t.Errorf("%s server is not reachable after cleanup: %v", name, err)
+		}
+		cancel()
+
+		assert.Equal(p.t, 0, testSchemaCount(p.t, db), "%s server still has test schemas", name)
+	}
+}
+
+func testSchemaCount(t *testing.T, db *sqlwrapper.DB) int {
+	t.Helper()
+
+	placeholders := make([]string, 0, len(testhelpers.ApplicableTestDbs))
+	args := make([]interface{}, 0, len(testhelpers.ApplicableTestDbs))
+	for _, schema := range testhelpers.ApplicableTestDbs {
+		placeholders = append(placeholders, "?")
+		args = append(args, schema)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var count int
+	query := fmt.Sprintf(
+		"SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name IN (%s)",
+		strings.Join(placeholders, ","),
+	)
+	if err := db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		t.Errorf("counting test schemas: %v", err)
+		return -1
+	}
+	return count
+}
+
+func runFailoverScenario(t *testing.T, scenario string) {
+	require.Contains(t, []string{childScenarioSuccess, childScenarioFailAfterStop}, scenario)
+	require.Equal(t, ghostferry.BinlogCoordinateGTID, binlogModeFromEnv(),
+		"the child must inherit gtid coordinate mode")
+
+	tool := containerTool()
+	require.NotEmpty(t, tool, "the child needs a container tool to stop the source")
+
+	sourceDB := openControlDB(t, testhelpers.TestSourcePort)
+	targetDB := openControlDB(t, testhelpers.TestTargetPort)
+	promotedDB := openControlDB(t, testhelpers.TestFutureMasterPort)
+
 	dropTestDBs(t, sourceDB)
 	dropTestDBs(t, targetDB)
 	dropTestDBs(t, promotedDB)
 
 	fm := &futureMaster{t: t, db: promotedDB, sourceDB: sourceDB, containerTool: tool}
-	// Ensure the promoted server is restored even if the test fails.
-	defer fm.restoreSourceContainer()
-	defer fm.reset()
 
 	// mysql-3 replicates the source BEFORE seeding, so it holds the real seed
 	// data and later writes; a failover to it then cannot lose applied
@@ -69,7 +261,7 @@ func TestMasterFailoverRecoveryReconnectsToPromotedMaster(t *testing.T) {
 
 	promoted := &ghostferry.DatabaseConfig{
 		Host:      "127.0.0.1",
-		Port:      uint16(futureMasterPort),
+		Port:      uint16(testhelpers.TestFutureMasterPort),
 		Net:       "tcp",
 		User:      "root",
 		Pass:      "",
@@ -101,65 +293,72 @@ func TestMasterFailoverRecoveryReconnectsToPromotedMaster(t *testing.T) {
 		ferry.Run()
 	}()
 
-	// Wait until row copy is fully complete before touching the source, so the
-	// data iterator is no longer reading it when we take it down. (Failover
-	// during row copy is out of scope: in-flight cursors are bound to their
-	// connection for scan consistency.)
+	// Failover during row copy is out of scope: in-flight cursors stay bound
+	// to their connection for scan consistency.
 	ferry.WaitUntilRowCopyIsComplete()
 
-	// Now fail the source over while the binlog streamer is still live and has
-	// no stop target yet:
-	//   1. write extra rows to the source and wait for mysql-3 to replicate them,
-	//      so they exist on the promoted master but have NOT been streamed yet;
-	//   2. promote mysql-3 and stop the old source container.
-	// The streamer then finds the old source gone and must recover onto mysql-3
-	// to stream those rows before cutover completes.
+	// The extra rows may already have streamed; what matters is that the
+	// promoted master holds them, so recovery can resume there.
 	insertRows(t, sourceDB, 50)
 	fm.waitUntilCaughtUpToSource()
 	fm.promote()
 	fm.stopSourceContainer()
 
-	// Wait for the streamer to actually recover onto the promoted master before
-	// driving cutover, so cutover records its stop coordinate from the new
-	// writer. (In Go we control the flow directly, so we can synchronize here
-	// rather than racing the cutover path against recovery.)
-	waitUntilSourceRepointed(t, ferry, uint16(futureMasterPort), errHandler)
+	if scenario == childScenarioFailAfterStop {
+		// The parent must restore everything from a live-goroutine failure.
+		t.Fatal("deliberately failing after stopping the source master")
+	}
+
+	// So cutover records its stop coordinate from the new writer.
+	require.NoError(t, waitUntilSourceRepointed(ferry, uint16(testhelpers.TestFutureMasterPort), errHandler, 60*time.Second))
+
+	// Rows only the promoted master ever had must still reach the target.
+	insertRows(t, promotedDB, 10)
 
 	ferry.FlushBinlogAndStopStreaming()
 	wg.Wait()
 	ferry.StopTargetVerifier()
 
-	require.NoError(t, errHandler.LastError, "ghostferry should not have fataled")
+	require.NoError(t, errHandler.Err(), "ghostferry should not have fataled")
 
-	// The promoted master (mysql-3) is now the source of truth; the target must
-	// be identical to it.
-	assertTablesIdentical(t, promotedDB, targetDB, "gftest", "table1")
+	// 30 seeded + 50 on the old source + 10 only on the promoted master.
+	require.Equal(t, 90, tableRowCount(t, promotedDB, "gftest", "table1"))
+	require.Equal(t, 90, tableRowCount(t, targetDB, "gftest", "table1"))
+	promotedChecksum := tableChecksum(t, promotedDB, "gftest", "table1")
+	targetChecksum := tableChecksum(t, targetDB, "gftest", "table1")
+	require.Equal(t, promotedChecksum, targetChecksum, "promoted master and target checksums differ")
 
-	// Recovery must actually have run and repointed the source.
-	assert.NotEqual(t, uint16(sourcePort), ferry.SourceRuntime().Config().Port,
-		"the ferry source should have been repointed away from the dead master")
-	assert.Equal(t, uint16(futureMasterPort), ferry.SourceRuntime().Config().Port,
+	require.Equal(t, uint16(testhelpers.TestFutureMasterPort), ferry.SourceRuntime().Config().Port,
 		"the ferry source should now be the promoted master")
+
+	// Proves candidate normalization ran against a real server.
+	runtimeDB := ferry.SourceRuntime().DB()
+	require.NotNil(t, runtimeDB)
+	var timeZone, sqlMode string
+	require.NoError(t, runtimeDB.QueryRow("SELECT @@session.time_zone, @@session.sql_mode").Scan(&timeZone, &sqlMode))
+	require.Equal(t, "+00:00", timeZone)
+	require.Contains(t, sqlMode, "STRICT_ALL_TABLES")
+	require.Contains(t, sqlMode, "NO_BACKSLASH_ESCAPES")
+
+	// All source work is finished.
+	ferry.SourceRuntime().CloseRetired()
 }
 
-// waitUntilSourceRepointed blocks until the ferry's source runtime has been
-// swapped to the expected (promoted) port, or the ferry fataled, or a timeout.
-func waitUntilSourceRepointed(t *testing.T, ferry *testhelpers.TestFerry, wantPort uint16, errHandler *testhelpers.ErrorHandler) {
-	t.Helper()
-	deadline := time.Now().Add(60 * time.Second)
+// Returns an error rather than failing from a helper, so the caller decides
+// on the test goroutine.
+func waitUntilSourceRepointed(ferry *testhelpers.TestFerry, wantPort uint16, errHandler *testhelpers.ErrorHandler, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if errHandler.LastError != nil {
-			t.Fatalf("ghostferry fataled during failover recovery: %v", errHandler.LastError)
+		if err := errHandler.Err(); err != nil {
+			return fmt.Errorf("ghostferry fataled during failover recovery: %w", err)
 		}
 		if cfg := ferry.SourceRuntime().Config(); cfg != nil && cfg.Port == wantPort {
-			return
+			return nil
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	t.Fatalf("source was not repointed to port %d within timeout", wantPort)
+	return fmt.Errorf("source was not repointed to port %d within %s", wantPort, timeout)
 }
-
-// ---- helpers ----
 
 func binlogModeFromEnv() ghostferry.BinlogCoordinateType {
 	mode := os.Getenv("GHOSTFERRY_BINLOG_COORDINATE_MODE")
@@ -169,41 +368,77 @@ func binlogModeFromEnv() ghostferry.BinlogCoordinateType {
 	return ghostferry.BinlogCoordinateType(mode)
 }
 
-func openDB(t *testing.T, port uint64) *sqlwrapper.DB {
+// Cleanup is registered immediately after Open so a failing Ping cannot leak
+// the handle.
+func openControlDB(t *testing.T, port uint64) *sqlwrapper.DB {
 	t.Helper()
-	dsn := fmt.Sprintf("root@tcp(127.0.0.1:%d)/?charset=utf8mb4&collation=utf8mb4_unicode_ci&interpolateParams=true", port)
+	dsn := fmt.Sprintf(
+		"root@tcp(127.0.0.1:%d)/?charset=utf8mb4&collation=utf8mb4_unicode_ci&interpolateParams=true&timeout=5s&readTimeout=30s&writeTimeout=5s",
+		port,
+	)
 	db, err := sqlwrapper.Open("mysql", dsn, "")
 	require.NoError(t, err)
-	require.NoError(t, db.Ping())
+	t.Cleanup(func() { _ = db.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, db.PingContext(ctx))
 	return db
+}
+
+func execControl(db *sqlwrapper.DB, query string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := db.ExecContext(ctx, query); err != nil {
+		return fmt.Errorf("%s: %w", query, err)
+	}
+	return nil
+}
+
+func execControlIgnoringError(db *sqlwrapper.DB, query string) {
+	_ = execControl(db, query)
+}
+
+func waitUntilPingable(db *sqlwrapper.DB, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		lastErr = db.PingContext(ctx)
+		cancel()
+		if lastErr == nil {
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return fmt.Errorf("not reachable within %s: %w", timeout, lastErr)
+}
+
+func runContainerCommand(tool string, timeout time.Duration, args ...string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, tool, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s %s: %w (%s)", tool, strings.Join(args, " "), err, strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 func dropTestDBs(t *testing.T, db *sqlwrapper.DB) {
 	t.Helper()
 	for _, name := range testhelpers.ApplicableTestDbs {
-		_, err := db.Exec(fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", name))
-		require.NoError(t, err)
+		require.NoError(t, execControl(db, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", name)))
 	}
 }
 
 func insertRows(t *testing.T, db *sqlwrapper.DB, count int) {
 	t.Helper()
-	for i := 0; i < count; i++ {
+	for range count {
 		_, err := db.Exec("INSERT INTO gftest.table1 (id, data) VALUES (?, ?)", nil, testhelpers.RandData())
 		require.NoError(t, err)
 	}
-}
-
-func assertTablesIdentical(t *testing.T, a, b *sqlwrapper.DB, dbName, table string) {
-	t.Helper()
-	countA := tableRowCount(t, a, dbName, table)
-	countB := tableRowCount(t, b, dbName, table)
-	assert.Greater(t, countA, 0, "promoted master should have rows")
-	assert.Equal(t, countA, countB, "promoted master and target row counts differ")
-
-	checksumA := tableChecksum(t, a, dbName, table)
-	checksumB := tableChecksum(t, b, dbName, table)
-	assert.Equal(t, checksumA, checksumB, "promoted master and target checksums differ")
 }
 
 func tableRowCount(t *testing.T, db *sqlwrapper.DB, dbName, table string) int {
@@ -218,12 +453,13 @@ func tableChecksum(t *testing.T, db *sqlwrapper.DB, dbName, table string) int64 
 	var name string
 	var checksum sqlorig.NullInt64
 	require.NoError(t, db.QueryRow(fmt.Sprintf("CHECKSUM TABLE `%s`.`%s`", dbName, table)).Scan(&name, &checksum))
+	require.True(t, checksum.Valid, "CHECKSUM TABLE returned NULL for %s.%s", dbName, table)
 	return checksum.Int64
 }
 
 // containerTool returns "docker" or "podman" if one is on PATH and can see the
 // source container, else "".
-func containerTool(t *testing.T) string {
+func containerTool() string {
 	for _, tool := range []string{"docker", "podman"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			continue
@@ -236,7 +472,10 @@ func containerTool(t *testing.T) string {
 }
 
 func sourceContainerName(tool string) string {
-	out, err := exec.Command(tool, "ps", "-a", "--format", "{{.Names}}").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, tool, "ps", "-a", "--format", "{{.Names}}").Output()
 	if err != nil {
 		return ""
 	}
@@ -289,6 +528,7 @@ func (f *futureMaster) setupAsReplicaOfSource() {
 	f.t.Helper()
 	f.execIgnore(f.db, "STOP REPLICA")
 	f.execIgnore(f.db, "RESET REPLICA ALL")
+	f.execIgnore(f.db, "SET GLOBAL super_read_only = OFF")
 	f.execIgnore(f.db, "SET GLOBAL read_only = OFF")
 	dropTestDBs(f.t, f.db)
 
@@ -351,8 +591,15 @@ func (f *futureMaster) waitUntilCaughtUpToSource() {
 	if sourceGTID == "" {
 		return
 	}
+
+	// The server waits up to 20 seconds; give the query a slightly longer
+	// deadline so the client never gives up before the server answers.
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+
 	var result sqlorig.NullInt64
-	require.NoError(f.t, f.db.QueryRow("SELECT WAIT_FOR_EXECUTED_GTID_SET(?, 20)", sourceGTID).Scan(&result))
+	require.NoError(f.t, f.db.QueryRowContext(ctx, "SELECT WAIT_FOR_EXECUTED_GTID_SET(?, 20)", sourceGTID).Scan(&result))
+	require.True(f.t, result.Valid, "WAIT_FOR_EXECUTED_GTID_SET returned NULL")
 	require.Equal(f.t, int64(0), result.Int64, "future master did not catch up to source in time")
 }
 
@@ -361,45 +608,15 @@ func (f *futureMaster) promote() {
 	f.waitUntilCaughtUpToSource()
 	f.exec(f.db, "STOP REPLICA")
 	f.exec(f.db, "RESET REPLICA ALL")
-	f.exec(f.db, "SET GLOBAL read_only = OFF")
 	f.execIgnore(f.db, "SET GLOBAL super_read_only = OFF")
+	f.exec(f.db, "SET GLOBAL read_only = OFF")
 }
 
 func (f *futureMaster) stopSourceContainer() {
 	f.t.Helper()
 	name := sourceContainerName(f.containerTool)
 	require.NotEmpty(f.t, name, "source container not found")
-	require.NoError(f.t, exec.Command(f.containerTool, "stop", name).Run())
-}
-
-func (f *futureMaster) restoreSourceContainer() {
-	name := sourceContainerName(f.containerTool)
-	if name == "" {
-		return
-	}
-	_ = exec.Command(f.containerTool, "start", name).Run()
-	// Wait until the source accepts connections again for later tests.
-	deadline := time.Now().Add(180 * time.Second)
-	for time.Now().Before(deadline) {
-		db, err := sqlwrapper.Open("mysql", fmt.Sprintf("root@tcp(127.0.0.1:%d)/", testhelpers.TestSourcePort), "")
-		if err == nil {
-			pingErr := db.Ping()
-			db.Close()
-			if pingErr == nil {
-				return
-			}
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-}
-
-func (f *futureMaster) reset() {
-	f.execIgnore(f.db, "STOP REPLICA")
-	f.execIgnore(f.db, "RESET REPLICA ALL")
-	f.execIgnore(f.db, "SET GLOBAL read_only = OFF")
-	for _, name := range testhelpers.ApplicableTestDbs {
-		f.execIgnore(f.db, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", name))
-	}
+	require.NoError(f.t, runContainerCommand(f.containerTool, 30*time.Second, "stop", name))
 }
 
 func asString(v interface{}) string {
