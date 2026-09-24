@@ -31,3 +31,11 @@ commands:
   test-ruby:
     desc: Run the ruby test suite.
     run: make test-ruby
+  docs:
+    desc: Serve the documentation locally at http://127.0.0.1:4000/ghostferry/main/ (no deploy).
+    run: bundle exec jekyll serve --source docs --destination build/docs --host 127.0.0.1 --port 4000
+  docs-build:
+    desc: Build the documentation into build/docs and check its links and anchors (no deploy).
+    run: |
+      bundle exec jekyll build --source docs --destination build/docs
+      bundle exec htmlproofer build/docs --disable-external --allow-missing-href --no-enforce-https --swap-urls '^/ghostferry/main/:/'

@@ -80,7 +80,7 @@ jobs:
 
     env:
       CI: "true"
-      BUNDLE_WITHOUT: "development"
+      BUNDLE_WITHOUT: "development:docs"
       MYSQL_VERSION: ${{ matrix.mysql }}
       GHOSTFERRY_LOG_BACKEND: ${{ matrix.log_backend }}
 

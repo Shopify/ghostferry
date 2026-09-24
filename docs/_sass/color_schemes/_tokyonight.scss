@@ -1,0 +1,57 @@
+// Shared Tokyo Night mapping for Just the Docs. Import it from a variant file
+// (tokyonight-night.scss / tokyonight-day.scss) that first defines the
+// palette below, taken from https://github.com/folke/tokyonight.nvim, plus
+// $color-scheme, $tn-text (body text) and $tn-button (primary buttons).
+
+$body-background-color: $tn-bg;
+$body-heading-color: $tn-fg;
+$body-text-color: $tn-text;
+$link-color: $tn-blue;
+$nav-child-link-color: $tn-dark5;
+$sidebar-color: $tn-bg-dark;
+$base-button-color: $tn-bg-highlight;
+$btn-primary-color: $tn-button;
+$code-background-color: $tn-bg-dark;
+// Despite the name, Just the Docs uses this as the plain text colour of code blocks.
+$code-linenumber-color: $tn-fg;
+$feedback-color: $tn-bg-dark;
+$table-background-color: $tn-bg-dark;
+$search-background-color: $tn-bg-highlight;
+$search-result-preview-color: $tn-fg-dark;
+$border-color: $tn-terminal-black;
+
+// Syntax highlighting (Rouge emits Pygments class names).
+.highlight { background: $tn-bg-dark; color: $tn-fg; }
+.highlight .hll { background-color: $tn-bg-highlight; }
+.highlight .c, .highlight .ch, .highlight .cm, .highlight .cpf,
+.highlight .c1, .highlight .cs { color: $tn-comment; font-style: italic; }
+.highlight .cp { color: $tn-cyan; font-style: normal; font-weight: normal; }
+.highlight .err { color: $tn-red1; }
+.highlight .esc, .highlight .g, .highlight .n, .highlight .x,
+.highlight .nv, .highlight .vc, .highlight .vg, .highlight .vi, .highlight .vm,
+.highlight .nx, .highlight .py { color: $tn-fg; }
+.highlight .p { color: $tn-fg-dark; }
+.highlight .o, .highlight .ow { color: $tn-blue5; font-weight: normal; }
+.highlight .k, .highlight .kd, .highlight .kn, .highlight .kp,
+.highlight .kr, .highlight .kv { color: $tn-magenta; font-weight: normal; }
+.highlight .kc { color: $tn-orange; font-weight: normal; }
+.highlight .kt, .highlight .nc, .highlight .nb, .highlight .bp,
+.highlight .nn { color: $tn-blue1; }
+.highlight .nf, .highlight .fm, .highlight .na, .highlight .nt { color: $tn-blue; }
+.highlight .no, .highlight .ne, .highlight .nl, .highlight .nd,
+.highlight .ni { color: $tn-orange; }
+.highlight .l, .highlight .ld, .highlight .s, .highlight .sa, .highlight .sb,
+.highlight .sc, .highlight .dl, .highlight .sd, .highlight .s2, .highlight .sh,
+.highlight .s1, .highlight .ss { color: $tn-green; }
+.highlight .se, .highlight .si, .highlight .sr, .highlight .sx { color: $tn-blue5; }
+.highlight .m, .highlight .mb, .highlight .mf, .highlight .mh, .highlight .mi,
+.highlight .il, .highlight .mo { color: $tn-orange; }
+.highlight .gp { color: $tn-magenta; font-weight: normal; }
+.highlight .go { color: $tn-fg-dark; }
+.highlight .gh, .highlight .gu { color: $tn-blue; font-weight: bold; }
+.highlight .gd { color: $tn-red; background-color: transparent; }
+.highlight .gi { color: $tn-green1; background-color: transparent; }
+.highlight .gr, .highlight .gt { color: $tn-red1; }
+.highlight .ge { font-style: italic; }
+.highlight .gs { font-weight: bold; }
+.highlight .w { color: $tn-fg-gutter; }

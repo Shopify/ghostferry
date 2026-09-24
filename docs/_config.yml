@@ -1,0 +1,72 @@
+title: Ghostferry
+url: https://shopify.github.io
+baseurl: /ghostferry/main
+theme: just-the-docs
+# Dark scheme, compiled into just-the-docs-default.css. The light scheme needs a
+# matching assets/css/just-the-docs-<name>.scss; _includes/head_custom.html
+# picks between them (system setting or the reader's saved choice).
+color_scheme: tokyonight-night
+light_color_scheme: tokyonight-day
+# Keeps Jekyll from writing docs/.jekyll-cache/ into the source tree.
+disable_disk_cache: true
+
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+  syntax_highlighter: rouge
+
+plugins:
+  - jekyll-optional-front-matter
+  - jekyll-relative-links
+
+relative_links:
+  enabled: true
+  collections: false
+
+sass:
+  quiet_deps: true
+  silence_deprecations: [import, global-builtin, color-functions]
+
+optional_front_matter:
+  remove_originals: true
+
+include:
+  - _static
+# Never publish a stale docs/build/ left behind by the old Sphinx build.
+exclude:
+  - build/
+
+search_enabled: true
+heading_anchors: true
+aux_links:
+  GitHub: https://github.com/Shopify/ghostferry
+gh_edit_link: true
+gh_edit_repository: https://github.com/Shopify/ghostferry
+gh_edit_branch: main
+gh_edit_source: docs
+gh_edit_view_mode: edit
+
+# Page titles and order live here so the Markdown files need no front matter.
+defaults:
+  - scope: { path: "" }
+    values: { layout: default }
+  # Generated theme assets (e.g. just-the-docs-head-nav.css) must not get the HTML layout.
+  - scope: { path: assets }
+    values: { layout: null }
+  - scope: { path: index.md }
+    values: { title: Home, nav_order: 1 }
+  - scope: { path: introduction.md }
+    values: { title: Introduction, nav_order: 2 }
+  - scope: { path: technicaloverview.md }
+    values: { title: Technical overview, nav_order: 3 }
+  - scope: { path: tutorialcopydb.md }
+    values: { title: Copydb tutorial, nav_order: 4 }
+  - scope: { path: copydbinprod.md }
+    values: { title: Running in production, nav_order: 5 }
+  - scope: { path: copydbinterruptresume.md }
+    values: { title: Interrupt and resume, nav_order: 6 }
+  - scope: { path: verifiers.md }
+    values: { title: Verifiers, nav_order: 7 }
+  - scope: { path: howtousecustom.md }
+    values: { title: Custom applications, nav_order: 8 }

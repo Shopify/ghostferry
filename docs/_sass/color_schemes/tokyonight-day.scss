@@ -1,0 +1,30 @@
+// Tokyo Night, "day" variant.
+$tn-bg: #e1e2e7;
+$tn-bg-dark: #d0d5e3;
+$tn-bg-highlight: #c4c8da;
+$tn-terminal-black: #a1a6c5;
+$tn-fg: #3760bf;
+$tn-fg-dark: #6172b0;
+$tn-fg-gutter: #a8aecb;
+$tn-comment: #848cb5;
+$tn-dark5: #68709a;
+$tn-blue0: #7890dd;
+$tn-blue: #2e7de9;
+$tn-cyan: #007197;
+$tn-blue1: #188092;
+$tn-blue5: #006a83;
+$tn-magenta: #9854f1;
+$tn-orange: #b15c00;
+$tn-yellow: #8c6c3e;
+$tn-green: #587539;
+$tn-green1: #387068;
+$tn-red: #f52a65;
+$tn-red1: #c64343;
+
+$color-scheme: light;
+// Day's fg_dark is too faint for long-form body text on its background.
+$tn-text: $tn-fg;
+// White button text needs the stronger blue on a light background.
+$tn-button: $tn-blue;
+
+@import "./tokyonight";

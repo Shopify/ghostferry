@@ -1,0 +1,8 @@
+// Theme toggle (_includes/header_custom.html): match the header's aux links.
+.theme-toggle {
+  @include fs-2;
+  margin-left: auto;
+  color: $link-color;
+  white-space: nowrap;
+  cursor: pointer;
+}

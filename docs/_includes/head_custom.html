@@ -1,0 +1,55 @@
+{%- comment -%}
+  Light/dark theme selection. just-the-docs-default.css holds the dark scheme
+  (site.color_scheme); the light scheme (site.light_color_scheme) is written in
+  below. Media queries follow the system setting until the reader picks a theme
+  with the header button (saved in localStorage).
+  Keep this a blocking inline script: it runs before first paint, so a page
+  never renders in the wrong scheme.
+{%- endcomment -%}
+{%- capture light_css -%}{{ '/assets/css/just-the-docs-' | append: site.light_color_scheme | append: '.css' | relative_url }}{%- endcapture -%}
+<script>
+  (function () {
+    var KEY = 'ghostferry-theme';
+    var DARK = '(prefers-color-scheme: dark)';
+    var LABELS = { system: 'Theme: System', light: 'Theme: Light', dark: 'Theme: Dark' };
+    var NEXT = { system: 'light', light: 'dark', dark: 'system' };
+
+    function media(mode) {
+      return {
+        dark: mode === 'dark' ? 'all' : mode === 'light' ? 'not all' : DARK,
+        light: mode === 'light' ? 'all' : mode === 'dark' ? 'not all' : 'not all and ' + DARK
+      };
+    }
+
+    var mode = null;
+    try { mode = localStorage.getItem(KEY); } catch (e) {}
+    if (mode !== 'light' && mode !== 'dark') mode = 'system';
+
+    var initial = media(mode);
+    var dark = document.querySelector('link[rel="stylesheet"][href$="/just-the-docs-default.css"]');
+    dark.media = initial.dark;
+    /* Parser-inserted (not appended) so browsers treat it as render-blocking.
+       Block comments only: Just the Docs compresses the page onto one line. */
+    document.write('<link rel="stylesheet" id="theme-light" href="{{ light_css }}" media="' + initial.light + '">');
+
+    window.ghostferryTheme = {
+      bind: function (button) {
+        function render() { button.textContent = LABELS[mode]; }
+        button.addEventListener('click', function () {
+          mode = NEXT[mode];
+          try {
+            if (mode === 'system') localStorage.removeItem(KEY); else localStorage.setItem(KEY, mode);
+          } catch (e) {}
+          var next = media(mode);
+          dark.media = next.dark;
+          document.getElementById('theme-light').media = next.light;
+          render();
+        });
+        render();
+        button.hidden = false;
+      }
+    };
+  })();
+</script>
+{%- comment -%} Without JavaScript the dark sheet stays on; the light sheet overrides it when the system is light. {%- endcomment -%}
+<noscript><link rel="stylesheet" href="{{ light_css }}" media="not all and (prefers-color-scheme: dark)"></noscript>
