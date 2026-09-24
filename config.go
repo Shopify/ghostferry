@@ -684,16 +684,15 @@ type Config struct {
 	// Make sure you have binlog_row_image=FULL when turning on this
 	SkipBinlogRowImageCheck bool
 
-	// BinlogCoordinateMode selects how Ghostferry expresses and persists binlog
-	// coordinates.
+	// BinlogCoordinateMode selects how binlog streams track coordinates.
 	//
 	// Valid values:
 	//   - "" or "file_position": the classic (file, position) coordinate. This
 	//     is the default and current behavior.
-	//   - "gtid": GTID-set based coordinates (experimental, MySQL only). At this
-	//     stage GTID mode only affects coordinate representation, validation, and
-	//     the ability to read the current GTID set; binlog streaming still uses
-	//     file/position until a later stage wires GTID streaming.
+	//   - "gtid": MySQL GTID-set streaming and containment-based cutover
+	//     (experimental). Requires gtid_mode=ON on the source and on the target
+	//     when target verification is enabled. Resume from serialized state is
+	//     not yet supported in this mode.
 	//
 	// Prefer BinlogCoordinateMode over any future boolean flag: it keeps the
 	// file/position and GTID paths cleanly separated and leaves room for

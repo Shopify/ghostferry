@@ -9,38 +9,28 @@ import (
 
 // BinlogCoordinateType identifies how a binlog position is expressed.
 //
-// This is the seam that lets Ghostferry evolve from file/position based
-// replication coordinates towards GTID based coordinates without forcing every
-// consumer to know which representation is in use. In this first iteration only
-// the file/position representation is implemented; the GTID representation is
-// reserved so that state serialized today remains forward compatible.
+// Coordinates support either file/position or MySQL GTID sets without requiring
+// consumers to know which representation is in use.
 type BinlogCoordinateType string
 
 const (
 	// BinlogCoordinateFilePosition is the classic (file, position) coordinate.
 	BinlogCoordinateFilePosition BinlogCoordinateType = "file_position"
 
-	// BinlogCoordinateGTID is reserved for the future GTID based coordinate.
-	// It is intentionally defined now so that the serialization format and the
-	// strategy dispatch have a stable name to target.
+	// BinlogCoordinateGTID identifies a MySQL GTID-set coordinate.
 	BinlogCoordinateGTID BinlogCoordinateType = "gtid"
 )
 
 // BinlogCoordinate is a representation-agnostic replication coordinate.
 //
-// It can express either a file/position (mysql.Position) or a GTID set. It
-// exists so that the rest of Ghostferry can be migrated to talk in terms of "a
-// coordinate" rather than "a file and a position", which is a prerequisite for
-// adding a GTID mode behind a feature flag without a second invasive refactor.
+// It can express either a file/position (mysql.Position) or a MySQL GTID set.
 //
 // The zero value is a zero file/position coordinate, matching the previous
 // behavior where an empty mysql.Position was used as the "no coordinate"
 // sentinel.
 //
-// GTID coordinates are stored canonically as the GTID set string. The parsed
-// mysql.GTIDSet is derived on demand; it is intentionally not stored so that
-// the value type stays trivially copyable and comparable-by-value-free (GTID
-// sets are mutable and must be cloned before mutation).
+// GTID coordinates carry a set string and may cache a parsed set. Copies share
+// the read-only cache; ParsedGTIDSet returns a clone that callers may mutate.
 type BinlogCoordinate struct {
 	// Type selects the active representation. An empty Type is treated as
 	// BinlogCoordinateFilePosition for backwards compatibility.
@@ -56,11 +46,8 @@ type BinlogCoordinate struct {
 	// that distinction should check Type and IsZero together.
 	GTIDSet string
 
-	// parsedGTIDSet is an optional cache of the parsed GTIDSet. It is populated
-	// by NewGTIDCoordinateFromSet (and lazily by parsedSet) so that hot paths
-	// such as the stop-condition check do not re-parse the canonical string on
-	// every binlog event. It is never mutated in place; accessors that hand a
-	// set to callers clone it. It is intentionally excluded from JSON.
+	// parsedGTIDSet caches the set cloned by NewGTIDCoordinateFromSet. It is
+	// read-only, excluded from JSON, and discarded when decoding a new value.
 	parsedGTIDSet mysql.GTIDSet
 }
 
