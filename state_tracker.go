@@ -49,7 +49,7 @@ func (s *SerializableState) MarshalJSON() ([]byte, error) {
 		LastSuccessfulPaginationKeys map[string]json.RawMessage
 		*Alias
 	}{
-		Alias: (*Alias)(s),
+		Alias:                        (*Alias)(s),
 		LastSuccessfulPaginationKeys: make(map[string]json.RawMessage),
 	}
 
@@ -104,6 +104,13 @@ func (s *SerializableState) MinSourceBinlogPosition() mysql.Position {
 	} else {
 		return s.LastWrittenBinlogPosition
 	}
+}
+
+// MinSourceBinlogCoordinate returns the safe source resume coordinate. It is
+// the coordinate-typed counterpart of MinSourceBinlogPosition and currently
+// delegates to it, wrapping the result as a file/position coordinate.
+func (s *SerializableState) MinSourceBinlogCoordinate() BinlogCoordinate {
+	return NewFilePositionCoordinate(s.MinSourceBinlogPosition())
 }
 
 // For tracking the speed of the copy
@@ -191,6 +198,46 @@ func (s *StateTracker) UpdateLastResumableBinlogPositionForTargetVerifier(pos my
 	defer s.BinlogRWMutex.Unlock()
 
 	s.lastStoredBinlogPositionForTargetVerifier = pos
+}
+
+// Coordinate-based accessors and mutators.
+//
+// These are the forward-looking API. They currently delegate to the
+// file/position storage above so behavior is unchanged, but they let callers be
+// written in terms of BinlogCoordinate ahead of introducing a GTID coordinate
+// mode.
+
+func (s *StateTracker) UpdateLastResumableSourceBinlogCoordinate(coord BinlogCoordinate) {
+	s.UpdateLastResumableSourceBinlogPosition(coord.Position())
+}
+
+func (s *StateTracker) UpdateLastResumableSourceBinlogCoordinateForInlineVerifier(coord BinlogCoordinate) {
+	s.UpdateLastResumableSourceBinlogPositionForInlineVerifier(coord.Position())
+}
+
+func (s *StateTracker) UpdateLastResumableBinlogCoordinateForTargetVerifier(coord BinlogCoordinate) {
+	s.UpdateLastResumableBinlogPositionForTargetVerifier(coord.Position())
+}
+
+func (s *StateTracker) LastResumableSourceBinlogCoordinate() BinlogCoordinate {
+	s.BinlogRWMutex.RLock()
+	defer s.BinlogRWMutex.RUnlock()
+
+	return NewFilePositionCoordinate(s.lastWrittenBinlogPosition)
+}
+
+func (s *StateTracker) LastResumableSourceBinlogCoordinateForInlineVerifier() BinlogCoordinate {
+	s.BinlogRWMutex.RLock()
+	defer s.BinlogRWMutex.RUnlock()
+
+	return NewFilePositionCoordinate(s.lastStoredBinlogPositionForInlineVerifier)
+}
+
+func (s *StateTracker) LastResumableBinlogCoordinateForTargetVerifier() BinlogCoordinate {
+	s.BinlogRWMutex.RLock()
+	defer s.BinlogRWMutex.RUnlock()
+
+	return NewFilePositionCoordinate(s.lastStoredBinlogPositionForTargetVerifier)
 }
 
 func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginationKey PaginationKey, rowStats RowStats) {

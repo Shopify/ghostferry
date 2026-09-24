@@ -340,6 +340,12 @@ func (s *BinlogStreamer) GetLastStreamedBinlogPosition() mysql.Position {
 	return s.lastStreamedBinlogPosition
 }
 
+// GetLastStreamedBinlogCoordinate is the coordinate-typed counterpart of
+// GetLastStreamedBinlogPosition.
+func (s *BinlogStreamer) GetLastStreamedBinlogCoordinate() BinlogCoordinate {
+	return NewFilePositionCoordinate(s.lastStreamedBinlogPosition)
+}
+
 func (s *BinlogStreamer) IsAlmostCaughtUp() bool {
 	return time.Now().Sub(s.lastProcessedEventTime) < caughtUpThreshold
 }

@@ -24,8 +24,14 @@ func (e *stubDMLEvent) NewValues() ghostferry.RowData           { return nil }
 func (e *stubDMLEvent) PaginationKey() (string, error)          { return "", nil }
 func (e *stubDMLEvent) BinlogPosition() mysql.Position          { return mysql.Position{} }
 func (e *stubDMLEvent) ResumableBinlogPosition() mysql.Position { return mysql.Position{} }
-func (e *stubDMLEvent) Annotation() (string, error)             { return "", nil }
-func (e *stubDMLEvent) Timestamp() time.Time                    { return time.Time{} }
+func (e *stubDMLEvent) BinlogCoordinate() ghostferry.BinlogCoordinate {
+	return ghostferry.NewFilePositionCoordinate(mysql.Position{})
+}
+func (e *stubDMLEvent) ResumableBinlogCoordinate() ghostferry.BinlogCoordinate {
+	return ghostferry.NewFilePositionCoordinate(mysql.Position{})
+}
+func (e *stubDMLEvent) Annotation() (string, error) { return "", nil }
+func (e *stubDMLEvent) Timestamp() time.Time        { return time.Time{} }
 
 // TestBinlogWriterBufferBinlogEventsBeforeRun verifies that BufferBinlogEvents
 // does not block when called before Run() has started in its own goroutine.
