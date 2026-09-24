@@ -1,8 +1,6 @@
-.. _introduction:
+<a name="introduction"></a>
 
-==========================
-Introduction to Ghostferry
-==========================
+# Introduction to Ghostferry
 
 Ghostferry is a library that enables you to copy data from one MySQL instance
 to another with minimal amount of downtime. This is accomplished by tailing
@@ -13,16 +11,15 @@ is because Ghostferry has the capability to selectively filter data to copy.
 The filtering could be arbitrarily complex and thus cannot be easily expressed
 in some configuration file.
 
-That said, there is a generic tool called ``ghostferry-copydb`` that will copy
+That said, there is a generic tool called `ghostferry-copydb` that will copy
 tables and the data contained in them from one MySQL to another with only the
 basic database/table name filtering.
 
-Ghostferry is inspired by Github's `gh-ost <https://github.com/github/gh-ost>`_.
+Ghostferry is inspired by Github's [gh-ost](https://github.com/github/gh-ost).
 However, instead of copying data from and to the same database, Ghostferry
 copies data from one database to another.
 
-Why do I need this?
-===================
+## Why do I need this?
 
 Traditionally, moving data from one database to another involves some sort of
 backup and restore along with replaying the changes via replication. Backup is

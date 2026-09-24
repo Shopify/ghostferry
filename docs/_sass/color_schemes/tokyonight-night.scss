@@ -1,0 +1,28 @@
+// Tokyo Night, "night" variant.
+$tn-bg: #1a1b26;
+$tn-bg-dark: #16161e;
+$tn-bg-highlight: #292e42;
+$tn-terminal-black: #414868;
+$tn-fg: #c0caf5;
+$tn-fg-dark: #a9b1d6;
+$tn-fg-gutter: #3b4261;
+$tn-comment: #565f89;
+$tn-dark5: #737aa2;
+$tn-blue0: #3d59a1;
+$tn-blue: #7aa2f7;
+$tn-cyan: #7dcfff;
+$tn-blue1: #2ac3de;
+$tn-blue5: #89ddff;
+$tn-magenta: #bb9af7;
+$tn-orange: #ff9e64;
+$tn-yellow: #e0af68;
+$tn-green: #9ece6a;
+$tn-green1: #73daca;
+$tn-red: #f7768e;
+$tn-red1: #db4b4b;
+
+$color-scheme: dark;
+$tn-text: $tn-fg-dark;
+$tn-button: $tn-blue0;
+
+@import "./tokyonight";

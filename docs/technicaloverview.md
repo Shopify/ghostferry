@@ -1,8 +1,6 @@
-.. _technicaloverview:
+<a name="technicaloverview"></a>
 
-==================
-Technical Overview
-==================
+# Technical Overview
 
 Ghostferry is a Go library to move data from one MySQL instance to another
 while the source (and possibly the target) databases are online. In order to do
@@ -53,8 +51,7 @@ This process has some downtime between step 5 and step 7. The window of
 downtime is proportional to how fast these steps can be done. In most cases
 this should be on the order of seconds to minutes.
 
-Architecture
-------------
+## Architecture
 
 Ghostferry has three levels of public APIs that you can use: the Ferry level,
 the DataIterator/BinlogStreamer level, and the Cursor level. Most of the time
@@ -68,43 +65,40 @@ runs.
 
 The overall, simplified architecture of Ghostferry can be summarized with the
 figure below. It shows the basic flow of all the background tasks, along with
-how each task is spawned (starting from ``Ferry.Run``). Arrows pointing towards
+how each task is spawned (starting from `Ferry.Run`). Arrows pointing towards
 outside of an encapsulating box indicate the task will exit.  The red arrows
 with "Error action" indicates an error has occurred and the error is sent to
-the ``ErrorHandler``, at which point the ErrorHandler flow takes over.
+the `ErrorHandler`, at which point the ErrorHandler flow takes over.
 
-.. image:: _static/ghostferry-architecture.png
-   :align: center
+![Ghostferry architecture](_static/ghostferry-architecture.png)
 
 You can see an example of an application built with Ghostferry in the
-``copydb`` package.
+`copydb` package.
 
-Limitations
------------
+## Limitations
 
 - Right now, Ghostferry can only be used on tables with auto incrementing,
   numeric, and unique primary keys.
 
-  - An error will be emitted during the beginning of the run if such a primary
-    key is not detected.
-  - In the near future, we will extend support to arbitrary primary key types.
-  - To work around these restrictions, you can use mysqldump to dump and restore
-    the table during the cutover.
+    - An error will be emitted during the beginning of the run if such a primary
+      key is not detected.
+    - In the near future, we will extend support to arbitrary primary key types.
+    - To work around these restrictions, you can use mysqldump to dump and restore
+      the table during the cutover.
 
 - Ghostferry can only be used on a source database with FULL RBR.
 
-  - An error will be emitted during the beginning of the run if FULL RBR is
-    An error will be emitted during the beginning of the run if FULL RBR is not enabled on the source database.
-  - Without FULL RBR, the integrity of the data cannot be guaranteed.
+    - An error will be emitted during the beginning of the run if FULL RBR is
+      An error will be emitted during the beginning of the run if FULL RBR is not enabled on the source database.
+    - Without FULL RBR, the integrity of the data cannot be guaranteed.
 
 - Ghostferry does not support tables with foreign key constraints.
 
-  - For tables with foreign key constraints, the constraints should be removed
-    before performing the data migration.
+    - For tables with foreign key constraints, the constraints should be removed
+      before performing the data migration.
 
-Algorithm Correctness
----------------------
+## Algorithm Correctness
 
 The overall algorithm of Ghostferry is specified in a TLA+ specification and
-validated via TLC. The algorithm can be seen in the ``tlaplus`` directory in the
+validated via TLC. The algorithm can be seen in the `tlaplus` directory in the
 source tree.

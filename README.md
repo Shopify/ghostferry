@@ -29,6 +29,29 @@ On a high-level, Ghostferry is broken into several components, enabling it to
 copy data. This is documented at
 https://shopify.github.io/ghostferry/main/technicaloverview.html
 
+Documentation
+-------------
+
+The documentation is written in Markdown under `docs/` and can be read
+directly on GitHub, starting at the [Documentation source](docs/index.md). The
+published site is built with [Jekyll](https://jekyllrb.com/) and the
+[Just the Docs](https://just-the-docs.com/) theme; its settings, page titles
+and navigation order live in `docs/_config.yml`.
+
+Internal contributors get the gems from `dev up`, then can run `dev docs`
+(live preview) or `dev docs-build` (build plus link check). Otherwise:
+
+```bash
+bundle install
+bundle exec jekyll build --source docs --destination build/docs
+bundle exec htmlproofer build/docs --disable-external --allow-missing-href --no-enforce-https --swap-urls '^/ghostferry/main/:/'
+bundle exec jekyll serve --source docs --destination build/docs --host 127.0.0.1 --port 4000
+```
+
+The build writes the site to `build/docs/`; `htmlproofer` fails on broken
+internal links or anchors. The live preview is served at
+http://127.0.0.1:4000/ghostferry/main/. None of these commands deploy anything.
+
 Development Setup
 -----------------
 
