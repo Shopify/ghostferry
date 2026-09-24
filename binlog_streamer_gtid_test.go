@@ -1,11 +1,15 @@
 package ghostferry
 
 import (
+	"encoding/json"
+	"math"
 	"sync"
 	"testing"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
+	"github.com/go-mysql-org/go-mysql/schema"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,10 +29,11 @@ func mustParseGTID(t *testing.T, s string) mysql.GTIDSet {
 
 func TestRunStopsAtGTIDTransactionBoundary(t *testing.T) {
 	target := mustParseGTID(t, gtidSetTarget)
+	sid := uuid.MustParse("3e11fa47-71ca-11e1-9e33-c80aa9429562")
 	gtid := func() *replication.BinlogEvent {
 		return &replication.BinlogEvent{
 			Header: &replication.EventHeader{EventType: replication.GTID_EVENT},
-			Event:  &replication.GTIDEvent{},
+			Event:  &replication.GTIDEvent{SID: sid[:], GNO: 100},
 		}
 	}
 	query := func(statement string) *replication.BinlogEvent {
@@ -269,6 +274,8 @@ func TestGTIDCoordinateAccessorsAreRaceFree(t *testing.T) {
 	s := &BinlogStreamer{BinlogCoordinateMode: BinlogCoordinateGTID}
 	s.logger = LogWithField("tag", "test")
 	s.seedGTIDSets(mustParseGTID(t, gtidSetLower))
+	sid := uuid.MustParse("3e11fa47-71ca-11e1-9e33-c80aa9429562")
+	event := &replication.GTIDEvent{SID: sid[:], GNO: 100}
 
 	const iterations = 500
 	var wg sync.WaitGroup
@@ -278,7 +285,10 @@ func TestGTIDCoordinateAccessorsAreRaceFree(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < iterations; i++ {
-			s.setResumableToStreamed()
+			if err := s.setResumableBeforeGTID(event); err != nil {
+				t.Error(err)
+				return
+			}
 			s.setLastStreamedGTIDSet(mustParseGTID(t, gtidSetTarget))
 		}
 	}()
@@ -307,6 +317,7 @@ func TestGTIDCoordinateAccessorsAreRaceFree(t *testing.T) {
 }
 
 func TestRunFinishesReplayedTransactionBeforeCutover(t *testing.T) {
+	sid := uuid.MustParse("3e11fa47-71ca-11e1-9e33-c80aa9429562")
 	for _, stopAt := range []string{"GTID", "first replayed update"} {
 		t.Run(stopAt, func(t *testing.T) {
 			stream := replication.NewBinlogStreamer()
@@ -346,7 +357,7 @@ func TestRunFinishesReplayedTransactionBeforeCutover(t *testing.T) {
 				}))
 			}
 			for range 2 {
-				add(replication.GTID_EVENT, &replication.GTIDEvent{})
+				add(replication.GTID_EVENT, &replication.GTIDEvent{SID: sid[:], GNO: 100})
 				add(replication.QUERY_EVENT, &replication.QueryEvent{Query: []byte("BEGIN"), GSet: mustParseGTID(t, gtidSetTarget)})
 				add(replication.UPDATE_ROWS_EVENTv2, &replication.RowsEvent{Rows: [][]interface{}{{0}, {1}}})
 				add(replication.UPDATE_ROWS_EVENTv2, &replication.RowsEvent{Rows: [][]interface{}{{1}, {0}}})
@@ -356,6 +367,224 @@ func TestRunFinishesReplayedTransactionBeforeCutover(t *testing.T) {
 			s.Run()
 			assert.Equal(t, 4, updates, "cutover must finish replaying the transaction")
 			assert.Equal(t, 0, value, "cutover must preserve the committed row value")
+		})
+	}
+}
+
+func gtidReplayTableSchema(database string) TableSchemaCache {
+	return TableSchemaCache{
+		database + ".t": &TableSchema{Table: &schema.Table{
+			Schema: database, Name: "t",
+			Columns: []schema.TableColumn{{Name: "id", Type: schema.TYPE_NUMBER}, {Name: "v", Type: schema.TYPE_NUMBER}},
+		}},
+	}
+}
+
+func queueGTIDReplayTransaction(t *testing.T, stream *replication.BinlogStreamer) {
+	t.Helper()
+	sid := uuid.MustParse("3e11fa47-71ca-11e1-9e33-c80aa9429562")
+	target := mustParseGTID(t, gtidSetTarget)
+	events := []*replication.BinlogEvent{
+		{Header: &replication.EventHeader{EventType: replication.GTID_EVENT}, Event: &replication.GTIDEvent{SID: sid[:], GNO: 100}},
+		{Header: &replication.EventHeader{EventType: replication.QUERY_EVENT}, Event: &replication.QueryEvent{Query: []byte("BEGIN"), GSet: target}},
+		{Header: &replication.EventHeader{EventType: replication.UPDATE_ROWS_EVENTv2}, Event: &replication.RowsEvent{
+			Table: &replication.TableMapEvent{Schema: []byte("review"), Table: []byte("t")}, Rows: [][]interface{}{{1, 0}, {1, 1}},
+		}},
+		{Header: &replication.EventHeader{EventType: replication.UPDATE_ROWS_EVENTv2}, Event: &replication.RowsEvent{
+			Table: &replication.TableMapEvent{Schema: []byte("review"), Table: []byte("t")}, Rows: [][]interface{}{{1, 1}, {1, 0}},
+		}},
+		{Header: &replication.EventHeader{EventType: replication.XID_EVENT}, Event: &replication.XIDEvent{GSet: target}},
+	}
+	for i, event := range events {
+		event.Header.LogPos = uint32(100 + i)
+		require.NoError(t, stream.AddEventToStreamer(event))
+	}
+}
+
+func TestRunResumesInterruptedGTIDReplay(t *testing.T) {
+	const start = "3e11fa47-71ca-11e1-9e33-c80aa9429562:1-99"
+	for _, inline := range []bool{false, true} {
+		name := "writer_only"
+		if inline {
+			name = "writer_and_inline"
+		}
+		t.Run(name, func(t *testing.T) {
+			newStreamer := func(coord BinlogCoordinate, groups int) *BinlogStreamer {
+				stream := replication.NewBinlogStreamer()
+				s := &BinlogStreamer{
+					BinlogCoordinateMode: BinlogCoordinateGTID,
+					binlogStreamer:       stream,
+					binlogSyncer:         replication.NewBinlogSyncer(replication.BinlogSyncerConfig{ServerID: 1}),
+					TableSchema:          gtidReplayTableSchema("review"),
+				}
+				s.seedGTIDSets(mustParseGTID(t, coord.GTIDSet))
+				s.setStopGTIDSet(mustParseGTID(t, gtidSetTarget))
+				for range groups {
+					queueGTIDReplayTransaction(t, stream)
+				}
+				require.NoError(t, s.AddBinlogEventHandler(replication.HEARTBEAT_EVENT, func(_ *replication.BinlogEvent, _ []byte, _ *BinlogEventState) ([]byte, error) {
+					t.Fatal("stream continued past the replayed commit")
+					return nil, nil
+				}))
+				require.NoError(t, stream.AddEventToStreamer(&replication.BinlogEvent{
+					Header: &replication.EventHeader{EventType: replication.HEARTBEAT_EVENT}, Event: &replication.GenericEvent{},
+				}))
+				return s
+			}
+			tracker := NewStateTracker(0)
+			advance := func(coord BinlogCoordinate) {
+				tracker.UpdateLastResumableSourceBinlogCoordinate(coord)
+				if inline {
+					tracker.UpdateLastResumableSourceBinlogCoordinateForInlineVerifier(coord)
+				}
+			}
+			advance(NewGTIDCoordinate(start))
+			s := newStreamer(NewGTIDCoordinate(start), 2)
+			consumer, updates, savedConsumer := 0, 0, 0
+			var saved []byte
+			apply := func(ev DMLEvent) {
+				if consumer == ev.OldValues()[1].(int) {
+					consumer = ev.NewValues()[1].(int)
+				}
+				advance(ev.ResumableBinlogCoordinate())
+				updates++
+			}
+			s.AddEventListener(func(events []DMLEvent) error {
+				for _, ev := range events {
+					apply(ev)
+					if updates == 3 {
+						assert.Equal(t, 1, consumer)
+						savedConsumer = consumer
+						var err error
+						saved, err = json.Marshal(tracker.Serialize(nil, nil))
+						require.NoError(t, err)
+						s.stopRequested.Store(true)
+					}
+				}
+				return nil
+			})
+			s.Run()
+			assert.Equal(t, 4, updates, "graceful cutover must finish the replay")
+			assert.Equal(t, 0, consumer)
+
+			var state SerializableState
+			require.NoError(t, json.Unmarshal(saved, &state))
+			tracker = NewStateTrackerFromSerializedState(0, &state)
+			resume, err := state.MinSourceBinlogCoordinate()
+			require.NoError(t, err)
+			assert.True(t, mustParseGTID(t, start).Equal(mustParseGTID(t, resume.GTIDSet)), "saved floor: %s", resume.GTIDSet)
+
+			consumer, updates = savedConsumer, 0
+			resumed := newStreamer(resume, 1)
+			resumed.stopRequested.Store(true)
+			resumed.AddEventListener(func(events []DMLEvent) error {
+				for _, ev := range events {
+					apply(ev)
+				}
+				return nil
+			})
+			resumed.Run()
+			assert.Equal(t, 2, updates, "resume must deliver the interrupted transaction")
+			assert.Equal(t, 0, consumer, "resume must repair the saved intermediate row")
+		})
+	}
+}
+
+func TestGTIDResumeFloorExcludesOnlyCurrentTransaction(t *testing.T) {
+	const a = "3e11fa47-71ca-11e1-9e33-c80aa9429562"
+	const b = "8e12fa47-71ca-11e1-9e33-c80aa9429999"
+	sid := uuid.MustParse(a)
+	for _, tc := range []struct {
+		name, committed, want string
+	}{
+		{"new transaction", a + ":1-99", a + ":1-99"},
+		{"interior replay preserves later and unrelated GTIDs", a + ":1-150," + b + ":1-3:8-10", a + ":1-99:101-150," + b + ":1-3:8-10"},
+		{"sole transaction", a + ":100", ""},
+		{"nil committed progress", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &BinlogStreamer{BinlogCoordinateMode: BinlogCoordinateGTID}
+			// Start with an existing floor to ensure nil committed progress clears it.
+			s.seedGTIDSets(mustParseGTID(t, gtidSetTarget))
+			var committed mysql.GTIDSet
+			if tc.committed != "" {
+				committed = mustParseGTID(t, tc.committed)
+			}
+			s.setLastStreamedGTIDSet(committed)
+			s.setStopGTIDSet(mustParseGTID(t, gtidSetPast))
+			beforeCommitted := s.GetLastStreamedBinlogCoordinate()
+			beforeStop := s.GetStopBinlogCoordinate()
+
+			require.NoError(t, s.setResumableBeforeGTID(&replication.GTIDEvent{SID: sid[:], GNO: 100}))
+			floor := s.resumableGTIDCoordinate()
+			assert.True(t, mustParseGTID(t, tc.want).Equal(mustParseGTID(t, floor.GTIDSet)), "resume floor: %s", floor.GTIDSet)
+			if tc.want == "" {
+				assert.Empty(t, floor.GTIDSet, "empty floor must not serialize a bare UUID")
+			}
+			assert.True(t, mustParseGTID(t, beforeCommitted.GTIDSet).Equal(mustParseGTID(t, s.GetLastStreamedBinlogCoordinate().GTIDSet)))
+			assert.True(t, mustParseGTID(t, beforeStop.GTIDSet).Equal(mustParseGTID(t, s.GetStopBinlogCoordinate().GTIDSet)))
+		})
+	}
+}
+
+type recordingGTIDErrorHandler struct {
+	err error
+}
+
+func (h *recordingGTIDErrorHandler) ReportError(_ string, err error) {
+	h.err = err
+}
+
+func (h *recordingGTIDErrorHandler) Fatal(from string, err error) {
+	h.ReportError(from, err)
+}
+
+func TestRunRejectsInvalidGTIDBeforeRows(t *testing.T) {
+	sid := uuid.MustParse("3e11fa47-71ca-11e1-9e33-c80aa9429562")
+	for _, tc := range []struct {
+		name  string
+		event *replication.GTIDEvent
+	}{
+		{"malformed SID", &replication.GTIDEvent{SID: []byte{1}, GNO: 100}},
+		{"zero sequence", &replication.GTIDEvent{SID: sid[:], GNO: 0}},
+		{"overflowing sequence", &replication.GTIDEvent{SID: sid[:], GNO: math.MaxInt64}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stream := replication.NewBinlogStreamer()
+			handler := &recordingGTIDErrorHandler{}
+			s := &BinlogStreamer{
+				BinlogCoordinateMode: BinlogCoordinateGTID,
+				binlogStreamer:       stream,
+				binlogSyncer:         replication.NewBinlogSyncer(replication.BinlogSyncerConfig{ServerID: 1}),
+				TableSchema:          gtidReplayTableSchema("review"),
+				ErrorHandler:         handler,
+			}
+			s.seedGTIDSets(mustParseGTID(t, gtidSetLower))
+			beforeResumable := s.resumableGTIDCoordinate()
+			beforeCommitted := s.GetLastStreamedBinlogCoordinate()
+			rowsDelivered := false
+			s.AddEventListener(func(_ []DMLEvent) error {
+				rowsDelivered = true
+				return nil
+			})
+			require.NoError(t, s.AddBinlogEventHandler(replication.HEARTBEAT_EVENT, func(_ *replication.BinlogEvent, _ []byte, _ *BinlogEventState) ([]byte, error) {
+				t.Fatal("stream continued after invalid GTID")
+				return nil, nil
+			}))
+			for _, event := range []*replication.BinlogEvent{
+				{Header: &replication.EventHeader{EventType: replication.GTID_EVENT, LogPos: 100}, Event: tc.event},
+				{Header: &replication.EventHeader{EventType: replication.UPDATE_ROWS_EVENTv2, LogPos: 101}, Event: &replication.RowsEvent{
+					Table: &replication.TableMapEvent{Schema: []byte("review"), Table: []byte("t")}, Rows: [][]interface{}{{1, 0}, {1, 1}},
+				}},
+				{Header: &replication.EventHeader{EventType: replication.HEARTBEAT_EVENT}, Event: &replication.GenericEvent{}},
+			} {
+				require.NoError(t, stream.AddEventToStreamer(event))
+			}
+			s.Run()
+			assert.Error(t, handler.err)
+			assert.False(t, rowsDelivered)
+			assert.True(t, mustParseGTID(t, beforeResumable.GTIDSet).Equal(mustParseGTID(t, s.resumableGTIDCoordinate().GTIDSet)))
+			assert.True(t, mustParseGTID(t, beforeCommitted.GTIDSet).Equal(mustParseGTID(t, s.GetLastStreamedBinlogCoordinate().GTIDSet)))
 		})
 	}
 }
