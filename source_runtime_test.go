@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"errors"
 	"testing"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -66,6 +67,41 @@ func TestSourceRuntimeCloseRetiredDrains(t *testing.T) {
 
 	assert.NotPanics(t, func() { rt.CloseRetired() })
 	assert.Empty(t, rt.retired, "retired handles must be drained")
+}
+
+func TestSourceRuntimeReplaceValidatedFailureDoesNotPublish(t *testing.T) {
+	oldDB := &sql.DB{Marginalia: "old"}
+	oldCfg := runtimeTestConfig("old-host")
+	rt := NewSourceRuntime(oldDB, oldCfg)
+
+	validateErr := errors.New("candidate rejected")
+	_, err := rt.ReplaceValidated(runtimeTestConfig("bad-host"), nil, func(_ *sql.DB) error {
+		return validateErr
+	})
+	assert.ErrorIs(t, err, validateErr)
+
+	// The current source must be unchanged and nothing retired.
+	assert.Same(t, oldDB, rt.DB())
+	assert.Same(t, oldCfg, rt.Config())
+	assert.Empty(t, rt.retired)
+}
+
+func TestSourceRuntimeReplaceValidatedSuccessPublishes(t *testing.T) {
+	oldDB := &sql.DB{Marginalia: "old"}
+	rt := NewSourceRuntime(oldDB, runtimeTestConfig("old-host"))
+
+	validated := false
+	newCfg := runtimeTestConfig("new-host")
+	newDB, err := rt.ReplaceValidated(newCfg, nil, func(db *sql.DB) error {
+		validated = true
+		assert.NotNil(t, db)
+		return nil
+	})
+	require.NoError(t, err)
+	assert.True(t, validated)
+	assert.Same(t, newDB, rt.DB())
+	assert.Same(t, newCfg, rt.Config())
+	assert.Contains(t, rt.retired, oldDB)
 }
 
 func TestSourceRuntimeNilInitial(t *testing.T) {
