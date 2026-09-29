@@ -124,7 +124,16 @@ module DbHelper
     dbtable = full_table_name(database_name, table_name)
 
     connection.query("CREATE DATABASE IF NOT EXISTS #{database_name}")
-    connection.query("CREATE TABLE IF NOT EXISTS #{dbtable} (id bigint(20) not null auto_increment, data TEXT, primary key(id))")
+    connection.query("
+      CREATE TABLE IF NOT EXISTS #{dbtable} (
+        id BIGINT(20) NOT NULL AUTO_INCREMENT,
+        data TEXT,
+        /* generated columns should be ignored */
+        length BIGINT(20) AS (LENGTH(data)) VIRTUAL,
+        summary VARCHAR(32) AS (MD5(data)) STORED,
+        PRIMARY KEY(id)
+      )
+    ")
 
     return if number_of_rows == 0
 

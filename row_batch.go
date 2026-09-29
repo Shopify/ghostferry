@@ -64,23 +64,27 @@ func (e *RowBatch) AsSQLQuery(schemaName, tableName string) (string, []interface
 		return "", nil, err
 	}
 
-	valuesStr := "(" + strings.Repeat("?,", len(e.columns)-1) + "?)"
+	filteredColumns := e.table.NonGeneratedColumnNames()
+
+	valuesStr := "(" + strings.Repeat("?,", len(filteredColumns)-1) + "?)"
 	valuesStr = strings.Repeat(valuesStr+",", len(e.values)-1) + valuesStr
 
 	query := "INSERT IGNORE INTO " +
 		QuotedTableNameFromString(schemaName, tableName) +
-		" (" + strings.Join(QuoteFields(e.columns), ",") + ") VALUES " + valuesStr
+		" (" + strings.Join(QuoteFields(filteredColumns), ",") + ") VALUES " + valuesStr
 
 	return query, e.flattenRowData(), nil
 }
 
 func (e *RowBatch) flattenRowData() []interface{} {
-	rowSize := len(e.values[0])
-	flattened := make([]interface{}, rowSize*len(e.values))
+	flattened := make([]interface{}, 0, len(e.values))
 
-	for rowIdx, row := range e.values {
+	for _, row := range e.values {
 		for colIdx, col := range row {
-			flattened[rowIdx*rowSize+colIdx] = col
+			if e.table.IsColumnIndexGenerated(colIdx) {
+				continue
+			}
+			flattened = append(flattened, col)
 		}
 	}
 

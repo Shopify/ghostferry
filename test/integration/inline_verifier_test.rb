@@ -429,8 +429,8 @@ class InlineVerifierTest < GhostferryTestCase
     # indeed running as the nominal case (comparing 0.0 and -0.0) should not
     # emit any error and thus we cannot say for certain if the InlineVerifier
     # ran or not.
-    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, 0.0)")
-    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, 1.0)")
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, 0.0)")
+    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, 1.0)")
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
 
@@ -468,8 +468,8 @@ class InlineVerifierTest < GhostferryTestCase
     seed_random_data(source_db, number_of_rows: 0)
     seed_random_data(target_db, number_of_rows: 0)
 
-    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, NULL)")
-    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, NULL)")
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, NULL)")
+    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, NULL)")
 
     verification_ran = false
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
@@ -486,8 +486,8 @@ class InlineVerifierTest < GhostferryTestCase
     seed_random_data(source_db, number_of_rows: 0)
     seed_random_data(target_db, number_of_rows: 0)
 
-    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, NULL)")
-    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, '')")
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, NULL)")
+    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, '')")
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
 
@@ -512,8 +512,8 @@ class InlineVerifierTest < GhostferryTestCase
     seed_random_data(source_db, number_of_rows: 0)
     seed_random_data(target_db, number_of_rows: 0)
 
-    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, NULL)")
-    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, 'NULL')")
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, NULL)")
+    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, 'NULL')")
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
 
@@ -542,8 +542,8 @@ class InlineVerifierTest < GhostferryTestCase
     source_db.query("ALTER TABLE #{DEFAULT_FULL_TABLE_NAME} ADD COLUMN data2 VARCHAR(255) AFTER data")
     target_db.query("ALTER TABLE #{DEFAULT_FULL_TABLE_NAME} ADD COLUMN data2 VARCHAR(255) AFTER data")
 
-    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, NULL, 'data')")
-    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} VALUES (1, 'data', NULL)")
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data, data2) VALUES (1, NULL, 'data')")
+    target_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data, data2) VALUES (1, 'data', NULL)")
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
 

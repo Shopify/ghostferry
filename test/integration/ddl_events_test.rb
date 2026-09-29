@@ -30,7 +30,7 @@ class DdlEventsTest < GhostferryTestCase
     ghostferry = new_ghostferry(DDL_GHOSTFERRY)
 
     ghostferry.on_status(GhostferryHelper::Ghostferry::Status::BINLOG_STREAMING_STARTED) do
-      source_db.query("INSERT INTO #{table_name} VALUES (9000, 'test')")
+      source_db.query("INSERT INTO #{table_name} (id, data) VALUES (9000, 'test')")
       source_db.query("ALTER TABLE #{table_name} ADD INDEX (data(100))")
       source_db.query("INSERT INTO #{table_name} (id, data) VALUES (9001, 'test')")
     end
