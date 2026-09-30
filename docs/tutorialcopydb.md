@@ -12,25 +12,37 @@ be found in [Running `ghostferry-copydb` in production](copydbinprod.md).
 
 ## Setup and Seed MySQL
 
-In this tutorial, we will be using two test databases that we setup locally and
-we will not consider the application. With git, clone the Ghostferry repository
-and create the test MySQL instances:
+In this tutorial, we will be using two disposable test databases that we set up
+locally and we will not consider the application. You need Git, Make, a MySQL
+client, Go 1.26.2 (the `go` directive in `go.mod` is authoritative) and Docker
+or Podman. Clone the Ghostferry repository and start the MySQL 8.0 test
+instances:
 
 ```console
 $ git clone https://github.com/Shopify/ghostferry.git
 $ cd ghostferry
-$ docker-compose up -d mysql-1 mysql-2
+$ docker compose -f docker-compose_8.0.yml up -d mysql-1 mysql-2
 ```
 
-Users without docker-compose can either install it on their machine or manually
-setup two localhost MySQL instances available at port 29291 and 29292 with FULL
-image row based replication.
+With Podman, use `podman-compose -f docker-compose_8.0.yml up -d mysql-1 mysql-2`
+instead. These servers listen on ports 29291 and 29292 and have a `root`
+account without a password. They are throwaway local test servers, not an
+example of production credentials.
 
-Confirm that you can access both MySQL instances with the MySQL console:
+Without Docker or Podman, you can set up two MySQL instances on localhost ports
+29291 and 29292 yourself. Both need binary logging enabled with
+`binlog_format=ROW`, `binlog_row_image=FULL` and
+`binlog_rows_query_log_events=ON`. Ghostferry checks the source's settings
+during initialization; the target needs `binlog_rows_query_log_events=ON`
+because Ghostferry monitors the target's binary log for unexpected writes (see
+[TargetVerifier](verifiers.md#targetverifier)). A dry run does not check every
+target setting.
+
+Wait until both MySQL instances accept connections from the MySQL console:
 
 ```console
-# mysql --protocol=tcp -u root -P 29291
-# mysql --protocol=tcp -u root -P 29292
+$ mysql --protocol=tcp -u root -P 29291 -e 'SELECT 1'
+$ mysql --protocol=tcp -u root -P 29292 -e 'SELECT 1'
 ```
 
 We will be moving data from the 29291 server to the 29292 server. To do this,
@@ -50,7 +62,7 @@ rm /tmp/n1create.sql
 ```
 
 This created two tables under the database `abc`. We will be moving
-`table1` to 29292 while not copying 29291.
+`table1` to 29292 while not copying `abc.table2`.
 
 ## (Mirrors Production) Create Ghostferry Users
 
@@ -75,11 +87,14 @@ On the target server, the minimum permissions required are:
 ```console
 mysql> CREATE USER 'ghostferry'@'%' IDENTIFIED BY 'ghostferry';
 mysql> GRANT INSERT, UPDATE, DELETE, CREATE, SELECT ON *.* TO 'ghostferry'@'%';
+mysql> GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'ghostferry'@'%';
 ```
 
 We grant permission to all databases because we assume that the `abc`
 database does not exist on the target and Ghostferry will create it
-automatically.
+automatically. The replication privileges on the target are needed because, by
+default, Ghostferry streams the target's binary log to detect writes to the
+target that it did not make itself.
 
 ## (Mirrors Production) Install ghostferry-copydb
 
@@ -89,13 +104,23 @@ this server over its network so make sure the production server is
 appropriately picked. For the present tutorial, Ghostferry will simply live on
 the same machine.
 
-To download the latest binaries, you currently have to compile copydb with
-Go 1.9 via `make copydb` after cloning the repository.
+Build ghostferry-copydb from the repository root:
 
-For testing purposes, you can also use [this unofficial PPA](https://launchpad.net/~shuhao/+archive/ubuntu/ghostferry-unofficial) (see
-[this PR](https://github.com/Shopify/ghostferry/pull/15) as well) to obtain a
-version of ghostferry-copydb. Note the unofficial PPA for ghsotferry-copydb is
-not supported and you should not use it in production.
+```console
+$ export GOPATH="$(go env GOPATH)"
+$ export PATH="${GOPATH%%:*}/bin:$PATH"
+$ make copydb
+```
+
+This installs `ghostferry-copydb` into the `bin` directory of the first
+`GOPATH` entry. Run it from the repository root throughout this tutorial: the
+web UI templates are loaded from `webui/` below
+`ControlServerConfig.WebBasedir`, which defaults to the current directory.
+Debian packages instead compile in the base directory `/usr/share/ghostferry`
+and install `webui/` beneath it (the base directory is always the parent of
+`webui/`). Packaged builds are published on the project's
+[GitHub Releases](https://github.com/Shopify/ghostferry/releases) page; most of
+them are prereleases built from `main` or canary tags.
 
 ## (Mirrors Production) Setup Ghostferry Run Configuration
 
@@ -135,11 +160,15 @@ which should look like the following:
     "Blacklist": ["table2"]
   },
 
-  "VerifierType": "ChecksumTable"
+  "VerifierType": "ChecksumTable",
+
+  "ControlServerConfig": {
+    "ServerBindAddr": "127.0.0.1:8000"
+  }
 }
 ```
 
-Save this file to a file called `examplerun.json`.
+Save this file to a file called `examplerun.json` in the repository root.
 
 Note that in the example above, the Collation and charsets are set. If you
 setup your own MySQL instances, you might need to change these values.  We are
@@ -147,10 +176,15 @@ also using the `Whitelist` and `Blacklist` to ensure that we only copy
 `abc.table1` from the source to the target. For more information about this
 configuration file, see [Running `ghostferry-copydb` in production](copydbinprod.md).
 
-Lastly, we have enabled verification to be available to use during the run.
-Specifically, we enabled the ChecksumTable verifier as the amount of data
-copied will be small. For more information about the verifiers, see
-[Verifiers](verifiers.md).
+`ControlServerConfig.ServerBindAddr` limits the web UI to the local machine.
+When it is not configured, the UI listens on `0.0.0.0:8000`, which is reachable
+from other hosts on the network.
+
+Lastly, we have selected a data verifier to be available to use during the
+run. Specifically, we selected the ChecksumTable verifier as the amount of data
+copied will be small. Independently of that choice, Ghostferry monitors the
+target for unexpected writes by default. For more information about the
+verifiers, see [Verifiers](verifiers.md).
 
 ## (Mirrors Production) Validate Ghostferry Configuration
 
@@ -165,72 +199,72 @@ $ ghostferry-copydb -dryrun -verbose examplerun.json
 ```
 
 The verbose flag gives slightly more debug information in case there are any
-issues. In this case, there should not be any issues as we setup the database
-according to the tutorial and the output should be something like this
-(simplified for readibility in the tutorial):
+issues. The exact log wording and fields depend on the configured logging
+backend, but a successful dry run of this tutorial shows:
 
-```text
-[...]
-INFO[0000] connecting to the source database             dsn="ghostferry:<masked>@[...]" tag=ferry
-INFO[0000] connecting to the target database             dsn="ghostferry:<masked>@[...]" tag=ferry
-[...]
-INFO[0000] found binlog position, starting synchronization  file=[...] pos=[...] tag=binlog_streamer
-[...]
-DEBU[0000] loading tables from database                  database=abc tag=table_schema_cache
-DEBU[0000] fetching table schema                         database=abc table=table1 tag=table_schema_cache
-DEBU[0000] fetching table schema                         database=abc table=table2 tag=table_schema_cache
-DEBU[0000] caching table schema                          database=abc table=table1 tag=table_schema_cache
-INFO[0000] table schemas cached                          tables="[abc.table1]" tag=table_schema_cache
-exiting due to dryrun
-```
+- a `table schemas cached` log entry listing only `abc.table1`;
+- binlog streaming starting for both the source and the target connection;
+- `exiting due to dryrun` as the last line on stdout.
 
-Note the last INFO line shows which tables will be moved as we cache their
-schemas in the memory. If there is a table you want to move and it does not
-show up there, it means the whitelist/blacklist configuration is incorrect.
+No tables or rows are copied during a dry run. If a table you want to move is
+not in the cached list, the whitelist/blacklist configuration is incorrect.
 
 ## (Mirrors Production) Starting Ghostferry Run
 
 To start the ghostferry run, simply perform the same command as before except
 without the dryrun flag. You can also turn off the verbose flag, although it
-may be good practise to leave it on and redirect stdout to a file so the move
-can be audited at a later time. We will do this here for good practise:
+may be good practise to leave it on and write the logs to a file so the move
+can be audited at a later time. Run it in its own terminal and use other
+terminals for the MySQL and web UI steps below:
 
 ```console
-$ ghostferry-copydb -verbose examplerun.json 2&>examplerun.log
+$ ghostferry-copydb -verbose examplerun.json >examplerun.log 2>&1
 ```
 
+This command merges stdout and stderr into one log file. If you want to be able
+to resume an interrupted run, stdout must instead be captured separately from
+the logs, as described in
+[Interrupt and resuming `ghostferry-copydb`](copydbinterruptresume.md).
+
 To confirm that Ghostferry indeed copies changes to the source table, we can
-manually insert a row into `abc.table1` during the run
+manually insert a row into `abc.table1` during the run, while the UI shows it
+waiting for cutover:
 
 ```console
-# mysql --protocol=tcp -u root -P 29291
+$ mysql --protocol=tcp -u root -P 29291
 mysql> INSERT INTO abc.table1 (id, data) VALUES (351, "helloworld");
 ```
 
 ## (Mirrors Production) Monitoring Ghostferry Run via Web UI
 
-Once the run starts, a built-in webserver is started at port 8000 by default.
-This can be changed in the configuration json. Simply browse to
-<http://localhost:8000> to view this server and in there you should find controls
-to:
+Once the run starts, the built-in web server listens on the configured
+`ControlServerConfig.ServerBindAddr`. Browse to <http://127.0.0.1:8000> to view
+it; there you should find controls to:
 
-- Pause/Unpause: allows you to pause/unpause the data copy and binlog streaming
-  process.
-- Allow automatic cutover: You should only press this button after you set the
-  source database to read only. In its current implementation, it will simply
-  allow ghostferry-copydb to finish all its processes in a correct manner,
-  assuming that there are no more writes to the source database and all pending
-  writes have been flushed to the binlog. In a future implementation, we may
-  allow external scripts (configured via the json configuration) to be
-  automatically executed with the push of this button so you can perform
-  operations you need to perform during cutover.
-- Run Verification: This button is only available during the Wait-For-Cutover
-  and Done phase of the move. It will run the ChecksumTable verifier we
-  specified earlier ensure the data are identical on the source and target. You
-  should only run this while the source is read only and when the target is not
-  yet written to.
+- Pause/Unpause: pauses/resumes table iteration and the application of binlog
+  events to the target. It does not stop writes to the source, and it does not
+  immediately stop every binlog streamer.
+- Allow Automatic Cutover: lets ghostferry-copydb proceed with cutover once
+  the row copy is complete and the binlog streamer has nearly caught up. It does
+  not stop application writes itself: you must stop writes to the source before
+  pressing it. ghostferry-copydb then records the source's current binlog
+  position, applies the remaining events up to it and stops streaming. The
+  configuration fields `CutoverLock` and `CutoverUnlock` can name HTTP
+  callbacks that copydb calls at the start and at the end of this procedure, and
+  `ControlServerConfig.CustomScripts` adds separate buttons that run scripts on
+  demand. `CutoverUnlock` is called before any operator-triggered final
+  verification, so it does not mean that the data has been verified.
+- Run Verification: shown when the run is neither starting nor copying and no
+  verification is in progress. It runs the ChecksumTable verifier we specified
+  earlier to compare the copied tables on the source and target. Only run it
+  once the source binlog streaming has finished (after cutover), while the
+  source is still read only and before anything else writes to the target.
+  (The Inline verifier's final verification can only be run once and rejects
+  any source binlog events arriving after it started.)
 
-The page will refresh itself every 60 seconds.
+While the run is not done, the page refreshes itself every 60 seconds. Once the
+run is done it no longer refreshes; use the Manual Refresh link to see
+verification progress.
 
 For this tutorial, the run should be very short so thus you might miss most of
 the copying states. Take a look around and refresh a couple times to get
@@ -239,41 +273,58 @@ familiar with the UI.
 ## (Mirrors Production) Perform Cutover
 
 In the default configuration, cutover is triggered manually. During cutover,
-you must stop writes to the data on the source database. For the purpose of
-this tutorial, we will set the source database to read only. Even though we
-have no applications writing to the source in this case, let's do it anyway so
-we get into the habit of thinking of this step:
+you must stop writes to the data on the source database: the application must
+stop its writers and let in-flight transactions finish. For the purpose of this
+tutorial, we lock the source and set it to read only. Even though we have no
+applications writing to the source in this case, let's do it anyway so we get
+into the habit of thinking of this step.
+
+Open a dedicated interactive session and keep it open until the final
+verification below has succeeded; the lock is released when the session ends:
 
 ```console
-# mysql --protocol=tcp -u root -P 29291
-mysql> FLUSH TABLES WITH READ LOCK; -- Ensure all writes are done
-mysql> SET GLOBAL read_only = ON;   -- Sets the database to read only
-mysql> FLUSH BINARY LOGS            -- Ensure all writes are record in binlog
+$ mysql --protocol=tcp -u root -P 29291
+mysql> FLUSH TABLES WITH READ LOCK;
+mysql> SET GLOBAL read_only = ON;
 ```
 
-The last step `FLUSH BINARY LOGS` is not necessarily required if you run your
-MySQL server with `sync_binlog=1`. If you're running Ghostferry from a source
-that is a replica, you need to also turn on the option `RunFerryFromReplica`
-in the config json as well as other options. See
-<https://godoc.org/github.com/Shopify/ghostferry/copydb#Config> for more
-details.
+See the [MySQL `FLUSH TABLES WITH READ LOCK`
+documentation](https://dev.mysql.com/doc/refman/8.0/en/flush.html#flush-tables-with-read-lock)
+for what the lock does and does not block. Ghostferry does not need a
+`FLUSH BINARY LOGS`: that statement only rotates the binary log. When cutover
+starts, Ghostferry reads the source's current binlog position and applies all
+events up to it. In production, account for privileged writers, replication
+and the application's own write paths rather than relying on this tutorial's
+procedure alone.
+
+If you run Ghostferry from a source that is a replica, you need to set
+`RunFerryFromReplica` together with `SourceReplicationMaster` and
+`ReplicatedMasterPositionQuery` in the config json. See
+[Running `ghostferry-copydb` in production](copydbinprod.md) and
+<https://pkg.go.dev/github.com/Shopify/ghostferry/copydb#Config> for more
+details (the API documentation is versioned; the source in this repository is
+authoritative for `main`).
 
 We can then go back to the web ui and click the Allow Automatic Cutover button.
 In a second or two the ghostferry binlog streaming process should stop. Refresh
-the page until you see the state to be DONE.
+the page until you see the state to be done. Done means that copying and
+binlog streaming have completed; it does not mean that the final verification
+has passed. The process and its web UI keep running.
 
 ## (Mirrors Production) Verify Source and Target Data are Identical
 
-At this point, the data on the source and target should be identical. To
-confirm this is the case, click the Run Verification button in the web ui to
-perform the verification in the background. Refresh the page a couple of times
-until it tells you the verification was successful.
+ghostferry-copydb does not run the final verification automatically. With the
+source still locked, click the Run Verification button in the web ui to perform
+the verification in the background. Use Manual Refresh until Verified Correct
+shows `true` and no error is reported. Only after that should applications be
+allowed to write to the target. Verified Correct covers the tables and columns
+the selected verifier compares; see [Verifiers](verifiers.md) for its limits.
 
 Additionally, since we manually inserted a row earlier, we should be able to
 find it via:
 
 ```console
-# mysql --protocol=tcp -u root -P 29292
+$ mysql --protocol=tcp -u root -P 29292
 mysql> SELECT * FROM abc.table1 WHERE id = 351;
 ```
 
@@ -283,6 +334,17 @@ At this point, the data on the source and target are verified identical and
 Ghostferry will no longer propagate data from 29291 to 29292. In a production
 situation, you can now notify all applications using the source database to use
 the target database.
+
+Because the servers are disposable local fixtures, restore the source in the
+session that still holds the lock:
+
+```console
+mysql> UNLOCK TABLES;
+mysql> SET GLOBAL read_only = OFF;
+```
+
+Do not copy this step into a production cutover: there, the old source should
+stay closed to application writes once they have moved to the target.
 
 The control server UI will stay up indefinitely. To stop it, simply press
 CTRL+C to interrupt the ghostferry-copydb process.

@@ -15,15 +15,19 @@ database from one machine to another.
 Talk to us on IRC at [irc.freenode.net #ghostferry](https://webchat.freenode.net/?channels=#ghostferry).
 
 - **Tutorial and General Documentations**: https://shopify.github.io/ghostferry
-- Code documentations: https://godoc.org/github.com/Shopify/ghostferry
+- Code documentations: https://pkg.go.dev/github.com/Shopify/ghostferry
+  (versioned API docs; for guides tracking `main`, the source in this
+  repository is authoritative)
 
 Overview of How it Works
 ------------------------
 
-An overview of Ghostferry's high-level design is expressed in the [TLA+
-specification](https://en.wikipedia.org/wiki/TLA%2B), under the `tlaplus` directory. It may be good to consult with
-that as it has a concise definition. However, the specification might not be
-entirely correct as proofs remain elusive.
+A simplified model of Ghostferry's high-level copy algorithm is written in
+[TLA+](https://en.wikipedia.org/wiki/TLA%2B) under the `tlaplus` directory,
+together with a TLC model configuration in `tlaplus/ghostferry.toolbox`. It is
+a small finite model with explicitly stated simplifying assumptions (see the
+comment at the top of `tlaplus/ghostferry.tla`); model checking it is not a
+proof of correctness of the current Go implementation.
 
 On a high-level, Ghostferry is broken into several components, enabling it to
 copy data. This is documented at
@@ -52,10 +56,32 @@ The build writes the site to `build/docs/`; `htmlproofer` fails on broken
 internal links or anchors. The live preview is served at
 http://127.0.0.1:4000/ghostferry/main/. None of these commands deploy anything.
 
+The [Changelog](docs/changelog.md) page is populated at build time from the
+root `CHANGELOG.md`, which is the only file to edit for release notes;
+`docs/changelog.md` is just a landing page for readers browsing the source on
+GitHub. Build and serve with the commands above. The Jekyll watcher only
+watches `docs/`, so restart `dev docs` / `jekyll serve` after editing the root
+`CHANGELOG.md`.
+
 Development Setup
 -----------------
 
 ### Installation
+
+#### Prerequisites
+
+- Go 1.26.2 (the `go` directive in `go.mod` is authoritative), Git, Make and
+  a MySQL client, to build and run `ghostferry-copydb`.
+- For the tests and the documentation site additionally: Ruby 3.4.8
+  (`.ruby-version`), Bundler 4.0.10 (`Gemfile.lock`), a C compiler toolchain
+  and the MySQL client development libraries needed to compile the `mysql2`
+  gem. Run `bundle install` without excluding the test, development or docs
+  groups; `test/test_helper.rb` loads `pry-byebug` from the development group
+  unless `CI` is set.
+- Docker (or Podman with `podman-compose`) for the local MySQL servers.
+
+`shell.nix` is legacy: it still selects Go 1.18 and Ruby 2.7 and is not a
+supported setup.
 
 #### For Internal Contributors
 
@@ -63,13 +89,44 @@ Development Setup
 
 #### For External Contributors
 
-- Have Docker installed
-- Clone the repo
-- `docker-compose up -d`
-- `nix-shell`
+Start two disposable MySQL 8.0 servers from the repository root:
+
+```sh
+docker compose -f docker-compose_8.0.yml up -d mysql-1 mysql-2
+# or: podman-compose -f docker-compose_8.0.yml up -d mysql-1 mysql-2
+```
+
+They listen on ports 29291 (source) and 29292 (target) with a passwordless
+`root` account. They are throwaway test servers, not a template for production
+credentials. Wait until both accept connections:
+
+```sh
+mysql --protocol=tcp -u root -P 29291 -e 'SELECT 1'
+mysql --protocol=tcp -u root -P 29292 -e 'SELECT 1'
+```
+
+Build `ghostferry-copydb` into the first `GOPATH` entry's `bin` directory:
+
+```sh
+export GOPATH="$(go env GOPATH)"
+export PATH="${GOPATH%%:*}/bin:$PATH"
+make copydb
+```
+
+Run the binary from the repository root: its web UI templates are loaded from
+`webui/` below `ControlServerConfig.WebBasedir`, which defaults to `.`.
+Debian packages built by `make copydb-deb` instead compile in the base
+directory `/usr/share/ghostferry` and install `webui/` beneath it; like `.`
+for source builds, the base directory is the parent of `webui/`, not the
+`webui` directory itself. Packaged builds are published on the project's
+[GitHub Releases](https://github.com/Shopify/ghostferry/releases) page; most
+of them are prereleases (see [Releasing new version](#releasing-new-version)).
 
 Testing
 ---------------
+
+Export `MYSQL_VERSION=8.0` when running tests against the MySQL 8.0 servers
+above.
 
 #### Run all tests
 
@@ -77,9 +134,22 @@ Testing
 
 #### Run example copydb usage
 
-- `make copydb && ghostferry-copydb -verbose examples/copydb/conf.json`
-- For a more detailed tutorial, see the
-  [documentation](https://shopify.github.io/ghostferry).
+`examples/copydb/conf.json` copies the `abc` database created by the
+[copydb tutorial](docs/tutorialcopydb.md): seed the source with the tutorial's
+SQL first, and make sure the target has no `abc` tables for a fresh run. Then,
+from the repository root:
+
+```sh
+ghostferry-copydb -verbose examples/copydb/conf.json
+```
+
+This example uses the `Inline` verifier, binds the UI to
+`127.0.0.1:8000` and adds two Custom Script buttons. It sets
+`"SkipTargetVerification": true`, which disables target-write monitoring; the
+tutorial intentionally keeps the protected default.
+
+For a more detailed walkthrough, see the
+[documentation](https://shopify.github.io/ghostferry).
 
 ### Ruby Integration Tests
 
@@ -92,19 +162,19 @@ Examples:
 
 Run all tests
 
-`rake test`
+`bundle exec rake test`
 
 Run a single file
 
-`rake test TEST=test/integration/trivial_test.rb`
+`bundle exec rake test TEST=test/integration/trivial_test.rb`
 
 or
 
-`ruby -Itest test/integration/trivial_test.rb`
+`bundle exec ruby -Itest test/integration/trivial_test.rb`
 
 Run a specific test
 
-`DEBUG=1 ruby -Itest test/integration/trivial_test.rb -n "TrivialIntegrationTest#test_logged_query_omits_columns"`
+`DEBUG=1 bundle exec ruby -Itest test/integration/trivial_test.rb -n 'TrivialIntegrationTest#test_logged_query_omits_columns'`
 
 Releasing new version
 ---------------------
@@ -118,10 +188,12 @@ git tag --sign --message="Initial support for UUIDs as pagination keys" canary/v
 git push origin --tags
 ```
 
-This will create the release named by tag.
+This creates a GitHub prerelease named after the tag.
 
 ### Production
 
-Final releases are created automatically on merge to `main` branch, they will end up with `release-SHA` name.
+Every push to the `main` branch creates a GitHub **prerelease** named
+`release-<first seven characters of the commit SHA>`.
 
-Remember to update version prior to bigger releases in `Makefile` along with updating the `CHANGELOG.md`.
+Remember to update `VERSION` in `Makefile` along with the root `CHANGELOG.md`
+prior to releases.

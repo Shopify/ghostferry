@@ -25,7 +25,7 @@ File.open("studies/batch_size_benchmark.csv", "w") do |f|
       FileUtils.mkdir_p(output_dir)
 
       config = GhostferryBenchmark.default_ghostferry_config
-      config["DataIterationBatchSize"] = batch_size
+      config["UpdatableConfig"]["DataIterationBatchSize"] = batch_size
 
       GhostferryBenchmark::Databases.wipe_target
       speed = GhostferryBenchmark.run_ghostferry(ghostferry_config: config, output_dir: output_dir)
