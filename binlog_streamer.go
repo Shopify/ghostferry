@@ -31,6 +31,11 @@ type BinlogStreamer struct {
 	ErrorHandler ErrorHandler
 	Filter       CopyFilter
 
+	// SchemaChangeDetector, when set, intercepts row events for tables in
+	// transition (skipping them before NewBinlogDMLEvents would crash on a
+	// column-count mismatch) and receives DDL QueryEvents.
+	SchemaChangeDetector *SchemaChangeDetector
+
 	TableSchema TableSchemaCache
 	LogTag      string
 
@@ -420,6 +425,17 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 
 	tableFromSchemaCache := s.TableSchema.Get(db, table)
 	if tableFromSchemaCache == nil {
+		return nil
+	}
+
+	// Drop row events for tables mid-schema-change before parsing. Parsing
+	// would call into NewBinlogDMLEvents which panics when the row column
+	// count diverges from the cached schema — exactly what happens during a
+	// transition.
+	if s.SchemaChangeDetector != nil && s.SchemaChangeDetector.IsInTransition(db, table) {
+		metrics.Count("BinlogStreamer.SkippedRowsEventForDDL", 1, []MetricTag{
+			{"table", table},
+		}, 1.0)
 		return nil
 	}
 

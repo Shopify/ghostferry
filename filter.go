@@ -23,6 +23,12 @@ type CopyFilter interface {
 	// otherwise.
 	// Returning an error here will cause the ferry to be aborted.
 	ApplicableEvent(DMLEvent) (bool, error)
+
+	// BuildDelete returns a DELETE query scoped to the same subset of rows the
+	// filter selects from BuildSelect. It is invoked when automatic DDL
+	// handling clears the target rows for a table that needs recopy after a
+	// schema change. Returning an error aborts the ferry.
+	BuildDelete(*TableSchema) (sq.DeleteBuilder, error)
 }
 
 type TableFilter interface {

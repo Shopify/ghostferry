@@ -257,6 +257,18 @@ func (s *StateTracker) IsTableComplete(table string) bool {
 	return s.completedTables[table]
 }
 
+// ResetTable wipes any persisted progress for a table so the next iteration
+// starts from the beginning. Used by automatic DDL handling when a table is
+// re-queued after a schema change.
+func (s *StateTracker) ResetTable(table string) {
+	s.CopyRWMutex.Lock()
+	defer s.CopyRWMutex.Unlock()
+
+	delete(s.completedTables, table)
+	delete(s.lastSuccessfulPaginationKeys, table)
+	delete(s.rowStatsWrittenPerTable, table)
+}
+
 // This is reasonably accurate if the rows copied are distributed uniformly
 // between paginationKey = 0 -> max(paginationKey). It would not be accurate if the distribution is
 // concentrated in a particular region.

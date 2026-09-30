@@ -20,6 +20,7 @@ import (
 	_ "net/http/pprof"
 
 	siddontangmysql "github.com/go-mysql-org/go-mysql/mysql"
+	"github.com/go-mysql-org/go-mysql/replication"
 	"github.com/go-sql-driver/mysql"
 )
 
@@ -64,6 +65,13 @@ type Ferry struct {
 
 	DataIterator *DataIterator
 	BatchWriter  *BatchWriter
+
+	// SchemaChangeDetector is non-nil when Config.AutomaticDDLHandling is set.
+	// It owns the state machine that lets the ferry tolerate DDL on either
+	// source or target during an active migration.
+	SchemaChangeDetector *SchemaChangeDetector
+	TargetBinlogTail     *TargetBinlogTail
+	ddlTraceFile         *os.File
 
 	StateTracker                       *StateTracker
 	ErrorHandler                       ErrorHandler
@@ -114,6 +122,13 @@ func (f *Ferry) NewDataIterator() *DataIterator {
 
 	if f.CopyFilter != nil {
 		dataIterator.CursorConfig.BuildSelect = f.CopyFilter.BuildSelect
+	}
+
+	// Propagate the schema-change detector so standalone data copies (delta
+	// joined-table copy, primary-key table copy at cutover) also abort
+	// cleanly on column drift instead of crashing with "Unknown column ...".
+	if f.SchemaChangeDetector != nil {
+		dataIterator.TransitionChecker = f.SchemaChangeDetector
 	}
 
 	return dataIterator
@@ -559,6 +574,54 @@ func (f *Ferry) Initialize() (err error) {
 		}
 	}
 
+	if f.Config.AutomaticDDLHandling {
+		transitionTimeout := f.Config.SchemaChangeTransitionTimeout
+		if transitionTimeout == 0 {
+			transitionTimeout = 24 * time.Hour
+		}
+
+		detector := NewSchemaChangeDetector(f.SourceDB, f.TargetDB, f.Tables)
+		detector.CopyFilter = f.Config.CopyFilter
+		detector.RecopyTrigger = f.DataIterator
+		detector.Verifier = f.inlineVerifier
+		detector.Throttler = f.Throttler
+		detector.StateTracker = f.StateTracker
+		detector.ErrorHandler = f.ErrorHandler
+		detector.TransitionTimeout = transitionTimeout
+		detector.CascadingPaginationColumnConfig = f.Config.CascadingPaginationColumnConfig
+		detector.DatabaseRewrites = f.Config.DatabaseRewrites
+		detector.TableRewrites = f.Config.TableRewrites
+		detector.Init()
+
+		if err := detector.PreflightCheck(f.Tables.AsSlice()); err != nil {
+			return err
+		}
+
+		if f.Config.DDLTraceFile != "" {
+			tf, err := os.OpenFile(f.Config.DDLTraceFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+			if err != nil {
+				return fmt.Errorf("open DDLTraceFile %s: %w", f.Config.DDLTraceFile, err)
+			}
+			detector.TraceWriter = tf
+			f.ddlTraceFile = tf
+			f.logger.WithField("path", f.Config.DDLTraceFile).Info("DDL trace file opened")
+		}
+
+		f.SchemaChangeDetector = detector
+		f.BinlogStreamer.SchemaChangeDetector = detector
+		f.DataIterator.TransitionChecker = detector
+		f.DataIterator.Tracer = detector
+		if f.inlineVerifier != nil {
+			f.inlineVerifier.QuiescenceChecker = detector
+		}
+		f.TargetBinlogTail = &TargetBinlogTail{
+			DB:           f.TargetDB,
+			DBConfig:     f.Config.Target,
+			ErrorHandler: f.ErrorHandler,
+			OnDDL:        detector.OnTargetDDL,
+		}
+	}
+
 	f.logger.Info("ferry initialized")
 	return nil
 }
@@ -581,6 +644,36 @@ func (f *Ferry) Start() error {
 
 	if f.inlineVerifier != nil {
 		f.BinlogStreamer.AddEventListener(f.inlineVerifier.binlogEventListener)
+	}
+
+	if f.SchemaChangeDetector != nil {
+		// Hand source-side DDL QueryEvents to the detector. The handler is
+		// invoked from the binlog streamer's read loop so it must remain
+		// non-blocking — handleDDL kicks the convergence check onto its own
+		// goroutine.
+		err := f.BinlogStreamer.AddBinlogEventHandler(replication.QUERY_EVENT,
+			func(ev *replication.BinlogEvent, query []byte, es *BinlogEventState) ([]byte, error) {
+				qe, ok := ev.Event.(*replication.QueryEvent)
+				if !ok {
+					return query, nil
+				}
+				if !IsDDLQuery(qe.Query) {
+					return query, nil
+				}
+				stmt := ParseDDLFromQueryEvent(qe)
+				if stmt == nil {
+					return query, nil
+				}
+				f.SchemaChangeDetector.OnSourceDDL(stmt)
+				return query, nil
+			})
+		if err != nil {
+			return err
+		}
+
+		// Bridge DataIterator table completions into the detector so it can
+		// flip Recopying → Normal once a re-iteration finishes.
+		f.DataIterator.AddTableCompletionListener(f.SchemaChangeDetector.OnTableIterationComplete)
 	}
 
 	// The starting binlog coordinates must be determined first. If it is
@@ -633,6 +726,12 @@ func (f *Ferry) Run() {
 	f.logger.Info("starting ferry run")
 	f.OverallState.Store(StateCopying)
 
+	defer func() {
+		if f.ddlTraceFile != nil {
+			_ = f.ddlTraceFile.Close()
+		}
+	}()
+
 	if f.Config.EnablePProf {
 		go func() {
 			err := http.ListenAndServe("localhost:6060", nil)
@@ -657,6 +756,22 @@ func (f *Ferry) Run() {
 		defer supportingServicesWg.Done()
 		handleError("throttler", f.Throttler.Run(ctx))
 	}()
+
+	if f.SchemaChangeDetector != nil {
+		supportingServicesWg.Add(1)
+		go func() {
+			defer supportingServicesWg.Done()
+			f.SchemaChangeDetector.RunTimeoutChecker(ctx)
+		}()
+
+		if f.TargetBinlogTail != nil {
+			supportingServicesWg.Add(1)
+			go func() {
+				defer supportingServicesWg.Done()
+				handleError("target_binlog_tail", f.TargetBinlogTail.Run(ctx))
+			}()
+		}
+	}
 
 	if f.Config.ControlServerConfig.Enabled {
 		go f.ControlServer.Run()
@@ -767,6 +882,19 @@ func (f *Ferry) Run() {
 	f.logger.Info("data copy is complete, waiting for cutover")
 	f.OverallState.Store(StateWaitingForCutover)
 	f.waitUntilAutomaticCutoverIsTrue()
+
+	// Block before any cutover work runs until every table is back in
+	// StateNormal. If a schema-change recopy is mid-flight (DELETE on target
+	// done but re-iteration not yet complete), running VerifyBeforeCutover
+	// against it would surface a checksum mismatch the recopy is about to
+	// fix. AwaitAllNormal honors TransitionTimeout so a stuck transition
+	// surfaces here rather than hanging cutover indefinitely.
+	if f.SchemaChangeDetector != nil {
+		if err := f.SchemaChangeDetector.AwaitAllNormal(); err != nil {
+			f.logger.WithError(err).Error("schema-change drain failed before cutover")
+			f.ErrorHandler.Fatal("schema_change_detector", err)
+		}
+	}
 
 	if f.inlineVerifier != nil {
 		// Stops the periodic verification of binlogs in the inline verifier
@@ -1005,7 +1133,16 @@ func (f *Ferry) Progress() *Progress {
 		tableName := table.String()
 		lastSuccessfulPaginationKeyInterface, foundInProgress := serializedState.LastSuccessfulPaginationKeys[tableName]
 
-		if serializedState.CompletedTables[tableName] {
+		// Detector overrides the default action while a DDL transition is in
+		// flight so shop-mover (and any other consumer of move.stats) can see
+		// "clearing_for_recopy" / "awaiting_ddl_convergence" / "recopying"
+		// instead of stale "completed" or premature "waiting".
+		if override := f.SchemaChangeDetector.TableAction(table.Schema, table.Name); override != "" {
+			currentAction = override
+			if override == TableActionRecopying {
+				s.ActiveDataIterators += 1
+			}
+		} else if serializedState.CompletedTables[tableName] {
 			currentAction = TableActionCompleted
 		} else if foundInProgress {
 			currentAction = TableActionCopying
@@ -1054,6 +1191,12 @@ func (f *Ferry) Progress() *Progress {
 	return s
 }
 
+// callbackHTTPClient bounds the per-call wait so a slow or hung callback
+// receiver cannot wedge the reporter goroutine indefinitely. Without this,
+// a single hung POST stalls all subsequent state/progress callbacks, and
+// shop-mover's stall watchdog fires because no further updates arrive.
+var callbackHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
 func (f *Ferry) ReportProgress() {
 	callback := f.Config.ProgressCallback // make a copy as we need to set the Payload.
 	progress := f.Progress()
@@ -1064,7 +1207,7 @@ func (f *Ferry) ReportProgress() {
 	}
 
 	callback.Payload = string(data)
-	err = callback.Post(&http.Client{})
+	err = callback.Post(callbackHTTPClient)
 	if err != nil {
 		f.logger.WithError(err).Warn("failed to post status, but that's probably okay")
 	}
@@ -1081,7 +1224,7 @@ func (f *Ferry) ReportState() {
 	}
 
 	callback.Payload = string(state)
-	err = callback.Post(&http.Client{})
+	err = callback.Post(callbackHTTPClient)
 	if err != nil {
 		f.logger.WithError(err).Errorf("failed to post state to callback %s", callback.URI)
 	}

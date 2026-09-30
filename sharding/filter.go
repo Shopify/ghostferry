@@ -139,6 +139,31 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 		OrderBy(quotedPaginationKey), nil // LIMIT comes from the subquery.
 }
 
+func (f *ShardedCopyFilter) BuildDelete(table *ghostferry.TableSchema) (sq.DeleteBuilder, error) {
+	quotedTable := ghostferry.QuotedTableName(table)
+
+	// Joined tables are reference-counted/copy-on-write rows shared across
+	// shards. Deleting them based on this shard's view would corrupt other
+	// shards' data on the same target, so refuse — the detector falls back to
+	// an INSERT IGNORE recopy that leaves stale rows alone (acceptable since
+	// joined-table rows are immutable by contract).
+	if _, exists := f.JoinedTables[table.Name]; exists {
+		return sq.DeleteBuilder{}, fmt.Errorf("BuildDelete is not supported for joined table %s", table.Name)
+	}
+
+	if _, exists := f.PrimaryKeyTables[table.Name]; exists {
+		// PrimaryKeyTables hold one row per shard keyed by the pagination
+		// column (which IS the sharding key here).
+		quotedPaginationKey := "`" + table.GetPaginationColumn().Name + "`"
+		return sq.Delete(quotedTable).
+			Where(sq.Eq{quotedPaginationKey: f.ShardingValue}), nil
+	}
+
+	quotedShardingKey := "`" + f.ShardingKey + "`"
+	return sq.Delete(quotedTable).
+		Where(sq.Eq{quotedShardingKey: f.ShardingValue}), nil
+}
+
 func (f *ShardedCopyFilter) shardingKeyIndexHint(table *ghostferry.TableSchema, indexHint string) string {
 	indexName := f.shardingKeyIndexName(table)
 

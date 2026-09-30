@@ -5,9 +5,12 @@ import (
 )
 
 const (
-	TableActionWaiting   = "waiting"
-	TableActionCopying   = "copying"
-	TableActionCompleted = "completed"
+	TableActionWaiting                = "waiting"
+	TableActionCopying                = "copying"
+	TableActionCompleted              = "completed"
+	TableActionAwaitingDDLConvergence = "awaiting_ddl_convergence"
+	TableActionClearingForRecopy      = "clearing_for_recopy"
+	TableActionRecopying              = "recopying"
 )
 
 type TableProgress struct {

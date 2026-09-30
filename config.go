@@ -808,6 +808,32 @@ type Config struct {
 	// Optional: defaults to "info"
 	LogLevel string
 
+	// AutomaticDDLHandling, when true, makes Ghostferry tolerate schema
+	// changes on either source or target during an active migration. The
+	// schema-change detector watches DDL on both sides; when source and
+	// target converge on a new schema for a migrated table, target rows for
+	// that table are wiped (scoped via CopyFilter.BuildDelete or TRUNCATE)
+	// and the table is re-iterated from source's current state. Other
+	// tables continue uninterrupted. Defaults to false (preserves current
+	// crash-on-DDL behavior).
+	AutomaticDDLHandling bool
+
+	// SchemaChangeTransitionTimeout bounds how long a single table may sit
+	// in transition (waiting for source/target to converge) before
+	// Ghostferry aborts. Only used when AutomaticDDLHandling is true.
+	//
+	// Optional: defaults to 24h.
+	SchemaChangeTransitionTimeout time.Duration
+
+	// DDLTraceFile, when non-empty, makes the schema-change detector append
+	// one structured line per decision (OnSourceDDL, affectedMigratedTables,
+	// state transition, checkConvergence, recopy steps, RequeueTable start,
+	// iterateTable completion, OnTableIterationComplete). Intended for
+	// diagnosing why a recopy did or did not fire — the file stays small
+	// (one short line per decision) so it can be cat'd from a rails console
+	// after the move. Only used when AutomaticDDLHandling is true.
+	DDLTraceFile string
+
 	// ----------------------------------------------------------------------------------------------------------------
 	// Updatable config
 	// The following configs are updatable via the `Config.Update` method and should be passed by pointer
