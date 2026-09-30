@@ -52,6 +52,10 @@ jobs:
     env:
       CI: "true"
       MYSQL_VERSION: ${{ matrix.mysql }}
+      # Emit full goroutine stacks (all goroutines, not just the crashing one)
+      # when the test binary panics or times out.  This is the primary
+      # diagnostic for stuck / deadlocked tests.
+      GOTRACEBACK: all
 
     steps:
       - uses: actions/checkout@v6.0.2

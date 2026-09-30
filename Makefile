@@ -64,8 +64,8 @@ test-go:
 		curl -sL $(GOTESTSUM_URL) | tar -xz -C ./bin gotestsum; \
 	fi
 
-	ulimit -n 1024 && ./bin/gotestsum --format short-verbose ./test/go ./copydb/test ./sharding/test -count 1 -p 1 -failfast
-	go test -v
+	ulimit -n 1024 && ./bin/gotestsum --format short-verbose ./test/go ./copydb/test ./sharding/test -count 1 -p 1 -failfast -timeout 5m
+	go test -v -timeout 5m
 
 test-ruby:
 	bundle install

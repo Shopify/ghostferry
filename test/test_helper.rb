@@ -25,6 +25,7 @@ helpers_path   = File.join(test_path, "helpers")
 require "db_helper"
 require "ghostferry_helper"
 require "data_writer_helper"
+require "blocking_gate_helper"
 
 Minitest::Reporters.use! Minitest::Reporters::SpecReporter.new
 Minitest::Retry.use!(exceptions_to_retry: [GhostferryHelper::Ghostferry::TimeoutError])
@@ -66,8 +67,17 @@ class GhostferryTestCase < Minitest::Test
   include GhostferryHelper
   include DbHelper
   include DataWriterHelper
+  include BlockingGateHelper
 
   MINIMAL_GHOSTFERRY = "minimal_ghostferry"
+
+  # Wall-clock budget for a single integration test, independent of the
+  # Ghostferry idle-message watchdog. This catches hangs that happen *outside*
+  # of an active Ghostferry#run, such as a wedged teardown or datawriter join.
+  # On timeout the watchdog dumps Ruby thread backtraces, asks every tracked
+  # Ghostferry subprocess for a goroutine dump (SIGQUIT), and exits the process
+  # so CI fails fast with diagnostics instead of waiting for the job timeout.
+  TEST_WALL_CLOCK_TIMEOUT = Integer(ENV.fetch("GHOSTFERRY_TEST_TIMEOUT", "240"))
 
   def new_ghostferry(filepath, config: {})
     # Transform path to something ruby understands
@@ -129,9 +139,13 @@ class GhostferryTestCase < Minitest::Test
 
     # Same thing with DataWriter as above
     @datawriter_instances = []
+
+    start_test_watchdog
   end
 
   def after_teardown
+    stop_test_watchdog
+
     @ghostferry_instances.each do |ghostferry|
       ghostferry.kill
     end
@@ -143,6 +157,66 @@ class GhostferryTestCase < Minitest::Test
     @log_capturer.print_output if self.failure
     @log_capturer.reset
     super
+  end
+
+  # Starts a background thread that fires after TEST_WALL_CLOCK_TIMEOUT and,
+  # if the test has not finished, dumps diagnostics and terminates the process.
+  # Covers hangs anywhere in the test lifecycle, including setup, teardown,
+  # datawriter joins, and DB queries -- not just inside Ghostferry#run.
+  def start_test_watchdog
+    # A Queue is used purely as a blocking, interruptible timer: the watchdog
+    # thread blocks on pop with a timeout. stop_test_watchdog pushes a token to
+    # release it cleanly. This avoids ConditionVariable timeout subtleties and
+    # captures everything as locals so there is no cross-test ivar aliasing.
+    done_queue = Thread::Queue.new
+    @test_watchdog_done_queue = done_queue
+    test_name = "#{self.class.name}##{self.name}"
+    timeout = TEST_WALL_CLOCK_TIMEOUT
+    ghostferry_instances = @ghostferry_instances
+    log_capturer = @log_capturer
+
+    @test_watchdog_thread = Thread.new do
+      # Thread::Queue#pop(timeout:) returns the pushed value on release, or nil
+      # when the timeout elapses (Ruby 3.2+). A non-nil value means
+      # stop_test_watchdog released us, so we exit quietly. nil means the test
+      # overran its wall-clock budget and we should fire.
+      token = done_queue.pop(timeout: timeout)
+      Thread.exit unless token.nil?
+
+      $stderr.puts("\n=== GHOSTFERRY TEST WATCHDOG FIRED ===")
+      $stderr.puts("Test #{test_name.inspect} exceeded #{timeout}s.")
+
+      Array(ghostferry_instances).each do |ghostferry|
+        begin
+          ghostferry.diagnose!("test_watchdog: #{test_name}")
+        rescue StandardError => e
+          $stderr.puts("failed to diagnose ghostferry instance: #{e.class}: #{e.message}")
+        end
+      end
+
+      $stderr.puts("--- all ruby thread backtraces ---")
+      Thread.list.each do |t|
+        $stderr.puts("thread #{t.object_id} status=#{t.status.inspect}")
+        (t.backtrace || []).each { |line| $stderr.puts("    #{line}") }
+      end
+      $stderr.puts("=== END GHOSTFERRY TEST WATCHDOG ===\n")
+      $stderr.flush
+
+      # Give the Go child a moment to flush its goroutine dump before we exit.
+      sleep 2
+      log_capturer.print_output
+      $stderr.flush
+      exit!(1)
+    end
+  end
+
+  def stop_test_watchdog
+    return unless @test_watchdog_thread
+
+    @test_watchdog_done_queue&.push(:done)
+    @test_watchdog_thread.join(5)
+    @test_watchdog_thread = nil
+    @test_watchdog_done_queue = nil
   end
 
   def on_term

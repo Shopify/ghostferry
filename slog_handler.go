@@ -2,7 +2,9 @@ package ghostferry
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"reflect"
 )
 
 // loggerSlogHandler implements slog.Handler on top of a ghostferry Logger.
@@ -99,7 +101,98 @@ func applySlogAttrToLogger(l Logger, a slog.Attr, prefix string) Logger {
 	if a.Key == "" {
 		return l
 	}
-	return l.WithField(joinSlogPrefix(prefix, a.Key), a.Value.Any())
+	return l.WithField(joinSlogPrefix(prefix, a.Key), safeFieldValue(a.Value.Any()))
+}
+
+// safeFieldValue returns a value safe to hand to a structured-logging backend.
+//
+// Some third-party libraries log values that cannot be JSON-encoded. For
+// example, go-mysql's BinlogSyncer logs its entire config via
+// slog.Any("config", cfg), and that config contains func fields
+// (Option func(*client.Conn) error, Dialer). logrus's JSON formatter calls
+// json.Marshal on each field and fails on such values, printing
+// "Failed to obtain reader, failed to marshal fields to JSON, json:
+// unsupported type: func(*client.Conn) error" to stderr for every binlog
+// syncer created — which floods the test logs.
+//
+// To stay backend-agnostic, any value that contains an unmarshalable kind
+// (func, chan, or unsafe.Pointer) is rendered to a string via fmt instead of
+// being passed through as a live Go value. Ordinary values are returned
+// unchanged so normal structured fields are unaffected.
+func safeFieldValue(v any) any {
+	if v == nil {
+		return nil
+	}
+	if containsUnmarshalableKind(reflect.ValueOf(v), 0) {
+		return fmt.Sprintf("%+v", v)
+	}
+	return v
+}
+
+// containsUnmarshalableKind reports whether v contains a func, chan, or
+// unsafe.Pointer anywhere in its (possibly nested) structure. It guards
+// against unbounded recursion with a depth limit and treats anything beyond it
+// as unmarshalable so the value is stringified rather than risk a marshal
+// failure.
+func containsUnmarshalableKind(v reflect.Value, depth int) bool {
+	if !v.IsValid() {
+		return false
+	}
+	if depth > 8 {
+		return true
+	}
+
+	switch v.Kind() {
+	case reflect.Func, reflect.Chan, reflect.UnsafePointer:
+		return true
+	case reflect.Ptr, reflect.Interface:
+		if v.IsNil() {
+			return false
+		}
+		return containsUnmarshalableKind(v.Elem(), depth+1)
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			if containsUnmarshalableKind(v.Field(i), depth+1) {
+				return true
+			}
+		}
+		return false
+	case reflect.Slice, reflect.Array:
+		elem := v.Type().Elem()
+		if isUnmarshalableType(elem) {
+			return true
+		}
+		for i := 0; i < v.Len(); i++ {
+			if containsUnmarshalableKind(v.Index(i), depth+1) {
+				return true
+			}
+		}
+		return false
+	case reflect.Map:
+		if isUnmarshalableType(v.Type().Elem()) || isUnmarshalableType(v.Type().Key()) {
+			return true
+		}
+		for _, k := range v.MapKeys() {
+			if containsUnmarshalableKind(v.MapIndex(k), depth+1) {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
+}
+
+// isUnmarshalableType reports whether a type is (or trivially contains) a kind
+// that cannot be JSON-encoded. Used to short-circuit empty containers whose
+// element type alone makes them unsafe.
+func isUnmarshalableType(t reflect.Type) bool {
+	switch t.Kind() {
+	case reflect.Func, reflect.Chan, reflect.UnsafePointer:
+		return true
+	default:
+		return false
+	}
 }
 
 // joinSlogPrefix concatenates prefix and key with a dot, eliding the dot when

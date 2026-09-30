@@ -173,14 +173,23 @@ class InterruptResumeTest < GhostferryTestCase
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
 
+    # Block the DataIterator (in AFTER_ROW_COPY) so it doesn't race with the
+    # term_and_wait_for_exit in AFTER_BINLOG_APPLY below. The gate is released
+    # by AFTER_BINLOG_APPLY before it terminates the process, so the blocked
+    # handler returns cleanly. If AFTER_BINLOG_APPLY never fires (an ordering
+    # race), the gate times out and fails the test instead of hanging the suite
+    # forever and letting the Go child hit its HTTP timeout.
+    iterator_gate = blocking_gate(label: "AFTER_ROW_COPY waiting for AFTER_BINLOG_APPLY")
+
     i = 0
     ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
-      sleep if i >= 1 # block the DataIterator so it doesn't race with the term_and_wait_for_exit below.
+      iterator_gate.wait if i >= 1
       source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (#{chosen_id}, 'data')")
       i += 1
     end
 
     ghostferry.on_status(Ghostferry::Status::AFTER_BINLOG_APPLY) do
+      iterator_gate.release
       ghostferry.term_and_wait_for_exit
     end
 
@@ -217,6 +226,14 @@ class InterruptResumeTest < GhostferryTestCase
     result = source_db.query("SELECT MIN(id) FROM #{DEFAULT_FULL_TABLE_NAME}")
     chosen_id = result.first["MIN(id)"] + 1
 
+    # Block the DataIterator (in AFTER_ROW_COPY) so it doesn't race with the
+    # term_and_wait_for_exit in AFTER_BINLOG_APPLY below. The gate is released
+    # by AFTER_BINLOG_APPLY before it terminates the process, so the blocked
+    # handler returns cleanly. If AFTER_BINLOG_APPLY never fires (an ordering
+    # race), the gate times out and fails the test instead of hanging the suite
+    # forever and letting the Go child hit its HTTP timeout.
+    iterator_gate = blocking_gate(label: "AFTER_ROW_COPY waiting for AFTER_BINLOG_APPLY")
+
     i = 0
     ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
       if i == 1
@@ -225,11 +242,12 @@ class InterruptResumeTest < GhostferryTestCase
         # DataIterator holds a FOR UPDATE lock for the minimum id row.
         source_db.query("DELETE FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{chosen_id}")
       end
-      sleep if i > 1 # block the DataIterator so it doesn't race with the term_and_wait_for_exit below.
+      iterator_gate.wait if i > 1
       i += 1
     end
 
     ghostferry.on_status(Ghostferry::Status::AFTER_BINLOG_APPLY) do
+      iterator_gate.release
       ghostferry.term_and_wait_for_exit
     end
 
