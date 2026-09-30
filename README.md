@@ -80,14 +80,36 @@ Development Setup
   unless `CI` is set.
 - Docker (or Podman with `podman-compose`) for the local MySQL servers.
 
-`shell.nix` is legacy: it still selects Go 1.18 and Ruby 2.7 and is not a
-supported setup.
+Go and Ruby versions are pinned in `.tool-versions`, which both
+[mise](https://mise.jdx.dev/) and [asdf](https://asdf-vm.com/) read.
 
 #### For Internal Contributors
 
 `dev up`
 
 #### For External Contributors
+
+Install Go and Ruby with mise or asdf from the repository root:
+
+```sh
+mise install    # or: asdf install
+```
+
+Without a version manager, any Go 1.21 or newer also works: because `go.mod`
+requires Go 1.26.2, the `go` command downloads and uses that toolchain itself.
+
+Install the MySQL client and its development libraries (needed by the `mysql2`
+gem), for example `brew install mysql-client` on macOS or
+`apt install default-mysql-client default-libmysqlclient-dev` on Debian/Ubuntu,
+then install the gems:
+
+```sh
+bundle install
+```
+
+Homebrew's `mysql-client` is keg-only; if `mysql2` cannot find it, run
+`bundle config set build.mysql2 --with-mysql-config="$(brew --prefix mysql-client)/bin/mysql_config"`
+first.
 
 Start two disposable MySQL 8.0 servers from the repository root:
 
