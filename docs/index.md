@@ -24,6 +24,7 @@ Contents:
 - [Running `ghostferry-copydb` in production](copydbinprod.md)
     - [Prerequisites](copydbinprod.md#prerequisites)
     - [Testing Ghostferry with Production Data](copydbinprod.md#testing-ghostferry-with-production-data)
+    - [Running from a replica](copydbinprod.md#running-from-a-replica)
     - [To Verify Or Not To Verify](copydbinprod.md#to-verify-or-not-to-verify)
     - [Dealing with Errors and Restarting Runs](copydbinprod.md#dealing-with-errors-and-restarting-runs)
     - [Configuration for `ghostferry-copydb`](copydbinprod.md#configuration-for-ghostferry-copydb)
@@ -34,8 +35,9 @@ Contents:
     - [TargetVerifier](verifiers.md#targetverifier)
 - [Using Ghostferry in Custom Applications](howtousecustom.md)
     - [Consuming Ghostferry Metrics](howtousecustom.md#consuming-ghostferry-metrics)
+- [Changelog](changelog.md)
 
 ## Other resources
 
-- [API Documentations](https://godoc.org/github.com/Shopify/ghostferry)
+- [API Documentations](https://pkg.go.dev/github.com/Shopify/ghostferry) (versioned; for the `main` branch, the source in the repository is authoritative)
 - [**Percona Live Conference Slides + Presenter Notes**](_static/percona-talk.pdf)

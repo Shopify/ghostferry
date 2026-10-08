@@ -1,9 +1,21 @@
 # Verifiers
 
 Verifiers in Ghostferry are designed to ensure that Ghostferry did not
-corrupt/miss data. There are three different verifiers: the
-`ChecksumTableVerifier`, the `InlineVerifier`, and the `TargetVerifier`. A comparison of the
-`ChecksumTableVerifier` and `InlineVerifier` are given below:
+corrupt/miss data. There are two independent mechanisms:
+
+- A **data verifier**, selected with `VerifierType` in the embedded
+  `ghostferry.Config`: `"ChecksumTable"`, `"Inline"`, the deprecated
+  `"Iterative"`, or `"NoVerification"`. Leaving `VerifierType` empty means no
+  data verifier in copydb; in library code, an empty `VerifierType` lets you
+  supply your own `Ferry.Verifier` instead.
+- The **`TargetVerifier`**, which monitors the target's binlog for writes that
+  did not come from Ghostferry. It is enabled by default
+  (`SkipTargetVerification: false`) whichever data verifier is chosen,
+  including `NoVerification`. It does not compare row contents and is not a
+  substitute for a final data verification.
+
+A comparison of the `ChecksumTableVerifier` and `InlineVerifier` data
+verifiers is given below:
 
 | | ChecksumTableVerifier | InlineVerifier |
 |---|---|---|
@@ -21,15 +33,20 @@ corrupt/miss data. There are three different verifiers: the
 [^2]: Increase in copy time does not increase downtime. Downtime occurs only
     in cutover.
 
-If you want verification, you should try with the `ChecksumTableVerifier`
-first if you're copying whole tables at a time. If that takes too long, you can
-try using the `InlineVerifier`.  Alternatively, you can verify in a staging
-run and not verify during the production run (see
-[Running `ghostferry-copydb` in production](copydbinprod.md)).
+`ChecksumTable` is a simple choice for small whole-table copies such as the
+[tutorial](tutorialcopydb.md), because it scans every copied table during
+cutover. `Inline` is the non-deprecated incremental option for larger datasets
+or partial copies. A successful verification in a rehearsal does not verify
+the data of a later run; see
+[Running `ghostferry-copydb` in production](copydbinprod.md).
 
 Note that the `InlineVerifier` on its own may potentially miss some
-cases, and using it with the `TargetVerifier` is recommended if these
-cases are possible.
+cases, and keeping the `TargetVerifier` enabled is recommended if these
+cases are possible. In the table below, "Yes" means the condition is detected
+within the scope of the selected verifier: the copied tables, and for the
+Inline verifier the compared columns (columns configured in
+`IgnoredColumnsForVerification` are skipped, and columns listed in
+`CompressedColumnsForVerification` are compared after decompression).
 
 | Conditions | ChecksumTable | Inline | Inline + Target |
 |---|---|---|---|
@@ -84,9 +101,9 @@ IterativeVerifier verifies the source and target in a couple of steps:
     1. If they are the same: the verification for that row is complete.
     2. If they are not the same: the verification fails.
 
-5. If no verification failure occurs, the source and the target are identical.
-    If verification failure does occur (4b), then the source and target are not
-    identical.
+5. If no verification failure occurs, the compared rows of the source and the
+    target are identical within the scope of the verifier. If verification
+    failure does occur (4b), then the source and target are not identical.
 
 A proof of concept TLA+ verification of this algorithm is done in
 <https://github.com/Shopify/ghostferry/tree/iterative-verifier-tla>.
@@ -107,54 +124,84 @@ With regards to the `DataIterator` and `BatchWriter`:
 2. The fingerprint, gathered from the `MD5(...)` of the query above is stored
     on the `RowBatch` to be used in the next verification step.
 
-3. The `BatchWriter` then attempts to write the `RowBatch`, but instead of inserting
-    it directly, the following process is taken:
+3. The `BatchWriter` then writes the `RowBatch` as follows:
 
-    1. A transaction is opened.
+    1. A transaction is opened on the target.
     2. The data contained in the `RowBatch` is inserted.
-    3. The PK and fingerprint is then `SELECT`ed from the Target
-        as `SELECT pk, MD5(....) FROM ...`.
-    4. The fingerprint (`MD5`) is then checked against the fingerprint currently
-        stored on the `RowBatch`.
+    3. The pagination key and fingerprint of these rows are then `SELECT`ed
+        from the target in the same transaction.
+    4. The target fingerprints are compared with the source fingerprints stored
+        on the `RowBatch`. The pagination keys of mismatched rows are added to
+        the `reverifyStore` to be verified again later.
+    5. The transaction is committed.
 
-    The process in step 3 above is retried (with a limit) if there happens to be
-    a failure or mismatch, and will fail the run if they are not verified within
-    the retry limits.
+    Query and write failures are retried (with a limit) and fail the run if
+    the retry limit is exceeded. A mismatch alone does not abort the copy: it
+    is enqueued for reverification. The exception is when
+    `EnforceInlineVerification` is set on the `BatchWriter` (used for
+    standalone copies without binlog streaming, such as
+    `Ferry.RunStandaloneDataCopy`), where a mismatch fails the batch.
 
 With regards to the BinlogStreamer:
 
-1. As DMLs are observed by the `BinlogStreamer`, the PKs of the events are placed into
-    a `reverifyStore` to be periodically verified for correctness.
+1. As DMLs are observed by the `BinlogStreamer`, the pagination keys of the
+    changed rows are placed into the `reverifyStore` to be periodically verified
+    for correctness, every `InlineVerifierConfig.VerifyBinlogEventsInterval`
+    (default `"1s"`).
 
-2. This continues to happen in the background throughout the process of the Run.
+2. This continues to happen in the background until cutover is allowed.
 
-3. If a PK is found not to match, it is added back into the reverifyStore to be verified
-    again.
+3. If a row is found not to match, its pagination key is added back into the
+    `reverifyStore` to be verified again.
 
-4. When `VerifyBeforeCutover` starts, the InlineVerifier will verify enough of the
-    events in the `reverifyStore` to ensure it has a sufficiently small number of events
-    that can be successfully verified before cutover.
+4. `VerifyBeforeCutover` reverifies the `reverifyStore` in at most 30 passes,
+    stopping early once at most 1000 rows remain queued or a pass no longer
+    shrinks the queue. If `InlineVerifierConfig.MaxExpectedDowntime` is set
+    (non-empty and non-zero) and the last pass took longer, the run fails. This
+    is an estimate, not a hard guarantee on downtime.
 
-5. When `VerifyDuringCutover` begins, all of the remaining events in the `reverifyStore`
-    are verified and any mismatches are returned.
+5. When `VerifyDuringCutover` begins, all of the remaining rows in the
+    `reverifyStore` are verified. If any mismatch remains, the result has
+    `DataCorrect: false` and a message listing the mismatched pagination keys.
+    `VerifyDuringCutover` can only be started once, and any source binlog event
+    received after it started is an error.
+
+`VerifyDuringCutover` must be called after binlog streaming has stopped and
+before the target receives application writes. ghostferry-copydb does **not**
+call it automatically: the operator must click Run Verification in the web UI
+after cutover and check that Verified Correct is `true` and no error is shown
+before letting applications write to the target. The copydb state `done` only
+means that copying and streaming have finished. Custom applications must call
+`VerifyDuringCutover` themselves.
 
 ## TargetVerifier
 
-TargetVerifier ensures data on the Target is not corrupted during the move process
-and is meant to be used in conjunction with another verifier above.
+TargetVerifier detects writes to the copied tables on the target that were not
+made by Ghostferry during the move process. It is enabled by default and is
+meant to be used in conjunction with one of the data verifiers above; it does
+not compare row contents.
 
-It uses a configurable annotation string that is prepended to DMLs that acts as
-a verified "signature" of all of Ghostferry's operations on the Target:
+Ghostferry prepends an SQL annotation (`Target.Marginalia`, default
+`application:ghostferry`) to its statements on the target. The TargetVerifier
+checks for this expected annotation:
 
-1. A BinlogStreamer is created and attached to the Target
+1. A BinlogStreamer is created and attached to the Target. This requires the
+    target to have binary logging with `binlog_rows_query_log_events=ON`, and
+    the target user to have replication privileges.
 
-2. As this BinlogStreamer receives DML events, it attempts to extract the annotation
-    from each for each of the `RowsEvents`.
+2. As this BinlogStreamer receives DML events for the copied tables, it
+    extracts the annotation from the query event preceding each `RowsEvent`.
 
-3. If an annotation is not found for the DML, or the extracted annotation does not
-    match the configured annotation of Ghostferry, an error is returned and the process fails.
+3. If no annotation is found for the DML, or the extracted annotation text does
+    not match `Target.Marginalia`, an error is returned and the run fails.
 
-The TargetVerifier needs to be manually stopped before cutover. If it is not stopped,
-it may detect writes from the application (that are not from Ghostferry) and fail the run.
-Stopping before cutover also gives the TargetVerifier the opportunity to inspect all
-of the DMLs in its `BinlogStreamer` queue to ensure no corruption of the data has occurred.
+This detects unexpected writers; it is not cryptographic authentication and
+does not protect against a writer that deliberately uses the same annotation.
+
+The TargetVerifier must be stopped (`Ferry.StopTargetVerifier`) after source
+binlog processing has finished and before the target is opened to application
+writes; otherwise it would fail the run on the application's writes. Stopping
+it also lets it process all target binlog events up to the stop point.
+ghostferry-copydb does this automatically after the source binlog streaming
+stops and before calling `CutoverUnlock`. Custom applications must do the
+equivalent themselves.

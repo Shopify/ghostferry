@@ -82,8 +82,9 @@ type Verifier interface {
 	//
 	// If the verification has been completed successfully (without errors) and
 	// the data checks out to be "correct", the result will be
-	// VerificationResult{true, ""}, with error = nil.
-	// Otherwise, the result will be VerificationResult{false, "message"}, with
+	// VerificationResult{DataCorrect: true}, with error = nil.
+	// Otherwise, the result will be
+	// VerificationResult{DataCorrect: false, Message: "..."}, with
 	// error = nil.
 	//
 	// If the verification is "done" but experienced an error during the check,

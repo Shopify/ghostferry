@@ -4,7 +4,8 @@
 
 Ghostferry is a library that enables you to copy data from one MySQL instance
 to another with minimal amount of downtime. This is accomplished by tailing
-and replaying the binlog while the data is being copied by a separate process.
+and replaying the binlog while the existing data is being copied by concurrent
+goroutines in the same Ghostferry process.
 
 Ghostferry is a library rather than an application. The decision to make it so
 is because Ghostferry has the capability to selectively filter data to copy.
@@ -29,9 +30,13 @@ not feasible (mysqldump) or if the filesystem of the database host is not
 available (for Percona Xtrabackup), such as in the case of cloud provided
 database as a service.
 
-The traditional process can only move a single table at minimum. Ghostferry
-allows you to use the filtering capability to move rows subject to a custom
-constraint.
+With backup/restore plus replication, any row-level filtering applied to the
+initial copy is not carried over to the replication stream, whose filters work
+on whole databases or tables. Ghostferry lets an application supply a custom
+`CopyFilter`: its `BuildSelect` restricts the rows read during the bulk copy and
+its `ApplicableEvent` decides which streamed binlog changes apply, so the same
+application-specific filter covers both the initial copy and the ongoing
+changes.
 
 Additionally, traditional tools present themselves as a complicated process
 that require a lot of manual intervention from a reasonably experienced

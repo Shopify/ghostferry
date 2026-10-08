@@ -5,7 +5,7 @@ import (
 )
 
 // CopyFilter provides an interface for restricting the copying to a subset of
-// data. This typically involves adding a WHERE condition in the ConstrainSelect
+// data. This typically involves adding a WHERE condition in the BuildSelect
 // function, and returning false for unwanted rows in ApplicableEvent.
 type CopyFilter interface {
 	// BuildSelect is used to set up the query used for batch data copying,
@@ -18,8 +18,8 @@ type CopyFilter interface {
 	BuildSelect([]string, *TableSchema, PaginationKey, uint64) (sq.SelectBuilder, error)
 
 	// ApplicableEvent is used to filter events for rows that have been
-	// filtered in ConstrainSelect. ApplicableEvent should return true if the
-	// event is for a row that would be selected by ConstrainSelect, and false
+	// filtered in BuildSelect. ApplicableEvent should return true if the
+	// event is for a row that would be selected by BuildSelect, and false
 	// otherwise.
 	// Returning an error here will cause the ferry to be aborted.
 	ApplicableEvent(DMLEvent) (bool, error)

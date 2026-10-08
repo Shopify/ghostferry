@@ -46,6 +46,8 @@ gh_edit_repository: https://github.com/Shopify/ghostferry
 gh_edit_branch: main
 gh_edit_source: docs
 gh_edit_view_mode: edit
+# Just the Docs only renders the edit link when its text is set.
+gh_edit_link_text: Edit this page on GitHub
 
 # Page titles and order live here so the Markdown files need no front matter.
 defaults:
@@ -70,3 +72,5 @@ defaults:
     values: { title: Verifiers, nav_order: 7 }
   - scope: { path: howtousecustom.md }
     values: { title: Custom applications, nav_order: 8 }
+  - scope: { path: changelog.md }
+    values: { title: Changelog, nav_order: 9 }

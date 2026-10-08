@@ -9,8 +9,10 @@ import (
 )
 
 type ErrorHandler interface {
-	// Usually called from Fatal. When called from Fatal, if this method returns
-	// true, Fatal should panic, otherwise it should not.
+	// Reports the error (for example logging it, dumping the state and
+	// invoking an error callback). It does not decide whether to terminate;
+	// that is Fatal's responsibility (PanicErrorHandler.Fatal reports the
+	// error and then panics).
 	ReportError(from string, err error)
 	Fatal(from string, err error)
 }

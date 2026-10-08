@@ -144,7 +144,13 @@ module GhostferryBenchmark
         "DumpStateOnSignal" => false,
         "VerifierType" => "Inline",
         "SkipTargetVerification" => true,
-        "DataIterationBatchSize" => 200
+        "UpdatableConfig" => {
+          "DataIterationBatchSize" => 200
+        },
+        "ControlServerConfig" => {
+          "WebBasedir" => File.expand_path("..", __dir__),
+          "ServerBindAddr" => "127.0.0.1:8000"
+        }
       }
     end
 

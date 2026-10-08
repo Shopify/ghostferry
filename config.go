@@ -194,8 +194,9 @@ func (c *DatabaseConfig) assertParamSet(param, value string) error {
 
 type InlineVerifierConfig struct {
 	// The maximum expected downtime during cutover, in the format of
-	// time.ParseDuration. If nothing is specified, the InlineVerifier will not
-	// try to estimate the downtime and will always allow cutover.
+	// time.ParseDuration. If nothing is specified (or it is zero), the
+	// InlineVerifier does not enforce a downtime limit in VerifyBeforeCutover;
+	// verification itself still takes place.
 	MaxExpectedDowntime string
 
 	// The interval at which the periodic binlog reverification occurs, in the
@@ -261,8 +262,8 @@ type IterativeVerifierConfig struct {
 	// Optional: defaults to empty map/no compression
 	//
 	// Note that the IterativeVerifier is in the process of being deprecated.
-	// If this is specified, ColumnCompressionConfig should also be filled out in
-	// the main Config.
+	// If this is specified, CompressedColumnsForVerification should also be
+	// filled out in the main Config.
 	TableColumnCompression TableColumnCompressionConfig
 }
 
@@ -288,7 +289,7 @@ type ControlServerConfig struct {
 	// Bind control server address
 	ServerBindAddr string
 
-	// Path to `web` base dir
+	// Path to the directory containing the `webui` directory
 	WebBasedir string
 
 	// TODO: refactor control server config out of the base ferry at some point
@@ -590,14 +591,14 @@ type Config struct {
 	// The maximum number of retries for reads if the reads fail on the source
 	// database.
 	//
-	// Optional: defaults to 5
+	// Optional: defaults to 60
 	DBReadRetries int
 
-	// This specify the number of concurrent goroutines, each iterating over
+	// This specifies the number of concurrent goroutines, each iterating over
 	// a single table.
 	//
-	// At this point in time, parallelize iteration within a single table. This
-	// may be possible to add to the future.
+	// Concurrency is across tables: a single table is always iterated by one
+	// goroutine and is not split among workers.
 	//
 	// Optional: defaults to 4
 	DataIterationConcurrency int
@@ -607,9 +608,13 @@ type Config struct {
 	// Optional: defaults to false
 	AutomaticCutover bool
 
-	// This specifies whether or not Ferry.Run will handle SIGINT and SIGTERM
-	// by dumping the current state to stdout and the error HTTP callback.
-	// The dumped state can be used to resume Ghostferry.
+	// This specifies whether or not Ferry.Run installs a SIGINT and SIGTERM
+	// handler that reports the signal as a fatal error, so that the error
+	// handler can dump the current state for resuming Ghostferry. With the
+	// default error handler, the state is only written to stdout if
+	// DumpStateToStdoutOnError is also set (and sent to the ErrorCallback, if
+	// configured). A signal received during cutover is logged and ignored; a
+	// signal received after the run is done exits the process.
 	DumpStateOnSignal bool
 
 	// This specifies whether or not Ghostferry will dump the current state to stdout
@@ -632,14 +637,14 @@ type Config struct {
 	ProgressCallback        HTTPCallback
 	ProgressReportFrequency int
 
-	// Report state via an HTTP callback. The SerializedState struct will be
-	// sent as the Payload parameter. The unit of StateReportFrequency is
-	// in milliseconds.
+	// Report state via an HTTP callback. The serialized SerializableState
+	// (the same JSON as the state dump) will be sent as the Payload parameter.
+	// The unit of StateReportFrequency is in milliseconds.
 	StateCallback        HTTPCallback
 	StateReportFrequency int
 
-	// Report error via an HTTP callback. The Payload field will contain the ErrorType,
-	// ErrorMessage and the StateDump.
+	// Report error via an HTTP callback. The Payload field will contain a JSON
+	// object with the ErrFrom, ErrMessage and StateDump fields.
 	ErrorCallback HTTPCallback
 
 	// Report when ghostferry is entering cutover
@@ -661,13 +666,16 @@ type Config struct {
 	// reconciliation process will start and Ghostferry will resume after that.
 	StateToResumeFrom *SerializableState
 
-	// The verifier to use during the run. Valid choices are:
+	// The data verifier to use during the run. Valid choices are:
 	// ChecksumTable
-	// Iterative
+	// Inline
+	// Iterative (deprecated)
 	// NoVerification
 	//
 	// If it is left blank, the Verifier member variable on the Ferry will be
-	// used. If that member variable is nil, no verification will be done.
+	// used, which allows a custom verifier. If that member variable is nil, no
+	// verification will be done. Target verification (see
+	// SkipTargetVerification) is independent of this choice.
 	VerifierType string
 
 	// Only useful if VerifierType == Iterative.
@@ -732,29 +740,36 @@ type Config struct {
 	ForceIndexForVerification ForceIndexConfig
 
 	// Ghostferry requires a single numeric or binary column to paginate over tables. Inferring that column is done in the following exact order:
-	// 1. Use the PerTable pagination column, if configured for a table. Fail if we cannot find this column in the table.
-	// 2. Use the table's primary key column as the pagination column. Fail if the primary key is not numeric/binary or is a composite key without a FallbackColumn specified.
-	// 3. Use the FallbackColumn pagination column, if configured. Fail if we cannot find this column in the table.
+	// 1. Use the PerTable pagination column, if configured for a table.
+	// 2. Otherwise, use the table's primary key if it consists of a single column.
+	// 3. Otherwise (no primary key, or a composite primary key), use the FallbackColumn, if configured.
+	// Schema loading fails if no column is selected, if the selected column does not exist, or if it is not an
+	// integer or binary column (BINARY/VARBINARY, or CHAR/VARCHAR with a binary collation). A single-column
+	// primary key of an unsupported type is not replaced by the FallbackColumn; it fails.
+	// Numeric pagination keys must be positive integers and binary pagination keys must be non-empty, as
+	// pagination starts after zero/the empty value.
 	//
-	// IMPORTANT: The pagination column MUST contain unique values for data integrity.
-	// When using a FallbackColumn (typically "id") for tables with composite primary keys, this column must have a unique constraint.
+	// IMPORTANT: The pagination column MUST contain unique, non-NULL values for data integrity. Ghostferry does
+	// not validate this; the caller is responsible for it, ideally with a unique constraint on the column.
 	// The pagination algorithm uses WHERE pagination_key > last_key ORDER BY pagination_key LIMIT batch_size.
 	// If duplicate values exist, rows may be skipped during iteration, resulting in data loss during the migration.
 	CascadingPaginationColumnConfig *CascadingPaginationColumnConfig
 
 	// SkipTargetVerification is used to enable or disable target verification during moves.
-	// This feature is currently only available while using the InlineVerifier.
+	// When false (the default), target verification is enabled regardless of the VerifierType.
 	//
-	// This does so by inspecting the annotations (configured as Marginalia in the DatabaseConfig above)
-	// and will fail the move unless all applicable DMLs (as identified by the sharding key) sent to the
-	// Target were sent from Ghostferry.
+	// Target verification streams the Target's binlog and inspects the annotations (configured as Marginalia
+	// in the DatabaseConfig above), failing the move unless all applicable DMLs sent to the Target carry
+	// Ghostferry's annotation. It detects unexpected writers; it does not compare row data.
 	//
 	// NOTE:
 	// The Target database must be configured with binlog_rows_query_log_events
-	// set to "ON" for this to function properly. Ghostferry not allow the move
-	// process to begin if this is enabled and the above option is set to "OFF".
+	// set to "ON" for this to function properly. While target verification
+	// is enabled (this field is false), Ghostferry does not allow the move
+	// process to begin if the Source has
+	// binlog_rows_query_log_events set to "OFF".
 	//
-	// Required: defaults to false
+	// Optional: defaults to false
 	SkipTargetVerification bool
 
 	// During initialization, Ghostferry will raise an error if any
@@ -942,9 +957,9 @@ func (c *Config) Update(updatedConfig UpdatableConfig) {
 
 // UpdatableConfig defines config fields that support dynamic updates
 type UpdatableConfig struct {
-	// The batch size used to iterate the data during data copy. This batch size
-	// is always used: if this is specified to be 100, 100 rows will be copied
-	// per iteration.
+	// The maximum batch size used to iterate the data during data copy. A batch
+	// may contain fewer rows (for example the last batch of a table), and
+	// DataIterationBatchSizePerTableOverride can set other sizes per table.
 	//
 	// With the current implementation of Ghostferry, we need to lock the rows
 	// we select. This means, the larger this number is, the longer we need to
