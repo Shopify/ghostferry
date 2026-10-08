@@ -50,7 +50,8 @@ Ghostferry works:
    Ghostferry records the source's current binlog position, applies all events
    up to it and stops, and `Ferry.Run` returns. copydb runs steps 4 to 6
    without pausing once Allow Automatic Cutover is clicked in the web UI, so
-   with copydb the writes must already be stopped before clicking it.
+   with copydb the writes must be stopped before clicking it, or by the
+   `CutoverLock` callback, which copydb calls and waits on before draining.
 7. The application stops the target verifier (`StopTargetVerifier`), runs the
    final verification (`VerifyDuringCutover`) if a verifier is used, and only
    then points the application at the target database and enables writes on

@@ -764,8 +764,9 @@ type Config struct {
 	//
 	// NOTE:
 	// The Target database must be configured with binlog_rows_query_log_events
-	// set to "ON" for this to function properly. While this is enabled,
-	// Ghostferry does not allow the move process to begin if the Source has
+	// set to "ON" for this to function properly. While target verification
+	// is enabled (this field is false), Ghostferry does not allow the move
+	// process to begin if the Source has
 	// binlog_rows_query_log_events set to "OFF".
 	//
 	// Optional: defaults to false
