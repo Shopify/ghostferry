@@ -79,6 +79,11 @@ type DMLEvent interface {
 	PaginationKey() (string, error)
 	BinlogPosition() mysql.Position
 	ResumableBinlogPosition() mysql.Position
+	// BinlogCoordinate and ResumableBinlogCoordinate are the coordinate-typed
+	// counterparts of BinlogPosition and ResumableBinlogPosition. They are the
+	// forward-looking API used while Ghostferry migrates off raw mysql.Position.
+	BinlogCoordinate() BinlogCoordinate
+	ResumableBinlogCoordinate() BinlogCoordinate
 	Annotation() (string, error)
 	Timestamp() time.Time
 }
@@ -110,6 +115,14 @@ func (e *DMLEventBase) BinlogPosition() mysql.Position {
 
 func (e *DMLEventBase) ResumableBinlogPosition() mysql.Position {
 	return e.resumablePos
+}
+
+func (e *DMLEventBase) BinlogCoordinate() BinlogCoordinate {
+	return NewFilePositionCoordinate(e.pos)
+}
+
+func (e *DMLEventBase) ResumableBinlogCoordinate() BinlogCoordinate {
+	return NewFilePositionCoordinate(e.resumablePos)
 }
 
 // Annotation will return the first prefixed comment on the SQL string,
@@ -504,10 +517,10 @@ func Int64Value(value interface{}) (int64, bool) {
 //
 // This is specifically mentioned in the the below link:
 //
-//    When BINARY values are stored, they are right-padded with the pad value
-//    to the specified length. The pad value is 0x00 (the zero byte). Values
-//    are right-padded with 0x00 for inserts, and no trailing bytes are removed
-//    for retrievals.
+//	When BINARY values are stored, they are right-padded with the pad value
+//	to the specified length. The pad value is 0x00 (the zero byte). Values
+//	are right-padded with 0x00 for inserts, and no trailing bytes are removed
+//	for retrievals.
 //
 // ref: https://dev.mysql.com/doc/refman/5.7/en/binary-varbinary.html
 func appendEscapedString(buffer []byte, value string, rightPadToLengthWithZeroBytes int) []byte {

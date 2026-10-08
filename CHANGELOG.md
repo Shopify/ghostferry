@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Introduce `BinlogCoordinate` to wrap MySQL file/position coordinates with comparison, zero-value detection, and typed JSON serialization. Decoding also accepts the legacy bare `mysql.Position` JSON format. The GTID coordinate type is reserved; GTID replication is not yet supported.
+- Add coordinate-based APIs to `BinlogStreamer`, `StateTracker`, and `SerializableState`, retaining the existing file/position APIs and resume behavior.
+
+### Changed
+
+- Extend `DMLEvent` with `BinlogCoordinate()` and `ResumableBinlogCoordinate()`. `DMLEventBase` implements both; custom implementations must provide these methods.
+
+### Fixed
+
+- Reject malformed typed binlog coordinates instead of silently decoding them as an unset position.
+
 ## [1.3.1 - 2026-04-15]
 
 ### Changed
