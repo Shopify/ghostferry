@@ -257,7 +257,11 @@ type InlineVerifierMismatches struct {
 }
 
 type InlineVerifier struct {
-	SourceDB                   *sql.DB
+	SourceDB *sql.DB
+	// SourceRuntime, when set, is the authoritative source of the current
+	// source connection (see currentSourceDB). It lets inline verification
+	// follow a source master failover. When nil, SourceDB is used directly.
+	SourceRuntime              *SourceRuntime
 	TargetDB                   *sql.DB
 	DatabaseRewrites           map[string]string
 	TableRewrites              map[string]string
@@ -274,7 +278,10 @@ type InlineVerifier struct {
 
 	sourceStmtCache *StmtCache
 	targetStmtCache *StmtCache
-	logger          Logger
+	// sourceDBMu guards SourceDB and sourceStmtCache when currentSourceDB
+	// resolves the runtime handle and may reset the cache on a failover swap.
+	sourceDBMu sync.Mutex
+	logger     Logger
 
 	// Used only for the ControlServer initiated VerifyDuringCutover
 	backgroundVerificationResultAndStatus VerificationResultAndStatus
@@ -524,8 +531,32 @@ func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	}, nil
 }
 
+// currentSourceDB returns the source connection inline verification should use,
+// resolving it from SourceRuntime when configured so a failover is followed. If
+// the source handle changed since the last call, the source statement cache is
+// reset because cached prepared statements are bound to the previous DB.
+// currentSourceDB returns the source connection inline verification should use,
+// resolving it from SourceRuntime when configured so a failover is followed. If
+// the source handle changed since the last call, the source statement cache is
+// reset because cached prepared statements are bound to the previous DB. The
+// resolved DB and its matching statement cache are returned together under a
+// lock so concurrent verification workers stay consistent.
+func (v *InlineVerifier) currentSourceDB() (*sql.DB, *StmtCache) {
+	v.sourceDBMu.Lock()
+	defer v.sourceDBMu.Unlock()
+
+	if v.SourceRuntime != nil {
+		if current := v.SourceRuntime.DB(); current != nil && current != v.SourceDB {
+			v.SourceDB = current
+			v.sourceStmtCache = NewStmtCache()
+		}
+	}
+	return v.SourceDB, v.sourceStmtCache
+}
+
 func (v *InlineVerifier) getFingerprintDataFromSourceDb(schemaName, tableName string, tx *sql.Tx, table *TableSchema, paginationKeys []interface{}) (map[string][]byte, map[string]map[string][]byte, error) {
-	return v.getFingerprintDataFromDb(v.SourceDB, v.sourceStmtCache, schemaName, tableName, tx, table, paginationKeys)
+	db, stmtCache := v.currentSourceDB()
+	return v.getFingerprintDataFromDb(db, stmtCache, schemaName, tableName, tx, table, paginationKeys)
 }
 
 func (v *InlineVerifier) getFingerprintDataFromTargetDb(schemaName, tableName string, tx *sql.Tx, table *TableSchema, paginationKeys []interface{}) (map[string][]byte, map[string]map[string][]byte, error) {

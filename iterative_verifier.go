@@ -120,7 +120,11 @@ type IterativeVerifier struct {
 	BinlogStreamer      *BinlogStreamer
 	TableSchemaCache    TableSchemaCache
 	SourceDB            *sql.DB
-	TargetDB            *sql.DB
+	// SourceRuntime, when set, provides the current source connection so
+	// iterative verification follows a source master failover. When nil,
+	// SourceDB is used. See currentSourceDB.
+	SourceRuntime *SourceRuntime
+	TargetDB      *sql.DB
 
 	Tables              []*TableSchema
 	IgnoredTables       []string
@@ -287,6 +291,19 @@ func (v *IterativeVerifier) Message() string {
 
 func (v *IterativeVerifier) Result() (VerificationResultAndStatus, error) {
 	return v.verificationResultAndStatus, v.verificationErr
+}
+
+// currentSourceDB resolves the source connection from SourceRuntime when
+// configured (so verification follows a source master failover), otherwise the
+// static SourceDB. Unlike the inline verifier there is no persistent
+// source-bound statement cache to reset: GetHashes prepares per call.
+func (v *IterativeVerifier) currentSourceDB() *sql.DB {
+	if v.SourceRuntime != nil {
+		if db := v.SourceRuntime.DB(); db != nil {
+			return db
+		}
+	}
+	return v.SourceDB
 }
 
 func (v *IterativeVerifier) GetHashes(db *sql.DB, schemaName, tableName, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []interface{}) (map[string][]byte, error) {
@@ -595,7 +612,7 @@ func (v *IterativeVerifier) compareFingerprints(paginationKeys []interface{}, ta
 	go func() {
 		defer wg.Done()
 		sourceErr = WithRetries(5, 0, v.logger, "get fingerprints from source db", func() (err error) {
-			sourceHashes, err = v.GetHashes(v.SourceDB, table.Schema, table.Name, table.GetPaginationColumn().Name, v.columnsToVerify(table), paginationKeys)
+			sourceHashes, err = v.GetHashes(v.currentSourceDB(), table.Schema, table.Name, table.GetPaginationColumn().Name, v.columnsToVerify(table), paginationKeys)
 			return
 		})
 	}()
@@ -627,7 +644,7 @@ func (v *IterativeVerifier) compareFingerprints(paginationKeys []interface{}, ta
 }
 
 func (v *IterativeVerifier) compareCompressedHashes(targetDb, targetTable string, table *TableSchema, paginationKeys []interface{}) ([]string, error) {
-	sourceHashes, err := v.CompressionVerifier.GetCompressedHashes(v.SourceDB, table.Schema, table.Name, table.GetPaginationColumn().Name, v.columnsToVerify(table), paginationKeys)
+	sourceHashes, err := v.CompressionVerifier.GetCompressedHashes(v.currentSourceDB(), table.Schema, table.Name, table.GetPaginationColumn().Name, v.columnsToVerify(table), paginationKeys)
 	if err != nil {
 		return nil, err
 	}
