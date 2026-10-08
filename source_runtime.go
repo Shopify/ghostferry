@@ -71,9 +71,30 @@ func (r *SourceRuntime) Config() *DatabaseConfig {
 // If opening the new connection fails, the current source is left unchanged and
 // the error is returned.
 func (r *SourceRuntime) Replace(config *DatabaseConfig, logger Logger) (*sql.DB, error) {
+	return r.ReplaceValidated(config, logger, nil)
+}
+
+// ReplaceValidated opens a new source connection from the given config, runs an
+// optional validate hook against it, and only installs it as the current source
+// if validation succeeds. This keeps the swap fail-closed: a candidate that
+// fails validation is never published to consumers.
+//
+// If opening the connection or the validate hook fails, the newly opened handle
+// is closed and the current source is left unchanged. On success the previous
+// handle is retired (retained, not closed) as with Replace.
+func (r *SourceRuntime) ReplaceValidated(config *DatabaseConfig, logger Logger, validate func(*sql.DB) error) (*sql.DB, error) {
 	newDB, err := config.SqlDB(logger)
 	if err != nil {
 		return nil, err
+	}
+
+	if validate != nil {
+		if err := validate(newDB); err != nil {
+			// The candidate is unsafe; do not publish it. Close the handle we
+			// opened for validation.
+			_ = newDB.Close()
+			return nil, err
+		}
 	}
 
 	r.mu.Lock()

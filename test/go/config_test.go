@@ -220,6 +220,35 @@ func (this *ConfigTestSuite) TestBinlogCoordinateModeInvalidIsRejected() {
 	this.Require().EqualError(err, `invalid BinlogCoordinateMode "banana", must be "file_position" or "gtid"`)
 }
 
+func (this *ConfigTestSuite) TestMasterFailoverRecoveryRequiresGTIDMode() {
+	this.config.BinlogCoordinateMode = ghostferry.BinlogCoordinateFilePosition
+	this.config.MasterFailoverRecovery = &ghostferry.MasterFailoverRecoveryConfig{
+		Resolver: ghostferry.MasterWriterResolverFunc(func(_ *ghostferry.DatabaseConfig) (*ghostferry.DatabaseConfig, error) {
+			return nil, nil
+		}),
+	}
+	err := this.config.ValidateConfig()
+	this.Require().EqualError(err, `MasterFailoverRecovery requires BinlogCoordinateMode "gtid", got "file_position"`)
+}
+
+func (this *ConfigTestSuite) TestMasterFailoverRecoveryRequiresResolver() {
+	this.config.BinlogCoordinateMode = ghostferry.BinlogCoordinateGTID
+	this.config.MasterFailoverRecovery = &ghostferry.MasterFailoverRecoveryConfig{}
+	err := this.config.ValidateConfig()
+	this.Require().EqualError(err, "MasterFailoverRecovery requires a Resolver")
+}
+
+func (this *ConfigTestSuite) TestMasterFailoverRecoveryValidInGTIDMode() {
+	this.config.BinlogCoordinateMode = ghostferry.BinlogCoordinateGTID
+	this.config.MasterFailoverRecovery = &ghostferry.MasterFailoverRecoveryConfig{
+		Resolver: ghostferry.MasterWriterResolverFunc(func(_ *ghostferry.DatabaseConfig) (*ghostferry.DatabaseConfig, error) {
+			return nil, nil
+		}),
+	}
+	err := this.config.ValidateConfig()
+	this.Require().Nil(err)
+}
+
 func TestConfig(t *testing.T) {
 	testhelpers.SetupTest()
 	suite.Run(t, new(ConfigTestSuite))
