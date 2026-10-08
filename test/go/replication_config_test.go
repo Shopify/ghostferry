@@ -2,9 +2,11 @@ package test
 
 import (
 	"fmt"
-	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"math"
+	"os"
 	"testing"
+
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
@@ -16,6 +18,8 @@ type ReplicationConfigTestSuite struct {
 
 	SourceDB                        *sql.DB
 	ReplicatedMasterPositionFetcher *ghostferry.ReplicatedMasterPositionViaCustomQuery
+	ReplicatedMasterGTIDFetcher     *ghostferry.ReplicatedMasterGTIDViaCustomQuery
+	gtidMode                        bool
 }
 
 func (t *ReplicationConfigTestSuite) SetupTest() {
@@ -25,14 +29,27 @@ func (t *ReplicationConfigTestSuite) SetupTest() {
 	t.SourceDB, err = t.Ferry.Source.SqlDB(nil)
 	t.Require().Nil(err)
 
-	t.ReplicatedMasterPositionFetcher = &ghostferry.ReplicatedMasterPositionViaCustomQuery{
-		Query: "SELECT 'mysql-bin.000003', 483685",
+	t.gtidMode = os.Getenv("GHOSTFERRY_BINLOG_COORDINATE_MODE") == string(ghostferry.BinlogCoordinateGTID)
+
+	wait := &ghostferry.WaitUntilReplicaIsCaughtUpToMaster{
+		MasterDB:             t.SourceDB,
+		BinlogCoordinateMode: t.Ferry.Config.BinlogCoordinateMode,
 	}
 
-	t.Ferry.WaitUntilReplicaIsCaughtUpToMaster = &ghostferry.WaitUntilReplicaIsCaughtUpToMaster{
-		MasterDB:                        t.SourceDB,
-		ReplicatedMasterPositionFetcher: t.ReplicatedMasterPositionFetcher,
+	if t.gtidMode {
+		// A high, unreachable GTID set so the replica is never "caught up".
+		t.ReplicatedMasterGTIDFetcher = &ghostferry.ReplicatedMasterGTIDViaCustomQuery{
+			Query: "SELECT '3e11fa47-71ca-11e1-9e33-c80aa9429562:1-1'",
+		}
+		wait.ReplicatedMasterCoordinateFetcher = t.ReplicatedMasterGTIDFetcher
+	} else {
+		t.ReplicatedMasterPositionFetcher = &ghostferry.ReplicatedMasterPositionViaCustomQuery{
+			Query: "SELECT 'mysql-bin.000003', 483685",
+		}
+		wait.ReplicatedMasterPositionFetcher = t.ReplicatedMasterPositionFetcher
 	}
+
+	t.Ferry.WaitUntilReplicaIsCaughtUpToMaster = wait
 }
 
 func (t *ReplicationConfigTestSuite) TearDownTest() {
@@ -57,6 +74,17 @@ func (t *ReplicationConfigTestSuite) TestErrorsIfItsRunFromAReplicaWithoutSettin
 }
 
 func (t *ReplicationConfigTestSuite) TestErrorsIfPositionFetcherQueryIsNotProvided() {
+	if t.gtidMode {
+		// The GTID fetcher scans a single column, so a two-column query is the
+		// error condition here.
+		t.ReplicatedMasterGTIDFetcher.Query = "SELECT 1, 2"
+
+		err := t.Ferry.Initialize()
+		t.Require().NotNil(err)
+		t.Require().Equal("sql: expected 2 destination arguments in Scan, not 1", err.Error())
+		return
+	}
+
 	t.ReplicatedMasterPositionFetcher.Query = "SELECT 1"
 
 	err := t.Ferry.Initialize()
@@ -73,6 +101,16 @@ func (t *ReplicationConfigTestSuite) TestErrorsIfProvidedMasterIsReadOnly() {
 }
 
 func (t *ReplicationConfigTestSuite) TestCanInitializeFerryWithValidConfig() {
+	if t.gtidMode {
+		// A high, valid GTID set that parses cleanly; Initialize only probes
+		// that the fetcher query is executable, so it must succeed.
+		t.ReplicatedMasterGTIDFetcher.Query = "SELECT '3e11fa47-71ca-11e1-9e33-c80aa9429562:1-999999999'"
+
+		err := t.Ferry.Initialize()
+		t.Require().Nil(err)
+		return
+	}
+
 	t.ReplicatedMasterPositionFetcher.Query = fmt.Sprintf("SELECT 'mysql-bin.999999',%d", math.MaxUint32)
 
 	err := t.Ferry.Initialize()

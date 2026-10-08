@@ -14,6 +14,13 @@ type ReplicatedMasterPositionFetcher interface {
 	Current(*sql.DB) (mysql.Position, error)
 }
 
+// ReplicatedMasterCoordinateFetcher is the coordinate-typed counterpart of
+// ReplicatedMasterPositionFetcher. Implementations return the replication
+// coordinate (file/position or GTID) that the replica has replicated up to.
+type ReplicatedMasterCoordinateFetcher interface {
+	CurrentCoordinate(*sql.DB) (BinlogCoordinate, error)
+}
+
 // Selects the master position that we have replicated until from a heartbeat
 // table of sort.
 type ReplicatedMasterPositionViaCustomQuery struct {
@@ -41,27 +48,123 @@ func (r ReplicatedMasterPositionViaCustomQuery) Current(replicaDB *sql.DB) (mysq
 	return NewMysqlPosition(file, pos, err, replicaDB)
 }
 
+// CurrentCoordinate adapts the file/position fetcher to the coordinate API.
+func (r ReplicatedMasterPositionViaCustomQuery) CurrentCoordinate(replicaDB *sql.DB) (BinlogCoordinate, error) {
+	pos, err := r.Current(replicaDB)
+	if err != nil {
+		return BinlogCoordinate{}, err
+	}
+	return NewFilePositionCoordinate(pos), nil
+}
+
+// ReplicatedMasterGTIDViaCustomQuery selects the GTID set the replica has
+// replicated up to from a heartbeat table of sort.
+type ReplicatedMasterGTIDViaCustomQuery struct {
+	// The custom query must return a single row with a single column: the
+	// master's executed GTID set as a string, e.g.
+	// "SELECT gtid_executed FROM meta.ptheartbeat WHERE server_id = %d".
+	//
+	// As with the file/position variant, do not use the replica's own applied
+	// GTID set if it differs from the master's executed set; return the master's
+	// set that has been durably replicated.
+	Query string
+}
+
+// CurrentCoordinate returns the replicated master GTID set as a coordinate.
+func (r ReplicatedMasterGTIDViaCustomQuery) CurrentCoordinate(replicaDB *sql.DB) (BinlogCoordinate, error) {
+	var gtidSet string
+	row := replicaDB.QueryRow(r.Query)
+	if err := row.Scan(&gtidSet); err != nil {
+		return BinlogCoordinate{}, err
+	}
+	if _, err := mysql.ParseMysqlGTIDSet(gtidSet); err != nil {
+		return BinlogCoordinate{}, err
+	}
+	return NewGTIDCoordinate(gtidSet), nil
+}
+
 // Only set the MasterDB and ReplicatedMasterPosition options in your code as
 // the others will be overwritten by the ferry.
 type WaitUntilReplicaIsCaughtUpToMaster struct {
 	MasterDB                        *sql.DB
 	ReplicatedMasterPositionFetcher ReplicatedMasterPositionFetcher
-	Timeout                         time.Duration
+
+	// ReplicatedMasterCoordinateFetcher is the coordinate-typed fetcher. When
+	// set it takes precedence over ReplicatedMasterPositionFetcher. In GTID
+	// mode this must be set (e.g. to a ReplicatedMasterGTIDViaCustomQuery).
+	ReplicatedMasterCoordinateFetcher ReplicatedMasterCoordinateFetcher
+
+	// BinlogCoordinateMode selects how the target master coordinate is read and
+	// compared. Empty means file/position for backwards compatibility.
+	BinlogCoordinateMode BinlogCoordinateType
+
+	Timeout time.Duration
 
 	ReplicaDB *sql.DB
 
 	logger Logger
 }
 
+func (w *WaitUntilReplicaIsCaughtUpToMaster) coordinateMode() BinlogCoordinateType {
+	if w.BinlogCoordinateMode == "" {
+		return BinlogCoordinateFilePosition
+	}
+	return w.BinlogCoordinateMode
+}
+
+// coordinateFetcher returns the coordinate-typed fetcher, adapting the legacy
+// file/position fetcher when only that is set.
+func (w *WaitUntilReplicaIsCaughtUpToMaster) coordinateFetcher() ReplicatedMasterCoordinateFetcher {
+	if w.ReplicatedMasterCoordinateFetcher != nil {
+		return w.ReplicatedMasterCoordinateFetcher
+	}
+	if w.ReplicatedMasterPositionFetcher != nil {
+		// ReplicatedMasterPositionViaCustomQuery already implements the
+		// coordinate interface; other custom fetchers are wrapped here.
+		if cf, ok := w.ReplicatedMasterPositionFetcher.(ReplicatedMasterCoordinateFetcher); ok {
+			return cf
+		}
+		return positionFetcherAdapter{w.ReplicatedMasterPositionFetcher}
+	}
+	return nil
+}
+
+type positionFetcherAdapter struct {
+	fetcher ReplicatedMasterPositionFetcher
+}
+
+func (a positionFetcherAdapter) CurrentCoordinate(replicaDB *sql.DB) (BinlogCoordinate, error) {
+	pos, err := a.fetcher.Current(replicaDB)
+	if err != nil {
+		return BinlogCoordinate{}, err
+	}
+	return NewFilePositionCoordinate(pos), nil
+}
+
+// IsCaughtUp reports whether the replica has replicated up to the given
+// file/position target. It is retained for backwards compatibility; new code
+// should prefer IsCaughtUpToCoordinate.
 func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUp(targetMasterPos mysql.Position, retries int) (bool, error) {
+	return w.IsCaughtUpToCoordinate(NewFilePositionCoordinate(targetMasterPos), retries)
+}
+
+// IsCaughtUpToCoordinate reports whether the replica has replicated up to the
+// given target coordinate. The finish-line check is delegated to
+// BinlogCoordinate.HasReached, so this is identical for file/position and GTID.
+func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUpToCoordinate(targetMaster BinlogCoordinate, retries int) (bool, error) {
 	if w.logger == nil {
 		w.logger = LogWithField("tag", "wait_replica")
 	}
 
-	var currentReplicatedMasterPos mysql.Position
-	err := WithRetries(retries, 600*time.Millisecond, w.logger, "read replicated master binlog position", func() error {
+	fetcher := w.coordinateFetcher()
+	if fetcher == nil {
+		return false, errors.New("no replicated master coordinate fetcher configured")
+	}
+
+	var current BinlogCoordinate
+	err := WithRetries(retries, 600*time.Millisecond, w.logger, "read replicated master coordinate", func() error {
 		var err error
-		currentReplicatedMasterPos, err = w.ReplicatedMasterPositionFetcher.Current(w.ReplicaDB)
+		current, err = fetcher.CurrentCoordinate(w.ReplicaDB)
 		return err
 	})
 
@@ -69,12 +172,17 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) IsCaughtUp(targetMasterPos mysql.Po
 		return false, err
 	}
 
-	if currentReplicatedMasterPos.Compare(targetMasterPos) >= 0 {
-		w.logger.Infof("target master position reached by replica: %v >= %v\n", currentReplicatedMasterPos, targetMasterPos)
+	reached, err := current.HasReached(targetMaster)
+	if err != nil {
+		return false, err
+	}
+
+	if reached {
+		w.logger.Infof("target master coordinate reached by replica: %v has reached %v\n", current, targetMaster)
 		return true, nil
 	}
 
-	w.logger.Debugf("replicated master position is: %v < %v\n", currentReplicatedMasterPos, targetMasterPos)
+	w.logger.Debugf("replicated master coordinate %v has not yet reached %v\n", current, targetMaster)
 	return false, nil
 }
 
@@ -87,10 +195,16 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) Wait() error {
 
 	start := time.Now()
 
-	var targetMasterPos mysql.Position
-	err := WithRetries(100, 600*time.Millisecond, w.logger, "read master binlog position", func() error {
+	var targetMaster BinlogCoordinate
+	err := WithRetries(100, 600*time.Millisecond, w.logger, "read master coordinate", func() error {
 		var err error
-		targetMasterPos, err = ShowMasterStatusBinlogPosition(w.MasterDB)
+		if w.coordinateMode() == BinlogCoordinateGTID {
+			targetMaster, err = ReadCurrentGTIDCoordinate(w.MasterDB)
+			return err
+		}
+		var pos mysql.Position
+		pos, err = ShowMasterStatusBinlogPosition(w.MasterDB)
+		targetMaster = NewFilePositionCoordinate(pos)
 		return err
 	})
 
@@ -99,10 +213,10 @@ func (w *WaitUntilReplicaIsCaughtUpToMaster) Wait() error {
 		return err
 	}
 
-	w.logger.Infof("target master position is: %v\n", targetMasterPos)
+	w.logger.Infof("target master coordinate is: %v\n", targetMaster)
 
 	for {
-		isCaughtUp, err := w.IsCaughtUp(targetMasterPos, 100)
+		isCaughtUp, err := w.IsCaughtUpToCoordinate(targetMaster, 100)
 		if err != nil {
 			w.logger.WithError(err).Error("failed to get replica binlog coordinates")
 			return err
