@@ -42,14 +42,14 @@ type RowData []interface{}
 // https://github.com/Shopify/ghostferry/issues/165.
 //
 // In summary:
-// - This code receives values from both go-sql-driver/mysql and
-//   go-mysql-org/go-mysql.
-// - go-sql-driver/mysql gives us int64 for signed integer, and uint64 in a byte
-//   slice for unsigned integer.
-// - go-mysql-org/go-mysql gives us int64 for signed integer, and uint64 for
-//   unsigned integer.
-// - We currently make this function deal with both cases. In the future we can
-//   investigate alternative solutions.
+//   - This code receives values from both go-sql-driver/mysql and
+//     go-mysql-org/go-mysql.
+//   - go-sql-driver/mysql gives us int64 for signed integer, and uint64 in a byte
+//     slice for unsigned integer.
+//   - go-mysql-org/go-mysql gives us int64 for signed integer, and uint64 for
+//     unsigned integer.
+//   - We currently make this function deal with both cases. In the future we can
+//     investigate alternative solutions.
 func (r RowData) GetUint64(colIdx int) (uint64, error) {
 	u64, ok := Uint64Value(r[colIdx])
 	if ok {
@@ -88,6 +88,15 @@ type DMLEvent interface {
 	Timestamp() time.Time
 }
 
+// coordinateStamper is an internal capability used by the BinlogStreamer to
+// stamp non-file/position coordinates (e.g. GTID) onto events. It is
+// deliberately NOT part of the exported DMLEvent interface so that external
+// implementations of DMLEvent do not have to implement it. All built-in DML
+// events satisfy it via DMLEventBase.
+type coordinateStamper interface {
+	SetCoordinates(coordinate, resumableCoordinate BinlogCoordinate)
+}
+
 // The base of DMLEvent to provide the necessary methods.
 type DMLEventBase struct {
 	table        *TableSchema
@@ -95,6 +104,23 @@ type DMLEventBase struct {
 	resumablePos mysql.Position
 	query        []byte
 	timestamp    time.Time
+
+	// coordinate and resumableCoordinate optionally carry non-file/position
+	// coordinates (e.g. GTID). When set (non-nil), they take precedence over
+	// the file/position fields in the coordinate accessors. They are stamped by
+	// the BinlogStreamer in GTID mode.
+	coordinate          *BinlogCoordinate
+	resumableCoordinate *BinlogCoordinate
+}
+
+// SetCoordinates overrides the coordinate-typed accessors with explicit
+// coordinates. It is used by the BinlogStreamer to stamp GTID coordinates onto
+// events in GTID mode. The file/position accessors are unaffected.
+func (e *DMLEventBase) SetCoordinates(coordinate, resumableCoordinate BinlogCoordinate) {
+	c := coordinate
+	r := resumableCoordinate
+	e.coordinate = &c
+	e.resumableCoordinate = &r
 }
 
 func (e *DMLEventBase) Database() string {
@@ -118,10 +144,16 @@ func (e *DMLEventBase) ResumableBinlogPosition() mysql.Position {
 }
 
 func (e *DMLEventBase) BinlogCoordinate() BinlogCoordinate {
+	if e.coordinate != nil {
+		return *e.coordinate
+	}
 	return NewFilePositionCoordinate(e.pos)
 }
 
 func (e *DMLEventBase) ResumableBinlogCoordinate() BinlogCoordinate {
+	if e.resumableCoordinate != nil {
+		return *e.resumableCoordinate
+	}
 	return NewFilePositionCoordinate(e.resumablePos)
 }
 

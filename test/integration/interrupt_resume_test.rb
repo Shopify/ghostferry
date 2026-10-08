@@ -121,8 +121,13 @@ class InterruptResumeTest < GhostferryTestCase
 
     dumped_state = ghostferry.run_expecting_interrupt
     assert_basic_fields_exist_in_dumped_state(dumped_state)
-    assert_equal "", dumped_state["LastStoredBinlogPositionForInlineVerifier"]["Name"]
-    assert_equal 0, dumped_state["LastStoredBinlogPositionForInlineVerifier"]["Pos"]
+    if gtid_coordinate_mode?
+      # Without a verifier, no inline-verifier coordinate should be recorded.
+      assert_nil dumped_state["LastStoredBinlogCoordinateForInlineVerifier"]
+    else
+      assert_equal "", dumped_state["LastStoredBinlogPositionForInlineVerifier"]["Name"]
+      assert_equal 0, dumped_state["LastStoredBinlogPositionForInlineVerifier"]["Pos"]
+    end
   end
 
   def test_interrupt_resume_inline_verifier_with_datawriter
@@ -350,17 +355,38 @@ class InterruptResumeTest < GhostferryTestCase
 
     dumped_state = ghostferry.run_expecting_interrupt
 
-    refute_nil dumped_state['LastWrittenBinlogPosition']['Name']
-    refute_nil dumped_state['LastWrittenBinlogPosition']['Pos']
-    refute_nil dumped_state['LastStoredBinlogPositionForInlineVerifier']['Name']
-    refute_nil dumped_state['LastStoredBinlogPositionForInlineVerifier']['Pos']
-    refute_nil dumped_state['LastStoredBinlogPositionForTargetVerifier']['Name']
-    refute_nil dumped_state['LastStoredBinlogPositionForTargetVerifier']['Pos']
+    if gtid_coordinate_mode?
+      written = dumped_state['LastWrittenBinlogCoordinate']
+      inline = dumped_state['LastStoredBinlogCoordinateForInlineVerifier']
+      target = dumped_state['LastStoredBinlogCoordinateForTargetVerifier']
 
-    # assert the resumable position is not the start position
-    if dumped_state['LastWrittenBinlogPosition']['Name'] == start_binlog_status['File']
-      refute_equal dumped_state['LastWrittenBinlogPosition']['Pos'], start_binlog_status['Position']
-      refute_equal dumped_state['LastStoredBinlogPositionForInlineVerifier']['Pos'], start_binlog_status['Position']
+      refute_nil written
+      refute_nil inline
+      refute_nil target
+      refute_nil written['GTIDSet']
+      refute_nil inline['GTIDSet']
+      refute_nil target['GTIDSet']
+
+      # The resumable GTID set is conservatively the committed set BEFORE the
+      # in-flight transaction, so when the interrupt lands inside the first
+      # transaction after start it can still equal the start set. The key
+      # invariants are that a non-empty GTID set was recorded and that resume
+      # (asserted below) succeeds. It must never go backwards from the start set.
+      refute_empty written['GTIDSet']
+      refute_empty inline['GTIDSet']
+    else
+      refute_nil dumped_state['LastWrittenBinlogPosition']['Name']
+      refute_nil dumped_state['LastWrittenBinlogPosition']['Pos']
+      refute_nil dumped_state['LastStoredBinlogPositionForInlineVerifier']['Name']
+      refute_nil dumped_state['LastStoredBinlogPositionForInlineVerifier']['Pos']
+      refute_nil dumped_state['LastStoredBinlogPositionForTargetVerifier']['Name']
+      refute_nil dumped_state['LastStoredBinlogPositionForTargetVerifier']['Pos']
+
+      # assert the resumable position is not the start position
+      if dumped_state['LastWrittenBinlogPosition']['Name'] == start_binlog_status['File']
+        refute_equal dumped_state['LastWrittenBinlogPosition']['Pos'], start_binlog_status['Position']
+        refute_equal dumped_state['LastStoredBinlogPositionForInlineVerifier']['Pos'], start_binlog_status['Position']
+      end
     end
 
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)

@@ -32,10 +32,17 @@ class CallbacksTest < GhostferryTestCase
 
     assert_equal 0, progress.last["ActiveDataIterators"]
 
-    refute progress.last["LastSuccessfulBinlogPos"]["Name"].nil?
-    refute progress.last["LastSuccessfulBinlogPos"]["Pos"].nil?
-    assert progress.last["BinlogStreamerLag"] > 0
-    assert_equal progress.last["LastSuccessfulBinlogPos"], progress.last["FinalBinlogPos"]
+    if gtid_coordinate_mode?
+      refute progress.last["LastSuccessfulBinlogCoordinate"].nil?
+      refute progress.last["LastSuccessfulBinlogCoordinate"]["GTIDSet"].nil?
+      assert progress.last["BinlogStreamerLag"] > 0
+      assert_equal progress.last["LastSuccessfulBinlogCoordinate"], progress.last["FinalBinlogCoordinate"]
+    else
+      refute progress.last["LastSuccessfulBinlogPos"]["Name"].nil?
+      refute progress.last["LastSuccessfulBinlogPos"]["Pos"].nil?
+      assert progress.last["BinlogStreamerLag"] > 0
+      assert_equal progress.last["LastSuccessfulBinlogPos"], progress.last["FinalBinlogPos"]
+    end
 
     assert progress.last["VerifierMessage"].include?("currentRowCount =")
     assert progress.last["VerifierMessage"].include?("currentEntryCount =")

@@ -241,6 +241,13 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 		}
 	}
 
+	// GHOSTFERRY_BINLOG_COORDINATE_MODE selects the binlog coordinate mode used
+	// by the integration run: "file_position" (default) or "gtid". It lets the
+	// Ruby suite run every test against either coordinate representation.
+	if binlogCoordinateMode := os.Getenv("GHOSTFERRY_BINLOG_COORDINATE_MODE"); binlogCoordinateMode != "" {
+		config.BinlogCoordinateMode = ghostferry.BinlogCoordinateType(binlogCoordinateMode)
+	}
+
 	verifierType := os.Getenv("GHOSTFERRY_VERIFIER_TYPE")
 	if verifierType == ghostferry.VerifierTypeIterative {
 		config.VerifierType = ghostferry.VerifierTypeIterative

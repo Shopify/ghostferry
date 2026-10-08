@@ -750,7 +750,7 @@ func (v *InlineVerifier) binlogEventListener(evs []DMLEvent) error {
 	}
 
 	if v.StateTracker != nil {
-		v.StateTracker.UpdateLastResumableSourceBinlogPositionForInlineVerifier(evs[len(evs)-1].ResumableBinlogPosition())
+		v.StateTracker.UpdateLastResumableSourceBinlogCoordinateForInlineVerifier(evs[len(evs)-1].ResumableBinlogCoordinate())
 	}
 
 	return nil
