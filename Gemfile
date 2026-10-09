@@ -9,7 +9,7 @@ group :test do
   gem "minitest-hooks"
   gem "minitest-reporters", "~> 1.4"
   gem "minitest-retry"
-  gem "minitest-fail-fast", "~> 0.1.0"
+  gem "minitest-fail-fast", "~> 0.2.0"
 end
 
 group :development do

@@ -15,6 +15,8 @@ All notable changes to this project will be documented in this file.
   - `github.com/DataDog/datadog-go` to v4.8.3
   - `github.com/stretchr/testify` to v1.12.1 (test dependency)
   - indirect: `golang.org/x/sys`, `golang.org/x/text`, `filippo.io/edwards25519`, `go.uber.org/zap`, `go.uber.org/atomic`
+- Updated ruby to 4.0.7 and bundler to 4.0.22 (test dependency)
+- Updated ruby gems, including `minitest` to v6 and `minitest-fail-fast` to v0.2 (test and docs dependencies)
 
 ## [1.3.1 - 2026-04-15]
 

@@ -5,7 +5,7 @@ require "open3"
 require "thread"
 require "tmpdir"
 require "webrick"
-require "cgi"
+require "uri"
 
 module GhostferryHelper
   GHOSTFERRY_TEMPDIR = File.join(Dir.tmpdir, "ghostferry-integration")
@@ -174,10 +174,10 @@ module GhostferryHelper
             @server.shutdown
           end
 
-          query = CGI::parse(req.body)
+          query = URI.decode_www_form(req.body).group_by(&:first).transform_values { |pairs| pairs.map(&:last) }
 
           status = Array(query["status"]).first
-          data = query["data"]
+          data = query.fetch("data", [])
 
           if status.nil?
             @server_last_error = ArgumentError.new("Ghostferry is improperly implemented and did not send a status")
