@@ -5,11 +5,12 @@ group :test do
   gem "rake"
   gem "mysql2"
   gem "webrick"
+  gem "logger"
 
   gem "minitest-hooks"
   gem "minitest-reporters", "~> 1.4"
   gem "minitest-retry"
-  gem "minitest-fail-fast", "~> 0.1.0"
+  gem "minitest-fail-fast", "~> 0.2.0"
 end
 
 group :development do
