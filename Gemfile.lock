@@ -196,6 +196,7 @@ DEPENDENCIES
   jekyll-optional-front-matter (~> 0.3)
   jekyll-relative-links (~> 0.7)
   just-the-docs (~> 0.12)
+  logger
   minitest
   minitest-fail-fast (~> 0.2.0)
   minitest-hooks

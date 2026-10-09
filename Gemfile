@@ -5,6 +5,7 @@ group :test do
   gem "rake"
   gem "mysql2"
   gem "webrick"
+  gem "logger"
 
   gem "minitest-hooks"
   gem "minitest-reporters", "~> 1.4"
