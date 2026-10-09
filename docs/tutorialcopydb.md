@@ -14,7 +14,7 @@ be found in [Running `ghostferry-copydb` in production](copydbinprod.md).
 
 In this tutorial, we will be using two disposable test databases that we set up
 locally and we will not consider the application. You need Git, Make, a MySQL
-client, Go 1.26.2 (the `go` directive in `go.mod` is authoritative) and Docker
+client, Go 1.27.2 (the `go` directive in `go.mod` is authoritative) and Docker
 or Podman. Clone the Ghostferry repository and start the MySQL 8.0 test
 instances:
 
