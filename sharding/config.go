@@ -23,6 +23,8 @@ type Config struct {
 
 	JoinedTables map[string][]JoinTable
 
+	CutoverDependencies *CutoverDependenciesConfig
+
 	// IgnoredTables and IncludedTables are mutually exclusive. Specifying both is an error.
 	IgnoredTables  []string
 	IncludedTables []string
@@ -38,6 +40,10 @@ type Config struct {
 func (c *Config) ValidateConfig() error {
 	if len(c.IgnoredTables) != 0 && len(c.IncludedTables) != 0 {
 		return fmt.Errorf("IgnoredTables and IncludedTables cannot be defined at the same time.")
+	}
+
+	if err := c.validateCutoverDependencies(); err != nil {
+		return err
 	}
 
 	if c.RunFerryFromReplica && c.SourceReplicationMaster != nil {
