@@ -52,6 +52,14 @@ func NewFerry(config *Config) (*ShardingFerry, error) {
 		}
 	}
 
+	if config.CutoverDependencies != nil {
+		dependencyTables := map[string]struct{}{}
+		for _, table := range config.CutoverDependencies.Tables {
+			dependencyTables[table.Table] = struct{}{}
+		}
+		tableFilter.(*ShardedTableFilter).CutoverDependencyTables = dependencyTables
+	}
+
 	config.TableFilter = tableFilter
 
 	if err := config.ValidateConfig(); err != nil {
@@ -156,6 +164,15 @@ func (r *ShardingFerry) Run() {
 	if err != nil {
 		r.logger.WithField("error", err).Errorf("failed to delta-copy joined tables after locking")
 		r.Ferry.ErrorHandler.Fatal("sharding.delta_copy", err)
+	}
+
+	metrics.Measure("CopyCutoverDependencies", nil, 1.0, func() {
+		err = r.copyCutoverDependencies()
+	})
+	if err != nil {
+		r.logger.WithError(err).Error("failed to copy and verify cutover dependencies")
+		r.Ferry.ErrorHandler.Fatal("sharding.cutover_dependencies", err)
+		return
 	}
 
 	var verificationResult ghostferry.VerificationResult

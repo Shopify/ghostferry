@@ -64,7 +64,7 @@ test-go:
 		curl -sL $(GOTESTSUM_URL) | tar -xz -C ./bin gotestsum; \
 	fi
 
-	ulimit -n 1024 && ./bin/gotestsum --format short-verbose ./test/go ./copydb/test ./sharding/test -count 1 -p 1 -failfast
+	ulimit -n 1024 && ./bin/gotestsum --format short-verbose ./test/go ./copydb/test ./sharding ./sharding/test -count 1 -p 1 -failfast
 	go test -v
 
 test-ruby:

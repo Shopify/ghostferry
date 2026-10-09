@@ -264,12 +264,13 @@ const (
 )
 
 type ShardedTableFilter struct {
-	SourceShard      string
-	ShardingKey      string
-	JoinedTables     map[string][]JoinTable
-	Type             ShardedTableFilterType
-	Tables           []*regexp.Regexp
-	PrimaryKeyTables map[string]struct{}
+	SourceShard             string
+	ShardingKey             string
+	JoinedTables            map[string][]JoinTable
+	Type                    ShardedTableFilterType
+	Tables                  []*regexp.Regexp
+	PrimaryKeyTables        map[string]struct{}
+	CutoverDependencyTables map[string]struct{}
 }
 
 func (s *ShardedTableFilter) isIgnoreFilter() bool {
@@ -286,6 +287,9 @@ func (s *ShardedTableFilter) ApplicableDatabases(dbs []string) ([]string, error)
 
 func (s *ShardedTableFilter) ApplicableTables(tables []*ghostferry.TableSchema) (applicable []*ghostferry.TableSchema, err error) {
 	for _, table := range tables {
+		if _, dependency := s.CutoverDependencyTables[table.Name]; dependency {
+			continue
+		}
 		if (s.isIgnoreFilter() && s.isPresent(table)) || (s.isIncludeFilter() && !s.isPresent(table)) {
 			continue
 		}
