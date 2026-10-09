@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- Updated golang to 1.27.2
+- Updated go packages:
+  - `github.com/sirupsen/logrus` to v1.10.2
+  - `github.com/rs/zerolog` to v1.35.1
+  - `github.com/gorilla/mux` to v1.8.1
+  - `github.com/golang/snappy` to v1.0.0
+  - `github.com/DataDog/datadog-go` to v4.8.3
+  - `github.com/stretchr/testify` to v1.12.1 (test dependency)
+  - indirect: `golang.org/x/sys`, `golang.org/x/text`, `filippo.io/edwards25519`, `go.uber.org/zap`, `go.uber.org/atomic`
+
 ## [1.3.1 - 2026-04-15]
 
 ### Changed
