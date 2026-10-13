@@ -85,6 +85,7 @@ func TestBinlogCoordinate_UnmarshalRejectsMalformedTypedForm(t *testing.T) {
 		{"negative position", `{"Type":"file_position","FilePosition":{"Name":"mysql-bin.000050","Pos":-1}}`},
 		{"overflowing position", `{"Type":"file_position","FilePosition":{"Name":"mysql-bin.000050","Pos":4294967296}}`},
 		{"invalid type", `{"Type":7,"FilePosition":{"Name":"mysql-bin.000050","Pos":700}}`},
+		{"position not a number", `{"Type":"file_position","FilePosition":{"Name":"mysql-bin.000050","Pos":"700"}}`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
