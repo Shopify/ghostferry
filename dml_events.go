@@ -79,9 +79,6 @@ type DMLEvent interface {
 	PaginationKey() (string, error)
 	BinlogPosition() mysql.Position
 	ResumableBinlogPosition() mysql.Position
-	// BinlogCoordinate and ResumableBinlogCoordinate are the coordinate-typed
-	// counterparts of BinlogPosition and ResumableBinlogPosition. They are the
-	// forward-looking API used while Ghostferry migrates off raw mysql.Position.
 	BinlogCoordinate() BinlogCoordinate
 	ResumableBinlogCoordinate() BinlogCoordinate
 	Annotation() (string, error)

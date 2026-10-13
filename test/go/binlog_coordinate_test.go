@@ -52,9 +52,8 @@ func TestBinlogCoordinate_JSONRoundTrip(t *testing.T) {
 	assert.Equal(t, coord.Position(), decoded.Position())
 }
 
-// TestBinlogCoordinate_UnmarshalBareMysqlPosition guards the backwards
-// compatible decoding path: a bare {"Name":...,"Pos":...} object (the shape an
-// older mysql.Position produced) must decode into a file/position coordinate.
+// A bare {"Name":...,"Pos":...} object (older serialized state) must decode as
+// a file/position coordinate.
 func TestBinlogCoordinate_UnmarshalBareMysqlPosition(t *testing.T) {
 	raw := []byte(`{"Name":"mysql-bin.000042","Pos":314}`)
 

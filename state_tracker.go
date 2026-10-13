@@ -106,9 +106,7 @@ func (s *SerializableState) MinSourceBinlogPosition() mysql.Position {
 	}
 }
 
-// MinSourceBinlogCoordinate returns the safe source resume coordinate. It is
-// the coordinate-typed counterpart of MinSourceBinlogPosition and currently
-// delegates to it, wrapping the result as a file/position coordinate.
+// MinSourceBinlogCoordinate returns the safe source resume coordinate.
 func (s *SerializableState) MinSourceBinlogCoordinate() BinlogCoordinate {
 	return NewFilePositionCoordinate(s.MinSourceBinlogPosition())
 }
@@ -199,13 +197,6 @@ func (s *StateTracker) UpdateLastResumableBinlogPositionForTargetVerifier(pos my
 
 	s.lastStoredBinlogPositionForTargetVerifier = pos
 }
-
-// Coordinate-based accessors and mutators.
-//
-// These are the forward-looking API. They currently delegate to the
-// file/position storage above so behavior is unchanged, but they let callers be
-// written in terms of BinlogCoordinate ahead of introducing a GTID coordinate
-// mode.
 
 func (s *StateTracker) UpdateLastResumableSourceBinlogCoordinate(coord BinlogCoordinate) {
 	s.UpdateLastResumableSourceBinlogPosition(coord.Position())

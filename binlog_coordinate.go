@@ -8,40 +8,18 @@ import (
 )
 
 // BinlogCoordinateType identifies how a binlog position is expressed.
-//
-// This is the seam that lets Ghostferry evolve from file/position based
-// replication coordinates towards GTID based coordinates without forcing every
-// consumer to know which representation is in use. In this first iteration only
-// the file/position representation is implemented; the GTID representation is
-// reserved so that state serialized today remains forward compatible.
 type BinlogCoordinateType string
 
 const (
-	// BinlogCoordinateFilePosition is the classic (file, position) coordinate.
 	BinlogCoordinateFilePosition BinlogCoordinateType = "file_position"
 
-	// BinlogCoordinateGTID is reserved for the future GTID based coordinate.
-	// It is intentionally defined now so that the serialization format and the
-	// strategy dispatch have a stable name to target.
+	// BinlogCoordinateGTID is reserved for the future GTID coordinate.
 	BinlogCoordinateGTID BinlogCoordinateType = "gtid"
 )
 
 // BinlogCoordinate is a representation-agnostic replication coordinate.
-//
-// Today it only wraps a file/position (mysql.Position). It exists so that the
-// rest of Ghostferry can be migrated to talk in terms of "a coordinate" rather
-// than "a file and a position", which is a prerequisite for adding a GTID mode
-// behind a feature flag without a second invasive refactor.
-//
-// The zero value is a zero file/position coordinate, matching the previous
-// behavior where an empty mysql.Position was used as the "no coordinate"
-// sentinel.
 type BinlogCoordinate struct {
-	// Type selects the active representation. An empty Type is treated as
-	// BinlogCoordinateFilePosition for backwards compatibility.
-	Type BinlogCoordinateType
-
-	// FilePosition holds the coordinate when Type is BinlogCoordinateFilePosition.
+	Type         BinlogCoordinateType
 	FilePosition mysql.Position
 }
 
@@ -53,9 +31,7 @@ func NewFilePositionCoordinate(pos mysql.Position) BinlogCoordinate {
 	}
 }
 
-// resolvedType returns the effective type, treating the empty string as
-// file/position for backwards compatibility with older serialized state and
-// zero-valued coordinates.
+// resolvedType treats an empty Type as file/position for backwards compatibility.
 func (c BinlogCoordinate) resolvedType() BinlogCoordinateType {
 	if c.Type == "" {
 		return BinlogCoordinateFilePosition
@@ -63,23 +39,15 @@ func (c BinlogCoordinate) resolvedType() BinlogCoordinateType {
 	return c.Type
 }
 
-// IsFilePosition reports whether this coordinate is a file/position coordinate.
 func (c BinlogCoordinate) IsFilePosition() bool {
 	return c.resolvedType() == BinlogCoordinateFilePosition
 }
 
-// Position returns the underlying mysql.Position.
-//
-// It is valid to call this only for file/position coordinates. This accessor
-// exists to keep the migration incremental: consumers that still require a
-// concrete mysql.Position can obtain it here while the surrounding plumbing is
-// converted to BinlogCoordinate.
+// Position returns the underlying mysql.Position; valid only for file/position coordinates.
 func (c BinlogCoordinate) Position() mysql.Position {
 	return c.FilePosition
 }
 
-// IsZero reports whether the coordinate carries no meaningful position. This
-// mirrors the previous use of an empty mysql.Position as the "unset" sentinel.
 func (c BinlogCoordinate) IsZero() bool {
 	switch c.resolvedType() {
 	case BinlogCoordinateFilePosition:
@@ -89,13 +57,8 @@ func (c BinlogCoordinate) IsZero() bool {
 	}
 }
 
-// Compare orders two coordinates of the same type.
-//
-// It returns -1, 0 or 1 following the semantics of mysql.Position.Compare for
-// file/position coordinates. Comparing coordinates of differing types is a
-// programmer error and panics, because there is no meaningful total ordering
-// across representations. Callers that may receive mixed types should branch on
-// the coordinate type first.
+// Compare orders two coordinates of the same type. Comparing coordinates of
+// different types is a programmer error and panics.
 func (c BinlogCoordinate) Compare(other BinlogCoordinate) int {
 	if c.resolvedType() != other.resolvedType() {
 		panic(fmt.Sprintf(
@@ -112,7 +75,6 @@ func (c BinlogCoordinate) Compare(other BinlogCoordinate) int {
 	}
 }
 
-// String returns a human readable representation for logs and status output.
 func (c BinlogCoordinate) String() string {
 	switch c.resolvedType() {
 	case BinlogCoordinateFilePosition:
@@ -122,10 +84,7 @@ func (c BinlogCoordinate) String() string {
 	}
 }
 
-// serializedBinlogCoordinate is the on-disk / on-wire shape of a
-// BinlogCoordinate. It is deliberately explicit and self-describing so that a
-// future GTID variant can be added as additional fields without breaking
-// existing readers.
+// serializedBinlogCoordinate is the serialized shape of a BinlogCoordinate.
 type serializedBinlogCoordinate struct {
 	Type         BinlogCoordinateType `json:"Type"`
 	FilePosition *mysql.Position      `json:"FilePosition,omitempty"`
@@ -146,10 +105,8 @@ func (c BinlogCoordinate) MarshalJSON() ([]byte, error) {
 	return json.Marshal(out)
 }
 
-// UnmarshalJSON implements json.Unmarshaler.
-//
-// It accepts both the new self-describing form and, for defensive
-// compatibility, a bare mysql.Position object of the form {"Name":...,"Pos":...}.
+// UnmarshalJSON implements json.Unmarshaler. It also accepts a bare
+// mysql.Position object for backwards compatibility.
 func (c *BinlogCoordinate) UnmarshalJSON(data []byte) error {
 	var typed serializedBinlogCoordinate
 	if err := json.Unmarshal(data, &typed); err != nil {
@@ -170,7 +127,6 @@ func (c *BinlogCoordinate) UnmarshalJSON(data []byte) error {
 		}
 	}
 
-	// Fall back to a bare mysql.Position for older/simpler payloads.
 	var pos mysql.Position
 	if err := json.Unmarshal(data, &pos); err != nil {
 		return err
