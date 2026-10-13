@@ -127,14 +127,11 @@ func (s *WaitUntilReplicaIsCaughtUpToMasterGTIDSuite) TestIsCaughtUpToCoordinate
 	uuid := "3e11fa47-71ca-11e1-9e33-c80aa9429562"
 	target := ghostferry.NewGTIDCoordinate(uuid + ":1-100")
 
-	// Replica has replicated only up to :1-50, which does not contain the
-	// target :1-100.
 	s.updateHeartbeatGTID(s.w.ReplicaDB, uuid+":1-50")
 	isCaughtUp, err := s.w.IsCaughtUpToCoordinate(target, 1)
 	s.Require().Nil(err)
 	s.Require().False(isCaughtUp)
 
-	// Replica now contains the full target set.
 	s.updateHeartbeatGTID(s.w.ReplicaDB, uuid+":1-150")
 	isCaughtUp, err = s.w.IsCaughtUpToCoordinate(target, 1)
 	s.Require().Nil(err)

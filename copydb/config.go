@@ -71,9 +71,8 @@ type Config struct {
 	ReplicatedMasterPositionQuery string
 
 	// This is the SQL query used to read the master's executed GTID set that
-	// has been replicated to the Source. It is only used when
-	// BinlogCoordinateMode is "gtid". The query must return a single column
-	// containing the GTID set string, e.g.
+	// has been replicated to the Source. Only used in GTID mode; must return
+	// a single column with the GTID set string, e.g.
 	//
 	// SELECT gtid_executed FROM meta.ptheartbeat WHERE server_id = master_server_id
 	ReplicatedMasterGTIDQuery string

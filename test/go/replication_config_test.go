@@ -75,8 +75,7 @@ func (t *ReplicationConfigTestSuite) TestErrorsIfItsRunFromAReplicaWithoutSettin
 
 func (t *ReplicationConfigTestSuite) TestErrorsIfPositionFetcherQueryIsNotProvided() {
 	if t.gtidMode {
-		// The GTID fetcher scans a single column, so a two-column query is the
-		// error condition here.
+		// The GTID fetcher scans a single column, so a two-column query is the error condition.
 		t.ReplicatedMasterGTIDFetcher.Query = "SELECT 1, 2"
 
 		err := t.Ferry.Initialize()
@@ -102,8 +101,7 @@ func (t *ReplicationConfigTestSuite) TestErrorsIfProvidedMasterIsReadOnly() {
 
 func (t *ReplicationConfigTestSuite) TestCanInitializeFerryWithValidConfig() {
 	if t.gtidMode {
-		// A high, valid GTID set that parses cleanly; Initialize only probes
-		// that the fetcher query is executable, so it must succeed.
+		// Initialize only probes that the query is executable, so a valid GTID set must succeed.
 		t.ReplicatedMasterGTIDFetcher.Query = "SELECT '3e11fa47-71ca-11e1-9e33-c80aa9429562:1-999999999'"
 
 		err := t.Ferry.Initialize()

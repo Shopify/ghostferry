@@ -692,26 +692,19 @@ type Config struct {
 	// Make sure you have binlog_row_image=FULL when turning on this
 	SkipBinlogRowImageCheck bool
 
-	// BinlogCoordinateMode selects how binlog streams track coordinates.
+	// BinlogCoordinateMode selects how binlog coordinates are tracked.
 	//
 	// Valid values:
 	//   - "" or "file_position": the classic (file, position) coordinate. This
 	//     is the default.
-	//   - "gtid": GTID-set based coordinates (experimental, MySQL only). GTID
-	//     mode drives binlog streaming start/stop, state persistence and resume,
-	//     progress reporting, and replica catchup via executed-set containment.
-	//     It requires @@GLOBAL.gtid_mode=ON on the source (and target when
-	//     target verification is enabled, and the replication master when
-	//     running from a replica).
+	//   - "gtid": GTID-set based coordinates (experimental, MySQL only).
+	//     Requires @@GLOBAL.gtid_mode=ON on the source, on the target when
+	//     target verification is enabled, and on the replication master when
+	//     running from a replica.
 	//
 	// In GTID mode, LastSuccessfulBinlogPos still reports the streamed
-	// file/position, while FinalBinlogPos remains unset. These legacy fields
-	// are not authoritative for GTID comparisons; use
+	// file/position, while FinalBinlogPos remains unset; use
 	// LastSuccessfulBinlogCoordinate and FinalBinlogCoordinate instead.
-	//
-	// Prefer BinlogCoordinateMode over any future boolean flag: it keeps the
-	// file/position and GTID paths cleanly separated and leaves room for
-	// additional coordinate sources.
 	BinlogCoordinateMode BinlogCoordinateType
 
 	// This config is necessary for inline verification for a special case of

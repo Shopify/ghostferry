@@ -85,10 +85,6 @@ func TestUpdateBinlogSelectCopy(t *testing.T) {
 }
 
 func TestMasterChangingBeforeStoppingBinlogStreaming(t *testing.T) {
-	// This test fakes an unreachable replicated-master coordinate to exercise
-	// master-demotion detection, which is independent of the binlog coordinate
-	// mode. The file/position run provides full coverage; the fabricated GTID
-	// timing differs enough that we skip the redundant GTID variant.
 	if os.Getenv("GHOSTFERRY_BINLOG_COORDINATE_MODE") == string(ghostferry.BinlogCoordinateGTID) {
 		t.Skip("master-demotion detection is mode-independent; covered by the file/position run")
 	}
