@@ -9,14 +9,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// runtimeTestConfig is a DatabaseConfig SqlDB can open lazily (sql.Open does
-// not dial), so Replace can install a real handle without a live server.
+// SqlDB opens lazily (no dial), so tests get real handles without a server.
 func runtimeTestConfig(host string) *DatabaseConfig {
 	return &DatabaseConfig{Host: host, Port: 3306, User: "root", Net: "tcp"}
 }
 
-// isClosed reports whether db rejects work because it was closed. A cancelled
-// context makes an open lazily-dialed handle fail fast without dialing.
+// isClosed: a cancelled context makes PingContext fail fast without dialing.
 func isClosed(t *testing.T, db *sql.DB) bool {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -45,12 +43,10 @@ func TestSourceRuntimeReplaceInstallsNewSourceAndRetiresOld(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, newDB)
 
-	// The runtime now serves the new handle/config.
 	assert.Same(t, newDB, rt.DB())
 	assert.Same(t, newCfg, rt.Config())
 	assert.NotSame(t, oldDB, rt.DB())
 
-	// The old handle is retired, not closed here.
 	assert.Contains(t, rt.retired, oldDB)
 }
 
@@ -62,7 +58,6 @@ func TestSourceRuntimeReplaceRetainsAllPriorHandles(t *testing.T) {
 	_, err = rt.Replace(runtimeTestConfig("h2"), nil)
 	require.NoError(t, err)
 
-	// Two swaps retire two handles (gen0 and the h1 handle).
 	assert.Len(t, rt.retired, 2)
 }
 
@@ -77,7 +72,6 @@ func TestSourceRuntimeCloseRetiredClosesOnlyRetiredHandles(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, current.Close()) })
 
-	// Retiring must not close handles that in-flight work may still use.
 	assert.False(t, isClosed(t, initial))
 	assert.False(t, isClosed(t, replaced))
 
@@ -87,7 +81,6 @@ func TestSourceRuntimeCloseRetiredClosesOnlyRetiredHandles(t *testing.T) {
 	assert.False(t, isClosed(t, current), "current handle must stay open")
 	assert.Same(t, current, rt.DB())
 
-	// Draining is idempotent and never touches the current handle.
 	rt.CloseRetired()
 	assert.False(t, isClosed(t, current))
 }
@@ -97,7 +90,6 @@ func TestSourceRuntimeNilInitial(t *testing.T) {
 	assert.Nil(t, rt.DB())
 	assert.Nil(t, rt.Config())
 
-	// Replacing from a nil initial does not retire anything.
 	_, err := rt.Replace(runtimeTestConfig("h1"), nil)
 	require.NoError(t, err)
 	assert.Empty(t, rt.retired)

@@ -54,11 +54,6 @@ type Ferry struct {
 	SourceDB *sql.DB
 	TargetDB *sql.DB
 
-	// sourceRuntime owns the current source connection and its DatabaseConfig.
-	// It is introduced as the future single source of truth for "the current
-	// source" so a master failover can repoint every consumer atomically. It is
-	// initialised alongside SourceDB in Initialize. Consumers are not yet
-	// migrated to it; SourceDB / Config.Source remain authoritative for now.
 	sourceRuntime *SourceRuntime
 
 	ControlServer *ControlServer
@@ -98,8 +93,6 @@ type Ferry struct {
 	rowCopyCompleteCh chan struct{}
 }
 
-// SourceRuntime returns the Ferry's source runtime, which owns the current
-// source connection and config. It is populated during Initialize.
 func (f *Ferry) SourceRuntime() *SourceRuntime {
 	return f.sourceRuntime
 }
@@ -380,9 +373,6 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
-	// Wrap the source connection in a SourceRuntime. This is currently only the
-	// owner of the initial handle; consumers still read SourceDB directly. A
-	// later change migrates consumers to the runtime and uses it for failover.
 	f.sourceRuntime = NewSourceRuntime(f.SourceDB, f.Config.Source)
 
 	err = f.checkConnection("source", f.SourceDB)
