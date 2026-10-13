@@ -318,10 +318,7 @@ func (s *StateTracker) UpdateLastResumableBinlogPositionForTargetVerifier(pos my
 
 func (s *StateTracker) UpdateLastResumableSourceBinlogCoordinate(coord BinlogCoordinate) {
 	if coord.IsGTID() {
-		s.BinlogRWMutex.Lock()
-		defer s.BinlogRWMutex.Unlock()
-		c := coord
-		s.lastWrittenBinlogCoordinate = &c
+		s.storeGTIDCoordinate(&s.lastWrittenBinlogCoordinate, coord)
 		return
 	}
 	s.UpdateLastResumableSourceBinlogPosition(coord.Position())
@@ -329,10 +326,7 @@ func (s *StateTracker) UpdateLastResumableSourceBinlogCoordinate(coord BinlogCoo
 
 func (s *StateTracker) UpdateLastResumableSourceBinlogCoordinateForInlineVerifier(coord BinlogCoordinate) {
 	if coord.IsGTID() {
-		s.BinlogRWMutex.Lock()
-		defer s.BinlogRWMutex.Unlock()
-		c := coord
-		s.lastStoredBinlogCoordinateForInlineVerifier = &c
+		s.storeGTIDCoordinate(&s.lastStoredBinlogCoordinateForInlineVerifier, coord)
 		return
 	}
 	s.UpdateLastResumableSourceBinlogPositionForInlineVerifier(coord.Position())
@@ -340,43 +334,39 @@ func (s *StateTracker) UpdateLastResumableSourceBinlogCoordinateForInlineVerifie
 
 func (s *StateTracker) UpdateLastResumableBinlogCoordinateForTargetVerifier(coord BinlogCoordinate) {
 	if coord.IsGTID() {
-		s.BinlogRWMutex.Lock()
-		defer s.BinlogRWMutex.Unlock()
-		c := coord
-		s.lastStoredBinlogCoordinateForTargetVerifier = &c
+		s.storeGTIDCoordinate(&s.lastStoredBinlogCoordinateForTargetVerifier, coord)
 		return
 	}
 	s.UpdateLastResumableBinlogPositionForTargetVerifier(coord.Position())
 }
 
-func (s *StateTracker) LastResumableSourceBinlogCoordinate() BinlogCoordinate {
-	s.BinlogRWMutex.RLock()
-	defer s.BinlogRWMutex.RUnlock()
+func (s *StateTracker) storeGTIDCoordinate(dst **BinlogCoordinate, coord BinlogCoordinate) {
+	s.BinlogRWMutex.Lock()
+	defer s.BinlogRWMutex.Unlock()
 
-	if s.lastWrittenBinlogCoordinate != nil {
-		return *s.lastWrittenBinlogCoordinate
-	}
-	return NewFilePositionCoordinate(s.lastWrittenBinlogPosition)
+	*dst = &coord
+}
+
+func (s *StateTracker) LastResumableSourceBinlogCoordinate() BinlogCoordinate {
+	return s.gtidCoordinateOrPosition(&s.lastWrittenBinlogCoordinate, &s.lastWrittenBinlogPosition)
 }
 
 func (s *StateTracker) LastResumableSourceBinlogCoordinateForInlineVerifier() BinlogCoordinate {
-	s.BinlogRWMutex.RLock()
-	defer s.BinlogRWMutex.RUnlock()
-
-	if s.lastStoredBinlogCoordinateForInlineVerifier != nil {
-		return *s.lastStoredBinlogCoordinateForInlineVerifier
-	}
-	return NewFilePositionCoordinate(s.lastStoredBinlogPositionForInlineVerifier)
+	return s.gtidCoordinateOrPosition(&s.lastStoredBinlogCoordinateForInlineVerifier, &s.lastStoredBinlogPositionForInlineVerifier)
 }
 
 func (s *StateTracker) LastResumableBinlogCoordinateForTargetVerifier() BinlogCoordinate {
+	return s.gtidCoordinateOrPosition(&s.lastStoredBinlogCoordinateForTargetVerifier, &s.lastStoredBinlogPositionForTargetVerifier)
+}
+
+func (s *StateTracker) gtidCoordinateOrPosition(src **BinlogCoordinate, pos *mysql.Position) BinlogCoordinate {
 	s.BinlogRWMutex.RLock()
 	defer s.BinlogRWMutex.RUnlock()
 
-	if s.lastStoredBinlogCoordinateForTargetVerifier != nil {
-		return *s.lastStoredBinlogCoordinateForTargetVerifier
+	if *src != nil {
+		return **src
 	}
-	return NewFilePositionCoordinate(s.lastStoredBinlogPositionForTargetVerifier)
+	return NewFilePositionCoordinate(*pos)
 }
 
 func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginationKey PaginationKey, rowStats RowStats) {
