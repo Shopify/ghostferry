@@ -692,20 +692,7 @@ type Config struct {
 	// Make sure you have binlog_row_image=FULL when turning on this
 	SkipBinlogRowImageCheck bool
 
-	// BinlogCoordinateMode selects how Ghostferry expresses and persists binlog
-	// coordinates.
-	//
-	// Valid values:
-	//   - "" or "file_position": the classic (file, position) coordinate. This
-	//     is the default and current behavior.
-	//   - "gtid": GTID-set based coordinates (experimental, MySQL only). At this
-	//     stage GTID mode only affects coordinate representation, validation, and
-	//     the ability to read the current GTID set; binlog streaming still uses
-	//     file/position until a later stage wires GTID streaming.
-	//
-	// Prefer BinlogCoordinateMode over any future boolean flag: it keeps the
-	// file/position and GTID paths cleanly separated and leaves room for
-	// additional coordinate sources.
+	// BinlogCoordinateMode is "file_position" (default) or "gtid".
 	BinlogCoordinateMode BinlogCoordinateType
 
 	// This config is necessary for inline verification for a special case of
@@ -888,7 +875,6 @@ func (c *Config) ValidateConfig() error {
 	case "":
 		c.BinlogCoordinateMode = BinlogCoordinateFilePosition
 	case BinlogCoordinateFilePosition, BinlogCoordinateGTID:
-		// valid
 	default:
 		return fmt.Errorf("invalid BinlogCoordinateMode %q, must be %q or %q", c.BinlogCoordinateMode, BinlogCoordinateFilePosition, BinlogCoordinateGTID)
 	}

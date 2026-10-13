@@ -32,7 +32,6 @@ func TestBinlogCoordinate_HasReachedFilePosition(t *testing.T) {
 	a := ghostferry.NewFilePositionCoordinate(mysql.Position{Name: "mysql-bin.000001", Pos: 10})
 	b := ghostferry.NewFilePositionCoordinate(mysql.Position{Name: "mysql-bin.000001", Pos: 20})
 
-	// b is ahead of a: b has reached a, a has not reached b.
 	reached, err := b.HasReached(a)
 	require.NoError(t, err)
 	assert.True(t, reached)
@@ -41,7 +40,6 @@ func TestBinlogCoordinate_HasReachedFilePosition(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, reached)
 
-	// A coordinate has reached itself (>=).
 	reached, err = a.HasReached(a)
 	require.NoError(t, err)
 	assert.True(t, reached)
@@ -176,7 +174,6 @@ func TestBinlogCoordinate_HasReachedGTID(t *testing.T) {
 	larger := ghostferry.NewGTIDCoordinate(testGTIDSetB)
 	smaller := ghostferry.NewGTIDCoordinate(testGTIDSetA)
 
-	// The larger set contains the smaller, so it has reached it.
 	reached, err := larger.HasReached(smaller)
 	require.NoError(t, err)
 	assert.True(t, reached)

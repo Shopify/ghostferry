@@ -258,10 +258,8 @@ func CheckDbIsAReplica(db *sql.DB) (bool, error) {
 	return isReadOnly, err
 }
 
-// ReadExecutedGTIDSet reads @@GLOBAL.GTID_EXECUTED from the given database and
-// returns it as a canonical GTID set string. The returned string may be empty
-// if the server has executed no GTID-tagged transactions yet; that is not an
-// error.
+// ReadExecutedGTIDSet reads @@GLOBAL.GTID_EXECUTED; an empty result is valid,
+// not an error.
 func ReadExecutedGTIDSet(db *sql.DB) (string, error) {
 	var gtidSet string
 	row := db.QueryRow("SELECT @@GLOBAL.GTID_EXECUTED")
@@ -279,8 +277,6 @@ func ReadCurrentGTIDCoordinate(db *sql.DB) (BinlogCoordinate, error) {
 		return BinlogCoordinate{}, err
 	}
 
-	// Validate that the string parses as a MySQL GTID set. An empty string is
-	// a valid (empty) set.
 	if _, err := mysql.ParseMysqlGTIDSet(gtidSet); err != nil {
 		return BinlogCoordinate{}, fmt.Errorf("parsing executed GTID set %q: %w", gtidSet, err)
 	}
@@ -288,10 +284,7 @@ func ReadCurrentGTIDCoordinate(db *sql.DB) (BinlogCoordinate, error) {
 	return NewGTIDCoordinate(gtidSet), nil
 }
 
-// CheckServerGTIDModeEnabled verifies that the server has GTID mode enabled
-// (@@GLOBAL.gtid_mode = ON). It returns an error describing the current value
-// otherwise. This is intended to be called during startup validation when
-// BinlogCoordinateMode is "gtid".
+// CheckServerGTIDModeEnabled verifies @@GLOBAL.gtid_mode is ON.
 func CheckServerGTIDModeEnabled(db *sql.DB) error {
 	var gtidMode string
 	row := db.QueryRow("SELECT @@GLOBAL.gtid_mode")
