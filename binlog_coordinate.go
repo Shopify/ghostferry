@@ -185,15 +185,15 @@ func (c BinlogCoordinate) HasReached(target BinlogCoordinate) (bool, error) {
 	case BinlogCoordinateGTID:
 		// Use the cached parsed sets (read-only) to avoid re-parsing on hot
 		// paths such as the per-event stop check. Contain does not mutate.
-		mine, err := c.parsedSet()
+		sourceSet, err := c.parsedSet()
 		if err != nil {
 			return false, fmt.Errorf("parsing GTID set %q: %w", c.GTIDSet, err)
 		}
-		theirs, err := target.parsedSet()
+		targetSet, err := target.parsedSet()
 		if err != nil {
 			return false, fmt.Errorf("parsing GTID set %q: %w", target.GTIDSet, err)
 		}
-		return mine.Contain(theirs), nil
+		return sourceSet.Contain(targetSet), nil
 	default:
 		return false, fmt.Errorf("HasReached not supported for binlog coordinate type %q", c.resolvedType())
 	}
