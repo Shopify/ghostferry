@@ -188,27 +188,30 @@ func (s *BinlogStreamer) coordinateMode() BinlogCoordinateType {
 	return s.BinlogCoordinateMode
 }
 
+// currentCoordinate returns the source's current coordinate for the
+// configured BinlogCoordinateMode.
+func (s *BinlogStreamer) currentCoordinate() (BinlogCoordinate, error) {
+	if s.coordinateMode() == BinlogCoordinateGTID {
+		return ReadCurrentGTIDCoordinate(s.DB)
+	}
+	pos, err := ShowMasterStatusBinlogPosition(s.DB)
+	if err != nil {
+		return BinlogCoordinate{}, err
+	}
+	return NewFilePositionCoordinate(pos), nil
+}
+
 // ConnectBinlogStreamerToMysqlWithCoordinate starts streaming from the current
-// server coordinate for the configured BinlogCoordinateMode. It is the
-// coordinate-typed counterpart of ConnectBinlogStreamerToMysql.
+// server coordinate for the configured BinlogCoordinateMode.
 func (s *BinlogStreamer) ConnectBinlogStreamerToMysqlWithCoordinate() (BinlogCoordinate, error) {
 	s.ensureLogger()
 
-	switch s.coordinateMode() {
-	case BinlogCoordinateGTID:
-		coord, err := ReadCurrentGTIDCoordinate(s.DB)
-		if err != nil {
-			s.logger.WithError(err).Error("failed to read current executed GTID set")
-			return BinlogCoordinate{}, err
-		}
-		return s.ConnectBinlogStreamerToMysqlSinceCoordinate(coord)
-	default:
-		pos, err := s.ConnectBinlogStreamerToMysql()
-		if err != nil {
-			return BinlogCoordinate{}, err
-		}
-		return NewFilePositionCoordinate(pos), nil
+	coord, err := s.currentCoordinate()
+	if err != nil {
+		s.logger.WithError(err).Error("failed to read current binlog coordinate")
+		return BinlogCoordinate{}, err
 	}
+	return s.ConnectBinlogStreamerToMysqlSinceCoordinate(coord)
 }
 
 // ConnectBinlogStreamerToMysqlSinceCoordinate starts streaming since the given
