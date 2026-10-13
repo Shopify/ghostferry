@@ -709,18 +709,10 @@ type Config struct {
 	// LastSuccessfulBinlogCoordinate and FinalBinlogCoordinate instead.
 	BinlogCoordinateMode BinlogCoordinateType
 
-	// MasterFailoverRecovery, when set, enables automatic reconnection of the
-	// source to a new master writer when the source connection is lost (a
-	// topology failover). It requires BinlogCoordinateMode "gtid" (GTID
-	// coordinates are server-independent; file/position cannot be carried across
-	// a failover). The Resolver is supplied by the embedding application to
-	// discover the new writer. Nil keeps the previous behavior: a lost source
-	// connection is fatal.
-	//
-	// Covers the binlog stream and source work created after the swap; a
-	// row-copy cursor already bound to the dead server exhausts its read
-	// retries and fails. Initialize rejects it alongside
-	// WaitUntilReplicaIsCaughtUpToMaster.
+	// MasterFailoverRecovery, when set, reconnects the source to the promoted
+	// master writer after the source connection is lost. Requires
+	// BinlogCoordinateMode "gtid" and a Resolver; incompatible with
+	// WaitUntilReplicaIsCaughtUpToMaster. Nil keeps a lost source fatal.
 	MasterFailoverRecovery *MasterFailoverRecoveryConfig
 
 	// This config is necessary for inline verification for a special case of

@@ -99,8 +99,8 @@ func (t *PrimaryKeyTableTestSuite) TestPrimaryKeyTableVerificationFailure() {
 	t.Require().True(strings.HasSuffix(err.Error(), "on gftest1.tenants_table do not match"))
 }
 
-// VerifyDuringCutover is the last hook before copyPrimaryKeyTables, and runs
-// after Ferry.Run has joined: the only safe point to fake a source failover.
+// VerifyDuringCutover runs after Ferry.Run has joined, just before
+// copyPrimaryKeyTables: the only safe point to fake a source failover.
 type sourceRuntimeSwappingVerifier struct {
 	ghostferry.Verifier
 	afterCutover func() error
@@ -114,8 +114,7 @@ func (v *sourceRuntimeSwappingVerifier) VerifyDuringCutover() (ghostferry.Verifi
 	return result, v.afterCutover()
 }
 
-// Regression: copyPrimaryKeyTables read schemas from the Initialize-time
-// handle, which a failover leaves stale.
+// Regression: copyPrimaryKeyTables read schemas from the Initialize-time handle, stale after a failover.
 func (t *PrimaryKeyTableTestSuite) TestPrimaryKeyTablesUseSourceRuntime() {
 	f := t.Ferry.Ferry
 	errorHandler := &testhelpers.ErrorHandler{}
@@ -129,8 +128,7 @@ func (t *PrimaryKeyTableTestSuite) TestPrimaryKeyTablesUseSourceRuntime() {
 	f.Verifier = &sourceRuntimeSwappingVerifier{
 		Verifier: original,
 		afterCutover: func() error {
-			// Swap the way failover recovery does, and retire the handle the
-			// run was initialized with.
+			// Swap the source the way failover recovery does and retire the initial handle.
 			newDB, err := f.SourceRuntime().Replace(f.Config.Source, nil)
 			if err != nil {
 				return err

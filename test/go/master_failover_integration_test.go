@@ -20,9 +20,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Selects the destructive scenario when this binary is re-executed as a
-// child. The scenario leaves Ferry goroutines running on failure and
-// Ghostferry has no Ferry.Cancel, so only a separate process can be killed.
+// Selects the scenario when this binary is re-executed as a child; the
+// scenario leaves Ferry goroutines running and there is no Ferry.Cancel, so
+// only a separate process can be killed.
 const failoverChildEnv = "GHOSTFERRY_FAILOVER_TEST_CHILD"
 
 const (
@@ -30,9 +30,8 @@ const (
 	childScenarioFailAfterStop = "fail_after_stop"
 )
 
-// GTID-only, and needs docker/podman to stop the source; skips otherwise.
-// As a parent it runs the child and restores the environment; with
-// failoverChildEnv set it runs the scenario itself.
+// GTID-only, needs docker/podman to stop the source; runs the scenario in a
+// child process unless failoverChildEnv is set.
 func TestMasterFailoverRecoveryReconnectsToPromotedMaster(t *testing.T) {
 	if scenario := os.Getenv(failoverChildEnv); scenario != "" {
 		runFailoverScenario(t, scenario)
@@ -64,8 +63,7 @@ func TestMasterFailoverRecoveryCleansUpAfterFailure(t *testing.T) {
 	assert.Contains(t, output, "--- FAIL: TestMasterFailoverRecoveryReconnectsToPromotedMaster",
 		"the child must have failed inside the scenario, not skipped it")
 
-	// Proves the child reached the stopped-source phase rather than failing
-	// early for an unrelated reason.
+	// Confirms the child failed in the stopped-source phase, not earlier.
 	pingCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.Error(t, parent.sourceDB.PingContext(pingCtx),
@@ -85,8 +83,7 @@ func TestMasterFailoverRecoveryCleansUpAfterFailure(t *testing.T) {
 type failoverParent struct {
 	t    *testing.T
 	tool string
-	// Captured before the child stops it: restoration must not depend on the
-	// container still being listable.
+	// Captured before the child stops it; a stopped container may not be listable.
 	sourceContainer string
 
 	sourceDB   *sqlwrapper.DB
@@ -161,8 +158,7 @@ func (p *failoverParent) restoreEnvironment() error {
 		errs = append(errs, fmt.Errorf("source did not accept connections again: %w", err))
 	}
 
-	// State dependent (mysql-3 may not be a replica at all), so their
-	// failures are not cleanup failures.
+	// State dependent (mysql-3 may not be a replica), so failures are ignored.
 	execControlIgnoringError(p.promotedDB, "STOP REPLICA")
 	execControlIgnoringError(p.promotedDB, "RESET REPLICA ALL")
 	// super_read_only must be cleared before read_only.
@@ -173,8 +169,7 @@ func (p *failoverParent) restoreEnvironment() error {
 		errs = append(errs, err)
 	}
 
-	// Source/target GTID history is deliberately left alone: other tests
-	// resume from it.
+	// Source/target GTID history is deliberately left alone: other tests resume from it.
 	for name, db := range p.servers() {
 		for _, schema := range testhelpers.ApplicableTestDbs {
 			if err := execControl(db, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", schema)); err != nil {
@@ -251,9 +246,8 @@ func runFailoverScenario(t *testing.T, scenario string) {
 
 	fm := &futureMaster{t: t, db: promotedDB, sourceDB: sourceDB, containerTool: tool}
 
-	// mysql-3 replicates the source BEFORE seeding, so it holds the real seed
-	// data and later writes; a failover to it then cannot lose applied
-	// transactions.
+	// mysql-3 replicates the source before seeding, so it holds every applied
+	// transaction a failover to it must not lose.
 	fm.setupAsReplicaOfSource()
 
 	testhelpers.SeedInitialData(sourceDB, "gftest", "table1", 30)
@@ -293,12 +287,10 @@ func runFailoverScenario(t *testing.T, scenario string) {
 		ferry.Run()
 	}()
 
-	// Failover during row copy is out of scope: in-flight cursors stay bound
-	// to their connection for scan consistency.
+	// Failover during row copy is out of scope: cursors stay bound to their connection.
 	ferry.WaitUntilRowCopyIsComplete()
 
-	// The extra rows may already have streamed; what matters is that the
-	// promoted master holds them, so recovery can resume there.
+	// The rows may already have streamed; what matters is that the promoted master holds them.
 	insertRows(t, sourceDB, 50)
 	fm.waitUntilCaughtUpToSource()
 	fm.promote()
@@ -344,8 +336,7 @@ func runFailoverScenario(t *testing.T, scenario string) {
 	ferry.SourceRuntime().CloseRetired()
 }
 
-// Returns an error rather than failing from a helper, so the caller decides
-// on the test goroutine.
+// Returns an error rather than failing in a helper, so the caller decides on the test goroutine.
 func waitUntilSourceRepointed(ferry *testhelpers.TestFerry, wantPort uint16, errHandler *testhelpers.ErrorHandler, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
@@ -368,8 +359,7 @@ func binlogModeFromEnv() ghostferry.BinlogCoordinateType {
 	return ghostferry.BinlogCoordinateType(mode)
 }
 
-// Cleanup is registered immediately after Open so a failing Ping cannot leak
-// the handle.
+// Cleanup is registered immediately after Open so a failing Ping cannot leak the handle.
 func openControlDB(t *testing.T, port uint64) *sqlwrapper.DB {
 	t.Helper()
 	dsn := fmt.Sprintf(
@@ -592,8 +582,7 @@ func (f *futureMaster) waitUntilCaughtUpToSource() {
 		return
 	}
 
-	// The server waits up to 20 seconds; give the query a slightly longer
-	// deadline so the client never gives up before the server answers.
+	// The client deadline must outlast the server's 20s wait.
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 

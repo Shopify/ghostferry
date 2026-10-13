@@ -20,9 +20,7 @@ import (
 var errUnsupportedSourceRuntimeTestOp = errors.New("unsupported source runtime test operation")
 
 // sourceRuntimeQueryConnector returns the configured rows for every query, prepared or not.
-//
-// A non-nil query answers per statement instead of with the static rows;
-// prepared statements retain their text so they take the same path.
+// A non-nil query answers per statement instead of the static rows.
 type sourceRuntimeQueryConnector struct {
 	columns []string
 	data    [][]driver.Value
@@ -117,7 +115,6 @@ func newSourceRuntimeQueryDB(t *testing.T, columns []string, data [][]driver.Val
 	return db
 }
 
-// Closed when the test ends.
 func newSourceRuntimeQueryDBWithQuery(t *testing.T, query func(context.Context, string) (driver.Rows, error)) *sql.DB {
 	t.Helper()
 	db := &sql.DB{DB: sqlorig.OpenDB(&sourceRuntimeQueryConnector{query: query})}

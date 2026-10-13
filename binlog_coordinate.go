@@ -179,10 +179,7 @@ func intersectGTIDSets(a, b mysql.GTIDSet) (mysql.GTIDSet, error) {
 	return result, nil
 }
 
-// unionGTIDStringInto returns a new GTID set equal to base with the GTID(s) in
-// add merged in. base may be nil (treated as empty). It never mutates base. It
-// is used by failover recovery to fold an in-flight transaction's GTID into the
-// already-applied set before validating a candidate master.
+// unionGTIDStringInto merges add into a clone of base (nil = empty); never mutates base.
 func unionGTIDStringInto(base mysql.GTIDSet, add string) (mysql.GTIDSet, error) {
 	var result *mysql.MysqlGTIDSet
 	if base == nil {
@@ -205,10 +202,7 @@ func unionGTIDStringInto(base mysql.GTIDSet, add string) (mysql.GTIDSet, error) 
 	return result, nil
 }
 
-// unionGTIDSets returns a new GTID set equal to a with b merged in. Either may
-// be nil (treated as empty). It never mutates its inputs. It is used by failover
-// recovery to require a candidate master to contain both the applied set and the
-// cutover stop target.
+// unionGTIDSets merges b into a clone of a (either may be nil); never mutates inputs.
 func unionGTIDSets(a, b mysql.GTIDSet) (mysql.GTIDSet, error) {
 	var result *mysql.MysqlGTIDSet
 	if a == nil {
@@ -231,8 +225,7 @@ func unionGTIDSets(a, b mysql.GTIDSet) (mysql.GTIDSet, error) {
 			return nil, fmt.Errorf("GTID union requires MySQL GTID sets, got %T", b)
 		}
 		for _, uuidSet := range bMysql.Sets {
-			// Clone so result never aliases b's internal UUIDSet (AddSet stores
-			// the pointer directly when the SID is not already present).
+			// AddSet stores the pointer directly, so clone to avoid aliasing b's UUIDSet.
 			result.AddSet(uuidSet.Clone())
 		}
 	}

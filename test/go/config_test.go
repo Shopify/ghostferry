@@ -172,9 +172,7 @@ func (this *ConfigTestSuite) TestUnixNetMysqlConfig() {
 	err := this.config.ValidateConfig()
 	this.Require().Nil(err)
 
-	// Validation is idempotent: a unix config that has already been validated
-	// (and therefore has Port zero) must validate again unchanged, because
-	// failover normalizes resolver-supplied configs that may already be valid.
+	// Validation must be idempotent: failover may normalize an already-validated config.
 	this.Require().Equal(uint16(0), this.config.Source.Port)
 	this.Require().Nil(this.config.Source.Validate())
 	this.Require().Equal(uint16(0), this.config.Source.Port)

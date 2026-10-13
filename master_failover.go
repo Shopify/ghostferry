@@ -11,19 +11,11 @@ import (
 	"github.com/go-mysql-org/go-mysql/mysql"
 )
 
-// errNilCandidate is returned when a resolver yields no candidate master.
 var errNilCandidate = errors.New("failover: resolver returned a nil candidate master")
 
-// MasterWriterResolver resolves the current source master writer after a
-// suspected failover. Implementations typically consult an external topology
-// service (orchestrator, a service-discovery endpoint, etc.) to find the host
-// that is now the writable primary.
-//
-// ResolveCurrentMaster receives the DatabaseConfig the source was last
-// connected to (so the implementation can, for example, exclude the now-dead
-// host) and returns the connection details of the host that should now be
-// streamed from. Returning an error causes recovery to be retried after a
-// backoff.
+// MasterWriterResolver finds the host that is now the writable primary after a
+// failover, typically via a topology service. previous is the config last
+// connected to (e.g. to exclude the dead host); an error retries after backoff.
 type MasterWriterResolver interface {
 	ResolveCurrentMaster(previous *DatabaseConfig) (*DatabaseConfig, error)
 }
@@ -36,37 +28,22 @@ func (f MasterWriterResolverFunc) ResolveCurrentMaster(previous *DatabaseConfig)
 }
 
 // MasterFailoverRecoveryConfig configures automatic reconnection to a new
-// source master when the source connection is lost.
-//
-// Failover recovery is only supported in GTID binlog coordinate mode: GTID sets
-// are server-independent, so a resume set valid on the old master is meaningful
-// on the new one. File/position coordinates are per-host and cannot be carried
-// across a failover, so recovery is refused in that mode.
+// source master when the source connection is lost. GTID mode only.
 type MasterFailoverRecoveryConfig struct {
-	// Resolver discovers the new master writer. Required; recovery is disabled
-	// when nil.
+	// Discovers the new master writer. Required.
 	Resolver MasterWriterResolver
 
-	// MaxAttempts bounds how many times recovery is attempted for a single
-	// disconnect before giving up and surfacing a fatal error. Zero means retry
-	// indefinitely.
+	// Recovery attempts per disconnect before a fatal error; 0 retries indefinitely.
 	MaxAttempts int
 
-	// RetryWait is how long to wait between recovery attempts. Defaults to
-	// DefaultFailoverRetryWait when zero.
+	// Wait between attempts; defaults to DefaultFailoverRetryWait when zero.
 	RetryWait time.Duration
 
-	// SyncerMaxReconnectAttempts bounds how many times go-mysql's binlog syncer
-	// retries reconnecting to the SAME (now-dead) host before giving up and
-	// surfacing the error, which is what triggers our reconnect-to-a-new-host
-	// recovery. Without a bound the syncer retries the dead host forever and the
-	// failure never surfaces. Defaults to DefaultSyncerMaxReconnectAttempts.
+	// Bounds go-mysql's retries against the SAME (now-dead) host so the error
+	// surfaces and triggers failover. Defaults to DefaultSyncerMaxReconnectAttempts.
 	SyncerMaxReconnectAttempts int
 }
 
-// DefaultSyncerMaxReconnectAttempts bounds go-mysql's same-host reconnect
-// retries when failover recovery is enabled, so a lost source surfaces as a
-// GetEvent error (triggering failover) within a few seconds.
 const DefaultSyncerMaxReconnectAttempts = 3
 
 func (c *MasterFailoverRecoveryConfig) syncerMaxReconnectAttempts() int {
@@ -76,8 +53,6 @@ func (c *MasterFailoverRecoveryConfig) syncerMaxReconnectAttempts() int {
 	return c.SyncerMaxReconnectAttempts
 }
 
-// DefaultFailoverRetryWait is the wait between failover recovery attempts when
-// MasterFailoverRecoveryConfig.RetryWait is unset.
 const DefaultFailoverRetryWait = 500 * time.Millisecond
 
 func (c *MasterFailoverRecoveryConfig) retryWait() time.Duration {
@@ -89,28 +64,20 @@ func (c *MasterFailoverRecoveryConfig) retryWait() time.Duration {
 
 var errNilStreamVerifier = errors.New("failover: missing stream validation callback")
 
-// SourceReconnector is the seam between the streamer (which knows the GTID
-// set it must not fall behind) and the Ferry (which owns the SourceRuntime).
-// Implementations must fail closed: a source not containing requiredGTIDSet
-// would silently diverge the target or wait forever for a stop target.
-//
-// verifyStream is mandatory because StartSyncGTID returns as soon as
-// COM_BINLOG_DUMP_GTID is written — a refusal surfaces only through GetEvent.
-// Only a successful callback may publish the connection, and a requirement it
-// added must be revalidated against the server first.
-//
-// On failure it returns the config of the candidate it attempted, or nil when
-// resolution itself failed.
+// SourceReconnector connects the streamer (which knows the required GTID set)
+// with the Ferry (which owns the SourceRuntime); implementations must fail
+// closed. verifyStream is mandatory because StartSyncGTID returns before the
+// server can refuse: only a successful callback may publish, and a requirement
+// it raised must be revalidated first. On failure returns the attempted
+// candidate config, or nil if resolution itself failed.
 type SourceReconnector interface {
 	Reconnect(previous *DatabaseConfig, requiredGTIDSet mysql.GTIDSet,
 		verifyStream func(*sql.DB, *DatabaseConfig) (mysql.GTIDSet, error),
 	) (*sql.DB, *DatabaseConfig, error)
 }
 
-// A parsed but empty requiredSet is valid (a fresh source has executed
-// nothing); a nil set is not, because it cannot be told apart from an
-// uninitialised caller. ctx bounds every query, including the first lazy
-// dial. It does not close db.
+// A parsed empty requiredSet is valid (fresh source); nil is not (cannot be
+// told apart from an uninitialised caller). ctx bounds every query; not closed.
 func validateFailoverTarget(ctx context.Context, db *sql.DB, candidate *DatabaseConfig, requiredSet mysql.GTIDSet) error {
 	if candidate == nil {
 		return fmt.Errorf("failover: nil candidate master config")

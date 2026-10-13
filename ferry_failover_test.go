@@ -61,7 +61,6 @@ func TestReconnectRejectsNilCandidate(t *testing.T) {
 	assert.ErrorIs(t, err, errNilCandidate)
 	assert.Nil(t, config)
 
-	// The runtime must not have been swapped when the candidate is nil.
 	assert.Equal(t, "old", f.sourceRuntime.Config().Host)
 }
 
@@ -142,7 +141,6 @@ func TestFailoverCandidateConfig(t *testing.T) {
 		assert.Equal(t, "/tmp/ca.pem", normalized.TLS.CertPath)
 		assert.Equal(t, "promoted", normalized.TLS.ServerName)
 
-		// The resolver's map is neither replaced nor written to.
 		assert.Len(t, params, 1)
 		assert.Equal(t, map[string]string{"charset": "utf8mb4"}, candidate.Params)
 	})
@@ -204,8 +202,7 @@ func TestFailoverCandidateConfig(t *testing.T) {
 	})
 }
 
-// The target streamer shares the Ferry config but must never reach the
-// source resolver.
+// The target streamer must never reach the source resolver.
 func TestSourceFailoverWiring(t *testing.T) {
 	sentinel := errors.New("no promoted master available")
 	lost := errors.New("connection lost")

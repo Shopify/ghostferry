@@ -1,9 +1,7 @@
 #!/bin/bash
 set -xe
 
-# mysql-3 is the promoted writer used by the master-failover integration test.
-# It is started alongside the source/target so that test can run; other tests
-# ignore it.
+# mysql-3 is the promoted writer for the master-failover integration test.
 if [ "$MYSQL_VERSION" == "8.0" ]; then
   docker compose -f docker-compose_8.0.yml up -d mysql-1 mysql-2 mysql-3
 elif [ "$MYSQL_VERSION" == "8.4" ]; then

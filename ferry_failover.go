@@ -11,21 +11,17 @@ import (
 	"github.com/go-mysql-org/go-mysql/mysql"
 )
 
-// Bounds the candidate's SQL validation including its first lazy dial. It
-// does not bound the resolver: a MasterWriterResolver owns its own deadline.
+// Bounds the candidate's SQL validation including its first lazy dial; the
+// resolver owns its own deadline.
 const failoverValidationTimeout = 10 * time.Second
 
-// Publication through SourceRuntime is the swap: consumers already resolve
-// their connection from it. Work bound to the previous handle keeps it until
-// the embedding application calls SourceRuntime.CloseRetired.
+// Publishing through SourceRuntime is the swap; prior handles retire via CloseRetired.
 type ferrySourceReconnector struct {
 	ferry    *Ferry
 	resolver MasterWriterResolver
 }
 
-// Validate mutates its receiver and Params, so it runs against a copy: the
-// resolver keeps ownership of what it returned, and a bare host/port still
-// picks up Ghostferry's mandatory session settings.
+// Validate mutates its receiver and Params, so run it against a copy.
 func normalizeFailoverCandidate(candidate *DatabaseConfig) (*DatabaseConfig, error) {
 	if candidate == nil {
 		return nil, errNilCandidate
@@ -63,8 +59,7 @@ func (r *ferrySourceReconnector) Reconnect(
 		return nil, nil, err
 	}
 
-	// Fail closed: a candidate that fails any check is never published, and
-	// ReplaceValidated closes the handle it opened for validation.
+	// Fail closed: a rejected candidate is never published.
 	newDB, err := r.ferry.sourceRuntime.ReplaceValidated(
 		normalized,
 		r.ferry.logger.WithField("dbname", "source_failover"),
@@ -81,8 +76,7 @@ func (r *ferrySourceReconnector) Reconnect(
 				return fmt.Errorf("failover: stream validation returned a nil required GTID set")
 			}
 
-			// The trial can raise the bar (a stop target recorded mid-trial,
-			// further rows emitted), and the server was not checked for that.
+			// The trial can raise the requirement; the server was not checked for that.
 			if requiredGTIDSet != nil && requiredGTIDSet.Contain(finalRequired) {
 				return nil
 			}

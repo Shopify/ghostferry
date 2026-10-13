@@ -7,11 +7,8 @@ import (
 )
 
 // SourceRuntime owns the current source connection so a master failover
-// repoints every consumer through one Replace.
-//
-// Consumers resolve at their point of use, but a cursor snapshots the handle
-// at creation: a scan stays on one server and is not rebound mid-scan, so it
-// fails through its ordinary read retries if that server goes away.
+// repoints every consumer through one Replace. A cursor snapshots the handle
+// at creation and is never rebound mid-scan.
 type SourceRuntime struct {
 	mu     sync.RWMutex
 	db     *sql.DB
@@ -48,14 +45,9 @@ func (r *SourceRuntime) Replace(config *DatabaseConfig, logger Logger) (*sql.DB,
 	return r.ReplaceValidated(config, logger, nil)
 }
 
-// ReplaceValidated opens a new source connection from the given config, runs an
-// optional validate hook against it, and only installs it as the current source
-// if validation succeeds. This keeps the swap fail-closed: a candidate that
-// fails validation is never published to consumers.
-//
-// If opening the connection or the validate hook fails, the newly opened handle
-// is closed and the current source is left unchanged. On success the previous
-// handle is retired (retained, not closed) as with Replace.
+// ReplaceValidated opens a new source connection and installs it only if the
+// optional validate hook succeeds; a failed candidate is closed and never
+// published. The previous handle is retired as with Replace.
 func (r *SourceRuntime) ReplaceValidated(config *DatabaseConfig, logger Logger, validate func(*sql.DB) error) (*sql.DB, error) {
 	newDB, err := config.SqlDB(logger)
 	if err != nil {
@@ -64,8 +56,6 @@ func (r *SourceRuntime) ReplaceValidated(config *DatabaseConfig, logger Logger, 
 
 	if validate != nil {
 		if err := validate(newDB); err != nil {
-			// The candidate is unsafe; do not publish it. Close the handle we
-			// opened for validation.
 			_ = newDB.Close()
 			return nil, err
 		}
@@ -82,10 +72,9 @@ func (r *SourceRuntime) ReplaceValidated(config *DatabaseConfig, logger Logger, 
 	return newDB, nil
 }
 
-// Callers must first join Ferry.Run, any standalone source-copy workers and
-// any verifier they started, and stop using handles captured earlier: the
-// library cannot prove embedder-owned cursors are quiescent. Candidates that
-// were never published are closed at rejection and never appear here.
+// CloseRetired closes retired handles. Callers must first join Ferry.Run and
+// any source-copy or verifier workers and stop using earlier handles: the
+// library cannot prove embedder-owned cursors are quiescent.
 func (r *SourceRuntime) CloseRetired() {
 	r.mu.Lock()
 	retired := r.retired

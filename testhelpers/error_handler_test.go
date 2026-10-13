@@ -7,8 +7,7 @@ import (
 	"testing"
 )
 
-// Mirrors Ghostferry: component goroutines report while the test goroutine
-// polls. Run with -race.
+// Mirrors Ghostferry: goroutines report while the test goroutine polls. Run with -race.
 func TestErrorHandlerConcurrentReportAndRead(t *testing.T) {
 	handler := &ErrorHandler{}
 

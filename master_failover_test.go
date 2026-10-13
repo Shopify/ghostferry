@@ -17,20 +17,16 @@ import (
 func TestFailoverRecoveryEnabled(t *testing.T) {
 	reconnector := &fakeReconnector{}
 
-	// Disabled with no config.
 	s := &BinlogStreamer{BinlogCoordinateMode: BinlogCoordinateGTID}
 	assert.False(t, s.failoverRecoveryEnabled())
 
-	// Config but no reconnector.
 	s.MasterFailoverRecovery = &MasterFailoverRecoveryConfig{}
 	assert.False(t, s.failoverRecoveryEnabled())
 
-	// Config + reconnector but file/position mode.
 	s.BinlogCoordinateMode = BinlogCoordinateFilePosition
 	s.SourceReconnector = reconnector
 	assert.False(t, s.failoverRecoveryEnabled())
 
-	// GTID mode + config + reconnector: enabled.
 	s.BinlogCoordinateMode = BinlogCoordinateGTID
 	assert.True(t, s.failoverRecoveryEnabled())
 }
@@ -46,19 +42,16 @@ func TestAppliedGTIDSetFoldsInFlight(t *testing.T) {
 	s := &BinlogStreamer{BinlogCoordinateMode: BinlogCoordinateGTID}
 	s.logger = LogWithField("tag", "test")
 
-	// Committed set only.
 	s.lastStreamedGTIDSet = mustParseGTID(t, gtidSetTarget) // :1-100
 	applied, err := s.appliedGTIDSet()
 	require.NoError(t, err)
 	assert.Equal(t, gtidSetTarget, applied.String())
 
-	// With an in-flight GTID, the applied set extends to include it.
 	s.inFlightGTID = "3e11fa47-71ca-11e1-9e33-c80aa9429562:101"
 	applied, err = s.appliedGTIDSet()
 	require.NoError(t, err)
 	assert.Equal(t, "3e11fa47-71ca-11e1-9e33-c80aa9429562:1-101", applied.String())
 
-	// A malformed in-flight GTID fails closed.
 	s.inFlightGTID = "not-a-gtid"
 	_, err = s.appliedGTIDSet()
 	assert.Error(t, err)
@@ -80,7 +73,6 @@ func TestUnionGTIDStringInto(t *testing.T) {
 	assert.Equal(t, "3e11fa47-71ca-11e1-9e33-c80aa9429562:1-101", merged.String())
 	assert.Equal(t, gtidSetTarget, base.String(), "base must not be mutated")
 
-	// The safety property: a candidate missing the in-flight GTID fails containment.
 	candidateMissing := mustParseGTID(t, gtidSetTarget)
 	assert.False(t, candidateMissing.Contain(merged))
 	candidateHas := mustParseGTID(t, "3e11fa47-71ca-11e1-9e33-c80aa9429562:1-101")
@@ -88,7 +80,6 @@ func TestUnionGTIDStringInto(t *testing.T) {
 }
 
 func TestUnionGTIDSets(t *testing.T) {
-	// nil inputs yield empty.
 	res, err := unionGTIDSets(nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, "", res.String())
@@ -98,11 +89,9 @@ func TestUnionGTIDSets(t *testing.T) {
 	merged, err := unionGTIDSets(applied, stop)
 	require.NoError(t, err)
 	assert.Equal(t, gtidSetPast, merged.String())
-	// Inputs unchanged.
 	assert.Equal(t, gtidSetTarget, applied.String())
 	assert.Equal(t, gtidSetPast, stop.String())
 
-	// A candidate must contain the union of applied + stop target.
 	candidateShort := mustParseGTID(t, gtidSetTarget) // only :1-100
 	assert.False(t, candidateShort.Contain(merged), "candidate missing stop-target GTIDs must fail")
 }
@@ -196,16 +185,13 @@ func TestValidateFailoverTarget(t *testing.T) {
 	})
 }
 
-// Keeps the real publication path (SourceRuntime.ReplaceValidated with
-// lazily-opened handles) so rejected handles are really closed and published
-// ones really retired; only the server query is replaced by a containment
-// check against the executed set each fake host is declared to hold.
+// Uses the real publication path (ReplaceValidated with lazily opened handles)
+// so rejected handles are really closed and published ones really retired.
 type fakeReconnector struct {
 	runtime *SourceRuntime
 
 	// Handed out in order; the last one repeats.
 	candidates []*DatabaseConfig
-	// executed maps a candidate host to the GTID set that host has executed.
 	executed   map[string]string
 	resolveErr error
 

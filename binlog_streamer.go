@@ -32,8 +32,7 @@ type BinlogEventState struct {
 	queryGTIDSet             mysql.GTIDSet
 }
 
-// Interface rather than *replication.BinlogSyncer so tests can drive the real
-// Run/recovery loops against synthetic streams; go-mysql has no such seam.
+// Interface, not *replication.BinlogSyncer, so tests can supply a fake; go-mysql has no such seam.
 type binlogSyncer interface {
 	StartSync(pos mysql.Position) (*replication.BinlogStreamer, error)
 	StartSyncGTID(gset mysql.GTIDSet) (*replication.BinlogStreamer, error)
@@ -66,14 +65,10 @@ type BinlogStreamer struct {
 
 	BinlogCoordinateMode BinlogCoordinateType
 
-	// MasterFailoverRecovery, when set together with SourceReconnector, enables
-	// automatic reconnection to a new source master on connection loss. Honored
-	// only in GTID mode (GTID sets are server-independent). Nil disables it.
+	// Enables reconnect to a promoted master on connection loss; GTID mode only.
 	MasterFailoverRecovery *MasterFailoverRecoveryConfig
 
-	// SourceReconnector reconnects the source after a lost connection. It is
-	// supplied by the Ferry, which owns the SourceRuntime and therefore how the
-	// whole run repoints at the promoted writer. Required for failover recovery.
+	// Required for failover recovery.
 	SourceReconnector SourceReconnector
 
 	lastStreamedBinlogPosition  mysql.Position
@@ -86,19 +81,15 @@ type BinlogStreamer struct {
 	lastResumableGTIDSet mysql.GTIDSet
 	stopAtGTIDSet        mysql.GTIDSet
 
-	// Cleared by whichever event terminates the group: XID, COMMIT/ROLLBACK,
-	// a standalone DDL QueryEvent, or an XA PREPARE marker. Its rows may
-	// already be downstream before lastStreamedGTIDSet advances, so failover
-	// validation folds it in. Run goroutine only.
+	// Open GTID group; its rows may be downstream before lastStreamedGTIDSet advances.
+	// Run goroutine only.
 	inFlightGTID string
 
-	// Monotonic: every GTID already emitted downstream plus any cutover stop
-	// target, so reseeding the replay floor cannot drop a GTID a consumer
-	// already saw. Run goroutine only.
+	// Monotonic: every emitted GTID plus any stop target; a reseed never lowers it.
+	// Run goroutine only.
 	failoverRequiredGTIDSet mysql.GTIDSet
 
-	// Guards DB, DBConfig, binlogSyncer and binlogStreamer against
-	// FlushAndStop while the Run goroutine publishes a promoted master.
+	// Guards DB, DBConfig, binlogSyncer and binlogStreamer.
 	connMu sync.Mutex
 
 	lastProcessedEventTime   time.Time
@@ -144,9 +135,7 @@ func (s *BinlogStreamer) createBinlogSyncer() error {
 	return nil
 }
 
-// newBinlogSyncerFor builds a BinlogSyncer targeting the given DB config and
-// server id without mutating streamer state, so failover recovery can construct
-// a candidate syncer before committing to it.
+// newBinlogSyncerFor builds a syncer for an arbitrary config without mutating streamer state.
 func (s *BinlogStreamer) newBinlogSyncerFor(dbConf *DatabaseConfig, serverID uint32) (binlogSyncer, error) {
 	var tlsConfig *tls.Config
 	if dbConf.TLS != nil {
@@ -170,11 +159,8 @@ func (s *BinlogStreamer) newBinlogSyncerFor(dbConf *DatabaseConfig, serverID uin
 		Logger:                   NewSlogLogger(s.logger),
 	}
 
-	// Unbounded same-host retries would surface a dead source only as context
-	// timeouts, so failover would never trigger; heartbeats let an idle
-	// promoted master still prove its stream works, and a read timeout stops
-	// a blackholed connection hanging forever. Other streams keep go-mysql's
-	// defaults, matching pre-failover Ghostferry.
+	// go-mysql's defaults (unlimited same-host retries, no heartbeat) would mask
+	// a dead source and starve the failover trial; other streams keep the defaults.
 	if s.failoverRecoveryEnabled() {
 		syncerConfig.MaxReconnectAttempts = s.MasterFailoverRecovery.syncerMaxReconnectAttempts()
 		syncerConfig.HeartbeatPeriod = failoverHeartbeatPeriod
@@ -311,41 +297,33 @@ func (s *BinlogStreamer) connectBinlogStreamerFromGTID(startFrom BinlogCoordinat
 }
 
 // failoverRecoveryEnabled reports whether automatic master-failover recovery is
-// configured and usable. It requires GTID mode and a reconnector.
+// configured and usable (GTID mode + reconnector).
 func (s *BinlogStreamer) failoverRecoveryEnabled() bool {
 	return s.MasterFailoverRecovery != nil &&
 		s.SourceReconnector != nil &&
 		s.coordinateMode() == BinlogCoordinateGTID
 }
 
-// currentDB returns the active source DB handle under the connection lock. Used
-// by goroutines other than Run (FlushAndStop) so they observe a consistent
-// handle across a failover swap.
+// currentDB returns the source DB handle under connMu; non-Run goroutines must
+// use it to observe a failover swap consistently.
 func (s *BinlogStreamer) currentDB() *sql.DB {
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
 	return s.DB
 }
 
-// currentDBConfig returns the active DBConfig under the connection lock.
+// currentDBConfig returns the active DBConfig under connMu.
 func (s *BinlogStreamer) currentDBConfig() *DatabaseConfig {
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
 	return s.DBConfig
 }
 
-// appliedGTIDSet returns everything the streamer has emitted downstream: the
-// committed streamed set plus any in-flight transaction's GTID (whose rows may
-// already have reached listeners before the commit advanced the streamed set).
-// Failover validation must ensure a candidate contains this whole set.
-//
-// It fails closed: if an in-flight GTID is present but cannot be folded in, it
-// returns an error rather than an under-approximated set, so recovery refuses
-// to validate a candidate against an incomplete applied set (which could let a
-// diverging master through).
+// appliedGTIDSet returns everything emitted downstream, including an open
+// group's GTID (its rows may already have reached listeners). Fails closed:
+// a fold error aborts rather than under-approximating.
 func (s *BinlogStreamer) appliedGTIDSet() (mysql.GTIDSet, error) {
-	// Snapshot the streamed set under gtidMu; it is mutated by the XID/DDL paths
-	// and read by Progress() concurrently.
+	// Snapshot under gtidMu: mutated by XID/DDL paths, read by Progress().
 	applied := s.lastStreamedGTIDClone()
 	if s.inFlightGTID != "" {
 		merged, err := unionGTIDStringInto(applied, s.inFlightGTID)
@@ -363,15 +341,14 @@ const failoverTrialReadTimeout = 10 * time.Second
 // An idle promoted master must still emit something recovery can accept.
 const failoverHeartbeatPeriod = time.Second
 
-// A failure from our own handlers/listeners, not the transport: another master
-// cannot fix it and retrying would re-deliver rows, so it aborts recovery.
+// Handler/listener failure (not transport): retrying on another master would
+// re-deliver rows, so it aborts recovery.
 type binlogConsumerError struct{ err error }
 
 func (e *binlogConsumerError) Error() string { return e.err.Error() }
 func (e *binlogConsumerError) Unwrap() error { return e.err }
 
-// Monotonic by construction: a reseed of the replay floor must never lower
-// what a candidate has to contain.
+// Monotonic: a reseed of the replay floor must never lower the requirement.
 func (s *BinlogStreamer) updateFailoverRequirement() error {
 	applied, err := s.appliedGTIDSet()
 	if err != nil {
@@ -395,16 +372,13 @@ func (s *BinlogStreamer) updateFailoverRequirement() error {
 }
 
 // recoverFromMasterFailover is GTID-only; guard with failoverRecoveryEnabled.
-//
-// The candidate stays unpublished until a trial stream proves real progress,
-// because StartSyncGTID succeeds before the server can refuse. es and query
-// are left holding the accepted trial's state so Run resumes at the next
-// event rather than replaying the accepted group.
+// A candidate is published only after a trial stream proves real progress
+// (StartSyncGTID succeeds before the server can refuse). es/query keep the
+// accepted trial's state so Run resumes at the next event.
 func (s *BinlogStreamer) recoverFromMasterFailover(cause error, es *BinlogEventState, query *[]byte) error {
 	cfg := s.MasterFailoverRecovery
 
-	// A nil set is uninitialised state, unlike a parsed empty set on a fresh
-	// source: without it we cannot say what a candidate must contain.
+	// Nil means uninitialised; a parsed empty set is valid on a fresh source.
 	if s.resumableGTIDClone() == nil || s.lastStreamedGTIDClone() == nil {
 		return fmt.Errorf("master failover recovery requires an initialized GTID state (original error: %v)", cause)
 	}
@@ -412,8 +386,7 @@ func (s *BinlogStreamer) recoverFromMasterFailover(cause error, es *BinlogEventS
 		return fmt.Errorf("master failover recovery requires an initialized server_id (original error: %v)", cause)
 	}
 
-	// A candidate must move past this, so replaying an already-committed
-	// group can never look like recovery.
+	// A candidate must move past this so a replayed group cannot fake progress.
 	progressBaseline := s.lastStreamedGTIDClone()
 
 	if err := s.updateFailoverRequirement(); err != nil {
@@ -445,8 +418,8 @@ func (s *BinlogStreamer) recoverFromMasterFailover(cause error, es *BinlogEventS
 			time.Sleep(cfg.retryWait())
 		}
 
-		// Capture a stop target or rows a failed trial emitted before the
-		// reseed below lowers the replay floor.
+		// Capture rows or a stop target a failed trial emitted before the reseed
+		// below lowers the replay floor.
 		if err := s.updateFailoverRequirement(); err != nil {
 			return fmt.Errorf("master failover recovery: %w (original error: %v)", err, cause)
 		}
@@ -484,8 +457,8 @@ func (s *BinlogStreamer) recoverFromMasterFailover(cause error, es *BinlogEventS
 		}
 
 		if err != nil {
-			// Reached only when the trial passed but publication did not
-			// (for example revalidation of a mid-trial stop target).
+			// Trial passed but publication did not (e.g. revalidation of a
+			// mid-trial stop target).
 			if candidateSyncer != nil {
 				candidateSyncer.Close()
 				candidateSyncer, candidateStreamer = nil, nil
@@ -526,8 +499,8 @@ func (s *BinlogStreamer) recoverFromMasterFailover(cause error, es *BinlogEventS
 	return fmt.Errorf("master failover recovery exhausted after %d attempts: %w", cfg.MaxAttempts, lastErr)
 }
 
-// Returns the requirement the candidate must be revalidated against: the
-// trial itself may emit rows or see a stop target recorded mid-flight.
+// Returns the (possibly raised) requirement: the trial may emit rows or see a
+// stop target mid-flight.
 func (s *BinlogStreamer) trialCandidateStream(
 	streamer *replication.BinlogStreamer,
 	es *BinlogEventState,
@@ -562,9 +535,7 @@ func (s *BinlogStreamer) trialCandidateStream(
 	}
 }
 
-// Startup headers, a group opening, an in-group heartbeat and a replay of an
-// already-committed group all fail this test: none of them shows the new
-// master can carry the run forward.
+// Only committed-group progress or a healthy idle heartbeat proves the candidate.
 func (s *BinlogStreamer) candidateStreamUsable(
 	ev *replication.BinlogEvent,
 	groupWasOpen bool,
@@ -577,8 +548,7 @@ func (s *BinlogStreamer) candidateStreamUsable(
 		return false
 	}
 
-	// (a) A group that was open before this event is now closed, its GTID is
-	// committed, and the committed set moved beyond this episode's baseline.
+	// (a) An open group closed, its GTID committed, and the set moved past the baseline.
 	if groupWasOpen && !es.transactionOpen {
 		if openGTID != "" {
 			groupSet, err := mysql.ParseMysqlGTIDSet(openGTID)
@@ -589,8 +559,8 @@ func (s *BinlogStreamer) candidateStreamUsable(
 		return progressBaseline == nil || !progressBaseline.Contain(committed)
 	}
 
-	// (b) A real heartbeat outside any group, on a stream that already holds
-	// everything required: an idle but healthy writer.
+	// (b) A heartbeat outside any group on a stream holding everything required:
+	// an idle but healthy writer.
 	if ev.Header.EventType == replication.HEARTBEAT_EVENT && !groupWasOpen && !es.transactionOpen {
 		return required == nil || committed.Contain(required)
 	}
@@ -611,8 +581,8 @@ func (s *BinlogStreamer) closeSyncer() {
 	}
 }
 
-// Reuses the initial connection's server id: a new id per retry would leak
-// replication slots on the master and defeat an explicitly configured one.
+// Reuses the run's server id: a fresh id per retry would leak replication
+// slots on the master.
 func (s *BinlogStreamer) buildSyncerFromGTID(dbConf *DatabaseConfig, resumeSet mysql.GTIDSet) (binlogSyncer, *replication.BinlogStreamer, error) {
 	if resumeSet == nil {
 		return nil, nil, fmt.Errorf("failover: cannot start a candidate stream from an uninitialized GTID set")
@@ -757,8 +727,7 @@ func (s *BinlogStreamer) shouldContinueStreaming() bool {
 	return !reached
 }
 
-// Shared with the candidate trial, so an unpublished candidate is judged
-// with exactly the semantics the run uses.
+// Shared with the candidate trial so candidates are judged with the run's semantics.
 func (s *BinlogStreamer) processBinlogEvent(ev *replication.BinlogEvent, es *BinlogEventState, query []byte) ([]byte, error) {
 	es.evPosition = mysql.Position{
 		Name: es.nextFilename,
@@ -789,8 +758,7 @@ func (s *BinlogStreamer) processBinlogEvent(ev *replication.BinlogEvent, es *Bin
 		}
 	}
 
-	// Coordinate tracking must run even when a custom handler replaces the
-	// default handler, but only after the event has been handled successfully.
+	// Coordinate tracking runs even for custom handlers, only after success.
 	if s.coordinateMode() == BinlogCoordinateGTID {
 		if err := s.updateGTIDState(ev, es); err != nil {
 			s.logger.WithError(err).Error("failed to update GTID state")
@@ -842,9 +810,7 @@ func (s *BinlogStreamer) Run() {
 		}()
 
 		if err != nil && err != context.DeadlineExceeded {
-			// A non-timeout GetEvent error means the source connection was lost.
-			// In GTID mode with failover recovery enabled, reconnect to the new
-			// master and continue; otherwise this is fatal.
+			// Non-timeout GetEvent errors mean the source connection was lost.
 			if s.failoverRecoveryEnabled() {
 				if recoverErr := s.recoverFromMasterFailover(err, &es, &query); recoverErr != nil {
 					s.ErrorHandler.Fatal("binlog_streamer", recoverErr)
@@ -966,8 +932,7 @@ func (s *BinlogStreamer) resumableGTIDClone() mysql.GTIDSet {
 	return s.lastResumableGTIDSet.Clone()
 }
 
-// lastStreamedGTIDClone returns a mutable clone of the streamed set under the
-// lock, or nil when unset.
+// lastStreamedGTIDClone returns a clone under gtidMu, nil when unset.
 func (s *BinlogStreamer) lastStreamedGTIDClone() mysql.GTIDSet {
 	s.gtidMu.RLock()
 	defer s.gtidMu.RUnlock()
@@ -977,8 +942,7 @@ func (s *BinlogStreamer) lastStreamedGTIDClone() mysql.GTIDSet {
 	return s.lastStreamedGTIDSet.Clone()
 }
 
-// stopGTIDClone returns a mutable clone of the stop set under the lock, or nil
-// when unset.
+// stopGTIDClone returns a clone under gtidMu, nil when unset.
 func (s *BinlogStreamer) stopGTIDClone() mysql.GTIDSet {
 	s.gtidMu.RLock()
 	defer s.gtidMu.RUnlock()
@@ -1044,8 +1008,8 @@ func (s *BinlogStreamer) updateGTIDState(ev *replication.BinlogEvent, es *Binlog
 		if err := s.setResumableBeforeGTID(e); err != nil {
 			return err
 		}
-		// Fail closed: an under-approximated applied set could let a
-		// diverging master pass failover validation.
+		// Fail closed: an under-approximated applied set could let a diverging
+		// master pass validation.
 		nextSet, err := e.GTIDNext()
 		if err != nil {
 			return fmt.Errorf("decoding in-flight GTID: %w", err)
@@ -1258,9 +1222,8 @@ func (s *BinlogStreamer) generateNewServerId() (uint32, error) {
 	return generateNewServerIdOn(s.DB, s.logger)
 }
 
-// generateNewServerIdOn generates a server id not already in use on the given
-// server. It takes an explicit DB so failover recovery can target a server
-// other than the currently-installed one.
+// generateNewServerIdOn generates a server id unused on db; the explicit handle
+// lets failover target a candidate master.
 func generateNewServerIdOn(db *sql.DB, logger Logger) (uint32, error) {
 	var id uint32
 

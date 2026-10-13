@@ -97,8 +97,8 @@ func (f *Ferry) SourceRuntime() *SourceRuntime {
 	return f.sourceRuntime
 }
 
-// Resolve at the point of use so a failover swap is observed; an
-// already-running cursor deliberately does not rebind.
+// Resolve at point of use so a failover swap is observed; running cursors
+// deliberately keep their handle.
 func (f *Ferry) CurrentSourceDB() *sql.DB {
 	if f.sourceRuntime != nil {
 		if db := f.sourceRuntime.DB(); db != nil {
@@ -146,10 +146,7 @@ func (f *Ferry) NewDataIteratorWithoutStateTracker() *DataIterator {
 
 func (f *Ferry) NewSourceBinlogStreamer() *BinlogStreamer {
 	streamer := f.newBinlogStreamer(f.SourceDB, f.Config.Source, nil, nil, "source_binlog_streamer")
-	// Master-failover recovery only applies to the source stream: the target
-	// verifier streams from the (stable) target and does not fail over. The
-	// reconnector repoints the whole run via SourceRuntime when a failover
-	// occurs.
+	// Failover recovery applies only to the source stream; the target is stable.
 	streamer.MasterFailoverRecovery = f.Config.MasterFailoverRecovery
 	streamer.SourceReconnector = f.newSourceReconnector()
 	return streamer
@@ -389,9 +386,8 @@ func (f *Ferry) Initialize() (err error) {
 		}
 	}
 
-	// The resolver discovers a writer, not a replacement replica plus its
-	// separately configured upstream master, so repointing one half of that
-	// pair would compare progress across unrelated servers.
+	// A resolver finds a writer, not a replacement replica with its own upstream
+	// master; combining both would compare progress across unrelated servers.
 	if f.Config.MasterFailoverRecovery != nil && f.WaitUntilReplicaIsCaughtUpToMaster != nil {
 		err = fmt.Errorf("MasterFailoverRecovery cannot be combined with WaitUntilReplicaIsCaughtUpToMaster")
 		f.logger.WithError(err).Error("unsupported source configuration")

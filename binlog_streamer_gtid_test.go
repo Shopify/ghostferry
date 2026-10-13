@@ -168,8 +168,7 @@ func TestRunStopsAtGTIDTransactionBoundary(t *testing.T) {
 	}
 }
 
-// Failover validation must include emitted-but-uncommitted transactions even
-// when custom handlers replace the default transaction event handlers.
+// Failover validation must include in-flight GTIDs even when custom handlers replace the default transaction handlers.
 func TestRunIncludesInFlightGTIDInFailoverRequirements(t *testing.T) {
 	const sidText = "3e11fa47-71ca-11e1-9e33-c80aa9429562"
 	sid := uuid.MustParse(sidText)
@@ -626,8 +625,7 @@ func TestRunRejectsInvalidGTIDBeforeRows(t *testing.T) {
 	}
 }
 
-// Syncer whose stream the test supplies, so the real Run/recovery loops run
-// against synthetic streams with no MySQL server.
+// Syncer whose stream the test supplies, so the real recovery loops run without a MySQL server.
 type failoverTestSyncer struct {
 	cfg    replication.BinlogSyncerConfig
 	start  func(mysql.GTIDSet) (*replication.BinlogStreamer, error)
@@ -704,8 +702,7 @@ type failoverHarness struct {
 	initialDB   *sql.DB
 	initial     *replication.BinlogStreamer
 
-	// Indexed by candidate attempt; the last one repeats. An error simulates
-	// a synchronous StartSyncGTID failure.
+	// Indexed by attempt; the last one repeats. An error simulates a synchronous StartSyncGTID failure.
 	scripts []func(*replication.BinlogStreamer) error
 
 	syncers    []*failoverTestSyncer
@@ -713,9 +710,8 @@ type failoverHarness struct {
 	actions    []func()
 }
 
-// GetEvent selects between the event and error channels at random, so tests
-// mutate state or inject errors only from the handler of the last queued
-// event.
+// GetEvent selects between channels nondeterministically, so state changes
+// must run in the handler of the last queued event.
 func (h *failoverHarness) at(fn func()) *replication.BinlogEvent {
 	h.actions = append(h.actions, fn)
 	return failoverTestEvent(replication.STOP_EVENT, 200, &replication.GenericEvent{})
@@ -838,9 +834,8 @@ func TestFailoverRecoveryExhaustsAttemptsWithoutPublishing(t *testing.T) {
 	refused := errors.New("candidate refused the dump request")
 
 	for _, tc := range []struct {
-		name  string
-		start string
-		// candidate builds one failed attempt's stream.
+		name      string
+		start     string
 		candidate func(*failoverHarness, *replication.BinlogStreamer) error
 	}{
 		{
@@ -934,8 +929,7 @@ func TestFailoverRecoveryPublishesOnlyAfterUsableStream(t *testing.T) {
 		},
 	}
 
-	// The interrupted transaction delivered its first update before the
-	// source died, so the replay must repair the row.
+	// The interrupted transaction delivered its first update before dying, so replay must repair the row.
 	value, updates := 0, 0
 	h.streamer.AddEventListener(func(events []DMLEvent) error {
 		for _, ev := range events {
@@ -965,8 +959,7 @@ func TestFailoverRecoveryPublishesOnlyAfterUsableStream(t *testing.T) {
 	assert.Equal(t, "dead", h.reconnector.previousSeen[0].Host)
 	assert.Equal(t, "host-b", h.reconnector.previousSeen[1].Host)
 
-	// The displaced handle is retained until the embedder declares
-	// source quiescence.
+	// The displaced handle is retained until the embedder declares quiescence.
 	published := h.reconnector.published[0]
 	assert.Same(t, published, h.runtime.DB())
 	assert.Same(t, published, h.streamer.currentDB())
@@ -1005,8 +998,7 @@ func TestFailoverRecoveryRetainsRequiredGTIDsAcrossAttempts(t *testing.T) {
 		retryWait:   time.Millisecond,
 		candidates:  []string{"host-b", "host-c", "host-d"},
 		executed: map[string]string{
-			// host-b and host-c hold the emitted work and the stop target, so
-			// they reach the stream trial and fail there.
+			// host-b and host-c hold the required sets, so they reach the stream trial and fail there.
 			"host-b": gtidSetTarget + "," + stopTarget,
 			"host-c": gtidSetTarget + "," + stopTarget,
 			"host-d": gtidSetTarget + "," + stopTarget + "," + thirdSID + ":1-5",
@@ -1016,16 +1008,13 @@ func TestFailoverRecoveryRetainsRequiredGTIDsAcrossAttempts(t *testing.T) {
 	h.streamer.stopRequested.Store(true)
 
 	h.scripts = []func(*replication.BinlogStreamer) error{
-		// Fails before replaying the interrupted group at all.
 		func(stream *replication.BinlogStreamer) error {
 			return h.queue(stream, append(startupHeaders(), h.disconnect(stream, refused))...)
 		},
-		// Emits an in-flight transaction from a different SID, then fails.
 		func(stream *replication.BinlogStreamer) error {
 			partial := gtidGroupEvents(t, thirdSID, 5, gtidSetTarget+","+thirdSID+":5", [][]interface{}{{1, 0}, {1, 1}})
 			return h.queue(stream, append(partial[:len(partial)-1], h.disconnect(stream, refused))...)
 		},
-		// A candidate that holds everything required completes the group.
 		func(stream *replication.BinlogStreamer) error {
 			replay := gtidGroupEvents(t, failoverTestSID, 100,
 				gtidSetTarget+","+stopTarget+","+thirdSID+":1-5", [][]interface{}{{1, 1}, {1, 0}})
@@ -1056,14 +1045,11 @@ func TestFailoverRecoveryRetainsRequiredGTIDsAcrossAttempts(t *testing.T) {
 		}
 	}
 
-	// Every attempt must have reached the stream trial and failed there: a
-	// candidate rejected on containment alone never starts a syncer, which
-	// would silently skip the scripts this test depends on.
+	// A containment-rejected candidate never starts a syncer, so 3 syncers prove every script ran.
 	require.Len(t, h.syncers, 3)
 	require.Len(t, h.resumeSets, 3)
 
-	// Reseeding the replay floor for each new stream must not weaken the
-	// requirement above.
+	// Reseeding the replay floor per stream must not weaken the requirement.
 	for i, resume := range h.resumeSets {
 		assert.False(t, mustParseGTID(t, resume).Contain(emitted),
 			"attempt %d resumes before the interrupted group", i+1)
@@ -1146,8 +1132,7 @@ func TestFailoverRecoveryRevalidatesStopTargetRecordedDuringTrial(t *testing.T) 
 		maxAttempts: 1,
 		retryWait:   time.Millisecond,
 		candidates:  []string{"promoted"},
-		// The candidate holds the emitted transaction but not the stop target
-		// that cutover records while the trial is running.
+		// The candidate holds the emitted transaction but not the stop target cutover records during the trial.
 		executed: map[string]string{"promoted": gtidSetTarget},
 	})
 
