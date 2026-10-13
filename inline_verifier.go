@@ -257,10 +257,7 @@ type InlineVerifierMismatches struct {
 }
 
 type InlineVerifier struct {
-	SourceDB *sql.DB
-	// SourceRuntime, when set, is the authoritative source of the current
-	// source connection (see currentSourceDB). It lets inline verification
-	// follow a source master failover. When nil, SourceDB is used directly.
+	SourceDB                   *sql.DB
 	SourceRuntime              *SourceRuntime
 	TargetDB                   *sql.DB
 	DatabaseRewrites           map[string]string
@@ -278,8 +275,7 @@ type InlineVerifier struct {
 
 	sourceStmtCache *StmtCache
 	targetStmtCache *StmtCache
-	// sourceDBMu guards SourceDB and sourceStmtCache when currentSourceDB
-	// resolves the runtime handle and may reset the cache on a failover swap.
+	// sourceDBMu guards SourceDB and sourceStmtCache.
 	sourceDBMu sync.Mutex
 	logger     Logger
 
@@ -531,14 +527,7 @@ func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	}, nil
 }
 
-// currentSourceDB returns the source connection inline verification should use,
-// resolving it from SourceRuntime when configured so a failover is followed. If
-// the source handle changed since the last call, a fresh source statement cache
-// is installed because cached prepared statements are bound to the previous DB.
-// The resolved DB and its matching statement cache are returned together under
-// a lock so concurrent verification workers stay consistent. The previous cache
-// is not closed here: in-flight workers may still hold its (db, cache) pair, and
-// its statements are released with the retired DB by SourceRuntime.CloseRetired.
+// currentSourceDB returns the source DB and its matching statement cache; on a handle swap the cache is replaced (statements are bound to the old DB) but not closed, as in-flight workers may still hold it.
 func (v *InlineVerifier) currentSourceDB() (*sql.DB, *StmtCache) {
 	v.sourceDBMu.Lock()
 	defer v.sourceDBMu.Unlock()

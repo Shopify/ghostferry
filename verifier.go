@@ -97,11 +97,8 @@ type ChecksumTableVerifier struct {
 	DatabaseRewrites map[string]string
 	TableRewrites    map[string]string
 	SourceDB         *sql.DB
-	// SourceRuntime, when set, provides the current source connection so
-	// checksum verification follows a source master failover. When nil,
-	// SourceDB is used. See currentSourceDB.
-	SourceRuntime *SourceRuntime
-	TargetDB      *sql.DB
+	SourceRuntime    *SourceRuntime
+	TargetDB         *sql.DB
 
 	started *AtomicBoolean
 
@@ -112,9 +109,6 @@ type ChecksumTableVerifier struct {
 	wg     *sync.WaitGroup
 }
 
-// currentSourceDB resolves the source connection from SourceRuntime when
-// configured (so verification follows a source master failover), otherwise the
-// static SourceDB.
 func (v *ChecksumTableVerifier) currentSourceDB() *sql.DB {
 	if v.SourceRuntime != nil {
 		if db := v.SourceRuntime.DB(); db != nil {

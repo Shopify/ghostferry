@@ -14,18 +14,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// These tests verify what source consumers observe when a SourceRuntime is
-// configured: metadata reads and verification use the current runtime handle,
-// new cursors bind to it at creation, and existing cursors / in-flight inline
-// verification keep the handle they started with. No MySQL server is needed:
-// fixture DBs answer every query with canned rows, and SourceRuntime.Replace
-// opens a lazy (undialed) handle which tests close before querying so that a
-// consumer routed to the replacement fails deterministically.
+// These tests need no MySQL: fixture DBs answer every query with canned rows,
+// and a swapped-in handle is closed up front so consumers routed to it fail fast.
 
 var errUnsupportedSourceRuntimeTestOp = errors.New("unsupported source runtime test operation")
 
-// sourceRuntimeQueryConnector backs a *sql.DB that returns the configured rows
-// for every query, whether issued directly or through a prepared statement.
+// sourceRuntimeQueryConnector returns the configured rows for every query, prepared or not.
 type sourceRuntimeQueryConnector struct {
 	columns []string
 	data    [][]driver.Value
@@ -104,8 +98,6 @@ func (r *sourceRuntimeQueryRows) Next(dest []driver.Value) error {
 	return nil
 }
 
-// newSourceRuntimeQueryDB returns an open *sql.DB whose every query yields the
-// given columns and rows. It is closed when the test ends.
 func newSourceRuntimeQueryDB(t *testing.T, columns []string, data [][]driver.Value) *sql.DB {
 	t.Helper()
 	db := &sql.DB{DB: sqlorig.OpenDB(&sourceRuntimeQueryConnector{columns: columns, data: data})}
@@ -113,10 +105,7 @@ func newSourceRuntimeQueryDB(t *testing.T, columns []string, data [][]driver.Val
 	return db
 }
 
-// replaceWithClosedHandle swaps rt to a fresh lazily-opened handle and closes
-// that handle immediately, so any consumer that resolves the current source
-// after the swap fails deterministically without dialing. It requires the
-// swap to have actually installed a new handle so a no-op Replace cannot pass.
+// replaceWithClosedHandle swaps in a fresh handle and closes it, so consumers resolving the source after the swap fail deterministically.
 func replaceWithClosedHandle(t *testing.T, rt *SourceRuntime, host string) *sql.DB {
 	t.Helper()
 	previous := rt.DB()
@@ -131,7 +120,6 @@ func replaceWithClosedHandle(t *testing.T, rt *SourceRuntime, host string) *sql.
 	return replacement
 }
 
-// numericReviewTable is a review.t table paginated on a numeric id column.
 func numericReviewTable() *TableSchema {
 	columns := []schema.TableColumn{{Name: "id", Type: schema.TYPE_NUMBER}}
 	return &TableSchema{
@@ -210,14 +198,11 @@ func TestMaxTableSizeSorterUsesSourceRuntime(t *testing.T) {
 	iterator := &DataIterator{DB: staticDB, SourceRuntime: rt}
 	sorter := MaxTableSizeSorter{DataIterator: iterator}
 
-	// The runtime's ordering wins over the static DB's.
 	sorted, err := sorter.Sort(input)
 	require.NoError(t, err)
 	assertSortedTables(t, sorted, large, small)
 
-	// The sorter resolves the source on every call: once the runtime points at
-	// an unusable handle, sorting fails rather than falling back to the static
-	// DB, which is still open.
+	// The static DB is still open, so this failing proves the sorter resolves the source per call.
 	replaceWithClosedHandle(t, rt, "replacement")
 	_, err = sorter.Sort(input)
 	require.Error(t, err)
@@ -254,7 +239,6 @@ func TestNewCursorBindsToResolvedDB(t *testing.T) {
 	rt := NewSourceRuntime(initialDB, runtimeTestConfig("old"))
 	cfg := newTestCursorConfig(initialDB, rt)
 
-	// A cursor created before the swap keeps scanning the server it started on.
 	before := cfg.NewCursorWithoutRowLock(table, NewUint64Key(0), NewUint64Key(1))
 
 	replaceWithClosedHandle(t, rt, "new")
@@ -263,8 +247,6 @@ func TestNewCursorBindsToResolvedDB(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, singleRow, rows, "existing cursor must keep its handle")
 
-	// A cursor created after the swap uses the current (closed) runtime handle
-	// rather than the still-open static DB.
 	after := cfg.NewCursorWithoutRowLock(table, NewUint64Key(0), NewUint64Key(1))
 	rows, err = scanCursor(after)
 	require.Error(t, err)
@@ -317,17 +299,14 @@ func TestInlineVerifierSourceRuntimeCacheLifetime(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, oldFingerprint, fingerprints[key])
 
-	// An in-flight worker holds the (db, cache) pair it resolved before the swap.
 	inFlightDB, inFlightCache := v.currentSourceDB()
 
 	replaceWithClosedHandle(t, rt, "new")
 
-	// New work follows the runtime to the (closed) replacement. Reusing the
-	// query-keyed cache primed against the old DB would incorrectly succeed.
+	// A stale cache would reuse the old DB's statement and incorrectly succeed.
 	_, _, err = v.getFingerprintDataFromSourceDb("review", "t", nil, table, paginationKeys)
 	require.Error(t, err)
 
-	// The in-flight pair remains usable until retired handles are released.
 	fingerprints, _, err = v.getFingerprintDataFromDb(inFlightDB, inFlightCache, "review", "t", nil, table, paginationKeys)
 	require.NoError(t, err)
 	assert.Equal(t, oldFingerprint, fingerprints[key])
@@ -359,7 +338,6 @@ func TestInlineVerifierSourceFallback(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Verifier validation
 
-// sourceSelection enumerates the source configurations a verifier can be given.
 type sourceSelection struct {
 	name      string
 	static    bool // provide a working static SourceDB

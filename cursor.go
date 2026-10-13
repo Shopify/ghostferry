@@ -36,13 +36,6 @@ type CursorConfig struct {
 	DB        *sql.DB
 	Throttler Throttler
 
-	// SourceRuntime, when set, is the authoritative source of the current
-	// source connection. NewCursor resolves the cursor's DB from it at cursor
-	// creation time so that cursors started after a source master failover run
-	// against the promoted writer. When nil, the static DB field is used. A
-	// cursor captures the resolved handle for the duration of its scan (a scan
-	// must be consistent against a single server); only newly created cursors
-	// observe a swap.
 	SourceRuntime *SourceRuntime
 
 	ColumnsToSelect []string
@@ -54,8 +47,6 @@ type CursorConfig struct {
 	ReadRetries               int
 }
 
-// resolvedDB returns the source connection to use for a new cursor: the current
-// handle from SourceRuntime when configured, otherwise the static DB.
 func (c *CursorConfig) resolvedDB() *sql.DB {
 	if c.SourceRuntime != nil {
 		if db := c.SourceRuntime.DB(); db != nil {

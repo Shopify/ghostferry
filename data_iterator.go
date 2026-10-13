@@ -8,11 +8,7 @@ import (
 )
 
 type DataIterator struct {
-	DB *sql.DB
-	// SourceRuntime, when set, provides the current source connection for the
-	// data iterator's own metadata reads (pagination bounds, table sizing) so
-	// they follow a source master failover. When nil, DB is used. Cursors
-	// resolve their own handle at creation via CursorConfig.
+	DB                *sql.DB
 	SourceRuntime     *SourceRuntime
 	Concurrency       int
 	SelectFingerprint bool
@@ -33,9 +29,7 @@ type TableMaxPaginationKey struct {
 	MaxPaginationKey PaginationKey
 }
 
-// currentSourceDB resolves the source connection for the iterator's metadata
-// reads from SourceRuntime when configured, otherwise the static DB. It is
-// resolved at each point of use so a swap between reads is observed.
+// currentSourceDB resolves the source per call, not at startup, so a runtime swap is observed between reads.
 func (d *DataIterator) currentSourceDB() *sql.DB {
 	if d.SourceRuntime != nil {
 		if db := d.SourceRuntime.DB(); db != nil {

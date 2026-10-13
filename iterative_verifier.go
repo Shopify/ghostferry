@@ -120,11 +120,8 @@ type IterativeVerifier struct {
 	BinlogStreamer      *BinlogStreamer
 	TableSchemaCache    TableSchemaCache
 	SourceDB            *sql.DB
-	// SourceRuntime, when set, provides the current source connection so
-	// iterative verification follows a source master failover. When nil,
-	// SourceDB is used. See currentSourceDB.
-	SourceRuntime *SourceRuntime
-	TargetDB      *sql.DB
+	SourceRuntime       *SourceRuntime
+	TargetDB            *sql.DB
 
 	Tables              []*TableSchema
 	IgnoredTables       []string
@@ -293,10 +290,6 @@ func (v *IterativeVerifier) Result() (VerificationResultAndStatus, error) {
 	return v.verificationResultAndStatus, v.verificationErr
 }
 
-// currentSourceDB resolves the source connection from SourceRuntime when
-// configured (so verification follows a source master failover), otherwise the
-// static SourceDB. Unlike the inline verifier there is no persistent
-// source-bound statement cache to reset: GetHashes prepares per call.
 func (v *IterativeVerifier) currentSourceDB() *sql.DB {
 	if v.SourceRuntime != nil {
 		if db := v.SourceRuntime.DB(); db != nil {
