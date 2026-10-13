@@ -162,17 +162,14 @@ func TestRunStopsAtGTIDTransactionBoundary(t *testing.T) {
 func TestShouldContinueStreaming_FilePosition(t *testing.T) {
 	s := &BinlogStreamer{}
 
-	// No stop requested: always continue.
 	assert.True(t, s.shouldContinueStreaming())
 
 	s.stopRequested.Store(true)
 	s.stopAtBinlogPosition = mysql.Position{Name: "mysql-bin.000010", Pos: 100}
 
-	// Streamed position behind stop: continue.
 	s.lastStreamedBinlogPosition = mysql.Position{Name: "mysql-bin.000010", Pos: 50}
 	assert.True(t, s.shouldContinueStreaming())
 
-	// Streamed position reached stop: stop.
 	s.lastStreamedBinlogPosition = mysql.Position{Name: "mysql-bin.000010", Pos: 100}
 	assert.False(t, s.shouldContinueStreaming())
 }
@@ -180,41 +177,32 @@ func TestShouldContinueStreaming_FilePosition(t *testing.T) {
 func TestShouldContinueStreaming_GTID(t *testing.T) {
 	s := &BinlogStreamer{BinlogCoordinateMode: BinlogCoordinateGTID}
 
-	// No stop requested: always continue.
 	assert.True(t, s.shouldContinueStreaming())
 
 	s.stopRequested.Store(true)
 	s.stopAtGTIDSet = mustParseGTID(t, gtidSetTarget)
 
-	// No streamed set yet: keep going.
 	assert.True(t, s.shouldContinueStreaming())
 
-	// Streamed set does not yet contain target: continue.
 	s.lastStreamedGTIDSet = mustParseGTID(t, gtidSetLower)
 	assert.True(t, s.shouldContinueStreaming())
 
-	// Streamed set exactly reaches target: stop.
 	s.lastStreamedGTIDSet = mustParseGTID(t, gtidSetTarget)
 	assert.False(t, s.shouldContinueStreaming())
 
-	// Streamed set past target: stop.
 	s.lastStreamedGTIDSet = mustParseGTID(t, gtidSetPast)
 	assert.False(t, s.shouldContinueStreaming())
 }
 
-// TestShouldContinueStreaming_GTIDEmptyStopTarget guards the fresh-source
-// case: an empty executed GTID set is a valid stop target (not "unset"), and
-// any streamed set — including an empty one — has already reached it, so the
-// stream must stop rather than hang.
+// TestShouldContinueStreaming_GTIDEmptyStopTarget: an empty executed GTID set
+// is a valid stop target (fresh source), so the stream must stop, not hang.
 func TestShouldContinueStreaming_GTIDEmptyStopTarget(t *testing.T) {
 	s := &BinlogStreamer{BinlogCoordinateMode: BinlogCoordinateGTID}
 	s.stopRequested.Store(true)
 	s.stopAtGTIDSet = mustParseGTID(t, "") // empty executed set on a fresh source
 
-	// Empty streamed set has reached the empty stop target: stop.
 	assert.False(t, s.shouldContinueStreaming())
 
-	// A non-empty streamed set also trivially contains the empty target: stop.
 	s.lastStreamedGTIDSet = mustParseGTID(t, gtidSetTarget)
 	assert.False(t, s.shouldContinueStreaming())
 }
@@ -222,7 +210,6 @@ func TestShouldContinueStreaming_GTIDEmptyStopTarget(t *testing.T) {
 func TestGetLastStreamedBinlogCoordinate_GTIDMode(t *testing.T) {
 	s := &BinlogStreamer{BinlogCoordinateMode: BinlogCoordinateGTID}
 
-	// Nil streamed set yields an empty (zero) GTID coordinate.
 	coord := s.GetLastStreamedBinlogCoordinate()
 	assert.True(t, coord.IsGTID())
 	assert.True(t, coord.IsZero())
@@ -244,27 +231,21 @@ func TestGetLastStreamedBinlogCoordinate_FilePositionMode(t *testing.T) {
 }
 
 func TestConnectBinlogStreamerSinceCoordinate_TypeMismatch(t *testing.T) {
-	// GTID mode with a file/position coordinate must be rejected before any DB
-	// interaction.
+	// Type mismatch must be rejected before any DB interaction.
 	s := &BinlogStreamer{BinlogCoordinateMode: BinlogCoordinateGTID}
 	_, err := s.ConnectBinlogStreamerToMysqlSinceCoordinate(
 		NewFilePositionCoordinate(mysql.Position{Name: "mysql-bin.000001", Pos: 4}),
 	)
 	require.Error(t, err)
 
-	// File/position mode with a GTID coordinate must also be rejected.
 	s2 := &BinlogStreamer{}
 	_, err = s2.ConnectBinlogStreamerToMysqlSinceCoordinate(NewGTIDCoordinate(gtidSetTarget))
 	require.Error(t, err)
 }
 
-// TestGTIDCoordinateAccessorsAreRaceFree reproduces the cross-goroutine hazard
-// that Ferry.Progress() creates: one goroutine advances the streamed/stop GTID
-// sets (as the streaming loop does on every transaction), while another reads
-// them through the coordinate accessors (as Progress does). The underlying
-// mysql.GTIDSet is a map, so unsynchronised String()/Clone() against a
-// concurrent write is a data race (and a potential fatal map panic). Run with
-// -race; it must stay clean.
+// TestGTIDCoordinateAccessorsAreRaceFree mirrors the streaming loop and
+// Ferry.Progress() concurrently writing/reading the GTID sets (maps); must
+// stay clean under -race.
 func TestGTIDCoordinateAccessorsAreRaceFree(t *testing.T) {
 	s := &BinlogStreamer{BinlogCoordinateMode: BinlogCoordinateGTID}
 	s.logger = LogWithField("tag", "test")
@@ -274,7 +255,6 @@ func TestGTIDCoordinateAccessorsAreRaceFree(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(3)
 
-	// Writer 1: advances the streamed set at commit boundaries (XIDEvent path).
 	go func() {
 		defer wg.Done()
 		for i := 0; i < iterations; i++ {
@@ -283,7 +263,6 @@ func TestGTIDCoordinateAccessorsAreRaceFree(t *testing.T) {
 		}
 	}()
 
-	// Writer 2: records the stop target (FlushAndStop path).
 	go func() {
 		defer wg.Done()
 		for i := 0; i < iterations; i++ {
@@ -292,7 +271,6 @@ func TestGTIDCoordinateAccessorsAreRaceFree(t *testing.T) {
 		}
 	}()
 
-	// Reader: mirrors Ferry.Progress() reading both coordinates.
 	go func() {
 		defer wg.Done()
 		for i := 0; i < iterations; i++ {

@@ -398,8 +398,7 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
-	// The target binlog streamer (used by the target verifier) streams in the
-	// same coordinate mode, so the target must also have GTID mode enabled.
+	// The target verifier's streamer uses the same coordinate mode, so the target must also have GTID enabled.
 	if f.Config.BinlogCoordinateMode == BinlogCoordinateGTID && !f.Config.SkipTargetVerification {
 		if err = CheckServerGTIDModeEnabled(f.TargetDB); err != nil {
 			f.logger.WithError(err).Error("target db is not configured for GTID mode")
@@ -605,9 +604,6 @@ func (f *Ferry) Start() error {
 	// miss some records that are inserted between the time the
 	// DataIterator determines the range of IDs to copy and the time that
 	// the starting binlog coordinates are determined.
-	// Resume-from-state currently only supports file/position coordinates.
-	// GTID-based resume is introduced in a later stage once GTID coordinates are
-	// persisted in the serialized state.
 	if f.StateToResumeFrom != nil && f.Config.BinlogCoordinateMode == BinlogCoordinateGTID {
 		return fmt.Errorf("resuming from state is not yet supported in GTID binlog coordinate mode")
 	}
