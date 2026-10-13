@@ -48,8 +48,6 @@ func TestSerializableState_GTIDRoundTrip(t *testing.T) {
 	assert.Equal(t, gtidTarget, decoded.LastStoredBinlogCoordinateForTargetVerifier.GTIDSet)
 }
 
-// TestSerializableState_FilePositionOmitsGTIDFields guards backward
-// compatibility: a file/position state must not emit GTID fields or a mode.
 func TestSerializableState_FilePositionOmitsGTIDFields(t *testing.T) {
 	state := &ghostferry.SerializableState{
 		GhostferryVersion:            "test-version",
@@ -78,7 +76,6 @@ func TestSerializableState_MinSourceBinlogCoordinate_GTIDIntersection(t *testing
 	require.NoError(t, err)
 	assert.True(t, coord.IsGTID())
 
-	// The safe resume point is the intersection: the smaller of the two here.
 	got, err := coord.ParsedGTIDSet()
 	require.NoError(t, err)
 	want, err := mysql.ParseMysqlGTIDSet(gtidExpected)
@@ -86,8 +83,6 @@ func TestSerializableState_MinSourceBinlogCoordinate_GTIDIntersection(t *testing
 	assert.True(t, got.Equal(want), "expected intersection %s, got %s", want.String(), got.String())
 }
 
-// TestSerializableState_MinSourceBinlogCoordinate_MultiUUIDIntersection covers
-// the intersection across two server UUIDs with non-contiguous ranges.
 func TestSerializableState_MinSourceBinlogCoordinate_MultiUUIDIntersection(t *testing.T) {
 	uuidB := "8e12fa47-71ca-11e1-9e33-c80aa9429999"
 	written := uuidA + ":1-100," + uuidB + ":1-40"
@@ -111,9 +106,6 @@ func TestSerializableState_MinSourceBinlogCoordinate_MultiUUIDIntersection(t *te
 	assert.True(t, got.Equal(want), "expected intersection %s, got %s", want.String(), got.String())
 }
 
-// TestSerializableState_MinSourceBinlogCoordinate_FailClosed verifies that an
-// unparseable stored GTID coordinate produces an error rather than silently
-// falling back to a possibly-too-advanced resume floor.
 func TestSerializableState_MinSourceBinlogCoordinate_FailClosed(t *testing.T) {
 	state := &ghostferry.SerializableState{
 		BinlogCoordinateMode:                        ghostferry.BinlogCoordinateGTID,
@@ -138,7 +130,7 @@ func TestSerializableState_MinSourceBinlogCoordinate_GTIDSingleSide(t *testing.T
 }
 
 func TestSerializableState_HasTargetVerifierBinlogCoordinate(t *testing.T) {
-	// GTID mode: empty-set coordinate is present (not absent).
+
 	emptyGTID := ghostferry.NewGTIDCoordinate("")
 	state := &ghostferry.SerializableState{
 		BinlogCoordinateMode:                        ghostferry.BinlogCoordinateGTID,
@@ -147,7 +139,6 @@ func TestSerializableState_HasTargetVerifierBinlogCoordinate(t *testing.T) {
 	assert.True(t, state.HasTargetVerifierBinlogCoordinate(),
 		"an empty GTID set coordinate must count as present")
 
-	// GTID mode with no coordinate: absent.
 	stateNone := &ghostferry.SerializableState{
 		BinlogCoordinateMode: ghostferry.BinlogCoordinateGTID,
 	}
@@ -170,7 +161,6 @@ func TestStateTracker_GTIDUpdateAndSerialize(t *testing.T) {
 	require.NotNil(t, state.LastWrittenBinlogCoordinate)
 	assert.Equal(t, gtidWritten, state.LastWrittenBinlogCoordinate.GTIDSet)
 
-	// Round-trip through a new tracker resumed from the serialized state.
 	resumed := ghostferry.NewStateTrackerFromSerializedState(0, state)
 	assert.Equal(t, gtidWritten, resumed.LastResumableSourceBinlogCoordinate().GTIDSet)
 	assert.Equal(t, gtidTarget, resumed.LastResumableBinlogCoordinateForTargetVerifier().GTIDSet)

@@ -203,8 +203,6 @@ class GhostferryTestCase < Minitest::Test
   #
   # To actually assert the validity of the data within the dumped state, you
   # have to do it manually.
-  # Returns the binlog coordinate mode the suite is currently running under.
-  # Defaults to "file_position" when unset.
   def binlog_coordinate_mode
     mode = ENV["GHOSTFERRY_BINLOG_COORDINATE_MODE"]
     (mode.nil? || mode.empty?) ? "file_position" : mode

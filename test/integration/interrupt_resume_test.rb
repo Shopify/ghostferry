@@ -367,11 +367,8 @@ class InterruptResumeTest < GhostferryTestCase
       refute_nil inline['GTIDSet']
       refute_nil target['GTIDSet']
 
-      # The resumable GTID set is conservatively the committed set BEFORE the
-      # in-flight transaction, so when the interrupt lands inside the first
-      # transaction after start it can still equal the start set. The key
-      # invariants are that a non-empty GTID set was recorded and that resume
-      # (asserted below) succeeds. It must never go backwards from the start set.
+      # The floor excludes the in-flight transaction, so it can equal the start set;
+      # only presence, non-emptiness, and a successful resume (below) are asserted.
       refute_empty written['GTIDSet']
       refute_empty inline['GTIDSet']
     else

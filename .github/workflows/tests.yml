@@ -43,7 +43,6 @@ jobs:
   go-test:
     strategy:
       matrix:
-        # file_position is exercised on every supported MySQL version.
         mysql: ["5.7", "8.0", "8.4"]
         binlog_coordinate_mode: ["file_position"]
         include:
@@ -77,7 +76,6 @@ jobs:
   ruby-test:
     strategy:
       matrix:
-        # file_position is exercised on every supported MySQL version.
         mysql: ["5.7", "8.0", "8.4"]
         log_backend: ["logrus"]
         binlog_coordinate_mode: ["file_position"]

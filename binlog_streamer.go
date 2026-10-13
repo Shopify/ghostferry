@@ -491,8 +491,8 @@ func (s *BinlogStreamer) setLastStreamedGTIDSet(set mysql.GTIDSet) {
 	s.lastStreamedGTIDSet = set.Clone()
 }
 
-// setResumableBeforeGTID excludes the incoming transaction from the committed
-// set so checkpoints remain safe even when go-mysql replays a committed GTID.
+// setResumableBeforeGTID excludes the incoming transaction, so checkpoints stay
+// safe even when go-mysql replays a committed GTID.
 func (s *BinlogStreamer) setResumableBeforeGTID(event *replication.GTIDEvent) error {
 	sid, err := uuid.FromBytes(event.SID)
 	if err != nil {
@@ -550,11 +550,8 @@ func (s *BinlogStreamer) resumableGTIDClone() mysql.GTIDSet {
 	return s.lastResumableGTIDSet.Clone()
 }
 
-// streamedGTIDCoordinate and resumableGTIDCoordinate return GTID coordinates
-// snapshotted under gtidMu, for stamping onto DML events. They read the sets
-// while holding the lock so the snapshot never races the streaming goroutine's
-// writes. NewGTIDCoordinateFromSet clones internally, so the returned
-// coordinate does not alias the streamer's set.
+// NewGTIDCoordinateFromSet clones, so the returned coordinates do not alias the
+// streamer's sets.
 func (s *BinlogStreamer) streamedGTIDCoordinate() BinlogCoordinate {
 	s.gtidMu.RLock()
 	defer s.gtidMu.RUnlock()
@@ -761,19 +758,12 @@ func (s *BinlogStreamer) handleRowsEvent(ev *replication.BinlogEvent, query []by
 		return err
 	}
 
-	// In GTID mode, stamp GTID coordinates onto the events so that downstream
-	// consumers (binlog writer, verifiers) advance GTID-based state rather than
-	// file/position. The resumable coordinate excludes the current transaction
-	// from the committed set, so an interruption replays the whole transaction.
+	// The resumable coordinate excludes the current transaction so an
+	// interruption replays it whole.
 	if s.coordinateMode() == BinlogCoordinateGTID {
-		// Snapshot both coordinates under gtidMu so the read does not race the
-		// streaming goroutine's set mutations / Progress()'s reads.
 		currentCoord := s.streamedGTIDCoordinate()
 		resumableCoord := s.resumableGTIDCoordinate()
 		for _, dmlEv := range dmlEvs {
-			// SetCoordinates is an internal capability (coordinateStamper), not
-			// part of the exported DMLEvent interface; all built-in events
-			// satisfy it via DMLEventBase.
 			if stamper, ok := dmlEv.(coordinateStamper); ok {
 				stamper.SetCoordinates(currentCoord, resumableCoord)
 			}

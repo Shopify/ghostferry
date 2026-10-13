@@ -30,13 +30,8 @@ type Progress struct {
 	// server and you want some sort of custom identification with this field.
 	CustomPayload string
 
-	Tables                  map[string]TableProgress
-	LastSuccessfulBinlogPos mysql.Position
-	// LastSuccessfulBinlogCoordinate is the coordinate-typed counterpart of
-	// LastSuccessfulBinlogPos. It reflects the active BinlogCoordinateMode, so
-	// in GTID mode it carries the streamed GTID set. The legacy
-	// LastSuccessfulBinlogPos field is retained for backward compatibility and
-	// is only meaningful in file/position mode.
+	Tables                         map[string]TableProgress
+	LastSuccessfulBinlogPos        mysql.Position
 	LastSuccessfulBinlogCoordinate BinlogCoordinate
 	BinlogStreamerLag              float64 // This is the amount of seconds the binlog streamer is lagging by (seconds)
 	BinlogWriterLag                float64 // This is the amount of seconds the binlog writer is lagging by (seconds)
@@ -56,9 +51,7 @@ type Progress struct {
 	VerifierMessage string
 
 	// These are some variables that are only filled when CurrentState == done.
-	FinalBinlogPos mysql.Position
-	// FinalBinlogCoordinate is the coordinate-typed counterpart of
-	// FinalBinlogPos, reflecting the active BinlogCoordinateMode.
+	FinalBinlogPos        mysql.Position
 	FinalBinlogCoordinate BinlogCoordinate
 
 	// A best estimate on the speed at which the copying is taking place. If

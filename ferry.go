@@ -609,10 +609,8 @@ func (f *Ferry) Start() error {
 
 	var err error
 	if f.StateToResumeFrom != nil {
-		// Fail fast if the serialized state was produced in a different binlog
-		// coordinate mode than the current run; resuming across modes would
-		// mis-route the streamer (e.g. seeking a GTID set against a
-		// file/position stream) and could silently skip or replay events.
+		// Fail fast on mode mismatch: resuming across modes could silently
+		// skip or replay events.
 		if stateMode := f.StateToResumeFrom.CoordinateMode(); stateMode != f.Config.BinlogCoordinateMode {
 			return fmt.Errorf(
 				"cannot resume: state was saved in %q binlog coordinate mode but this run is configured for %q",
@@ -633,10 +631,8 @@ func (f *Ferry) Start() error {
 	}
 
 	if !f.Config.SkipTargetVerification {
-		// Presence must be checked explicitly, not via IsZero(): in GTID mode an
-		// empty executed set is a valid target-verifier coordinate, and treating
-		// it as absent would reconnect the target verifier at the target's
-		// current position and skip events that occurred before the interrupt.
+		// Presence, not IsZero: in GTID mode an empty executed set is a valid
+		// coordinate; treating it as absent would skip pre-interrupt events.
 		if f.StateToResumeFrom != nil && f.StateToResumeFrom.HasTargetVerifierBinlogCoordinate() {
 			targetCoord, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlSinceCoordinate(
 				f.StateToResumeFrom.TargetVerifierBinlogCoordinate(),

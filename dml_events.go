@@ -85,11 +85,8 @@ type DMLEvent interface {
 	Timestamp() time.Time
 }
 
-// coordinateStamper is an internal capability used by the BinlogStreamer to
-// stamp non-file/position coordinates (e.g. GTID) onto events. It is
-// deliberately NOT part of the exported DMLEvent interface so that external
-// implementations of DMLEvent do not have to implement it. All built-in DML
-// events satisfy it via DMLEventBase.
+// coordinateStamper is internal so external DMLEvent implementations need not
+// implement it; built-in events satisfy it via DMLEventBase.
 type coordinateStamper interface {
 	SetCoordinates(coordinate, resumableCoordinate BinlogCoordinate)
 }
@@ -102,17 +99,12 @@ type DMLEventBase struct {
 	query        []byte
 	timestamp    time.Time
 
-	// coordinate and resumableCoordinate optionally carry non-file/position
-	// coordinates (e.g. GTID). When set (non-nil), they take precedence over
-	// the file/position fields in the coordinate accessors. They are stamped by
-	// the BinlogStreamer in GTID mode.
 	coordinate          *BinlogCoordinate
 	resumableCoordinate *BinlogCoordinate
 }
 
-// SetCoordinates overrides the coordinate-typed accessors with explicit
-// coordinates. It is used by the BinlogStreamer to stamp GTID coordinates onto
-// events in GTID mode. The file/position accessors are unaffected.
+// SetCoordinates overrides the coordinate accessors; the file/position
+// accessors are unaffected.
 func (e *DMLEventBase) SetCoordinates(coordinate, resumableCoordinate BinlogCoordinate) {
 	c := coordinate
 	r := resumableCoordinate

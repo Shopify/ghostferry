@@ -270,10 +270,7 @@ module GhostferryHelper
           environment["GHOSTFERRY_MARGINALIA"] = @config[:marginalia]
         end
 
-        # Binlog coordinate mode: prefer an explicit per-test config, otherwise
-        # fall back to the suite-wide GHOSTFERRY_BINLOG_COORDINATE_MODE env var.
-        # This lets CI run the entire suite against "file_position" or "gtid"
-        # while individual tests can still pin a mode.
+        # Per-test config overrides the suite-wide GHOSTFERRY_BINLOG_COORDINATE_MODE.
         binlog_coordinate_mode = @config[:binlog_coordinate_mode] || ENV["GHOSTFERRY_BINLOG_COORDINATE_MODE"]
         if binlog_coordinate_mode && !binlog_coordinate_mode.empty?
           environment["GHOSTFERRY_BINLOG_COORDINATE_MODE"] = binlog_coordinate_mode
