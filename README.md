@@ -70,10 +70,10 @@ Development Setup
 
 #### Prerequisites
 
-- Go 1.26.2 (the `go` directive in `go.mod` is authoritative), Git, Make and
+- Go 1.27.2 (the `go` directive in `go.mod` is authoritative), Git, Make and
   a MySQL client, to build and run `ghostferry-copydb`.
-- For the tests and the documentation site additionally: Ruby 3.4.8
-  (`.ruby-version`), Bundler 4.0.10 (`Gemfile.lock`), a C compiler toolchain
+- For the tests and the documentation site additionally: Ruby 4.0.7
+  (`.ruby-version`), Bundler 4.0.22 (`Gemfile.lock`), a C compiler toolchain
   and the MySQL client development libraries needed to compile the `mysql2`
   gem. Run `bundle install` without excluding the test, development or docs
   groups; `test/test_helper.rb` loads `pry-byebug` from the development group
@@ -96,7 +96,7 @@ mise install    # or: asdf install
 ```
 
 Without a version manager, any Go 1.21 or newer also works: because `go.mod`
-requires Go 1.26.2, the `go` command downloads and uses that toolchain itself.
+requires Go 1.27.2, the `go` command downloads and uses that toolchain itself.
 
 Install the MySQL client and its development libraries (needed by the `mysql2`
 gem), for example `brew install mysql-client` on macOS or
