@@ -95,7 +95,11 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 		c.ColumnsToSelect = []string{"*"}
 	}
 
-	for c.lastSuccessfulPaginationKey.Compare(c.MaxPaginationKey) < 0 {
+	// Starting from the minimum key, the first query includes rows equal to it
+	// (DefaultBuildSelect uses >=), so that batch may end at the start key and
+	// must run even when the minimum is also the maximum.
+	inclusive := c.lastSuccessfulPaginationKey.IsMin()
+	for inclusive || c.lastSuccessfulPaginationKey.Compare(c.MaxPaginationKey) < 0 {
 		var tx SqlPreparerAndRollbacker
 		var batch *RowBatch
 		var paginationKeypos PaginationKey
@@ -136,7 +140,8 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 			break
 		}
 
-		if paginationKeypos.Compare(c.lastSuccessfulPaginationKey) <= 0 {
+		advance := paginationKeypos.Compare(c.lastSuccessfulPaginationKey)
+		if advance < 0 || (advance == 0 && !inclusive) {
 			tx.Rollback()
 			err = fmt.Errorf("new paginationKeypos %s <= lastSuccessfulPaginationKey %s", paginationKeypos.String(), c.lastSuccessfulPaginationKey.String())
 			c.logger.WithError(err).Errorf("last successful paginationKey position did not advance")
@@ -153,6 +158,7 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 		tx.Rollback()
 
 		c.lastSuccessfulPaginationKey = paginationKeypos
+		inclusive = false
 	}
 
 	return nil
@@ -307,9 +313,14 @@ func ScanByteRow(rows *sqlorig.Rows, columnCount int) ([][]byte, error) {
 func DefaultBuildSelect(columns []string, table *TableSchema, lastPaginationKey PaginationKey, batchSize uint64) squirrel.SelectBuilder {
 	quotedPaginationKey := QuoteField(table.GetPaginationColumn().Name)
 
+	var after squirrel.Sqlizer = squirrel.Gt{quotedPaginationKey: lastPaginationKey.SQLValue()}
+	if lastPaginationKey.IsMin() {
+		after = squirrel.GtOrEq{quotedPaginationKey: lastPaginationKey.SQLValue()}
+	}
+
 	return squirrel.Select(columns...).
 		From(QuotedTableName(table)).
-		Where(squirrel.Gt{quotedPaginationKey: lastPaginationKey.SQLValue()}).
+		Where(after).
 		Limit(batchSize).
 		OrderBy(quotedPaginationKey)
 }

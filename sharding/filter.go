@@ -37,6 +37,13 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 	quotedShardingKey := "`" + f.ShardingKey + "`"
 	quotedTable := ghostferry.QuotedTableName(table)
 
+	// A cursor starting from the minimum key has not copied anything yet, so
+	// rows equal to it (e.g. id 0) must be included.
+	after := ">"
+	if lastPaginationKey.IsMin() {
+		after = ">="
+	}
+
 	if _, exists := f.PrimaryKeyTables[table.Name]; exists {
 		// This table uses the sharding key as its primary key, and thus contains
 		// a single row per sharding key. This can commonly occur when representing
@@ -48,7 +55,7 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 		return sq.Select(columns...).
 			From(quotedTable + " USE INDEX (PRIMARY)").
 			Where(sq.Eq{quotedPaginationKey: f.ShardingValue}).
-			Where(sq.Gt{quotedPaginationKey: lastPaginationKey.SQLValue()}), nil
+			Where(sq.Expr(quotedPaginationKey+" "+after+" ?", lastPaginationKey.SQLValue())), nil
 	}
 
 	joinTables, exists := f.JoinedTables[table.Name]
@@ -84,7 +91,7 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 			selectPaginationKeys += " " + f.shardingKeyIndexHint(table, indexHint)
 		}
 
-		selectPaginationKeys += " WHERE " + quotedShardingKey + " = ? AND " + quotedPaginationKey + " > ?" +
+		selectPaginationKeys += " WHERE " + quotedShardingKey + " = ? AND " + quotedPaginationKey + " " + after + " ?" +
 			" ORDER BY " + quotedPaginationKey + " LIMIT " + strconv.Itoa(int(batchSize))
 
 		return sq.Select(columns...).
@@ -122,8 +129,8 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 	var args []interface{}
 
 	for _, joinTable := range joinTables {
-		pattern := "SELECT `%s` AS sharding_join_alias FROM `%s`.`%s` WHERE `%s` = ? AND `%s` > ?"
-		sql := fmt.Sprintf(pattern, joinTable.JoinColumn, table.Schema, joinTable.TableName, f.ShardingKey, joinTable.JoinColumn)
+		pattern := "SELECT `%s` AS sharding_join_alias FROM `%s`.`%s` WHERE `%s` = ? AND `%s` %s ?"
+		sql := fmt.Sprintf(pattern, joinTable.JoinColumn, table.Schema, joinTable.TableName, f.ShardingKey, joinTable.JoinColumn, after)
 		clauses = append(clauses, sql)
 		args = append(args, f.ShardingValue, lastPaginationKey.SQLValue())
 	}
