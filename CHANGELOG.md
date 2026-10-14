@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - Extend `DMLEvent` with `BinlogCoordinate()` and `ResumableBinlogCoordinate()`. `DMLEventBase` implements both; custom implementations must provide these methods.
 - Replace `BinlogCoordinate.Compare` with `HasReached`, using file/position ordering or GTID-set containment. Comparing different coordinate types now returns an error instead of panicking.
 - Compare parsed GTID sets directly during cutover, eliminating per-event GTID serialization and parsing.
+- Add `IsMin()` to `PaginationKey`; custom implementations must provide it. A `CopyFilter.BuildSelect` that builds its own pagination condition must include the key itself when `IsMin()` is true. `DefaultBuildSelect` and `sharding.ShardedCopyFilter` do.
 - Updated golang to 1.27.2
 - Updated go packages:
   - `github.com/sirupsen/logrus` to v1.10.2
@@ -40,6 +41,8 @@ All notable changes to this project will be documented in this file.
 - Publish binlog stop requests atomically after recording the stop coordinate, including reads from the control server.
 - Decode unsigned `MEDIUMINT` binlog values of 2^23 and above correctly. Previously they were sign-extended, so inserts were clamped to 16777215 on the target and updates of already-copied rows failed with an out-of-range error ([#299](https://github.com/Shopify/ghostferry/issues/299)).
 - Resume from the binlog writer coordinate when the InlineVerifier is disabled. Previously a coordinate left in the state by an earlier verifier-enabled run still held back the resume point, so resuming failed once the source purged those binlogs ([#184](https://github.com/Shopify/ghostferry/issues/184)).
+- Copy rows whose pagination key is the minimum value: 0 for integer keys, empty for binary and string keys. The first batch used to select keys strictly greater than the minimum, so these rows were silently skipped, and a table holding only such a row was not copied at all ([#305](https://github.com/Shopify/ghostferry/issues/305)).
+- Abort when a signed integer pagination column holds negative values instead of silently skipping those rows ([#305](https://github.com/Shopify/ghostferry/issues/305)).
 
 ## [1.3.1 - 2026-04-15]
 

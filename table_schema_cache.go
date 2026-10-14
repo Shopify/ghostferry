@@ -132,6 +132,15 @@ func MaxPaginationKeys(db *sql.DB, tables []*TableSchema, logger Logger) (map[*T
 	for _, table := range tables {
 		logger := logger.WithField("table", table.String())
 
+		hasNegative, err := hasNegativePaginationKey(db, table)
+		if err != nil {
+			logger.WithError(err).Errorf("failed to check for negative values in pagination key %s", table.GetPaginationColumn().Name)
+			return tablesWithData, emptyTables, err
+		}
+		if hasNegative {
+			return tablesWithData, emptyTables, fmt.Errorf("table %s has a negative pagination key in column %s, which Ghostferry cannot copy", table.String(), table.GetPaginationColumn().Name)
+		}
+
 		maxPaginationKey, maxPaginationKeyExists, err := maxPaginationKey(db, table)
 		if err != nil {
 			logger.WithError(err).Errorf("failed to get max primary key %s", table.GetPaginationColumn().Name)
@@ -417,6 +426,37 @@ func showTablesFrom(c *sql.DB, dbname string) ([]string, error) {
 	}
 
 	return tables, nil
+}
+
+// hasNegativePaginationKey reports whether a signed integer pagination column
+// holds negative values. Integer pagination starts at 0, so such rows would
+// never be copied.
+func hasNegativePaginationKey(db *sql.DB, table *TableSchema) (bool, error) {
+	column := table.GetPaginationColumn()
+	if column.IsUnsigned || (column.Type != schema.TYPE_NUMBER && column.Type != schema.TYPE_MEDIUM_INT) {
+		return false, nil
+	}
+
+	query, args, err := sq.
+		Select("1").
+		From(QuotedTableName(table)).
+		Where(sq.Lt{QuoteField(column.Name): 0}).
+		Limit(1).
+		ToSql()
+	if err != nil {
+		return false, err
+	}
+
+	var found int
+	err = db.QueryRow(query, args...).Scan(&found)
+	switch {
+	case err == sqlorig.ErrNoRows:
+		return false, nil
+	case err != nil:
+		return false, err
+	default:
+		return true, nil
+	}
 }
 
 func maxPaginationKey(db *sql.DB, table *TableSchema) (PaginationKey, bool, error) {
