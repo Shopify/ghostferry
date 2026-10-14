@@ -86,6 +86,9 @@ type Ferry struct {
 	DoneTime     time.Time
 	OverallState atomic.Value
 
+	// Set when the data iterator finishes; Progress.TimeTaken stops there.
+	dataCopyDoneTime atomic.Pointer[time.Time]
+
 	logger Logger
 
 	rowCopyCompleteCh chan struct{}
@@ -813,6 +816,8 @@ func (f *Ferry) Run() {
 	dataIteratorWg.Wait()
 
 	f.logger.Info("data copy is complete, waiting for cutover")
+	dataCopyDoneTime := time.Now()
+	f.dataCopyDoneTime.Store(&dataCopyDoneTime)
 	f.OverallState.Store(StateWaitingForCutover)
 	f.waitUntilAutomaticCutoverIsTrue()
 
@@ -1099,7 +1104,11 @@ func (f *Ferry) Progress() *Progress {
 	remainingPaginationKeys = math.Max(0, float64(totalPaginationKeysToCopy-completedPaginationKeys))
 	s.ETA = (time.Duration(math.Ceil(remainingPaginationKeys/estimatedPaginationKeysPerSecond)) * time.Second).Seconds()
 	s.PaginationKeysPerSecond = uint64(estimatedPaginationKeysPerSecond)
-	s.TimeTaken = time.Now().Sub(f.StartTime).Seconds()
+	end := now
+	if dataCopyDoneTime := f.dataCopyDoneTime.Load(); dataCopyDoneTime != nil {
+		end = *dataCopyDoneTime
+	}
+	s.TimeTaken = end.Sub(f.StartTime).Seconds()
 
 	return s
 }
