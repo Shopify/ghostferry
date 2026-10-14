@@ -130,6 +130,48 @@ class InterruptResumeTest < GhostferryTestCase
     end
   end
 
+  def test_interrupt_resume_without_inline_verifier_ignores_stale_inline_verifier_coordinate
+    # The first run records an InlineVerifier coordinate in the state.
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      ghostferry.term_and_wait_for_exit
+    end
+    verifier_state = ghostferry.run_expecting_interrupt
+
+    max_id = source_db.query("SELECT MAX(id) AS max_id FROM #{DEFAULT_FULL_TABLE_NAME}").first["max_id"]
+
+    # This write lands after the InlineVerifier coordinate, in a binlog file
+    # that is purged below.
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (#{max_id + 1}, 'before rotation')")
+    source_db.query("FLUSH BINARY LOGS")
+    rotated_binlog_file = source_binlog_status["File"]
+
+    # Resuming without the verifier advances the binlog writer coordinate past
+    # the rotation, while the InlineVerifier coordinate stays behind.
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (#{max_id + 2}, 'after rotation')")
+      start_time = Time.now
+      until target_db.query("SELECT id FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{max_id + 2}").count == 1
+        raise "timed out waiting for the binlog writer to apply the insert" if Time.now - start_time > 10
+        sleep 0.1
+      end
+      ghostferry.term_and_wait_for_exit
+    end
+    stale_state = ghostferry.run_expecting_interrupt(verifier_state)
+
+    inline_key = gtid_coordinate_mode? ? "LastStoredBinlogCoordinateForInlineVerifier" : "LastStoredBinlogPositionForInlineVerifier"
+    assert_equal verifier_state[inline_key], stale_state[inline_key]
+
+    # The InlineVerifier coordinate now points at purged binlogs.
+    source_db.query("PURGE BINARY LOGS TO '#{rotated_binlog_file}'")
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+    ghostferry.run(stale_state)
+
+    assert_test_table_is_identical
+  end
+
   def test_interrupt_resume_inline_verifier_with_datawriter
     datawriter = new_source_datawriter
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
@@ -320,9 +362,7 @@ class InterruptResumeTest < GhostferryTestCase
   # originally taken from @kolbitsch-lastline in https://github.com/Shopify/ghostferry/pull/160
   def test_interrupt_resume_between_consecutive_rows_events
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
-    version, _ = source_db.query("SELECT @@version").first["@@version"]
-    query =  version < "8.4.0" ? "SHOW MASTER STATUS" : "SHOW BINARY LOG STATUS"
-    start_binlog_status = source_db.query(query).first
+    start_binlog_status = source_binlog_status
 
     # create a series of rows-events that do not have interleaved table-map
     # events. This is the case when multiple rows are affected in a single
