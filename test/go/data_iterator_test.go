@@ -153,6 +153,65 @@ func (this *DataIteratorTestSuite) TestExistingRowsAreIterated() {
 	)
 }
 
+func (this *DataIteratorTestSuite) loadTablesAfterExecuting(statements []string, names ...string) []*ghostferry.TableSchema {
+	for _, statement := range statements {
+		_, err := this.Ferry.SourceDB.Exec(statement)
+		this.Require().Nil(err)
+	}
+
+	tableFilter := &testhelpers.TestTableFilter{
+		DbsFunc: testhelpers.DbApplicabilityFilter([]string{testhelpers.TestSchemaName}),
+	}
+	cache, err := ghostferry.LoadTables(this.Ferry.SourceDB, tableFilter, nil, nil, nil, nil)
+	this.Require().Nil(err)
+
+	tables := make([]*ghostferry.TableSchema, len(names))
+	for i, name := range names {
+		tables[i] = cache.Get(testhelpers.TestSchemaName, name)
+		this.Require().NotNil(tables[i], name)
+	}
+	return tables
+}
+
+func (this *DataIteratorTestSuite) receivedIds(table string) []interface{} {
+	ids := []interface{}{}
+	for _, row := range this.receivedRows[table] {
+		ids = append(ids, row[0])
+	}
+	return ids
+}
+
+func (this *DataIteratorTestSuite) TestRowsAtTheMinimumPaginationKeyAreIterated() {
+	tables := this.loadTablesAfterExecuting([]string{
+		"CREATE TABLE gftest.zero_and_up (id bigint NOT NULL, data TEXT, PRIMARY KEY (id))",
+		"INSERT INTO gftest.zero_and_up VALUES (0, 'a'), (1, 'b'), (2, 'c')",
+		"CREATE TABLE gftest.only_zero (id bigint unsigned NOT NULL, data TEXT, PRIMARY KEY (id))",
+		"INSERT INTO gftest.only_zero VALUES (0, 'a')",
+		"CREATE TABLE gftest.empty_binary_key (id varbinary(16) NOT NULL, data TEXT, PRIMARY KEY (id))",
+		"INSERT INTO gftest.empty_binary_key VALUES ('', 'a'), ('x', 'b')",
+	}, "zero_and_up", "only_zero", "empty_binary_key")
+
+	this.di.Run(tables)
+
+	this.Equal([]interface{}{int64(0), int64(1), int64(2)}, this.receivedIds("zero_and_up"))
+	this.Equal([]interface{}{int64(0)}, this.receivedIds("only_zero"))
+	this.Equal([]interface{}{[]byte(""), []byte("x")}, this.receivedIds("empty_binary_key"))
+}
+
+func (this *DataIteratorTestSuite) TestNegativePaginationKeyIsRejected() {
+	tables := this.loadTablesAfterExecuting([]string{
+		"CREATE TABLE gftest.negative_ids (id bigint NOT NULL, data TEXT, PRIMARY KEY (id))",
+		"INSERT INTO gftest.negative_ids VALUES (-1, 'a'), (1, 'b')",
+	}, "negative_ids")
+
+	errorHandler := &testhelpers.ErrorHandler{}
+	this.di.ErrorHandler = errorHandler
+	this.di.Run(tables)
+
+	this.Require().NotNil(errorHandler.LastError)
+	this.Require().Contains(errorHandler.LastError.Error(), "negative pagination key")
+}
+
 func (this *DataIteratorTestSuite) TestDoneListenerGetsNotifiedWhenDone() {
 	wasNotified := false
 
