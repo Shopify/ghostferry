@@ -60,7 +60,7 @@ func (s *MaxTableSizeSorter) Sort(unorderedTables map[*TableSchema]PaginationKey
 		strings.Join(databaseSchemas, `", "`),
 		strings.Join(tableNames, `", "`),
 	)
-	rows, err := s.DataIterator.DB.Query(query)
+	rows, err := s.DataIterator.currentSourceDB().Query(query)
 
 	if err != nil {
 		return orderedTables, err

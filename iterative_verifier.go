@@ -120,6 +120,7 @@ type IterativeVerifier struct {
 	BinlogStreamer      *BinlogStreamer
 	TableSchemaCache    TableSchemaCache
 	SourceDB            *sql.DB
+	SourceRuntime       *SourceRuntime
 	TargetDB            *sql.DB
 
 	Tables              []*TableSchema
@@ -153,7 +154,7 @@ func (v *IterativeVerifier) SanityCheckParameters() error {
 		return errors.New("BinlogStreamer must not be nil")
 	}
 
-	if v.SourceDB == nil {
+	if v.currentSourceDB() == nil {
 		return errors.New("SourceDB must not be nil")
 	}
 
@@ -287,6 +288,15 @@ func (v *IterativeVerifier) Message() string {
 
 func (v *IterativeVerifier) Result() (VerificationResultAndStatus, error) {
 	return v.verificationResultAndStatus, v.verificationErr
+}
+
+func (v *IterativeVerifier) currentSourceDB() *sql.DB {
+	if v.SourceRuntime != nil {
+		if db := v.SourceRuntime.DB(); db != nil {
+			return db
+		}
+	}
+	return v.SourceDB
 }
 
 func (v *IterativeVerifier) GetHashes(db *sql.DB, schemaName, tableName, paginationKeyColumn string, columns []schema.TableColumn, paginationKeys []interface{}) (map[string][]byte, error) {
@@ -595,7 +605,7 @@ func (v *IterativeVerifier) compareFingerprints(paginationKeys []interface{}, ta
 	go func() {
 		defer wg.Done()
 		sourceErr = WithRetries(5, 0, v.logger, "get fingerprints from source db", func() (err error) {
-			sourceHashes, err = v.GetHashes(v.SourceDB, table.Schema, table.Name, table.GetPaginationColumn().Name, v.columnsToVerify(table), paginationKeys)
+			sourceHashes, err = v.GetHashes(v.currentSourceDB(), table.Schema, table.Name, table.GetPaginationColumn().Name, v.columnsToVerify(table), paginationKeys)
 			return
 		})
 	}()
@@ -627,7 +637,7 @@ func (v *IterativeVerifier) compareFingerprints(paginationKeys []interface{}, ta
 }
 
 func (v *IterativeVerifier) compareCompressedHashes(targetDb, targetTable string, table *TableSchema, paginationKeys []interface{}) ([]string, error) {
-	sourceHashes, err := v.CompressionVerifier.GetCompressedHashes(v.SourceDB, table.Schema, table.Name, table.GetPaginationColumn().Name, v.columnsToVerify(table), paginationKeys)
+	sourceHashes, err := v.CompressionVerifier.GetCompressedHashes(v.currentSourceDB(), table.Schema, table.Name, table.GetPaginationColumn().Name, v.columnsToVerify(table), paginationKeys)
 	if err != nil {
 		return nil, err
 	}
