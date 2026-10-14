@@ -241,6 +241,11 @@ func NewStandardConfig() (*ghostferry.Config, error) {
 		}
 	}
 
+	// GHOSTFERRY_BINLOG_COORDINATE_MODE: "file_position" (default) or "gtid".
+	if binlogCoordinateMode := os.Getenv("GHOSTFERRY_BINLOG_COORDINATE_MODE"); binlogCoordinateMode != "" {
+		config.BinlogCoordinateMode = ghostferry.BinlogCoordinateType(binlogCoordinateMode)
+	}
+
 	verifierType := os.Getenv("GHOSTFERRY_VERIFIER_TYPE")
 	if verifierType == ghostferry.VerifierTypeIterative {
 		config.VerifierType = ghostferry.VerifierTypeIterative

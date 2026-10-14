@@ -17,7 +17,9 @@ type Config struct {
 
 	SourceReplicationMaster       *ghostferry.DatabaseConfig
 	ReplicatedMasterPositionQuery string
-	RunFerryFromReplica           bool
+	// Used instead of ReplicatedMasterPositionQuery in GTID mode; must return a single column with the master's executed GTID set.
+	ReplicatedMasterGTIDQuery string
+	RunFerryFromReplica       bool
 
 	StatsDAddress string
 

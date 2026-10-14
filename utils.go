@@ -258,6 +258,47 @@ func CheckDbIsAReplica(db *sql.DB) (bool, error) {
 	return isReadOnly, err
 }
 
+// ReadExecutedGTIDSet reads @@GLOBAL.GTID_EXECUTED; an empty result is valid,
+// not an error.
+func ReadExecutedGTIDSet(db *sql.DB) (string, error) {
+	var gtidSet string
+	row := db.QueryRow("SELECT @@GLOBAL.GTID_EXECUTED")
+	if err := row.Scan(&gtidSet); err != nil {
+		return "", fmt.Errorf("reading @@GLOBAL.GTID_EXECUTED: %w", err)
+	}
+	return gtidSet, nil
+}
+
+// ReadCurrentGTIDCoordinate reads the current executed GTID set and returns it
+// as a GTID BinlogCoordinate. The raw string is validated by parsing it.
+func ReadCurrentGTIDCoordinate(db *sql.DB) (BinlogCoordinate, error) {
+	gtidSet, err := ReadExecutedGTIDSet(db)
+	if err != nil {
+		return BinlogCoordinate{}, err
+	}
+
+	if _, err := mysql.ParseMysqlGTIDSet(gtidSet); err != nil {
+		return BinlogCoordinate{}, fmt.Errorf("parsing executed GTID set %q: %w", gtidSet, err)
+	}
+
+	return NewGTIDCoordinate(gtidSet), nil
+}
+
+// CheckServerGTIDModeEnabled verifies @@GLOBAL.gtid_mode is ON.
+func CheckServerGTIDModeEnabled(db *sql.DB) error {
+	var gtidMode string
+	row := db.QueryRow("SELECT @@GLOBAL.gtid_mode")
+	if err := row.Scan(&gtidMode); err != nil {
+		return fmt.Errorf("reading @@GLOBAL.gtid_mode: %w", err)
+	}
+
+	if !strings.EqualFold(gtidMode, "ON") {
+		return fmt.Errorf("gtid_mode must be ON for GTID binlog coordinate mode, but was %q", gtidMode)
+	}
+
+	return nil
+}
+
 func ConvertTableColumnsToStrings(columns []schema.TableColumn) []string {
 	out := make([]string, 0, len(columns))
 	for _, column := range columns {

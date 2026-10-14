@@ -114,8 +114,6 @@ func (this *CopydbFerry) initializeWaitUntilReplicaIsCaughtUpToMasterConnection(
 		return err
 	}
 
-	positionFetcher := ghostferry.ReplicatedMasterPositionViaCustomQuery{Query: this.config.ReplicatedMasterPositionQuery}
-
 	var timeout time.Duration
 	if this.config.WaitForReplicationTimeout == "" {
 		timeout = time.Duration(0)
@@ -126,11 +124,29 @@ func (this *CopydbFerry) initializeWaitUntilReplicaIsCaughtUpToMasterConnection(
 		}
 	}
 
-	this.Ferry.WaitUntilReplicaIsCaughtUpToMaster = &ghostferry.WaitUntilReplicaIsCaughtUpToMaster{
-		MasterDB:                        masterDB,
-		Timeout:                         timeout,
-		ReplicatedMasterPositionFetcher: positionFetcher,
+	wait := &ghostferry.WaitUntilReplicaIsCaughtUpToMaster{
+		MasterDB:             masterDB,
+		Timeout:              timeout,
+		BinlogCoordinateMode: this.config.BinlogCoordinateMode,
 	}
+
+	if this.config.BinlogCoordinateMode == ghostferry.BinlogCoordinateGTID {
+		if this.config.ReplicatedMasterGTIDQuery == "" {
+			return fmt.Errorf("ReplicatedMasterGTIDQuery must be set when running from a replica in GTID mode")
+		}
+		wait.ReplicatedMasterCoordinateFetcher = ghostferry.ReplicatedMasterGTIDViaCustomQuery{
+			Query: this.config.ReplicatedMasterGTIDQuery,
+		}
+	} else {
+		if this.config.ReplicatedMasterPositionQuery == "" {
+			return fmt.Errorf("ReplicatedMasterPositionQuery must be set when running from a replica")
+		}
+		wait.ReplicatedMasterPositionFetcher = ghostferry.ReplicatedMasterPositionViaCustomQuery{
+			Query: this.config.ReplicatedMasterPositionQuery,
+		}
+	}
+
+	this.Ferry.WaitUntilReplicaIsCaughtUpToMaster = wait
 	return nil
 }
 

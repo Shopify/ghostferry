@@ -2,6 +2,7 @@ package test
 
 import (
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -84,6 +85,10 @@ func TestUpdateBinlogSelectCopy(t *testing.T) {
 }
 
 func TestMasterChangingBeforeStoppingBinlogStreaming(t *testing.T) {
+	if os.Getenv("GHOSTFERRY_BINLOG_COORDINATE_MODE") == string(ghostferry.BinlogCoordinateGTID) {
+		t.Skip("master-demotion detection is mode-independent; covered by the file/position run")
+	}
+
 	ferry := testhelpers.NewTestFerry()
 
 	sourceDB, err := ferry.Source.SqlDB(nil)

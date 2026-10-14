@@ -42,14 +42,14 @@ type RowData []interface{}
 // https://github.com/Shopify/ghostferry/issues/165.
 //
 // In summary:
-// - This code receives values from both go-sql-driver/mysql and
-//   go-mysql-org/go-mysql.
-// - go-sql-driver/mysql gives us int64 for signed integer, and uint64 in a byte
-//   slice for unsigned integer.
-// - go-mysql-org/go-mysql gives us int64 for signed integer, and uint64 for
-//   unsigned integer.
-// - We currently make this function deal with both cases. In the future we can
-//   investigate alternative solutions.
+//   - This code receives values from both go-sql-driver/mysql and
+//     go-mysql-org/go-mysql.
+//   - go-sql-driver/mysql gives us int64 for signed integer, and uint64 in a byte
+//     slice for unsigned integer.
+//   - go-mysql-org/go-mysql gives us int64 for signed integer, and uint64 for
+//     unsigned integer.
+//   - We currently make this function deal with both cases. In the future we can
+//     investigate alternative solutions.
 func (r RowData) GetUint64(colIdx int) (uint64, error) {
 	u64, ok := Uint64Value(r[colIdx])
 	if ok {
@@ -79,8 +79,16 @@ type DMLEvent interface {
 	PaginationKey() (string, error)
 	BinlogPosition() mysql.Position
 	ResumableBinlogPosition() mysql.Position
+	BinlogCoordinate() BinlogCoordinate
+	ResumableBinlogCoordinate() BinlogCoordinate
 	Annotation() (string, error)
 	Timestamp() time.Time
+}
+
+// coordinateStamper is internal so external DMLEvent implementations need not
+// implement it; built-in events satisfy it via DMLEventBase.
+type coordinateStamper interface {
+	SetCoordinates(coordinate, resumableCoordinate BinlogCoordinate)
 }
 
 // The base of DMLEvent to provide the necessary methods.
@@ -90,6 +98,18 @@ type DMLEventBase struct {
 	resumablePos mysql.Position
 	query        []byte
 	timestamp    time.Time
+
+	coordinate          *BinlogCoordinate
+	resumableCoordinate *BinlogCoordinate
+}
+
+// SetCoordinates overrides the coordinate accessors; the file/position
+// accessors are unaffected.
+func (e *DMLEventBase) SetCoordinates(coordinate, resumableCoordinate BinlogCoordinate) {
+	c := coordinate
+	r := resumableCoordinate
+	e.coordinate = &c
+	e.resumableCoordinate = &r
 }
 
 func (e *DMLEventBase) Database() string {
@@ -110,6 +130,20 @@ func (e *DMLEventBase) BinlogPosition() mysql.Position {
 
 func (e *DMLEventBase) ResumableBinlogPosition() mysql.Position {
 	return e.resumablePos
+}
+
+func (e *DMLEventBase) BinlogCoordinate() BinlogCoordinate {
+	if e.coordinate != nil {
+		return *e.coordinate
+	}
+	return NewFilePositionCoordinate(e.pos)
+}
+
+func (e *DMLEventBase) ResumableBinlogCoordinate() BinlogCoordinate {
+	if e.resumableCoordinate != nil {
+		return *e.resumableCoordinate
+	}
+	return NewFilePositionCoordinate(e.resumablePos)
 }
 
 // Annotation will return the first prefixed comment on the SQL string,
@@ -504,10 +538,10 @@ func Int64Value(value interface{}) (int64, bool) {
 //
 // This is specifically mentioned in the the below link:
 //
-//    When BINARY values are stored, they are right-padded with the pad value
-//    to the specified length. The pad value is 0x00 (the zero byte). Values
-//    are right-padded with 0x00 for inserts, and no trailing bytes are removed
-//    for retrievals.
+//	When BINARY values are stored, they are right-padded with the pad value
+//	to the specified length. The pad value is 0x00 (the zero byte). Values
+//	are right-padded with 0x00 for inserts, and no trailing bytes are removed
+//	for retrievals.
 //
 // ref: https://dev.mysql.com/doc/refman/5.7/en/binary-varbinary.html
 func appendEscapedString(buffer []byte, value string, rightPadToLengthWithZeroBytes int) []byte {

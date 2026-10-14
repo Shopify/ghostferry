@@ -147,15 +147,16 @@ func (f *Ferry) newBinlogStreamer(db *sql.DB, dbConf *DatabaseConfig, schemaRewr
 	f.ensureInitialized()
 
 	return &BinlogStreamer{
-		DB:               db,
-		DBConfig:         dbConf,
-		MyServerId:       f.Config.MyServerId,
-		ErrorHandler:     f.ErrorHandler,
-		Filter:           f.CopyFilter,
-		TableSchema:      f.Tables,
-		LogTag:           logTag,
-		DatabaseRewrites: schemaRewrites,
-		TableRewrites:    tableRewrites,
+		DB:                   db,
+		DBConfig:             dbConf,
+		MyServerId:           f.Config.MyServerId,
+		ErrorHandler:         f.ErrorHandler,
+		Filter:               f.CopyFilter,
+		TableSchema:          f.Tables,
+		LogTag:               logTag,
+		DatabaseRewrites:     schemaRewrites,
+		TableRewrites:        tableRewrites,
+		BinlogCoordinateMode: f.Config.BinlogCoordinateMode,
 	}
 }
 
@@ -378,6 +379,13 @@ func (f *Ferry) Initialize() (err error) {
 		return err
 	}
 
+	if f.Config.BinlogCoordinateMode == BinlogCoordinateGTID {
+		if err = CheckServerGTIDModeEnabled(f.SourceDB); err != nil {
+			f.logger.WithError(err).Error("source db is not configured for GTID mode")
+			return err
+		}
+	}
+
 	f.TargetDB, err = f.Target.SqlDB(f.logger.WithField("dbname", "target"))
 	if err != nil {
 		f.logger.WithError(err).Error("failed to connect to target database")
@@ -388,6 +396,14 @@ func (f *Ferry) Initialize() (err error) {
 	if err != nil {
 		f.logger.WithError(err).Error("target connection checking failed")
 		return err
+	}
+
+	// The target verifier's streamer uses the same coordinate mode, so the target must also have GTID enabled.
+	if f.Config.BinlogCoordinateMode == BinlogCoordinateGTID && !f.Config.SkipTargetVerification {
+		if err = CheckServerGTIDModeEnabled(f.TargetDB); err != nil {
+			f.logger.WithError(err).Error("target db is not configured for GTID mode")
+			return err
+		}
 	}
 
 	if !f.Config.AllowSuperUserOnReadOnly {
@@ -406,6 +422,7 @@ func (f *Ferry) Initialize() (err error) {
 	// of the MySQL databases.
 	if f.WaitUntilReplicaIsCaughtUpToMaster != nil {
 		f.WaitUntilReplicaIsCaughtUpToMaster.ReplicaDB = f.SourceDB
+		f.WaitUntilReplicaIsCaughtUpToMaster.BinlogCoordinateMode = f.Config.BinlogCoordinateMode
 
 		if f.WaitUntilReplicaIsCaughtUpToMaster.MasterDB == nil {
 			err = errors.New("must specify a MasterDB")
@@ -419,8 +436,22 @@ func (f *Ferry) Initialize() (err error) {
 			return err
 		}
 
-		// Ensures the query to check for position is executable.
-		_, err = f.WaitUntilReplicaIsCaughtUpToMaster.IsCaughtUp(zeroPosition, 1)
+		// In GTID mode the master's executed GTID set is the cutover target, so the master must have GTID mode enabled.
+		if f.Config.BinlogCoordinateMode == BinlogCoordinateGTID {
+			if err = CheckServerGTIDModeEnabled(f.WaitUntilReplicaIsCaughtUpToMaster.MasterDB); err != nil {
+				f.logger.WithError(err).Error("source master is not configured for GTID mode")
+				return err
+			}
+		}
+
+		// Ensures the query to check for the replicated coordinate is executable.
+		var probeTarget BinlogCoordinate
+		if f.Config.BinlogCoordinateMode == BinlogCoordinateGTID {
+			probeTarget = NewGTIDCoordinate("")
+		} else {
+			probeTarget = NewFilePositionCoordinate(zeroPosition)
+		}
+		_, err = f.WaitUntilReplicaIsCaughtUpToMaster.IsCaughtUpToCoordinate(probeTarget, 1)
 		if err != nil {
 			f.logger.WithError(err).Error("cannot check replicated master position on the source database")
 			return err
@@ -588,24 +619,41 @@ func (f *Ferry) Start() error {
 	// miss some records that are inserted between the time the
 	// DataIterator determines the range of IDs to copy and the time that
 	// the starting binlog coordinates are determined.
-	var sourcePos siddontangmysql.Position
-	var targetPos siddontangmysql.Position
+	var sourceCoord BinlogCoordinate
+	var targetCoord BinlogCoordinate
 
 	var err error
 	if f.StateToResumeFrom != nil {
-		sourcePos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.MinSourceBinlogPosition())
+		// Fail fast on mode mismatch: resuming across modes could silently
+		// skip or replay events.
+		if stateMode := f.StateToResumeFrom.CoordinateMode(); stateMode != f.Config.BinlogCoordinateMode {
+			return fmt.Errorf(
+				"cannot resume: state was saved in %q binlog coordinate mode but this run is configured for %q",
+				stateMode, f.Config.BinlogCoordinateMode,
+			)
+		}
+
+		resumeCoord, resumeErr := f.StateToResumeFrom.MinSourceBinlogCoordinate()
+		if resumeErr != nil {
+			return fmt.Errorf("computing resume coordinate: %w", resumeErr)
+		}
+		sourceCoord, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlSinceCoordinate(resumeCoord)
 	} else {
-		sourcePos, err = f.BinlogStreamer.ConnectBinlogStreamerToMysql()
+		sourceCoord, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlWithCoordinate()
 	}
 	if err != nil {
 		return err
 	}
 
 	if !f.Config.SkipTargetVerification {
-		if f.StateToResumeFrom != nil && f.StateToResumeFrom.LastStoredBinlogPositionForTargetVerifier != zeroPosition {
-			targetPos, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlFrom(f.StateToResumeFrom.LastStoredBinlogPositionForTargetVerifier)
+		// Presence, not IsZero: in GTID mode an empty executed set is a valid
+		// coordinate; treating it as absent would skip pre-interrupt events.
+		if f.StateToResumeFrom != nil && f.StateToResumeFrom.HasTargetVerifierBinlogCoordinate() {
+			targetCoord, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlSinceCoordinate(
+				f.StateToResumeFrom.TargetVerifierBinlogCoordinate(),
+			)
 		} else {
-			targetPos, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysql()
+			targetCoord, err = f.TargetVerifier.BinlogStreamer.ConnectBinlogStreamerToMysqlWithCoordinate()
 		}
 	}
 	if err != nil {
@@ -615,13 +663,13 @@ func (f *Ferry) Start() error {
 	// If we don't set this now, there is a race condition where Ghostferry
 	// is terminated with some rows copied but no binlog events are written.
 	// This guarentees that we are able to restart from a valid location.
-	f.StateTracker.UpdateLastResumableSourceBinlogPosition(sourcePos)
+	f.StateTracker.UpdateLastResumableSourceBinlogCoordinate(sourceCoord)
 	if f.inlineVerifier != nil {
-		f.StateTracker.UpdateLastResumableSourceBinlogPositionForInlineVerifier(sourcePos)
+		f.StateTracker.UpdateLastResumableSourceBinlogCoordinateForInlineVerifier(sourceCoord)
 	}
 
 	if !f.Config.SkipTargetVerification {
-		f.StateTracker.UpdateLastResumableBinlogPositionForTargetVerifier(targetPos)
+		f.StateTracker.UpdateLastResumableBinlogCoordinateForTargetVerifier(targetCoord)
 	}
 
 	return nil
@@ -972,9 +1020,11 @@ func (f *Ferry) Progress() *Progress {
 
 	// Binlog Progress
 	s.LastSuccessfulBinlogPos = f.BinlogStreamer.lastStreamedBinlogPosition
+	s.LastSuccessfulBinlogCoordinate = f.BinlogStreamer.GetLastStreamedBinlogCoordinate()
 	s.BinlogStreamerLag = now.Sub(f.BinlogStreamer.lastProcessedEventTime).Seconds()
 	s.BinlogWriterLag = now.Sub(f.BinlogWriter.lastProcessedEventTime).Seconds()
 	s.FinalBinlogPos = f.BinlogStreamer.stopAtBinlogPosition
+	s.FinalBinlogCoordinate = f.BinlogStreamer.GetStopBinlogCoordinate()
 
 	if f.TargetVerifier != nil {
 		s.TargetBinlogStreamerLag = now.Sub(f.TargetVerifier.BinlogStreamer.lastProcessedEventTime).Seconds()

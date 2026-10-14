@@ -30,11 +30,12 @@ type Progress struct {
 	// server and you want some sort of custom identification with this field.
 	CustomPayload string
 
-	Tables                  map[string]TableProgress
-	LastSuccessfulBinlogPos mysql.Position
-	BinlogStreamerLag       float64 // This is the amount of seconds the binlog streamer is lagging by (seconds)
-	BinlogWriterLag         float64 // This is the amount of seconds the binlog writer is lagging by (seconds)
-	Throttled               bool
+	Tables                         map[string]TableProgress
+	LastSuccessfulBinlogPos        mysql.Position
+	LastSuccessfulBinlogCoordinate BinlogCoordinate
+	BinlogStreamerLag              float64 // This is the amount of seconds the binlog streamer is lagging by (seconds)
+	BinlogWriterLag                float64 // This is the amount of seconds the binlog writer is lagging by (seconds)
+	Throttled                      bool
 
 	// if the TargetVerifier is enabled, we emit this lag, otherwise this number will be 0
 	TargetBinlogStreamerLag float64
@@ -50,7 +51,8 @@ type Progress struct {
 	VerifierMessage string
 
 	// These are some variables that are only filled when CurrentState == done.
-	FinalBinlogPos mysql.Position
+	FinalBinlogPos        mysql.Position
+	FinalBinlogCoordinate BinlogCoordinate
 
 	// A best estimate on the speed at which the copying is taking place. If
 	// there are large gaps in the PaginationKey space, this probably will be inaccurate.

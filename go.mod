@@ -8,6 +8,7 @@ require (
 	github.com/go-mysql-org/go-mysql v1.13.0
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/golang/snappy v1.0.0
+	github.com/google/uuid v1.3.0
 	github.com/gorilla/mux v1.8.1
 	github.com/rs/zerolog v1.35.1
 	github.com/shopspring/decimal v1.2.0
@@ -19,7 +20,6 @@ require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
-	github.com/google/uuid v1.3.0 // indirect
 	github.com/klauspost/compress v1.17.8 // indirect
 	github.com/lann/builder v0.0.0-20180216234317-1b87b36280d0 // indirect
 	github.com/lann/ps v0.0.0-20150810152359-62de8c46ede0 // indirect
