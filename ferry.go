@@ -54,6 +54,8 @@ type Ferry struct {
 	SourceDB *sql.DB
 	TargetDB *sql.DB
 
+	sourceRuntime *SourceRuntime
+
 	ControlServer *ControlServer
 
 	BinlogStreamer *BinlogStreamer
@@ -89,6 +91,10 @@ type Ferry struct {
 	logger Logger
 
 	rowCopyCompleteCh chan struct{}
+}
+
+func (f *Ferry) SourceRuntime() *SourceRuntime {
+	return f.sourceRuntime
 }
 
 func (f *Ferry) NewDataIterator() *DataIterator {
@@ -366,6 +372,8 @@ func (f *Ferry) Initialize() (err error) {
 		f.logger.WithError(err).Error("failed to connect to source database")
 		return err
 	}
+
+	f.sourceRuntime = NewSourceRuntime(f.SourceDB, f.Config.Source)
 
 	err = f.checkConnection("source", f.SourceDB)
 	if err != nil {
