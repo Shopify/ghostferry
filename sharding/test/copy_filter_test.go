@@ -285,6 +285,24 @@ func (t *CopyFilterTestSuite) TestSelectsPrimaryKeyTables() {
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor.SQLValue()}, args)
 }
 
+func (t *CopyFilterTestSuite) TestIncludesMinimumPaginationKey() {
+	minKey := ghostferry.NewUint64Key(0)
+	expected := map[*ghostferry.TableSchema]string{
+		t.normalTable:     "SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` USE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? AND `id` >= ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)",
+		t.joinedTable:     "SELECT * FROM `shard_1`.`joinedtable` WHERE `joined_paginationKey` IN (SELECT * FROM (SELECT `joined_paginationKey1` AS sharding_join_alias FROM `shard_1`.`join1` WHERE `tenant_id` = ? AND `joined_paginationKey1` >= ? UNION DISTINCT SELECT `joined_paginationKey2` AS sharding_join_alias FROM `shard_1`.`join2` WHERE `tenant_id` = ? AND `joined_paginationKey2` >= ? ORDER BY sharding_join_alias LIMIT 1024) AS sharding_join_table) ORDER BY `joined_paginationKey`",
+		t.primaryKeyTable: "SELECT * FROM `shard_1`.`pkTable` USE INDEX (PRIMARY) WHERE `tenant_id` = ? AND `tenant_id` >= ?",
+	}
+
+	for table, expectedSQL := range expected {
+		selectBuilder, err := t.filter.BuildSelect([]string{"*"}, table, minKey, 1024)
+		t.Require().Nil(err)
+
+		sql, _, err := selectBuilder.ToSql()
+		t.Require().Nil(err)
+		t.Require().Equal(expectedSQL, sql)
+	}
+}
+
 func (t *CopyFilterTestSuite) TestShardingValueTypes() {
 	tenantIds := []interface{}{
 		uint64(1), uint32(1), uint16(1), uint8(1), uint(1),
