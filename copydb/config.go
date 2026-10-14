@@ -24,6 +24,9 @@ type FilterAndRewriteConfigs struct {
 	// Allows database/tables to be renamed from source to the target, where the
 	// key of this map is the database/table names on the source database and the
 	// value of the map is on the database/table names target database.
+	//
+	// Equivalent to the top-level DatabaseRewrites/TableRewrites; set one or the
+	// other, not both.
 	Rewrites map[string]string
 }
 
@@ -100,8 +103,20 @@ func (c *Config) InitializeAndValidateConfig() error {
 		c.Tables,
 	)
 
-	c.DatabaseRewrites = c.Databases.Rewrites
-	c.TableRewrites = c.Tables.Rewrites
+	// Rewrites may be set at the top level (DatabaseRewrites/TableRewrites)
+	// or nested under Databases/Tables, but not both.
+	if len(c.Databases.Rewrites) > 0 {
+		if len(c.DatabaseRewrites) > 0 {
+			return fmt.Errorf("DatabaseRewrites and Databases.Rewrites cannot both be specified")
+		}
+		c.DatabaseRewrites = c.Databases.Rewrites
+	}
+	if len(c.Tables.Rewrites) > 0 {
+		if len(c.TableRewrites) > 0 {
+			return fmt.Errorf("TableRewrites and Tables.Rewrites cannot both be specified")
+		}
+		c.TableRewrites = c.Tables.Rewrites
+	}
 
 	if c.WaitForReplicationTimeout != "" {
 		_, err := time.ParseDuration(c.WaitForReplicationTimeout)

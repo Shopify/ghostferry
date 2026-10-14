@@ -38,6 +38,7 @@ All notable changes to this project will be documented in this file.
 - Finish replayed GTID transactions before stopping at cutover, even when their GTIDs were already streamed before a reconnect.
 - Exclude the current GTID from serialized resume checkpoints during reconnect replay, preserving other committed GTIDs. Stop streaming on invalid GTID identities before delivering further rows.
 - Publish binlog stop requests atomically after recording the stop coordinate, including reads from the control server.
+- ghostferry-copydb keeps top-level `DatabaseRewrites` and `TableRewrites` instead of overwriting them with the (often empty) `Databases.Rewrites` and `Tables.Rewrites`. Setting both forms is now rejected ([#216](https://github.com/Shopify/ghostferry/issues/216)).
 
 ## [1.3.1 - 2026-04-15]
 
