@@ -147,6 +147,7 @@ func TestErrorsIfShardingKeyChanged(t *testing.T) {
 	defer testcase.Teardown()
 	testcase.CopyData()
 
-	assert.NotNil(t, errorHandler.LastError)
-	assert.Equal(t, "sharding key changed from 2 to 1", errorHandler.LastError.Error())
+	err := errorHandler.Err()
+	assert.NotNil(t, err)
+	assert.Equal(t, "sharding key changed from 2 to 1", err.Error())
 }
