@@ -220,6 +220,28 @@ func (this *ConfigTestSuite) TestBinlogCoordinateModeInvalidIsRejected() {
 	this.Require().EqualError(err, `invalid BinlogCoordinateMode "banana", must be "file_position" or "gtid"`)
 }
 
+func (this *ConfigTestSuite) TestReportFrequenciesDefaultWhenCallbacksAreSet() {
+	this.config.ProgressCallback.URI = "http://example.com/progress"
+	this.config.StateCallback.URI = "http://example.com/state"
+	err := this.config.ValidateConfig()
+	this.Require().Nil(err)
+	this.Require().Equal(60000, this.config.ProgressReportFrequency)
+	this.Require().Equal(60000, this.config.StateReportFrequency)
+}
+
+func (this *ConfigTestSuite) TestReportFrequenciesBelowMinimumAreRejected() {
+	this.config.ProgressCallback.URI = "http://example.com/progress"
+	this.config.ProgressReportFrequency = -1
+	err := this.config.ValidateConfig()
+	this.Require().EqualError(err, "ProgressReportFrequency must be at least 100 milliseconds, got -1")
+
+	this.SetupTest()
+	this.config.StateCallback.URI = "http://example.com/state"
+	this.config.StateReportFrequency = 50
+	err = this.config.ValidateConfig()
+	this.Require().EqualError(err, "StateReportFrequency must be at least 100 milliseconds, got 50")
+}
+
 func TestConfig(t *testing.T) {
 	testhelpers.SetupTest()
 	suite.Run(t, new(ConfigTestSuite))
