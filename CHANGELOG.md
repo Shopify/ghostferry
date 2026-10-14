@@ -38,6 +38,7 @@ All notable changes to this project will be documented in this file.
 - Finish replayed GTID transactions before stopping at cutover, even when their GTIDs were already streamed before a reconnect.
 - Exclude the current GTID from serialized resume checkpoints during reconnect replay, preserving other committed GTIDs. Stop streaming on invalid GTID identities before delivering further rows.
 - Publish binlog stop requests atomically after recording the stop coordinate, including reads from the control server.
+- Resume from the binlog writer coordinate when the InlineVerifier is disabled. Previously a coordinate left in the state by an earlier verifier-enabled run still held back the resume point, so resuming failed once the source purged those binlogs ([#184](https://github.com/Shopify/ghostferry/issues/184)).
 
 ## [1.3.1 - 2026-04-15]
 
