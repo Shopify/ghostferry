@@ -313,6 +313,36 @@ class TypesTest < GhostferryTestCase
     end
   end
 
+  def test_unsigned_mediumint_with_inline_verifier
+    [source_db, target_db].each do |db|
+      db.query("CREATE DATABASE IF NOT EXISTS #{DEFAULT_DB}")
+      db.query("CREATE TABLE IF NOT EXISTS #{DEFAULT_FULL_TABLE_NAME} (id bigint(20) NOT NULL, data mediumint UNSIGNED NOT NULL, primary key(id))")
+    end
+
+    max_uint24 = 16777215
+    source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (1, 1), (2, #{max_uint24})")
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
+
+    # Without binlog signedness metadata, go-mysql decodes values >= 2^23 as
+    # sign-extended negative int32s.
+    ghostferry.on_status(Ghostferry::Status::BINLOG_STREAMING_STARTED) do
+      source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (3, 8592090)")
+      source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = 8388608 WHERE id = 1")
+      source_db.query("UPDATE #{DEFAULT_FULL_TABLE_NAME} SET data = #{max_uint24 - 1} WHERE id = 2")
+    end
+
+    ghostferry.run
+    assert_test_table_is_identical
+
+    res = target_db.query("SELECT id, data FROM #{DEFAULT_FULL_TABLE_NAME} ORDER BY id")
+    assert_equal [
+      { "id" => 1, "data" => 8388608 },
+      { "id" => 2, "data" => max_uint24 - 1 },
+      { "id" => 3, "data" => 8592090 },
+    ], res.to_a
+  end
+
   def test_copy_data_in_fixed_size_binary_column
     # Also see: https://github.com/Shopify/ghostferry/pull/159#issuecomment-597769258
     #
