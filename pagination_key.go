@@ -29,6 +29,9 @@ type PaginationKey interface {
 	MarshalJSON() ([]byte, error)
 	// IsMax returns true if this key represents the maximum possible value for its type.
 	IsMax() bool
+	// IsMin returns true if this key represents the minimum possible value for
+	// its type. Cursors start here, so queries must include rows equal to it.
+	IsMin() bool
 }
 
 type Uint64Key struct {
@@ -82,6 +85,10 @@ func (k Uint64Key) String() string {
 
 func (k Uint64Key) IsMax() bool {
 	return k.Value == math.MaxUint64
+}
+
+func (k Uint64Key) IsMin() bool {
+	return k.Value == 0
 }
 
 func (k Uint64Key) MarshalJSON() ([]byte, error) {
@@ -168,6 +175,10 @@ func (k BinaryKey) IsMax() bool {
 		}
 	}
 	return true
+}
+
+func (k BinaryKey) IsMin() bool {
+	return len(k.Value) == 0
 }
 
 func (k BinaryKey) MarshalJSON() ([]byte, error) {
