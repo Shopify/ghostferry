@@ -633,9 +633,18 @@ func (f *Ferry) Start() error {
 			)
 		}
 
-		resumeCoord, resumeErr := f.StateToResumeFrom.MinSourceBinlogCoordinate()
-		if resumeErr != nil {
-			return fmt.Errorf("computing resume coordinate: %w", resumeErr)
+		// The inline verifier coordinate only advances while the verifier runs.
+		// Left over from an earlier run, it can point at binlogs the source has
+		// since purged, so it only bounds the resume coordinate when the
+		// verifier is enabled.
+		var resumeCoord BinlogCoordinate
+		if f.inlineVerifier != nil {
+			resumeCoord, err = f.StateToResumeFrom.MinSourceBinlogCoordinate()
+			if err != nil {
+				return fmt.Errorf("computing resume coordinate: %w", err)
+			}
+		} else {
+			resumeCoord = f.StateToResumeFrom.WrittenSourceBinlogCoordinate()
 		}
 		sourceCoord, err = f.BinlogStreamer.ConnectBinlogStreamerToMysqlSinceCoordinate(resumeCoord)
 	} else {
