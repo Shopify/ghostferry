@@ -38,6 +38,7 @@ All notable changes to this project will be documented in this file.
 - Finish replayed GTID transactions before stopping at cutover, even when their GTIDs were already streamed before a reconnect.
 - Exclude the current GTID from serialized resume checkpoints during reconnect replay, preserving other committed GTIDs. Stop streaming on invalid GTID identities before delivering further rows.
 - Publish binlog stop requests atomically after recording the stop coordinate, including reads from the control server.
+- Default `ProgressReportFrequency` and `StateReportFrequency` to 60000 ms, and reject values below 100 ms when the matching callback is set. An unset, zero or negative frequency used to make Ghostferry post to the callback in a tight loop ([#214](https://github.com/Shopify/ghostferry/issues/214)).
 
 ## [1.3.1 - 2026-04-15]
 
