@@ -39,6 +39,7 @@ All notable changes to this project will be documented in this file.
 - Exclude the current GTID from serialized resume checkpoints during reconnect replay, preserving other committed GTIDs. Stop streaming on invalid GTID identities before delivering further rows.
 - Publish binlog stop requests atomically after recording the stop coordinate, including reads from the control server.
 - Decode unsigned `MEDIUMINT` binlog values of 2^23 and above correctly. Previously they were sign-extended, so inserts were clamped to 16777215 on the target and updates of already-copied rows failed with an out-of-range error ([#299](https://github.com/Shopify/ghostferry/issues/299)).
+- Resume from the binlog writer coordinate when the InlineVerifier is disabled. Previously a coordinate left in the state by an earlier verifier-enabled run still held back the resume point, so resuming failed once the source purged those binlogs ([#184](https://github.com/Shopify/ghostferry/issues/184)).
 
 ## [1.3.1 - 2026-04-15]
 
