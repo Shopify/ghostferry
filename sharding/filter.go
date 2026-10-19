@@ -37,25 +37,20 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 	quotedShardingKey := "`" + f.ShardingKey + "`"
 	quotedTable := ghostferry.QuotedTableName(table)
 
-	// A cursor starting from the minimum key has not copied anything yet, so
-	// rows equal to it (e.g. id 0) must be included.
-	after := ">"
-	if lastPaginationKey.IsMin() {
-		after = ">="
-	}
-
 	if _, exists := f.PrimaryKeyTables[table.Name]; exists {
 		// This table uses the sharding key as its primary key, and thus contains
 		// a single row per sharding key. This can commonly occur when representing
 		// the model for a single tenant in a multitenant database, e.g. a shop on
 		// a multitenant commerce platform.
 		//
-		// It is necessary to use two WHERE conditions on quotedPaginationKey so the second batch will be empty.
 		// No LIMIT clause is necessary since at most one row is present.
-		return sq.Select(columns...).
+		query := sq.Select(columns...).
 			From(quotedTable + " USE INDEX (PRIMARY)").
-			Where(sq.Eq{quotedPaginationKey: f.ShardingValue}).
-			Where(sq.Expr(quotedPaginationKey+" "+after+" ?", lastPaginationKey.SQLValue())), nil
+			Where(sq.Eq{quotedPaginationKey: f.ShardingValue})
+		if lastPaginationKey != nil {
+			query = query.Where(sq.Gt{quotedPaginationKey: lastPaginationKey.SQLValue()})
+		}
+		return query, nil
 	}
 
 	joinTables, exists := f.JoinedTables[table.Name]
@@ -91,12 +86,18 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 			selectPaginationKeys += " " + f.shardingKeyIndexHint(table, indexHint)
 		}
 
-		selectPaginationKeys += " WHERE " + quotedShardingKey + " = ? AND " + quotedPaginationKey + " " + after + " ?" +
-			" ORDER BY " + quotedPaginationKey + " LIMIT " + strconv.Itoa(int(batchSize))
+		selectPaginationKeys += " WHERE " + quotedShardingKey + " = ?"
+		args := make([]interface{}, 0, 2)
+		args = append(args, f.ShardingValue)
+		if lastPaginationKey != nil {
+			selectPaginationKeys += " AND " + quotedPaginationKey + " > ?"
+			args = append(args, lastPaginationKey.SQLValue())
+		}
+		selectPaginationKeys += " ORDER BY " + quotedPaginationKey + " LIMIT " + strconv.Itoa(int(batchSize))
 
 		return sq.Select(columns...).
 			From(quotedTable).
-			Join("("+selectPaginationKeys+") AS `batch` USING("+quotedPaginationKey+")", f.ShardingValue, lastPaginationKey.SQLValue()), nil
+			Join("("+selectPaginationKeys+") AS `batch` USING("+quotedPaginationKey+")", args...), nil
 	}
 
 	// This is a "joined table". It is the only supported type of table that
@@ -127,12 +128,19 @@ func (f *ShardedCopyFilter) BuildSelect(columns []string, table *ghostferry.Tabl
 	// it to a batch, then select the rest of the columns.
 	var clauses []string
 	var args []interface{}
+	const firstPage = "SELECT `%[1]s` AS sharding_join_alias FROM `%[2]s`.`%[3]s` WHERE `%[4]s` = ?"
+	pattern := firstPage
+	if lastPaginationKey != nil {
+		pattern = firstPage + " AND `%[1]s` > ?"
+	}
 
 	for _, joinTable := range joinTables {
-		pattern := "SELECT `%s` AS sharding_join_alias FROM `%s`.`%s` WHERE `%s` = ? AND `%s` %s ?"
-		sql := fmt.Sprintf(pattern, joinTable.JoinColumn, table.Schema, joinTable.TableName, f.ShardingKey, joinTable.JoinColumn, after)
+		sql := fmt.Sprintf(pattern, joinTable.JoinColumn, table.Schema, joinTable.TableName, f.ShardingKey)
 		clauses = append(clauses, sql)
-		args = append(args, f.ShardingValue, lastPaginationKey.SQLValue())
+		args = append(args, f.ShardingValue)
+		if lastPaginationKey != nil {
+			args = append(args, lastPaginationKey.SQLValue())
+		}
 	}
 
 	subquery := strings.Join(clauses, " UNION DISTINCT ")

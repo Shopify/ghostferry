@@ -13,10 +13,10 @@ type CopyFilter interface {
 	// here will cause the query to be retried, until the retry limit is
 	// reached, at which point the ferry will be aborted. BuildSelect is passed
 	// the columns to be selected, table being copied, the last pagination key value
-	// from the previous batch, and the batch size. Select rows with a greater
-	// pagination key, or a greater or equal one when the key's IsMin() is true
-	// (nothing copied yet). Call DefaultBuildSelect to generate the default
-	// query, which may be used as a starting point.
+	// from the previous batch, and the batch size. Select rows strictly after
+	// that key in ascending pagination-key order. A nil key means no lower
+	// bound; it is used for the first batch and startup validation. Call
+	// DefaultBuildSelect to generate the default query as a starting point.
 	BuildSelect([]string, *TableSchema, PaginationKey, uint64) (sq.SelectBuilder, error)
 
 	// ApplicableEvent is used to filter events for rows that have been

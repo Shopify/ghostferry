@@ -45,7 +45,7 @@ type CursorConfig struct {
 	ReadRetries               int
 }
 
-// returns a new Cursor with an embedded copy of itself
+// NewCursor resumes after startPaginationKey, or starts at the beginning when it is nil.
 func (c *CursorConfig) NewCursor(table *TableSchema, startPaginationKey, maxPaginationKey PaginationKey) *Cursor {
 	return &Cursor{
 		CursorConfig:                *c,
@@ -95,11 +95,7 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 		c.ColumnsToSelect = []string{"*"}
 	}
 
-	// Starting from the minimum key, the first query includes rows equal to it
-	// (DefaultBuildSelect uses >=), so that batch may end at the start key and
-	// must run even when the minimum is also the maximum.
-	inclusive := c.lastSuccessfulPaginationKey.IsMin()
-	for inclusive || c.lastSuccessfulPaginationKey.Compare(c.MaxPaginationKey) < 0 {
+	for c.lastSuccessfulPaginationKey == nil || c.lastSuccessfulPaginationKey.Compare(c.MaxPaginationKey) < 0 {
 		var tx SqlPreparerAndRollbacker
 		var batch *RowBatch
 		var paginationKeypos PaginationKey
@@ -140,8 +136,7 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 			break
 		}
 
-		advance := paginationKeypos.Compare(c.lastSuccessfulPaginationKey)
-		if advance < 0 || (advance == 0 && !inclusive) {
+		if c.lastSuccessfulPaginationKey != nil && paginationKeypos.Compare(c.lastSuccessfulPaginationKey) <= 0 {
 			tx.Rollback()
 			err = fmt.Errorf("new paginationKeypos %s <= lastSuccessfulPaginationKey %s", paginationKeypos.String(), c.lastSuccessfulPaginationKey.String())
 			c.logger.WithError(err).Errorf("last successful paginationKey position did not advance")
@@ -158,7 +153,6 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 		tx.Rollback()
 
 		c.lastSuccessfulPaginationKey = paginationKeypos
-		inclusive = false
 	}
 
 	return nil
@@ -257,6 +251,16 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos Pagina
 			return
 		}
 
+		// The first query has no lower bound. Recheck its first row in case a
+		// negative key was inserted after startup validation.
+		if len(batchData) == 0 && !c.paginationKeyColumn.IsUnsigned &&
+			(c.paginationKeyColumn.Type == schema.TYPE_NUMBER || c.paginationKeyColumn.Type == schema.TYPE_MEDIUM_INT) {
+			if value, ok := Int64Value(rowData[paginationKeyIndex]); ok && value < 0 {
+				err = fmt.Errorf("table %s has a negative pagination key in column %s, which Ghostferry cannot copy", c.Table.String(), c.paginationKeyColumn.Name)
+				return
+			}
+		}
+
 		batchData = append(batchData, rowData)
 	}
 
@@ -313,14 +317,12 @@ func ScanByteRow(rows *sqlorig.Rows, columnCount int) ([][]byte, error) {
 func DefaultBuildSelect(columns []string, table *TableSchema, lastPaginationKey PaginationKey, batchSize uint64) squirrel.SelectBuilder {
 	quotedPaginationKey := QuoteField(table.GetPaginationColumn().Name)
 
-	var after squirrel.Sqlizer = squirrel.Gt{quotedPaginationKey: lastPaginationKey.SQLValue()}
-	if lastPaginationKey.IsMin() {
-		after = squirrel.GtOrEq{quotedPaginationKey: lastPaginationKey.SQLValue()}
-	}
-
-	return squirrel.Select(columns...).
+	query := squirrel.Select(columns...).
 		From(QuotedTableName(table)).
-		Where(after).
 		Limit(batchSize).
 		OrderBy(quotedPaginationKey)
+	if lastPaginationKey != nil {
+		query = query.Where(squirrel.Gt{quotedPaginationKey: lastPaginationKey.SQLValue()})
+	}
+	return query
 }

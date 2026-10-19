@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Masterminds/squirrel"
 	"github.com/Shopify/ghostferry"
 	"github.com/Shopify/ghostferry/testhelpers"
 	"github.com/stretchr/testify/suite"
@@ -56,7 +57,7 @@ func (this *DataIteratorTestSuite) SetupTest() {
 			BatchSizePerTableOverride: config.DataIterationBatchSizePerTableOverride,
 			ReadRetries:               config.DBReadRetries,
 		},
-		StateTracker: ghostferry.NewStateTracker(config.DataIterationConcurrency * 10),
+		StateTracker:         ghostferry.NewStateTracker(config.DataIterationConcurrency * 10),
 		TargetPaginationKeys: &sync.Map{},
 	}
 
@@ -182,6 +183,11 @@ func (this *DataIteratorTestSuite) receivedIds(table string) []interface{} {
 }
 
 func (this *DataIteratorTestSuite) TestRowsAtTheMinimumPaginationKeyAreIterated() {
+	this.Ferry.Config.UpdatableConfig.DataIterationBatchSize = 1
+	this.di.Concurrency = 1
+	errorHandler := &testhelpers.ErrorHandler{}
+	this.di.ErrorHandler = errorHandler
+
 	tables := this.loadTablesAfterExecuting([]string{
 		"CREATE TABLE gftest.zero_and_up (id bigint NOT NULL, data TEXT, PRIMARY KEY (id))",
 		"INSERT INTO gftest.zero_and_up VALUES (0, 'a'), (1, 'b'), (2, 'c')",
@@ -192,10 +198,70 @@ func (this *DataIteratorTestSuite) TestRowsAtTheMinimumPaginationKeyAreIterated(
 	}, "zero_and_up", "only_zero", "empty_binary_key")
 
 	this.di.Run(tables)
+	this.Require().NoError(errorHandler.LastError)
 
 	this.Equal([]interface{}{int64(0), int64(1), int64(2)}, this.receivedIds("zero_and_up"))
 	this.Equal([]interface{}{int64(0)}, this.receivedIds("only_zero"))
 	this.Equal([]interface{}{[]byte(""), []byte("x")}, this.receivedIds("empty_binary_key"))
+}
+
+func (this *DataIteratorTestSuite) TestResumeAfterMinimumPaginationKey() {
+	this.Ferry.Config.UpdatableConfig.DataIterationBatchSize = 1
+	this.di.Concurrency = 1
+	errorHandler := &testhelpers.ErrorHandler{}
+	this.di.ErrorHandler = errorHandler
+	tables := this.loadTablesAfterExecuting([]string{
+		"CREATE TABLE gftest.resume_zero (id bigint NOT NULL PRIMARY KEY)",
+		"INSERT INTO gftest.resume_zero VALUES (0), (1)",
+		"CREATE TABLE gftest.resume_empty (id varbinary(16) NOT NULL PRIMARY KEY)",
+		"INSERT INTO gftest.resume_empty VALUES (''), ('x')",
+	}, "resume_zero", "resume_empty")
+
+	this.di.StateTracker.UpdateLastSuccessfulPaginationKey("gftest.resume_zero", ghostferry.NewUint64Key(0), ghostferry.RowStats{})
+	this.di.StateTracker.UpdateLastSuccessfulPaginationKey("gftest.resume_empty", ghostferry.NewBinaryKey(nil), ghostferry.RowStats{})
+	state := this.di.StateTracker.Serialize(nil, nil)
+	this.di.StateTracker = ghostferry.NewStateTrackerFromSerializedState(0, state)
+	this.di.Run(tables)
+
+	this.Require().NoError(errorHandler.LastError)
+	this.Equal([]interface{}{int64(1)}, this.receivedIds("resume_zero"))
+	this.Equal([]interface{}{[]byte("x")}, this.receivedIds("resume_empty"))
+}
+
+func (this *DataIteratorTestSuite) TestNegativePaginationKeyCheckUsesCopyFilter() {
+	tables := this.loadTablesAfterExecuting([]string{
+		"CREATE TABLE gftest.filtered_ids (id bigint NOT NULL PRIMARY KEY, tenant_id bigint NOT NULL)",
+		"INSERT INTO gftest.filtered_ids VALUES (-1, 2), (0, 1), (1, 1)",
+		"CREATE TABLE gftest.excluded_ids (id bigint NOT NULL PRIMARY KEY, tenant_id bigint NOT NULL)",
+		"INSERT INTO gftest.excluded_ids VALUES (-2, 2), (-1, 2)",
+	}, "filtered_ids", "excluded_ids")
+	this.di.CursorConfig.BuildSelect = func(columns []string, table *ghostferry.TableSchema, lastKey ghostferry.PaginationKey, batchSize uint64) (squirrel.SelectBuilder, error) {
+		return ghostferry.DefaultBuildSelect(columns, table, lastKey, batchSize).Where(squirrel.Eq{"tenant_id": 1}), nil
+	}
+	errorHandler := &testhelpers.ErrorHandler{}
+	this.di.ErrorHandler = errorHandler
+	this.di.Run(tables)
+
+	this.Require().NoError(errorHandler.LastError)
+	this.Equal([]interface{}{int64(0), int64(1)}, this.receivedIds("filtered_ids"))
+	this.Empty(this.receivedIds("excluded_ids"))
+	this.True(this.completedTables()["gftest.excluded_ids"])
+}
+
+func (this *DataIteratorTestSuite) TestSelectedNegativePaginationKeyIsRejected() {
+	tables := this.loadTablesAfterExecuting([]string{
+		"CREATE TABLE gftest.filtered_negative (id mediumint NOT NULL PRIMARY KEY, tenant_id bigint NOT NULL)",
+		"INSERT INTO gftest.filtered_negative VALUES (-1, 1), (1, 2)",
+	}, "filtered_negative")
+	this.di.CursorConfig.BuildSelect = func(columns []string, table *ghostferry.TableSchema, lastKey ghostferry.PaginationKey, batchSize uint64) (squirrel.SelectBuilder, error) {
+		return ghostferry.DefaultBuildSelect(columns, table, lastKey, batchSize).Where(squirrel.Eq{"tenant_id": 1}), nil
+	}
+	errorHandler := &testhelpers.ErrorHandler{}
+	this.di.ErrorHandler = errorHandler
+	this.di.Run(tables)
+
+	this.Require().ErrorContains(errorHandler.LastError, "negative pagination key")
+	this.Empty(this.receivedIds("filtered_negative"))
 }
 
 func (this *DataIteratorTestSuite) TestNegativePaginationKeyIsRejected() {
@@ -210,6 +276,31 @@ func (this *DataIteratorTestSuite) TestNegativePaginationKeyIsRejected() {
 
 	this.Require().NotNil(errorHandler.LastError)
 	this.Require().Contains(errorHandler.LastError.Error(), "negative pagination key")
+}
+
+func (this *DataIteratorTestSuite) TestNegativePaginationKeyInsertedAfterValidation() {
+	this.Ferry.Config.UpdatableConfig.DataIterationBatchSize = 1
+	this.di.CursorConfig.ReadRetries = 1
+	tables := this.loadTablesAfterExecuting([]string{
+		"CREATE TABLE gftest.late_negative (id bigint NOT NULL PRIMARY KEY)",
+		"INSERT INTO gftest.late_negative VALUES (0), (1)",
+	}, "late_negative")
+	queries := 0
+	this.di.CursorConfig.BuildSelect = func(columns []string, table *ghostferry.TableSchema, lastKey ghostferry.PaginationKey, batchSize uint64) (squirrel.SelectBuilder, error) {
+		queries++
+		if queries == 2 {
+			if _, err := this.Ferry.SourceDB.Exec("INSERT INTO gftest.late_negative VALUES (-1)"); err != nil {
+				return squirrel.SelectBuilder{}, err
+			}
+		}
+		return ghostferry.DefaultBuildSelect(columns, table, lastKey, batchSize), nil
+	}
+	errorHandler := &testhelpers.ErrorHandler{}
+	this.di.ErrorHandler = errorHandler
+	this.di.Run(tables)
+
+	this.Require().ErrorContains(errorHandler.LastError, "negative pagination key")
+	this.Empty(this.receivedIds("late_negative"))
 }
 
 func (this *DataIteratorTestSuite) TestDoneListenerGetsNotifiedWhenDone() {
