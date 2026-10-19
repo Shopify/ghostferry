@@ -5,11 +5,13 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/Shopify/ghostferry"
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
 	"github.com/Shopify/ghostferry/sharding"
 	"github.com/Shopify/ghostferry/testhelpers"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func setupSingleTableDatabase(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
@@ -53,6 +55,76 @@ func TestSelectiveCopyDataWithoutAnyWritesToSource(t *testing.T) {
 
 	rows := testcase.AssertQueriesHaveEqualResult("SELECT * FROM gftest.table1 WHERE tenant_id = 2")
 	assert.Equal(t, 333, len(rows))
+}
+
+func TestSelectiveCopyIncludesMinimumKeysAndIgnoresExcludedNegativeKeys(t *testing.T) {
+	ferry := testhelpers.NewTestFerry()
+	ferry.Config.UpdatableConfig.DataIterationBatchSize = 1
+	ferry.Config.DataIterationConcurrency = 1
+	ferry.Config.VerifierType = ghostferry.VerifierTypeInline
+	ferry.Config.TableFilter = &testhelpers.TestTableFilter{
+		DbsFunc: testhelpers.DbApplicabilityFilter([]string{"gftest"}),
+	}
+	ferry.Config.CopyFilter = &sharding.ShardedCopyFilter{
+		ShardingKey:   "tenant_id",
+		ShardingValue: int64(0),
+		PrimaryKeyTables: map[string]struct{}{
+			"tenants": {},
+		},
+		JoinedTables: map[string][]sharding.JoinTable{
+			"shared_rows": {{TableName: "links", JoinColumn: "shared_id"}},
+		},
+	}
+	require.NoError(t, ferry.Config.ValidateConfig())
+	errorHandler := &testhelpers.ErrorHandler{}
+	ferry.ErrorHandler = errorHandler
+	testcase := &testhelpers.IntegrationTestCase{
+		T:     t,
+		Ferry: ferry,
+		SetupAction: func(_ *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+			for _, db := range []*sql.DB{sourceDB, targetDB} {
+				for _, statement := range []string{
+					"CREATE DATABASE gftest",
+					"CREATE TABLE gftest.normal_rows (id bigint PRIMARY KEY, tenant_id bigint NOT NULL, data TEXT, KEY tenant_idx (tenant_id, id))",
+					"CREATE TABLE gftest.tenants (tenant_id bigint PRIMARY KEY, data TEXT)",
+					"CREATE TABLE gftest.links (id bigint PRIMARY KEY, tenant_id bigint NOT NULL, shared_id bigint NOT NULL, KEY tenant_idx (tenant_id, id))",
+					"CREATE TABLE gftest.shared_rows (id bigint PRIMARY KEY, data TEXT)",
+					"CREATE TABLE gftest.excluded_rows (id bigint PRIMARY KEY, tenant_id bigint NOT NULL, KEY tenant_idx (tenant_id, id))",
+				} {
+					_, err := db.Exec(statement)
+					require.NoError(t, err)
+				}
+			}
+			for _, statement := range []string{
+				"INSERT INTO gftest.normal_rows VALUES (-1, 2, 'excluded'), (0, 0, 'zero'), (1, 0, 'one')",
+				"INSERT INTO gftest.tenants VALUES (-1, 'excluded'), (0, 'zero'), (2, 'excluded')",
+				"INSERT INTO gftest.links VALUES (-1, 2, -1), (0, 0, 0), (1, 0, 1)",
+				"INSERT INTO gftest.shared_rows VALUES (-1, 'excluded'), (0, 'zero'), (1, 'one')",
+				"INSERT INTO gftest.excluded_rows VALUES (-2, 2), (-1, 2)",
+			} {
+				_, err := sourceDB.Exec(statement)
+				require.NoError(t, err)
+			}
+		},
+	}
+	defer testcase.Teardown()
+	testcase.CopyData()
+	require.NoError(t, errorHandler.LastError)
+
+	for _, check := range []struct {
+		query string
+		want  string
+	}{
+		{"SELECT GROUP_CONCAT(CONCAT(id, ':', data) ORDER BY id) FROM gftest.normal_rows", "0:zero,1:one"},
+		{"SELECT GROUP_CONCAT(CONCAT(tenant_id, ':', data) ORDER BY tenant_id) FROM gftest.tenants", "0:zero"},
+		{"SELECT GROUP_CONCAT(CONCAT(id, ':', shared_id) ORDER BY id) FROM gftest.links", "0:0,1:1"},
+		{"SELECT GROUP_CONCAT(CONCAT(id, ':', data) ORDER BY id) FROM gftest.shared_rows", "0:zero,1:one"},
+		{"SELECT COUNT(*) FROM gftest.excluded_rows", "0"},
+	} {
+		var got string
+		require.NoError(t, testcase.TargetDB.QueryRow(check.query).Scan(&got))
+		assert.Equal(t, check.want, got, check.query)
+	}
 }
 
 func TestSelectiveCopyDataWithInsertLoadOnOtherTenants(t *testing.T) {

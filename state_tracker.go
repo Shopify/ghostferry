@@ -371,6 +371,7 @@ func (s *StateTracker) RowStatsWrittenPerTable() map[string]RowStats {
 	return d
 }
 
+// LastSuccessfulPaginationKey returns nil until a batch has been copied.
 func (s *StateTracker) LastSuccessfulPaginationKey(table string, tableSchema *TableSchema) PaginationKey {
 	s.CopyRWMutex.RLock()
 	defer s.CopyRWMutex.RUnlock()
@@ -380,12 +381,7 @@ func (s *StateTracker) LastSuccessfulPaginationKey(table string, tableSchema *Ta
 		return MaxPaginationKey(tableSchema.GetPaginationColumn())
 	}
 
-	paginationKey, found := s.lastSuccessfulPaginationKeys[table]
-	if !found {
-		return MinPaginationKey(tableSchema.GetPaginationColumn())
-	}
-
-	return paginationKey
+	return s.lastSuccessfulPaginationKeys[table]
 }
 
 func (s *StateTracker) MarkTableAsCompleted(table string) {

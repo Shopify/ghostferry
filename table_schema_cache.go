@@ -125,14 +125,32 @@ func QuotedTableNameFromString(database, table string) string {
 	return fmt.Sprintf("`%s`.`%s`", database, table)
 }
 
-func MaxPaginationKeys(db *sql.DB, tables []*TableSchema, logger Logger) (map[*TableSchema]PaginationKey, []*TableSchema, error) {
+// MaxPaginationKeys validates selected signed keys and returns table-wide upper
+// bounds for iteration. The first-key probe uses the same filter as the cursor.
+func MaxPaginationKeys(cursorConfig *CursorConfig, tables []*TableSchema, logger Logger) (map[*TableSchema]PaginationKey, []*TableSchema, error) {
 	tablesWithData := make(map[*TableSchema]PaginationKey)
 	emptyTables := make([]*TableSchema, 0, len(tables))
 
 	for _, table := range tables {
 		logger := logger.WithField("table", table.String())
 
-		maxPaginationKey, maxPaginationKeyExists, err := maxPaginationKey(db, table)
+		column := table.GetPaginationColumn()
+		if !column.IsUnsigned && (column.Type == schema.TYPE_NUMBER || column.Type == schema.TYPE_MEDIUM_INT) {
+			firstKey, found, err := firstSignedPaginationKey(cursorConfig, table)
+			if err != nil {
+				logger.WithError(err).Errorf("failed to check first selected pagination key %s", column.Name)
+				return tablesWithData, emptyTables, err
+			}
+			if !found {
+				emptyTables = append(emptyTables, table)
+				continue
+			}
+			if firstKey < 0 {
+				return tablesWithData, emptyTables, fmt.Errorf("table %s has a negative pagination key in column %s, which Ghostferry cannot copy", table.String(), column.Name)
+			}
+		}
+
+		maxPaginationKey, maxPaginationKeyExists, err := maxPaginationKey(cursorConfig.DB, table)
 		if err != nil {
 			logger.WithError(err).Errorf("failed to get max primary key %s", table.GetPaginationColumn().Name)
 			return tablesWithData, emptyTables, err
@@ -417,6 +435,31 @@ func showTablesFrom(c *sql.DB, dbname string) ([]string, error) {
 	}
 
 	return tables, nil
+}
+
+func firstSignedPaginationKey(cursorConfig *CursorConfig, table *TableSchema) (int64, bool, error) {
+	columns := []string{QuoteField(table.GetPaginationColumn().Name)}
+	var builder sq.SelectBuilder
+	if cursorConfig.BuildSelect == nil {
+		builder = DefaultBuildSelect(columns, table, nil, 1)
+	} else {
+		var err error
+		builder, err = cursorConfig.BuildSelect(columns, table, nil, 1)
+		if err != nil {
+			return 0, false, err
+		}
+	}
+	query, args, err := builder.ToSql()
+	if err != nil {
+		return 0, false, err
+	}
+
+	var value int64
+	err = cursorConfig.DB.QueryRow(query, args...).Scan(&value)
+	if err == sqlorig.ErrNoRows {
+		return 0, false, nil
+	}
+	return value, err == nil, err
 }
 
 func maxPaginationKey(db *sql.DB, table *TableSchema) (PaginationKey, bool, error) {

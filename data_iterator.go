@@ -39,9 +39,10 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 	}
 
 	d.logger.WithField("tablesCount", len(tables)).Info("starting data iterator run")
-	tablesWithData, emptyTables, err := MaxPaginationKeys(d.DB, tables, d.logger)
+	tablesWithData, emptyTables, err := MaxPaginationKeys(d.CursorConfig, tables, d.logger)
 	if err != nil {
 		d.ErrorHandler.Fatal("data_iterator", err)
+		return
 	}
 
 	for _, table := range emptyTables {
@@ -84,7 +85,7 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 				}
 
 				startPaginationKey := d.StateTracker.LastSuccessfulPaginationKey(table.String(), table)
-				if startPaginationKey.IsMax() {
+				if startPaginationKey != nil && startPaginationKey.IsMax() {
 					err := fmt.Errorf("%v has been marked as completed but a table iterator has been spawned, this is likely a programmer error which resulted in the inconsistent starting state", table.String())
 					logger.WithError(err).Error("this is definitely a bug")
 					d.ErrorHandler.Fatal("data_iterator", err)
