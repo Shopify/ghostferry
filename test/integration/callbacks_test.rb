@@ -107,6 +107,28 @@ class CallbacksTest < GhostferryTestCase
     assert progress.last["TimeTaken"] > 0
   end
 
+  def test_time_taken_stops_counting_once_data_copy_completes
+    seed_simple_database_with_single_table
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+
+    # Hold the run in the cutover phase while progress keeps being reported
+    # every 500ms.
+    ghostferry.on_status(Ghostferry::Status::ROW_COPY_COMPLETED) do
+      sleep 2
+    end
+
+    progress = []
+    ghostferry.on_callback("progress") do |progress_data|
+      progress << progress_data
+    end
+
+    ghostferry.run
+
+    after_copy = progress.select { |p| ["cutover", "done"].include?(p["CurrentState"]) }.map { |p| p["TimeTaken"] }
+    assert_operator after_copy.length, :>=, 3
+    assert_equal 1, after_copy.uniq.length, "TimeTaken kept growing after the data copy: #{after_copy.inspect}"
+  end
+
   def test_state_callback
     seed_simple_database_with_single_table
 
