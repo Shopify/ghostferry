@@ -6,7 +6,9 @@ import (
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 )
 
-// SourceRuntime owns the source connection and its config; safe for concurrent use.
+// SourceRuntime owns the current source connection so a master failover
+// repoints every consumer through one Replace. A cursor snapshots the handle
+// at creation and is never rebound mid-scan.
 type SourceRuntime struct {
 	mu     sync.RWMutex
 	db     *sql.DB
@@ -40,9 +42,23 @@ func (r *SourceRuntime) Config() *DatabaseConfig {
 // Replace opens a new connection from config and installs it as current,
 // retiring (not closing) the previous handle; on failure the source is unchanged.
 func (r *SourceRuntime) Replace(config *DatabaseConfig, logger Logger) (*sql.DB, error) {
+	return r.ReplaceValidated(config, logger, nil)
+}
+
+// ReplaceValidated opens a new source connection and installs it only if the
+// optional validate hook succeeds; a failed candidate is closed and never
+// published. The previous handle is retired as with Replace.
+func (r *SourceRuntime) ReplaceValidated(config *DatabaseConfig, logger Logger, validate func(*sql.DB) error) (*sql.DB, error) {
 	newDB, err := config.SqlDB(logger)
 	if err != nil {
 		return nil, err
+	}
+
+	if validate != nil {
+		if err := validate(newDB); err != nil {
+			_ = newDB.Close()
+			return nil, err
+		}
 	}
 
 	r.mu.Lock()
@@ -56,8 +72,9 @@ func (r *SourceRuntime) Replace(config *DatabaseConfig, logger Logger) (*sql.DB,
 	return newDB, nil
 }
 
-// CloseRetired closes the handles retired by Replace; callers must ensure no
-// source work is still in flight.
+// CloseRetired closes retired handles. Callers must first join Ferry.Run and
+// any source-copy or verifier workers and stop using earlier handles: the
+// library cannot prove embedder-owned cursors are quiescent.
 func (r *SourceRuntime) CloseRetired() {
 	r.mu.Lock()
 	retired := r.retired

@@ -21,3 +21,6 @@ build/
 .idea
 
 .ipynb_checkpoints
+
+# Local test tmpdir (macOS TMPDIR workaround)
+.tmp_ghostferry/

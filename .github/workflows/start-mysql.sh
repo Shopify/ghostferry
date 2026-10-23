@@ -1,12 +1,13 @@
 #!/bin/bash
 set -xe
 
+# mysql-3 is the promoted writer for the master-failover integration test.
 if [ "$MYSQL_VERSION" == "8.0" ]; then
-  docker compose -f docker-compose_8.0.yml up -d mysql-1 mysql-2
+  docker compose -f docker-compose_8.0.yml up -d mysql-1 mysql-2 mysql-3
 elif [ "$MYSQL_VERSION" == "8.4" ]; then
-  docker compose -f docker-compose_8.4.yml up -d mysql-1 mysql-2
+  docker compose -f docker-compose_8.4.yml up -d mysql-1 mysql-2 mysql-3
 else
-  docker compose up -d mysql-1 mysql-2
+  docker compose up -d mysql-1 mysql-2 mysql-3
 fi
 
 MAX_ATTEMPTS=60
@@ -38,6 +39,8 @@ wait_for_configuration () {
 
 wait_for_version "ghostferry-mysql-1-1"
 wait_for_version "ghostferry-mysql-2-1"
+wait_for_version "ghostferry-mysql-3-1"
 
 wait_for_configuration 29291
 wait_for_configuration 29292
+wait_for_configuration 29293

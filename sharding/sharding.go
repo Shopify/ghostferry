@@ -216,7 +216,8 @@ func (r *ShardingFerry) copyPrimaryKeyTables() error {
 	r.config.TableFilter.(*ShardedTableFilter).PrimaryKeyTables = primaryKeyTables
 	r.config.CopyFilter.(*ShardedCopyFilter).PrimaryKeyTables = primaryKeyTables
 
-	sourceDbTables, err := ghostferry.LoadTables(r.Ferry.SourceDB, r.config.TableFilter, r.config.CompressedColumnsForVerification, r.config.IgnoredColumnsForVerification, r.config.ForceIndexForVerification, r.config.CascadingPaginationColumnConfig)
+	// Runs after Ferry.Run joined, so a failover may have swapped the handle.
+	sourceDbTables, err := ghostferry.LoadTables(r.Ferry.CurrentSourceDB(), r.config.TableFilter, r.config.CompressedColumnsForVerification, r.config.IgnoredColumnsForVerification, r.config.ForceIndexForVerification, r.config.CascadingPaginationColumnConfig)
 	if err != nil {
 		return err
 	}

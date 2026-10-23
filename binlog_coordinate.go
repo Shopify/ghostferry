@@ -179,6 +179,60 @@ func intersectGTIDSets(a, b mysql.GTIDSet) (mysql.GTIDSet, error) {
 	return result, nil
 }
 
+// unionGTIDStringInto merges add into a clone of base (nil = empty); never mutates base.
+func unionGTIDStringInto(base mysql.GTIDSet, add string) (mysql.GTIDSet, error) {
+	var result *mysql.MysqlGTIDSet
+	if base == nil {
+		empty, err := mysql.ParseMysqlGTIDSet("")
+		if err != nil {
+			return nil, err
+		}
+		result = empty.(*mysql.MysqlGTIDSet)
+	} else {
+		clone, ok := base.Clone().(*mysql.MysqlGTIDSet)
+		if !ok {
+			return nil, fmt.Errorf("GTID union requires a MySQL GTID set, got %T", base)
+		}
+		result = clone
+	}
+
+	if err := result.Update(add); err != nil {
+		return nil, fmt.Errorf("GTID union: updating with %q: %w", add, err)
+	}
+	return result, nil
+}
+
+// unionGTIDSets merges b into a clone of a (either may be nil); never mutates inputs.
+func unionGTIDSets(a, b mysql.GTIDSet) (mysql.GTIDSet, error) {
+	var result *mysql.MysqlGTIDSet
+	if a == nil {
+		empty, err := mysql.ParseMysqlGTIDSet("")
+		if err != nil {
+			return nil, err
+		}
+		result = empty.(*mysql.MysqlGTIDSet)
+	} else {
+		clone, ok := a.Clone().(*mysql.MysqlGTIDSet)
+		if !ok {
+			return nil, fmt.Errorf("GTID union requires MySQL GTID sets, got %T", a)
+		}
+		result = clone
+	}
+
+	if b != nil {
+		bMysql, ok := b.(*mysql.MysqlGTIDSet)
+		if !ok {
+			return nil, fmt.Errorf("GTID union requires MySQL GTID sets, got %T", b)
+		}
+		for _, uuidSet := range bMysql.Sets {
+			// AddSet stores the pointer directly, so clone to avoid aliasing b's UUIDSet.
+			result.AddSet(uuidSet.Clone())
+		}
+	}
+
+	return result, nil
+}
+
 // serializedBinlogCoordinate is the serialized shape of a BinlogCoordinate.
 type serializedBinlogCoordinate struct {
 	Type         BinlogCoordinateType `json:"Type"`

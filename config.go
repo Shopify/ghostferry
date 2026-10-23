@@ -133,7 +133,9 @@ func (c *DatabaseConfig) Validate() error {
 		return fmt.Errorf("host is empty")
 	}
 
-	if c.Port == 0 {
+	// Unix configs legitimately have no port (reset below), so requiring one
+	// here would make Validate non-idempotent for them.
+	if c.Port == 0 && c.Net != "unix" {
 		return fmt.Errorf("port is not specified")
 	}
 
@@ -707,6 +709,12 @@ type Config struct {
 	// LastSuccessfulBinlogCoordinate and FinalBinlogCoordinate instead.
 	BinlogCoordinateMode BinlogCoordinateType
 
+	// MasterFailoverRecovery, when set, reconnects the source to the promoted
+	// master writer after the source connection is lost. Requires
+	// BinlogCoordinateMode "gtid" and a Resolver; incompatible with
+	// WaitUntilReplicaIsCaughtUpToMaster. Nil keeps a lost source fatal.
+	MasterFailoverRecovery *MasterFailoverRecoveryConfig
+
 	// This config is necessary for inline verification for a special case of
 	// Ghostferry:
 	//
@@ -889,6 +897,19 @@ func (c *Config) ValidateConfig() error {
 	case BinlogCoordinateFilePosition, BinlogCoordinateGTID:
 	default:
 		return fmt.Errorf("invalid BinlogCoordinateMode %q, must be %q or %q", c.BinlogCoordinateMode, BinlogCoordinateFilePosition, BinlogCoordinateGTID)
+	}
+
+	if c.MasterFailoverRecovery != nil {
+		if c.BinlogCoordinateMode != BinlogCoordinateGTID {
+			return fmt.Errorf("MasterFailoverRecovery requires BinlogCoordinateMode %q, got %q", BinlogCoordinateGTID, c.BinlogCoordinateMode)
+		}
+		if c.MasterFailoverRecovery.Resolver == nil {
+			return fmt.Errorf("MasterFailoverRecovery requires a Resolver")
+		}
+		// A negative budget would silently disable recovery.
+		if c.MasterFailoverRecovery.MaxAttempts < 0 {
+			return fmt.Errorf("MasterFailoverRecovery.MaxAttempts must be >= 0")
+		}
 	}
 
 	if c.VerifierType == VerifierTypeIterative {

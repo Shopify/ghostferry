@@ -118,8 +118,9 @@ func TestMasterChangingBeforeStoppingBinlogStreaming(t *testing.T) {
 
 	testcase.Run()
 
-	require.NotNil(t, errHandler.LastError)
-	require.Equal(t, "source master is no longer a master writer", errHandler.LastError.Error())
+	fatalErr := errHandler.Err()
+	require.NotNil(t, fatalErr)
+	require.Equal(t, "source master is no longer a master writer", fatalErr.Error())
 }
 
 func TestSelectCopyUpdateBinlog(t *testing.T) {

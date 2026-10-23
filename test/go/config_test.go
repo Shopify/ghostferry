@@ -172,6 +172,12 @@ func (this *ConfigTestSuite) TestUnixNetMysqlConfig() {
 	err := this.config.ValidateConfig()
 	this.Require().Nil(err)
 
+	// Validation must be idempotent: failover may normalize an already-validated config.
+	this.Require().Equal(uint16(0), this.config.Source.Port)
+	this.Require().Nil(this.config.Source.Validate())
+	this.Require().Equal(uint16(0), this.config.Source.Port)
+	this.Require().Equal("/tmp/mysql.sock", this.config.Source.Host)
+
 	mysqlConfig, err := this.config.Source.MySQLConfig()
 	this.Require().Nil(err)
 
@@ -218,6 +224,50 @@ func (this *ConfigTestSuite) TestBinlogCoordinateModeInvalidIsRejected() {
 	this.config.BinlogCoordinateMode = "banana"
 	err := this.config.ValidateConfig()
 	this.Require().EqualError(err, `invalid BinlogCoordinateMode "banana", must be "file_position" or "gtid"`)
+}
+
+func (this *ConfigTestSuite) TestMasterFailoverRecoveryRequiresGTIDMode() {
+	this.config.BinlogCoordinateMode = ghostferry.BinlogCoordinateFilePosition
+	this.config.MasterFailoverRecovery = &ghostferry.MasterFailoverRecoveryConfig{
+		Resolver: ghostferry.MasterWriterResolverFunc(func(_ *ghostferry.DatabaseConfig) (*ghostferry.DatabaseConfig, error) {
+			return nil, nil
+		}),
+	}
+	this.Require().Error(this.config.ValidateConfig())
+}
+
+func (this *ConfigTestSuite) TestMasterFailoverRecoveryRequiresResolver() {
+	this.config.BinlogCoordinateMode = ghostferry.BinlogCoordinateGTID
+	this.config.MasterFailoverRecovery = &ghostferry.MasterFailoverRecoveryConfig{}
+	this.Require().Error(this.config.ValidateConfig())
+}
+
+func (this *ConfigTestSuite) TestMasterFailoverRecoveryRejectsNegativeMaxAttempts() {
+	this.config.BinlogCoordinateMode = ghostferry.BinlogCoordinateGTID
+	this.config.MasterFailoverRecovery = &ghostferry.MasterFailoverRecoveryConfig{
+		Resolver: ghostferry.MasterWriterResolverFunc(func(_ *ghostferry.DatabaseConfig) (*ghostferry.DatabaseConfig, error) {
+			return nil, nil
+		}),
+		MaxAttempts: -1,
+	}
+	this.Require().Error(this.config.ValidateConfig())
+
+	// Zero means unlimited and positive budgets are finite; both are accepted.
+	this.config.MasterFailoverRecovery.MaxAttempts = 0
+	this.Require().Nil(this.config.ValidateConfig())
+	this.config.MasterFailoverRecovery.MaxAttempts = 3
+	this.Require().Nil(this.config.ValidateConfig())
+}
+
+func (this *ConfigTestSuite) TestMasterFailoverRecoveryValidInGTIDMode() {
+	this.config.BinlogCoordinateMode = ghostferry.BinlogCoordinateGTID
+	this.config.MasterFailoverRecovery = &ghostferry.MasterFailoverRecoveryConfig{
+		Resolver: ghostferry.MasterWriterResolverFunc(func(_ *ghostferry.DatabaseConfig) (*ghostferry.DatabaseConfig, error) {
+			return nil, nil
+		}),
+	}
+	err := this.config.ValidateConfig()
+	this.Require().Nil(err)
 }
 
 func TestConfig(t *testing.T) {
