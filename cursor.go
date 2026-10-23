@@ -36,6 +36,8 @@ type CursorConfig struct {
 	DB        *sql.DB
 	Throttler Throttler
 
+	SourceRuntime *SourceRuntime
+
 	ColumnsToSelect []string
 	BuildSelect     func([]string, *TableSchema, PaginationKey, uint64) (squirrel.SelectBuilder, error)
 	// BatchSize is a pointer to the BatchSize in Config.UpdatableConfig which can be independently updated from this code.
@@ -45,10 +47,22 @@ type CursorConfig struct {
 	ReadRetries               int
 }
 
+func (c *CursorConfig) resolvedDB() *sql.DB {
+	if c.SourceRuntime != nil {
+		if db := c.SourceRuntime.DB(); db != nil {
+			return db
+		}
+	}
+	return c.DB
+}
+
 // returns a new Cursor with an embedded copy of itself
 func (c *CursorConfig) NewCursor(table *TableSchema, startPaginationKey, maxPaginationKey PaginationKey) *Cursor {
+	cfg := *c
+	// Bind the cursor to the current source connection for the whole scan.
+	cfg.DB = c.resolvedDB()
 	return &Cursor{
-		CursorConfig:                *c,
+		CursorConfig:                cfg,
 		Table:                       table,
 		MaxPaginationKey:            maxPaginationKey,
 		RowLock:                     true,

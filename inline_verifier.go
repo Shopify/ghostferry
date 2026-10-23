@@ -258,6 +258,7 @@ type InlineVerifierMismatches struct {
 
 type InlineVerifier struct {
 	SourceDB                   *sql.DB
+	SourceRuntime              *SourceRuntime
 	TargetDB                   *sql.DB
 	DatabaseRewrites           map[string]string
 	TableRewrites              map[string]string
@@ -274,7 +275,9 @@ type InlineVerifier struct {
 
 	sourceStmtCache *StmtCache
 	targetStmtCache *StmtCache
-	logger          Logger
+	// sourceDBMu guards SourceDB and sourceStmtCache.
+	sourceDBMu sync.Mutex
+	logger     Logger
 
 	// Used only for the ControlServer initiated VerifyDuringCutover
 	backgroundVerificationResultAndStatus VerificationResultAndStatus
@@ -524,8 +527,23 @@ func (v *InlineVerifier) VerifyDuringCutover() (VerificationResult, error) {
 	}, nil
 }
 
+// currentSourceDB returns the source DB and its matching statement cache; on a handle swap the cache is replaced (statements are bound to the old DB) but not closed, as in-flight workers may still hold it.
+func (v *InlineVerifier) currentSourceDB() (*sql.DB, *StmtCache) {
+	v.sourceDBMu.Lock()
+	defer v.sourceDBMu.Unlock()
+
+	if v.SourceRuntime != nil {
+		if current := v.SourceRuntime.DB(); current != nil && current != v.SourceDB {
+			v.SourceDB = current
+			v.sourceStmtCache = NewStmtCache()
+		}
+	}
+	return v.SourceDB, v.sourceStmtCache
+}
+
 func (v *InlineVerifier) getFingerprintDataFromSourceDb(schemaName, tableName string, tx *sql.Tx, table *TableSchema, paginationKeys []interface{}) (map[string][]byte, map[string]map[string][]byte, error) {
-	return v.getFingerprintDataFromDb(v.SourceDB, v.sourceStmtCache, schemaName, tableName, tx, table, paginationKeys)
+	db, stmtCache := v.currentSourceDB()
+	return v.getFingerprintDataFromDb(db, stmtCache, schemaName, tableName, tx, table, paginationKeys)
 }
 
 func (v *InlineVerifier) getFingerprintDataFromTargetDb(schemaName, tableName string, tx *sql.Tx, table *TableSchema, paginationKeys []interface{}) (map[string][]byte, map[string]map[string][]byte, error) {

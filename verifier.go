@@ -97,6 +97,7 @@ type ChecksumTableVerifier struct {
 	DatabaseRewrites map[string]string
 	TableRewrites    map[string]string
 	SourceDB         *sql.DB
+	SourceRuntime    *SourceRuntime
 	TargetDB         *sql.DB
 
 	started *AtomicBoolean
@@ -106,6 +107,15 @@ type ChecksumTableVerifier struct {
 
 	logger Logger
 	wg     *sync.WaitGroup
+}
+
+func (v *ChecksumTableVerifier) currentSourceDB() *sql.DB {
+	if v.SourceRuntime != nil {
+		if db := v.SourceRuntime.DB(); db != nil {
+			return db
+		}
+	}
+	return v.SourceDB
 }
 
 func (v *ChecksumTableVerifier) VerifyBeforeCutover() error {
@@ -151,7 +161,7 @@ func (v *ChecksumTableVerifier) VerifyDuringCutover() (VerificationResult, error
 		go func() {
 			defer wg.Done()
 			query := fmt.Sprintf("CHECKSUM TABLE %s EXTENDED", sourceTable)
-			sourceRow := v.SourceDB.QueryRow(query)
+			sourceRow := v.currentSourceDB().QueryRow(query)
 			sourceChecksum, sourceErr = v.fetchChecksumValueFromRow(sourceRow)
 		}()
 
@@ -210,7 +220,7 @@ func (v *ChecksumTableVerifier) fetchChecksumValueFromRow(row *sqlorig.Row) (int
 }
 
 func (v *ChecksumTableVerifier) StartInBackground() error {
-	if v.SourceDB == nil || v.TargetDB == nil {
+	if v.currentSourceDB() == nil || v.TargetDB == nil {
 		return errors.New("must specify source and target db")
 	}
 

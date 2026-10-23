@@ -9,6 +9,7 @@ import (
 
 type DataIterator struct {
 	DB                *sql.DB
+	SourceRuntime     *SourceRuntime
 	Concurrency       int
 	SelectFingerprint bool
 
@@ -28,6 +29,16 @@ type TableMaxPaginationKey struct {
 	MaxPaginationKey PaginationKey
 }
 
+// currentSourceDB resolves the source per call, not at startup, so a runtime swap is observed between reads.
+func (d *DataIterator) currentSourceDB() *sql.DB {
+	if d.SourceRuntime != nil {
+		if db := d.SourceRuntime.DB(); db != nil {
+			return db
+		}
+	}
+	return d.DB
+}
+
 func (d *DataIterator) Run(tables []*TableSchema) {
 	d.logger = LogWithField("tag", "data_iterator")
 
@@ -38,8 +49,10 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 		d.StateTracker = NewStateTracker(0)
 	}
 
+	db := d.currentSourceDB()
+
 	d.logger.WithField("tablesCount", len(tables)).Info("starting data iterator run")
-	tablesWithData, emptyTables, err := MaxPaginationKeys(d.DB, tables, d.logger)
+	tablesWithData, emptyTables, err := MaxPaginationKeys(db, tables, d.logger)
 	if err != nil {
 		d.ErrorHandler.Fatal("data_iterator", err)
 	}
