@@ -307,6 +307,76 @@ func (t *CopyFilterTestSuite) TestShardingValueTypes() {
 	}
 }
 
+func (t *CopyFilterTestSuite) TestNullableShardingValues() {
+	row := func(key interface{}) ghostferry.RowData {
+		return ghostferry.RowData{1001, key, "data"}
+	}
+
+	// Include zero to ensure NULL is not treated as a zero-valued sharding key.
+	for _, shardingValue := range []int64{1, 0} {
+		t.Run(fmt.Sprintf("sharding_value_%d", shardingValue), func() {
+			t.filter.ShardingValue = shardingValue
+			matchingRow := row(shardingValue)
+			otherRow := row(int64(2))
+			nullRow := row(nil)
+
+			cases := []struct {
+				name                 string
+				oldValues, newValues ghostferry.RowData
+				applicable           bool
+				err                  string
+			}{
+				{"insert_null", nil, nullRow, false, ""},
+				{"delete_null", nullRow, nil, false, ""},
+				{"insert_matching", nil, matchingRow, true, ""},
+				{"delete_matching", matchingRow, nil, true, ""},
+				{"insert_other", nil, otherRow, false, ""},
+				{"delete_other", otherRow, nil, false, ""},
+				{"update_null_to_null", nullRow, nullRow, false, ""},
+				{"update_null_to_other", nullRow, otherRow, false, ""},
+				{"update_other_to_null", otherRow, nullRow, false, ""},
+				{"update_matching_to_matching", matchingRow, matchingRow, true, ""},
+				{"update_other_to_other", otherRow, otherRow, false, ""},
+				{"update_null_to_matching", nullRow, matchingRow, false, fmt.Sprintf("sharding key changed from <nil> to %d", shardingValue)},
+				{"update_matching_to_null", matchingRow, nullRow, false, fmt.Sprintf("sharding key changed from %d to <nil>", shardingValue)},
+				{"update_other_to_matching", otherRow, matchingRow, false, fmt.Sprintf("sharding key changed from 2 to %d", shardingValue)},
+				{"update_matching_to_other", matchingRow, otherRow, false, fmt.Sprintf("sharding key changed from %d to 2", shardingValue)},
+				{"delete_invalid", row("1"), nil, false, "parsing old sharding key: invalid type %!t(string=1)"},
+				{"update_invalid_to_null", row("1"), nullRow, false, "parsing old sharding key: invalid type %!t(string=1)"},
+				{"update_null_to_invalid", nullRow, row("1"), false, "parsing new sharding key: invalid type %!t(string=1)"},
+			}
+
+			for _, tc := range cases {
+				t.Run(tc.name, func() {
+					eventBase := ghostferry.NewDMLEventBase(t.normalTable, mysql.Position{}, mysql.Position{}, nil, time.Unix(1618318965, 0))
+					var events []ghostferry.DMLEvent
+					var err error
+					switch {
+					case tc.oldValues == nil:
+						events, err = ghostferry.NewBinlogInsertEvents(eventBase, t.newRowsEvent(tc.newValues))
+					case tc.newValues == nil:
+						events, err = ghostferry.NewBinlogDeleteEvents(eventBase, t.newRowsEvent(tc.oldValues))
+					default:
+						rowsEvent := t.newRowsEvent(tc.oldValues)
+						rowsEvent.Rows = append(rowsEvent.Rows, tc.newValues)
+						events, err = ghostferry.NewBinlogUpdateEvents(eventBase, rowsEvent)
+					}
+					t.Require().NoError(err)
+					t.Require().Len(events, 1)
+
+					applicable, err := t.filter.ApplicableEvent(events[0])
+					if tc.err == "" {
+						t.Require().NoError(err)
+					} else {
+						t.Require().EqualError(err, tc.err)
+					}
+					t.Equal(tc.applicable, applicable)
+				})
+			}
+		})
+	}
+}
+
 func (t *CopyFilterTestSuite) TestInvalidShardingValueTypesErrors() {
 	eventBase := ghostferry.NewDMLEventBase(
 		t.normalTable,

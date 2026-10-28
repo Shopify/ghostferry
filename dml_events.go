@@ -331,7 +331,14 @@ func NewBinlogDMLEvents(table *TableSchema, ev *replication.BinlogEvent, pos, re
 				case int64:
 					row[i] = uint64(v)
 				case int32:
-					row[i] = uint32(v)
+					if col.Type == schema.TYPE_MEDIUM_INT {
+						// go-mysql decodes INT24 as a sign-extended int32 (v1.15+ decodes it
+						// unsigned only with binlog signedness metadata, absent on MySQL 5.7);
+						// keep only the low 24 bits.
+						row[i] = uint32(v) & 0xFFFFFF
+					} else {
+						row[i] = uint32(v)
+					}
 				case int16:
 					row[i] = uint16(v)
 				case int8:

@@ -109,6 +109,12 @@ module DbHelper
     default_db_config(port: DB_PORTS[:target])
   end
 
+  def source_binlog_status
+    version = source_db.query("SELECT @@version").first["@@version"]
+    query = version < "8.4.0" ? "SHOW MASTER STATUS" : "SHOW BINARY LOG STATUS"
+    source_db.query(query).first
+  end
+
   # Database Seeding Methods
   ##########################
   # Each test case can choose what kind of database it wants to setup by
