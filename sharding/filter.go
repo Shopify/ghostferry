@@ -244,8 +244,9 @@ func (f *ShardedCopyFilter) ApplicableEvent(event ghostferry.DMLEvent) (bool, er
 			oldEqual := oldExists && oldShardingValue == f.ShardingValue
 			newEqual := newExists && newShardingValue == f.ShardingValue
 
-			if oldEqual != newEqual && oldExists && newExists {
-				// The value of the sharding key for a row was changed - this is unsafe.
+			if oldEqual != newEqual && oldValues != nil && newValues != nil {
+				// An UPDATE entering or leaving this shard is unsafe, including
+				// transitions to or from NULL. Check row presence, not key presence.
 				err := fmt.Errorf("sharding key changed from %v to %v", oldValues[idx], newValues[idx])
 				return false, err
 			}
@@ -322,7 +323,8 @@ func (s *ShardedTableFilter) isPresent(table *ghostferry.TableSchema) bool {
 }
 
 func parseShardingValue(values []interface{}, index int) (int64, bool, error) {
-	if values == nil {
+	// Neither an absent row image nor a NULL key can match a sharding value.
+	if values == nil || values[index] == nil {
 		return 0, false, nil
 	}
 	if v, ok := ghostferry.Uint64Value(values[index]); ok {
