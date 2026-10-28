@@ -41,7 +41,8 @@ All notable changes to this project will be documented in this file.
 - Decode unsigned `MEDIUMINT` binlog values of 2^23 and above correctly. Previously they were sign-extended, so inserts were clamped to 16777215 on the target and updates of already-copied rows failed with an out-of-range error ([#299](https://github.com/Shopify/ghostferry/issues/299)).
 - Resume from the binlog writer coordinate when the InlineVerifier is disabled. Previously a coordinate left in the state by an earlier verifier-enabled run still held back the resume point, so resuming failed once the source purged those binlogs ([#184](https://github.com/Shopify/ghostferry/issues/184)).
 - `Progress.TimeTaken`, and the control server's "Time Taken", stop counting when the data copy completes instead of also including the wait for cutover and the cutover itself ([#314](https://github.com/Shopify/ghostferry/issues/314)).
-- ghostferry-copydb keeps top-level `DatabaseRewrites` and `TableRewrites` instead of overwriting them with the (often empty) `Databases.Rewrites` and `Tables.Rewrites`. Setting both forms is now rejected ([#216](https://github.com/Shopify/ghostferry/issues/216)).
+- ghostferry-copydb keeps top-level `DatabaseRewrites` and `TableRewrites` instead of overwriting them with the (often empty) `Databases.Rewrites` and `Tables.Rewrites`. When both forms contain rewrites, the maps must be identical ([#216](https://github.com/Shopify/ghostferry/issues/216)).
+  **Migration safety:** Finish active migrations before upgrading: top-level rewrites ignored by older binaries now take effect. Resume interrupted migrations with the original binary and unchanged effective database/table mappings.
 
 ## [1.3.1 - 2026-04-15]
 
