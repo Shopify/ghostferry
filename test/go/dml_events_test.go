@@ -144,6 +144,41 @@ func (this *DMLEventsTestSuite) TestBinlogUpdateEventGeneratesUpdateQuery() {
 	this.Require().Equal("UPDATE `target_schema`.`target_table` SET `col1`=1002,`col2`=CAST('{\"val\": 43.0}' AS JSON),`col3`=0 WHERE `col1`=1002 AND `col2`=CAST('{\"val\": 42.0}' AS JSON) AND `col3`=0", q3)
 }
 
+func (this *DMLEventsTestSuite) TestBinlogUpdateEventWithUnsignedMediumInt() {
+	table := &ghostferry.TableSchema{
+		Table: &schema.Table{
+			Schema: "test_schema",
+			Name:   "test_table",
+			Columns: []schema.TableColumn{
+				{Name: "unsigned_col", Type: schema.TYPE_MEDIUM_INT, IsUnsigned: true},
+				{Name: "signed_col", Type: schema.TYPE_MEDIUM_INT},
+			},
+		},
+	}
+
+	// Without binlog signedness metadata (MySQL 5.7), go-mysql decodes INT24 as a
+	// sign-extended int32: unsigned 8592090 (>= 2^23) arrives as -8185126 and
+	// unsigned 16777215 arrives as -1.
+	ev := &replication.BinlogEvent{
+		Header: &replication.EventHeader{EventType: replication.UPDATE_ROWS_EVENTv2},
+		Event: &replication.RowsEvent{
+			Table: this.tableMapEvent,
+			Rows: [][]interface{}{
+				{int32(-8185126), int32(-1)},
+				{int32(-1), int32(-8388608)},
+			},
+		},
+	}
+
+	dmlEvents, err := ghostferry.NewBinlogDMLEvents(table, ev, mysql.Position{}, mysql.Position{}, nil)
+	this.Require().Nil(err)
+	this.Require().Equal(1, len(dmlEvents))
+
+	q, err := dmlEvents[0].AsSQLString(this.targetTable.Schema, this.targetTable.Name)
+	this.Require().Nil(err)
+	this.Require().Equal("UPDATE `target_schema`.`target_table` SET `unsigned_col`=16777215,`signed_col`=-8388608 WHERE `unsigned_col`=8592090 AND `signed_col`=-1", q)
+}
+
 func (this *DMLEventsTestSuite) TestBinlogUpdateEventWithWrongColumnsReturnsError() {
 	rowsEvent := &replication.RowsEvent{
 		Table: this.tableMapEvent,

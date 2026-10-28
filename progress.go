@@ -58,5 +58,5 @@ type Progress struct {
 	// there are large gaps in the PaginationKey space, this probably will be inaccurate.
 	PaginationKeysPerSecond uint64
 	ETA                     float64 // seconds
-	TimeTaken               float64 // seconds
+	TimeTaken               float64 // seconds spent copying data; stops growing once the copy completes
 }
