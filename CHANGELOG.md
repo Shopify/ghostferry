@@ -31,6 +31,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Ignore binlog row events with NULL sharding keys when they do not belong to the migrating shard, rather than aborting the move. Updates entering or leaving the migrating shard still fail, including transitions to or from NULL.
 - Reject malformed typed binlog coordinates instead of silently decoding them as an unset position.
 - Clear cached GTID sets and inactive fields when decoding into an existing `BinlogCoordinate`, preventing stale reachability results.
 - Keep GTID cutover aligned with transaction boundaries, including savepoints, DDL, empty transaction commits, and XA prepare/one-phase commit markers, without bypassing coordinate tracking when custom event handlers are registered.

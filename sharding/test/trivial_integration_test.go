@@ -55,6 +55,45 @@ func TestSelectiveCopyDataWithoutAnyWritesToSource(t *testing.T) {
 	assert.Equal(t, 333, len(rows))
 }
 
+func TestSelectiveCopyDataWithDeleteOfNullTenant(t *testing.T) {
+	errorHandler := &testhelpers.ErrorHandler{}
+	ferry := selectiveFerry(int64(2))
+	ferry.ErrorHandler = errorHandler
+
+	testcase := &testhelpers.IntegrationTestCase{
+		T:     t,
+		Ferry: ferry,
+		SetupAction: func(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+			setupSingleTableDatabase(f, sourceDB, targetDB)
+			_, err := sourceDB.Exec("INSERT INTO gftest.table1 (id, data, tenant_id) VALUES (1001, 'null tenant', NULL)")
+			testhelpers.PanicIfError(err)
+		},
+		AfterRowCopyIsComplete: func(f *testhelpers.TestFerry, sourceDB, targetDB *sql.DB) {
+			result, err := sourceDB.Exec("DELETE FROM gftest.table1 WHERE tenant_id IS NULL")
+			testhelpers.PanicIfError(err)
+			deleted, err := result.RowsAffected()
+			testhelpers.PanicIfError(err)
+			assert.Equal(t, int64(1), deleted)
+
+			// Only binlog streaming can copy this row, proving it continued past the NULL delete.
+			_, err = sourceDB.Exec("INSERT INTO gftest.table1 (id, data, tenant_id) VALUES (1002, 'after null delete', 2)")
+			testhelpers.PanicIfError(err)
+		},
+	}
+
+	defer testcase.Teardown()
+	testcase.CopyData()
+
+	assert.NoError(t, errorHandler.LastError)
+	rows := testcase.AssertQueriesHaveEqualResult("SELECT * FROM gftest.table1 WHERE tenant_id = 2")
+	assert.Equal(t, 334, len(rows))
+
+	var count int
+	row := testcase.Ferry.TargetDB.QueryRow("SELECT count(*) FROM gftest.table1")
+	testhelpers.PanicIfError(row.Scan(&count))
+	assert.Equal(t, 334, count)
+}
+
 func TestSelectiveCopyDataWithInsertLoadOnOtherTenants(t *testing.T) {
 	testcase := &testhelpers.IntegrationTestCase{
 		T:           t,
