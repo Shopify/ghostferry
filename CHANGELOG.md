@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - Extend `DMLEvent` with `BinlogCoordinate()` and `ResumableBinlogCoordinate()`. `DMLEventBase` implements both; custom implementations must provide these methods.
 - Replace `BinlogCoordinate.Compare` with `HasReached`, using file/position ordering or GTID-set containment. Comparing different coordinate types now returns an error instead of panicking.
 - Compare parsed GTID sets directly during cutover, eliminating per-event GTID serialization and parsing.
+- `ProgressReportFrequency` and `StateReportFrequency` use a 60000 ms default when omitted or set to 0. For configured callbacks, nonzero values below 100 ms are rejected by both `Config.ValidateConfig` and `Ferry.Initialize`; an empty callback URI disables reporting. This prevents accidental callback floods ([#214](https://github.com/Shopify/ghostferry/issues/214)).
 - Updated golang to 1.27.2
 - Updated go packages:
   - `github.com/sirupsen/logrus` to v1.10.2
@@ -44,7 +45,6 @@ All notable changes to this project will be documented in this file.
 - `Progress.TimeTaken`, and the control server's "Time Taken", stop counting when the data copy completes instead of also including the wait for cutover and the cutover itself ([#314](https://github.com/Shopify/ghostferry/issues/314)).
 - ghostferry-copydb keeps top-level `DatabaseRewrites` and `TableRewrites` instead of overwriting them with the (often empty) `Databases.Rewrites` and `Tables.Rewrites`. When both forms contain rewrites, the maps must be identical ([#216](https://github.com/Shopify/ghostferry/issues/216)).
   **Migration safety:** Finish active migrations before upgrading: top-level rewrites ignored by older binaries now take effect. Resume interrupted migrations with the original binary and unchanged effective database/table mappings.
-- Default `ProgressReportFrequency` and `StateReportFrequency` to 60000 ms, and reject values below 100 ms when the matching callback is set. An unset, zero or negative frequency used to make Ghostferry post to the callback in a tight loop ([#214](https://github.com/Shopify/ghostferry/issues/214)).
 
 ## [1.3.1 - 2026-04-15]
 

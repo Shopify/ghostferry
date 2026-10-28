@@ -638,8 +638,9 @@ type Config struct {
 	// will be sent to the server as the CustomPayload field in the Progress
 	// struct. The unit of ProgressReportFrequency is in milliseconds.
 	//
-	// Optional: ProgressReportFrequency defaults to 60000 and must be at least
-	// 100 when ProgressCallback is set.
+	// Optional: 0 uses the default interval of 60000 ms, not disabled reporting.
+	// Nonzero values must be at least 100 ms when ProgressCallback.URI is set.
+	// Leave ProgressCallback.URI empty to disable reporting.
 	ProgressCallback        HTTPCallback
 	ProgressReportFrequency int
 
@@ -647,8 +648,9 @@ type Config struct {
 	// (the same JSON as the state dump) will be sent as the Payload parameter.
 	// The unit of StateReportFrequency is in milliseconds.
 	//
-	// Optional: StateReportFrequency defaults to 60000 and must be at least
-	// 100 when StateCallback is set.
+	// Optional: 0 uses the default interval of 60000 ms, not disabled reporting.
+	// Nonzero values must be at least 100 ms when StateCallback.URI is set.
+	// Leave StateCallback.URI empty to disable reporting.
 	StateCallback        HTTPCallback
 	StateReportFrequency int
 
@@ -952,6 +954,10 @@ func (c *Config) ValidateConfig() error {
 		c.CutoverRetryWaitSeconds = 1
 	}
 
+	return c.validateReportFrequencies()
+}
+
+func (c *Config) validateReportFrequencies() error {
 	if c.ProgressReportFrequency == 0 {
 		c.ProgressReportFrequency = defaultReportFrequencyMs
 	}

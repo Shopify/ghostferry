@@ -220,26 +220,46 @@ func (this *ConfigTestSuite) TestBinlogCoordinateModeInvalidIsRejected() {
 	this.Require().EqualError(err, `invalid BinlogCoordinateMode "banana", must be "file_position" or "gtid"`)
 }
 
-func (this *ConfigTestSuite) TestReportFrequenciesDefaultWhenCallbacksAreSet() {
-	this.config.ProgressCallback.URI = "http://example.com/progress"
-	this.config.StateCallback.URI = "http://example.com/state"
-	err := this.config.ValidateConfig()
-	this.Require().Nil(err)
-	this.Require().Equal(60000, this.config.ProgressReportFrequency)
-	this.Require().Equal(60000, this.config.StateReportFrequency)
-}
+func (this *ConfigTestSuite) TestReportFrequencies() {
+	cases := []struct {
+		name    string
+		value   int
+		enabled bool
+		want    int
+		invalid bool
+	}{
+		{name: "negative", value: -1, enabled: true, invalid: true},
+		{name: "zero_defaults", value: 0, enabled: true, want: 60000},
+		{name: "below_minimum", value: 99, enabled: true, invalid: true},
+		{name: "minimum", value: 100, enabled: true, want: 100},
+		{name: "valid_unchanged", value: 500, enabled: true, want: 500},
+		{name: "disabled_callback", value: 99, want: 99},
+	}
+	for _, kind := range []string{"progress", "state"} {
+		for _, tc := range cases {
+			this.Run(kind+"/"+tc.name, func() {
+				this.SetupTest()
+				callback := &this.config.ProgressCallback
+				frequency := &this.config.ProgressReportFrequency
+				if kind == "state" {
+					callback = &this.config.StateCallback
+					frequency = &this.config.StateReportFrequency
+				}
+				*frequency = tc.value
+				if tc.enabled {
+					callback.URI = "http://example.com/callback"
+				}
 
-func (this *ConfigTestSuite) TestReportFrequenciesBelowMinimumAreRejected() {
-	this.config.ProgressCallback.URI = "http://example.com/progress"
-	this.config.ProgressReportFrequency = -1
-	err := this.config.ValidateConfig()
-	this.Require().EqualError(err, "ProgressReportFrequency must be at least 100 milliseconds, got -1")
-
-	this.SetupTest()
-	this.config.StateCallback.URI = "http://example.com/state"
-	this.config.StateReportFrequency = 50
-	err = this.config.ValidateConfig()
-	this.Require().EqualError(err, "StateReportFrequency must be at least 100 milliseconds, got 50")
+				err := this.config.ValidateConfig()
+				if tc.invalid {
+					this.Require().Error(err)
+				} else {
+					this.Require().NoError(err)
+					this.Equal(tc.want, *frequency)
+				}
+			})
+		}
+	}
 }
 
 func TestConfig(t *testing.T) {
