@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -972,9 +973,11 @@ func (c *Config) logDeprecated(deprecatedConfig string, newConfig string) {
 	LogWithField("tag", "config").Warnf("Config.%s is deprecated in favour of Config.%s", deprecatedConfig, newConfig)
 }
 
+// Update applies a live configuration change. DataIterationBatchSize is read
+// concurrently by running cursors, so it is stored atomically.
 func (c *Config) Update(updatedConfig UpdatableConfig) {
 	if updatedConfig.DataIterationBatchSize > 0 {
-		c.UpdatableConfig.DataIterationBatchSize = updatedConfig.DataIterationBatchSize
+		atomic.StoreUint64(&c.UpdatableConfig.DataIterationBatchSize, updatedConfig.DataIterationBatchSize)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	sqlorig "database/sql"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -40,6 +41,7 @@ type CursorConfig struct {
 	BuildSelect     func([]string, *TableSchema, PaginationKey, uint64) (squirrel.SelectBuilder, error)
 	// BatchSize is a pointer to the BatchSize in Config.UpdatableConfig which can be independently updated from this code.
 	// Having it as a pointer allows the updated value to be read without needing additional code to copy the batch size value into the cursor config for each cursor we create.
+	// Runtime reads and writes of the pointed-to value must be atomic.
 	BatchSize                 *uint64
 	BatchSizePerTableOverride *DataIterationBatchSizePerTableOverride
 	ReadRetries               int
@@ -69,7 +71,7 @@ func (c CursorConfig) GetBatchSize(schemaName string, tableName string) uint64 {
 			return batchSize
 		}
 	}
-	return *c.BatchSize
+	return atomic.LoadUint64(c.BatchSize)
 }
 
 type Cursor struct {
