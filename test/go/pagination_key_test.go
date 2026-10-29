@@ -28,7 +28,7 @@ func TestUint64Key_Compare(t *testing.T) {
 		{"equal", ghostferry.NewUint64Key(100), ghostferry.NewUint64Key(100), 0},
 		{"greater than", ghostferry.NewUint64Key(200), ghostferry.NewUint64Key(100), 1},
 		{"zero vs non-zero", ghostferry.NewUint64Key(0), ghostferry.NewUint64Key(1), -1},
-		{"max uint64", ghostferry.NewUint64Key(math.MaxUint64), ghostferry.NewUint64Key(math.MaxUint64-1), 1},
+		{"max uint64", ghostferry.NewUint64Key(math.MaxUint64), ghostferry.NewUint64Key(math.MaxUint64 - 1), 1},
 	}
 
 	for _, tt := range tests {
@@ -389,8 +389,9 @@ func TestPaginationKey_RoundTrip_Binary(t *testing.T) {
 
 func TestMinPaginationKey_Numeric(t *testing.T) {
 	column := &schema.TableColumn{
-		Name: "id",
-		Type: schema.TYPE_NUMBER,
+		Name:       "id",
+		Type:       schema.TYPE_NUMBER,
+		IsUnsigned: true,
 	}
 
 	minKey := ghostferry.MinPaginationKey(column)
@@ -402,8 +403,9 @@ func TestMinPaginationKey_Numeric(t *testing.T) {
 
 func TestMinPaginationKey_MediumInt(t *testing.T) {
 	column := &schema.TableColumn{
-		Name: "id",
-		Type: schema.TYPE_MEDIUM_INT,
+		Name:       "id",
+		Type:       schema.TYPE_MEDIUM_INT,
+		IsUnsigned: true,
 	}
 
 	minKey := ghostferry.MinPaginationKey(column)
@@ -439,11 +441,11 @@ func TestMinPaginationKey_String(t *testing.T) {
 	assert.Equal(t, "key", binaryKey.ColumnName())
 }
 
-
 func TestMaxPaginationKey_Numeric(t *testing.T) {
 	column := &schema.TableColumn{
-		Name: "id",
-		Type: schema.TYPE_NUMBER,
+		Name:       "id",
+		Type:       schema.TYPE_NUMBER,
+		IsUnsigned: true,
 	}
 
 	maxKey := ghostferry.MaxPaginationKey(column)
@@ -455,8 +457,9 @@ func TestMaxPaginationKey_Numeric(t *testing.T) {
 
 func TestMaxPaginationKey_MediumInt(t *testing.T) {
 	column := &schema.TableColumn{
-		Name: "id",
-		Type: schema.TYPE_MEDIUM_INT,
+		Name:       "id",
+		Type:       schema.TYPE_MEDIUM_INT,
+		IsUnsigned: true,
 	}
 
 	maxKey := ghostferry.MaxPaginationKey(column)

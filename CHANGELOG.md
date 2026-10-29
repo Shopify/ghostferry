@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Support the full signed integer pagination range with `Int64Key`, while retaining the full unsigned range with `Uint64Key`. SQL and binlog key decoding follows column signedness; inline and compression verification handle negative keys. Saved signed checkpoints use the new `int64` tag, and existing `uint64` checkpoints remain readable.
 - Introduce `BinlogCoordinate` for MySQL file/position and GTID-set coordinates, with zero-value detection and typed JSON serialization. Decoding also accepts the legacy bare `mysql.Position` JSON format.
 - Add coordinate-based APIs to `BinlogStreamer`, `StateTracker`, and `SerializableState`, retaining the existing file/position APIs and resume behavior.
 - Experimental MySQL GTID binlog streaming with `BinlogCoordinateMode: "gtid"` for source and target-verification streams. File/position streaming remains the default.
@@ -14,6 +15,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Unstarted cursors and `StateTracker.LastSuccessfulPaginationKey` use nil rather than a minimum-value sentinel. Custom `CopyFilter.BuildSelect` implementations must accept nil as no lower bound and return rows in ascending pagination-key order. Non-nil checkpoints remain exclusive. Older binaries cannot resume state containing `int64` checkpoints.
 - Extend `DMLEvent` with `BinlogCoordinate()` and `ResumableBinlogCoordinate()`. `DMLEventBase` implements both; custom implementations must provide these methods.
 - Replace `BinlogCoordinate.Compare` with `HasReached`, using file/position ordering or GTID-set containment. Comparing different coordinate types now returns an error instead of panicking.
 - Compare parsed GTID sets directly during cutover, eliminating per-event GTID serialization and parsing.
@@ -31,6 +33,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Copy zero, negative, and empty binary pagination keys, including tables containing only the minimum key. Preserve exclusive resume boundaries at minimum and maximum values ([#305](https://github.com/Shopify/ghostferry/issues/305)).
+- Order the outer sharded batch query by its pagination column so JOIN execution order cannot change the cursor checkpoint.
+- Avoid unsigned underflow in progress estimates for negative keys and show unstarted checkpoints as absent in the control server.
 - Reject malformed typed binlog coordinates instead of silently decoding them as an unset position.
 - Clear cached GTID sets and inactive fields when decoding into an existing `BinlogCoordinate`, preventing stale reachability results.
 - Keep GTID cutover aligned with transaction boundaries, including savepoints, DDL, empty transaction commits, and XA prepare/one-phase commit markers, without bypassing coordinate tracking when custom event handlers are registered.

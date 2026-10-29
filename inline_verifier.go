@@ -8,14 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
 
-	"github.com/go-mysql-org/go-mysql/schema"
 	"github.com/golang/snappy"
 )
 
@@ -568,25 +566,11 @@ func (v *InlineVerifier) getFingerprintDataFromDb(db *sql.DB, stmtCache *StmtCac
 			return nil, nil, err
 		}
 
-		var paginationKeyStr string
-		switch paginationColumn.Type {
-		case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-			paginationKeyUint, err := strconv.ParseUint(string(rowData[0]), 10, 64)
-			if err != nil {
-				return nil, nil, err
-			}
-			paginationKeyStr = NewUint64Key(paginationKeyUint).String()
-
-		case schema.TYPE_BINARY, schema.TYPE_STRING:
-			paginationKeyStr = NewBinaryKey(rowData[0]).String()
-
-		default:
-			paginationKeyUint, err := strconv.ParseUint(string(rowData[0]), 10, 64)
-			if err != nil {
-				return nil, nil, err
-			}
-			paginationKeyStr = NewUint64Key(paginationKeyUint).String()
+		paginationKey, err := NewPaginationKeyFromRow(RowData{rowData[0]}, 0, paginationColumn)
+		if err != nil {
+			return nil, nil, err
 		}
+		paginationKeyStr := paginationKey.String()
 
 		fingerprints[paginationKeyStr] = rowData[1]
 		decompressedData[paginationKeyStr] = make(map[string][]byte)

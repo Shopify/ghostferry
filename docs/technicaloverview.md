@@ -101,11 +101,17 @@ You can see an example of an application built with Ghostferry in the
       `BINARY`/`VARBINARY` (for example `BINARY(16)` UUIDs) and `CHAR`/`VARCHAR`
       with a binary collation such as `utf8mb4_bin`. Other types and non-binary
       collations fail schema loading.
-    - Numeric pagination keys must be positive integers: the cursor starts at
-      zero and selects values greater than the last key, so zero and negative
-      values are not supported. Likewise, binary pagination starts from the
-      empty value, so empty string/binary keys are not supported. Ghostferry
-      does not validate these boundary values.
+    - Integer pagination respects the column's signedness: signed columns use
+      `int64` keys and unsigned columns use `uint64` keys. Negative values,
+      zero, and both 64-bit limits are supported. Empty string/binary keys are
+      also supported. The initial cursor has no lower bound; every real
+      checkpoint is exclusive, including the minimum value.
+    - Custom `CopyFilter.BuildSelect` implementations must accept a nil key
+      as no lower bound and return rows in ascending pagination-key order.
+    - Saved state tags signed keys as `int64` and unsigned keys as `uint64`.
+      Existing `uint64` checkpoints on signed columns can still be resumed;
+      this does not recover rows skipped before the checkpoint by an older
+      version. Older binaries cannot read the new `int64` checkpoint type.
     - The column is selected in this order:
       `CascadingPaginationColumnConfig.PerTable[database][table]`, otherwise the
       primary key if it consists of a single column, otherwise

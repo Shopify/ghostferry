@@ -4,6 +4,7 @@ import (
 	"container/ring"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -346,7 +347,9 @@ func (s *StateTracker) UpdateLastSuccessfulPaginationKey(table string, paginatio
 	if lastKey, exists := s.lastSuccessfulPaginationKeys[table]; exists {
 		deltaPaginationKey = paginationKey.NumericPosition() - lastKey.NumericPosition()
 	} else {
-		deltaPaginationKey = paginationKey.NumericPosition()
+		// There is no known starting position for the first batch of negative
+		// keys. Measure subsequent batches instead of recording negative speed.
+		deltaPaginationKey = math.Max(0, paginationKey.NumericPosition())
 	}
 	s.lastSuccessfulPaginationKeys[table] = paginationKey
 
@@ -371,6 +374,8 @@ func (s *StateTracker) RowStatsWrittenPerTable() map[string]RowStats {
 	return d
 }
 
+// LastSuccessfulPaginationKey returns nil for an unstarted table. Completed
+// tables retain their maximum sentinel; real checkpoints can have any key value.
 func (s *StateTracker) LastSuccessfulPaginationKey(table string, tableSchema *TableSchema) PaginationKey {
 	s.CopyRWMutex.RLock()
 	defer s.CopyRWMutex.RUnlock()
@@ -380,12 +385,7 @@ func (s *StateTracker) LastSuccessfulPaginationKey(table string, tableSchema *Ta
 		return MaxPaginationKey(tableSchema.GetPaginationColumn())
 	}
 
-	paginationKey, found := s.lastSuccessfulPaginationKeys[table]
-	if !found {
-		return MinPaginationKey(tableSchema.GetPaginationColumn())
-	}
-
-	return paginationKey
+	return s.lastSuccessfulPaginationKeys[table]
 }
 
 func (s *StateTracker) MarkTableAsCompleted(table string) {
@@ -426,8 +426,11 @@ func (s *StateTracker) EstimatedPaginationKeysPerSecond() float64 {
 	earliestValue := earliest.Value.(PaginationKeyPositionLog)
 	deltaPaginationKey := currentValue.Position - earliestValue.Position
 	deltaT := currentValue.At.Sub(earliestValue.At).Seconds()
+	if deltaT <= 0 {
+		return 0
+	}
 
-	return float64(deltaPaginationKey) / deltaT
+	return math.Max(0, deltaPaginationKey/deltaT)
 }
 
 func (s *StateTracker) updateRowStatsForTable(table string, rowStats RowStats) {

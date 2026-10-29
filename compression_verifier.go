@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
@@ -87,25 +86,11 @@ func (c *CompressionVerifier) GetCompressedHashes(db *sql.DB, schemaName, tableN
 			return nil, err
 		}
 
-		var paginationKeyStr string
-		switch paginationColumn.Type {
-		case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-			paginationKeyUint, err := strconv.ParseUint(string(rowData[0]), 10, 64)
-			if err != nil {
-				return nil, err
-			}
-			paginationKeyStr = NewUint64Key(paginationKeyUint).String()
-
-		case schema.TYPE_BINARY, schema.TYPE_STRING:
-			paginationKeyStr = NewBinaryKey(rowData[0]).String()
-
-		default:
-			paginationKeyUint, err := strconv.ParseUint(string(rowData[0]), 10, 64)
-			if err != nil {
-				return nil, err
-			}
-			paginationKeyStr = NewUint64Key(paginationKeyUint).String()
+		paginationKey, err := NewPaginationKeyFromRow(RowData{rowData[0]}, 0, paginationColumn)
+		if err != nil {
+			return nil, err
 		}
+		paginationKeyStr := paginationKey.String()
 
 		// Decompress the applicable columns and then hash them together
 		// to create a fingerprint. decompressedRowData contains a map of all

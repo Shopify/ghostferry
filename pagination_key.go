@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 
 	"github.com/go-mysql-org/go-mysql/schema"
 )
@@ -29,6 +30,69 @@ type PaginationKey interface {
 	MarshalJSON() ([]byte, error)
 	// IsMax returns true if this key represents the maximum possible value for its type.
 	IsMax() bool
+}
+
+// Int64Key is a pagination key for a signed integer column.
+type Int64Key struct {
+	Column string
+	Value  int64
+}
+
+func NewInt64Key(value int64) Int64Key {
+	return Int64Key{Value: value}
+}
+
+func NewInt64KeyWithColumn(column string, value int64) Int64Key {
+	return Int64Key{Column: column, Value: value}
+}
+
+func (k Int64Key) SQLValue() interface{} {
+	return k.Value
+}
+
+func (k Int64Key) ColumnName() string {
+	return k.Column
+}
+
+func (k Int64Key) Compare(other PaginationKey) int {
+	switch otherKey := other.(type) {
+	case Int64Key:
+		if k.Value < otherKey.Value {
+			return -1
+		} else if k.Value > otherKey.Value {
+			return 1
+		}
+		return 0
+	case Uint64Key:
+		// Old checkpoints used uint64 even for signed columns. Compare exactly,
+		// without overflowing int64 or losing precision through float64.
+		if k.Value < 0 {
+			return -1
+		}
+		return NewUint64Key(uint64(k.Value)).Compare(otherKey)
+	default:
+		panic(fmt.Sprintf("cannot compare Int64Key with %T", other))
+	}
+}
+
+func (k Int64Key) NumericPosition() float64 {
+	return float64(k.Value)
+}
+
+func (k Int64Key) String() string {
+	return strconv.FormatInt(k.Value, 10)
+}
+
+func (k Int64Key) IsMax() bool {
+	return k.Value == math.MaxInt64
+}
+
+func (k Int64Key) MarshalJSON() ([]byte, error) {
+	valBytes, err := json.Marshal(k.Value)
+	if err != nil {
+		return nil, err
+	}
+	return json.Marshal(encodedKey{Type: "int64", Value: valBytes, Column: k.Column})
 }
 
 type Uint64Key struct {
@@ -59,6 +123,9 @@ func (k Uint64Key) ColumnName() string {
 }
 
 func (k Uint64Key) Compare(other PaginationKey) int {
+	if signedKey, ok := other.(Int64Key); ok {
+		return -signedKey.Compare(k)
+	}
 	otherKey, ok := other.(Uint64Key)
 	if !ok {
 		panic(fmt.Sprintf("cannot compare Uint64Key with %T", other))
@@ -191,6 +258,15 @@ func UnmarshalPaginationKey(data []byte) (PaginationKey, error) {
 	}
 
 	switch wrapper.Type {
+	case "int64":
+		var i *int64
+		if err := json.Unmarshal(wrapper.Value, &i); err != nil {
+			return nil, err
+		}
+		if i == nil {
+			return nil, fmt.Errorf("int64 pagination key requires a value")
+		}
+		return NewInt64KeyWithColumn(wrapper.Column, *i), nil
 	case "uint64":
 		var i uint64
 		if err := json.Unmarshal(wrapper.Value, &i); err != nil {
@@ -219,6 +295,9 @@ func UnmarshalPaginationKey(data []byte) (PaginationKey, error) {
 func MinPaginationKey(column *schema.TableColumn) PaginationKey {
 	switch column.Type {
 	case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+		if !column.IsUnsigned {
+			return NewInt64KeyWithColumn(column.Name, math.MinInt64)
+		}
 		return NewUint64KeyWithColumn(column.Name, 0)
 	// Handle all potential binary/string types
 	case schema.TYPE_BINARY, schema.TYPE_STRING:
@@ -233,6 +312,9 @@ func MinPaginationKey(column *schema.TableColumn) PaginationKey {
 func MaxPaginationKey(column *schema.TableColumn) PaginationKey {
 	switch column.Type {
 	case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
+		if !column.IsUnsigned {
+			return NewInt64KeyWithColumn(column.Name, math.MaxInt64)
+		}
 		return NewUint64KeyWithColumn(column.Name, math.MaxUint64)
 	case schema.TYPE_BINARY, schema.TYPE_STRING:
 		// SAFETY: Cap the size to prevent OOM on LONGBLOB (4GB).
@@ -255,13 +337,12 @@ func MaxPaginationKey(column *schema.TableColumn) PaginationKey {
 // NewPaginationKeyFromRow extracts a pagination key from a row at the given index.
 // It determines the appropriate key type based on the column schema.
 func NewPaginationKeyFromRow(rowData RowData, index int, column *schema.TableColumn) (PaginationKey, error) {
+	if index < 0 || index >= len(rowData) {
+		return nil, fmt.Errorf("pagination key index %d out of range for row of length %d", index, len(rowData))
+	}
 	switch column.Type {
 	case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-		value, err := rowData.GetUint64(index)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get uint64 pagination key: %w", err)
-		}
-		return NewUint64KeyWithColumn(column.Name, value), nil
+		return newIntegerPaginationKey(rowData[index], column.Name, column.IsUnsigned)
 
 	case schema.TYPE_BINARY, schema.TYPE_STRING:
 		valueInterface := rowData[index]
@@ -277,11 +358,66 @@ func NewPaginationKeyFromRow(rowData RowData, index int, column *schema.TableCol
 		return NewBinaryKeyWithColumn(column.Name, valueBytes), nil
 
 	default:
-		// Fallback for other integer types
-		value, err := rowData.GetUint64(index)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get pagination key: %w", err)
+		// Preserve the unsigned fallback for other integer types.
+		return newIntegerPaginationKey(rowData[index], column.Name, true)
+	}
+}
+
+// newIntegerPaginationKey accepts both SQL driver and binlog integer values.
+// Validate cross-sign conversions before casting so malformed data cannot wrap.
+func newIntegerPaginationKey(value interface{}, column string, unsigned bool) (PaginationKey, error) {
+	switch v := value.(type) {
+	case int:
+		value = int64(v)
+	case int8:
+		value = int64(v)
+	case int16:
+		value = int64(v)
+	case int32:
+		value = int64(v)
+	case uint:
+		value = uint64(v)
+	case uint8:
+		value = uint64(v)
+	case uint16:
+		value = uint64(v)
+	case uint32:
+		value = uint64(v)
+	case []byte:
+		value = string(v)
+	}
+
+	switch v := value.(type) {
+	case int64:
+		if !unsigned {
+			return NewInt64KeyWithColumn(column, v), nil
 		}
-		return NewUint64KeyWithColumn(column.Name, value), nil
+		if v < 0 {
+			return nil, fmt.Errorf("negative pagination key %d for unsigned column %s", v, column)
+		}
+		return NewUint64KeyWithColumn(column, uint64(v)), nil
+	case uint64:
+		if unsigned {
+			return NewUint64KeyWithColumn(column, v), nil
+		}
+		if v > math.MaxInt64 {
+			return nil, fmt.Errorf("pagination key %d overflows int64 for column %s", v, column)
+		}
+		return NewInt64KeyWithColumn(column, int64(v)), nil
+	case string:
+		if unsigned {
+			i, err := strconv.ParseUint(v, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid uint64 pagination key for column %s: %w", column, err)
+			}
+			return NewUint64KeyWithColumn(column, i), nil
+		}
+		i, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid int64 pagination key for column %s: %w", column, err)
+		}
+		return NewInt64KeyWithColumn(column, i), nil
+	default:
+		return nil, fmt.Errorf("expected integer pagination key for column %s, got %T", column, value)
 	}
 }

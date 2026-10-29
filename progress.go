@@ -1,6 +1,8 @@
 package ghostferry
 
 import (
+	"math"
+
 	"github.com/go-mysql-org/go-mysql/mysql"
 )
 
@@ -17,6 +19,33 @@ type TableProgress struct {
 	RowsWritten                 uint64
 	BatchSize                   uint64
 	BytesWritten                uint64
+}
+
+// estimatePaginationETA uses differences within each table, so negative keys
+// and a table that has advanced past its original upper bound cannot underflow.
+// Zero means no estimate when a rate or a negative table's starting point is unknown.
+func estimatePaginationETA(targets map[string]PaginationKey, state *SerializableState, rate float64) float64 {
+	if rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+		return 0
+	}
+	var remaining float64
+	for table, target := range targets {
+		if state.CompletedTables[table] {
+			continue
+		}
+		position := float64(0)
+		if checkpoint := state.LastSuccessfulPaginationKeys[table]; checkpoint != nil {
+			position = checkpoint.NumericPosition()
+		} else if target.NumericPosition() < 0 {
+			return 0
+		}
+		remaining += math.Max(0, target.NumericPosition()-position)
+	}
+	eta := math.Ceil(remaining / rate)
+	if math.IsNaN(eta) || math.IsInf(eta, 0) {
+		return 0
+	}
+	return eta
 }
 
 type Progress struct {

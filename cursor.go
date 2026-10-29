@@ -95,7 +95,7 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 		c.ColumnsToSelect = []string{"*"}
 	}
 
-	for c.lastSuccessfulPaginationKey.Compare(c.MaxPaginationKey) < 0 {
+	for c.lastSuccessfulPaginationKey == nil || c.lastSuccessfulPaginationKey.Compare(c.MaxPaginationKey) < 0 {
 		var tx SqlPreparerAndRollbacker
 		var batch *RowBatch
 		var paginationKeypos PaginationKey
@@ -136,7 +136,7 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 			break
 		}
 
-		if paginationKeypos.Compare(c.lastSuccessfulPaginationKey) <= 0 {
+		if c.lastSuccessfulPaginationKey != nil && paginationKeypos.Compare(c.lastSuccessfulPaginationKey) <= 0 {
 			tx.Rollback()
 			err = fmt.Errorf("new paginationKeypos %s <= lastSuccessfulPaginationKey %s", paginationKeypos.String(), c.lastSuccessfulPaginationKey.String())
 			c.logger.WithError(err).Errorf("last successful paginationKey position did not advance")
@@ -175,7 +175,7 @@ func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos Pagina
 	if c.RowLock {
 		mySqlVersion, err := c.DB.QueryMySQLVersion()
 		if err != nil {
-			return nil, NewUint64Key(0), err
+			return nil, nil, err
 		}
 		if strings.HasPrefix(mySqlVersion, "8.") {
 			selectBuilder = selectBuilder.Suffix("FOR SHARE NOWAIT")
@@ -307,9 +307,12 @@ func ScanByteRow(rows *sqlorig.Rows, columnCount int) ([][]byte, error) {
 func DefaultBuildSelect(columns []string, table *TableSchema, lastPaginationKey PaginationKey, batchSize uint64) squirrel.SelectBuilder {
 	quotedPaginationKey := QuoteField(table.GetPaginationColumn().Name)
 
-	return squirrel.Select(columns...).
+	query := squirrel.Select(columns...).
 		From(QuotedTableName(table)).
-		Where(squirrel.Gt{quotedPaginationKey: lastPaginationKey.SQLValue()}).
 		Limit(batchSize).
 		OrderBy(quotedPaginationKey)
+	if lastPaginationKey != nil {
+		query = query.Where(squirrel.Gt{quotedPaginationKey: lastPaginationKey.SQLValue()})
+	}
+	return query
 }

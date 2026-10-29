@@ -433,40 +433,13 @@ func maxPaginationKey(db *sql.DB, table *TableSchema) (PaginationKey, bool, erro
 		return nil, false, err
 	}
 
+	// Keep the driver's original value so signed maxima (including all-negative
+	// tables) and unsigned values above MaxInt64 are both decoded without loss.
+	var value interface{}
+	err = db.QueryRow(query, args...).Scan(&value)
 	var result PaginationKey
-	switch primaryKeyColumn.Type {
-	case schema.TYPE_NUMBER, schema.TYPE_MEDIUM_INT:
-		var value uint64
-		err = db.QueryRow(query, args...).Scan(&value)
-		result = NewUint64KeyWithColumn(primaryKeyColumn.Name, value)
-
-	case schema.TYPE_BINARY, schema.TYPE_STRING:
-		// Scan into interface{} to handle both []byte and string from driver
-		var val interface{}
-		err = db.QueryRow(query, args...).Scan(&val)
-		if err != nil {
-			break
-		}
-
-		var binValue []byte
-		switch v := val.(type) {
-		case []byte:
-			binValue = v
-		case string:
-			binValue = []byte(v)
-		default:
-			err = fmt.Errorf("expected binary/string for max key, got %T", val)
-		}
-
-		if err == nil {
-			result = NewBinaryKeyWithColumn(primaryKeyColumn.Name, binValue)
-		}
-
-	default:
-		// Fallback
-		var value uint64
-		err = db.QueryRow(query, args...).Scan(&value)
-		result = NewUint64KeyWithColumn(primaryKeyColumn.Name, value)
+	if err == nil {
+		result, err = NewPaginationKeyFromRow(RowData{value}, 0, primaryKeyColumn)
 	}
 
 	switch {

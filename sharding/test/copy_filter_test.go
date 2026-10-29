@@ -104,7 +104,7 @@ func (t *CopyFilterTestSuite) TestSelectsRegularTables() {
 
 	sql, args, err := selectBuilder.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` USE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` USE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`) ORDER BY `id`", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor.SQLValue()}, args)
 }
 
@@ -115,7 +115,7 @@ func (t *CopyFilterTestSuite) TestFallsBackToLessGoodIndex() {
 
 	sql, args, err := selectBuilder.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` USE INDEX (`less_good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` USE INDEX (`less_good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`) ORDER BY `id`", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor.SQLValue()}, args)
 }
 
@@ -127,7 +127,7 @@ func (t *CopyFilterTestSuite) TestFallsBackToIgnoredPrimaryIndex() {
 
 	sql, args, err := selectBuilder.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` IGNORE INDEX (PRIMARY) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` IGNORE INDEX (PRIMARY) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`) ORDER BY `id`", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor.SQLValue()}, args)
 }
 
@@ -138,7 +138,7 @@ func (t *CopyFilterTestSuite) TestRemovesIndexHint() {
 
 	sql, args, err := selectBuilder.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`) ORDER BY `id`", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor.SQLValue()}, args)
 }
 
@@ -149,7 +149,7 @@ func (t *CopyFilterTestSuite) TestUsesForceIndex() {
 
 	sql, args, err := selectBuilder.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` FORCE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` FORCE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`) ORDER BY `id`", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor.SQLValue()}, args)
 }
 
@@ -160,7 +160,7 @@ func (t *CopyFilterTestSuite) TestUsesIndexHintThatIsNotLowercased() {
 
 	sql, args, err := selectBuilder.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` FORCE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` FORCE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`) ORDER BY `id`", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor.SQLValue()}, args)
 }
 
@@ -178,7 +178,7 @@ func (t *CopyFilterTestSuite) TestHigherSpecificityOfIndexHintingPerTable() {
 
 	sql, args, err := selectBuilder1.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` USE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` USE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`) ORDER BY `id`", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor.SQLValue()}, args)
 
 	selectBuilder2, err := t.filter.BuildSelect([]string{"*"}, t.normalTable2, t.paginationKeyCursor, 1024)
@@ -186,7 +186,7 @@ func (t *CopyFilterTestSuite) TestHigherSpecificityOfIndexHintingPerTable() {
 
 	sql, args, err = selectBuilder2.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable2` JOIN (SELECT `id` FROM `shard_1`.`normaltable2` WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable2` JOIN (SELECT `id` FROM `shard_1`.`normaltable2` WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`) ORDER BY `id`", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor.SQLValue()}, args)
 }
 
@@ -204,7 +204,7 @@ func (t *CopyFilterTestSuite) TestHigherSpecificityOfIndexHintingPerTable2() {
 
 	sql, args, err := selectBuilder1.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`) ORDER BY `id`", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor.SQLValue()}, args)
 
 	selectBuilder2, err := t.filter.BuildSelect([]string{"*"}, t.normalTable2, t.paginationKeyCursor, 1024)
@@ -212,7 +212,7 @@ func (t *CopyFilterTestSuite) TestHigherSpecificityOfIndexHintingPerTable2() {
 
 	sql, args, err = selectBuilder2.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable2` JOIN (SELECT `id` FROM `shard_1`.`normaltable2` FORCE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable2` JOIN (SELECT `id` FROM `shard_1`.`normaltable2` FORCE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`) ORDER BY `id`", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor.SQLValue()}, args)
 }
 
@@ -235,7 +235,7 @@ func (t *CopyFilterTestSuite) TestIndexHintingPerTableWithNonExistentIndex() {
 
 	sql, args, err := selectBuilder1.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`) ORDER BY `id`", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor.SQLValue()}, args)
 
 	selectBuilder2, err := t.filter.BuildSelect([]string{"*"}, t.normalTable2, t.paginationKeyCursor, 1024)
@@ -243,7 +243,7 @@ func (t *CopyFilterTestSuite) TestIndexHintingPerTableWithNonExistentIndex() {
 
 	sql, args, err = selectBuilder2.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable2` JOIN (SELECT `id` FROM `shard_1`.`normaltable2` FORCE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable2` JOIN (SELECT `id` FROM `shard_1`.`normaltable2` FORCE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`) ORDER BY `id`", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor.SQLValue()}, args)
 }
 
@@ -261,7 +261,7 @@ func (t *CopyFilterTestSuite) TestIndexHintingPerTableWithIndexOnTable() {
 
 	sql, args, err := selectBuilder1.ToSql()
 	t.Require().Nil(err)
-	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` FORCE INDEX (`less_good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`)", sql)
+	t.Require().Equal("SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` FORCE INDEX (`less_good_sharding_index`) WHERE `tenant_id` = ? AND `id` > ? ORDER BY `id` LIMIT 1024) AS `batch` USING(`id`) ORDER BY `id`", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor.SQLValue()}, args)
 }
 
@@ -283,6 +283,63 @@ func (t *CopyFilterTestSuite) TestSelectsPrimaryKeyTables() {
 	t.Require().Nil(err)
 	t.Require().Equal("SELECT * FROM `shard_1`.`pkTable` USE INDEX (PRIMARY) WHERE `tenant_id` = ? AND `tenant_id` > ?", sql)
 	t.Require().Equal([]interface{}{t.shardingValue, t.paginationKeyCursor.SQLValue()}, args)
+}
+
+func (t *CopyFilterTestSuite) TestNilCheckpointSelectsAllTableShapes() {
+	cases := []struct {
+		name  string
+		table *ghostferry.TableSchema
+		sql   string
+		args  []interface{}
+	}{
+		{
+			name:  "normal",
+			table: t.normalTable,
+			sql:   "SELECT * FROM `shard_1`.`normaltable` JOIN (SELECT `id` FROM `shard_1`.`normaltable` USE INDEX (`good_sharding_index`) WHERE `tenant_id` = ? ORDER BY `id` LIMIT 2) AS `batch` USING(`id`) ORDER BY `id`",
+			args:  []interface{}{t.shardingValue},
+		},
+		{
+			name:  "joined",
+			table: t.joinedTable,
+			sql:   "SELECT * FROM `shard_1`.`joinedtable` WHERE `joined_paginationKey` IN (SELECT * FROM (SELECT `joined_paginationKey1` AS sharding_join_alias FROM `shard_1`.`join1` WHERE `tenant_id` = ? AND `joined_paginationKey1` IS NOT NULL UNION DISTINCT SELECT `joined_paginationKey2` AS sharding_join_alias FROM `shard_1`.`join2` WHERE `tenant_id` = ? AND `joined_paginationKey2` IS NOT NULL ORDER BY sharding_join_alias LIMIT 2) AS sharding_join_table) ORDER BY `joined_paginationKey`",
+			args:  []interface{}{t.shardingValue, t.shardingValue},
+		},
+		{
+			name:  "primary",
+			table: t.primaryKeyTable,
+			sql:   "SELECT * FROM `shard_1`.`pkTable` USE INDEX (PRIMARY) WHERE `tenant_id` = ?",
+			args:  []interface{}{t.shardingValue},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func() {
+			query, err := t.filter.BuildSelect([]string{"*"}, tc.table, nil, 2)
+			t.Require().NoError(err)
+			sql, args, err := query.ToSql()
+			t.Require().NoError(err)
+			t.Equal(tc.sql, sql)
+			t.Equal(tc.args, args)
+		})
+	}
+}
+
+func (t *CopyFilterTestSuite) TestSignedCheckpointSelectsAllTableShapes() {
+	for _, table := range []*ghostferry.TableSchema{t.normalTable, t.joinedTable, t.primaryKeyTable} {
+		for _, checkpoint := range []int64{-1, 0} {
+			t.Run(fmt.Sprintf("%s/%d", table.Name, checkpoint), func() {
+				query, err := t.filter.BuildSelect([]string{"*"}, table, ghostferry.NewInt64Key(checkpoint), 2)
+				t.Require().NoError(err)
+				sql, args, err := query.ToSql()
+				t.Require().NoError(err)
+				t.Contains(sql, " > ?")
+				expected := []interface{}{t.shardingValue, checkpoint}
+				if table == t.joinedTable {
+					expected = append(expected, t.shardingValue, checkpoint)
+				}
+				t.Equal(expected, args)
+			})
+		}
+	}
 }
 
 func (t *CopyFilterTestSuite) TestShardingValueTypes() {

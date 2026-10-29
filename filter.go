@@ -13,7 +13,9 @@ type CopyFilter interface {
 	// here will cause the query to be retried, until the retry limit is
 	// reached, at which point the ferry will be aborted. BuildSelect is passed
 	// the columns to be selected, table being copied, the last pagination key value
-	// from the previous batch, and the batch size. Call DefaultBuildSelect to
+	// from the previous batch, and the batch size. A nil pagination key means
+	// the first batch has no lower bound; a nonnil key is an exclusive lower
+	// bound. Results must be ordered by the pagination key. Call DefaultBuildSelect to
 	// generate the default query, which may be used as a starting point.
 	BuildSelect([]string, *TableSchema, PaginationKey, uint64) (sq.SelectBuilder, error)
 

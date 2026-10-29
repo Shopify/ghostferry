@@ -283,15 +283,11 @@ func (this *ControlServer) fetchStatus() *ControlServerStatus {
 		tableProgress := status.Tables[name]
 		tableStatus := tableProgress.CurrentAction
 
-		lastSuccessfulPaginationKey := tableProgress.LastSuccessfulPaginationKey
-		if tableProgress.CurrentAction == TableActionWaiting {
-			lastSuccessfulPaginationKey = MinPaginationKey(this.F.Tables[name].GetPaginationColumn())
-		}
 		controlStatus := &ControlServerTableStatus{
 			TableName:                   name,
-			PaginationKeyName:           lastSuccessfulPaginationKey.ColumnName(),
+			PaginationKeyName:           this.F.Tables[name].GetPaginationColumn().Name,
 			Status:                      tableProgress.CurrentAction,
-			LastSuccessfulPaginationKey: lastSuccessfulPaginationKey,
+			LastSuccessfulPaginationKey: tableProgress.LastSuccessfulPaginationKey,
 			TargetPaginationKey:         tableProgress.TargetPaginationKey,
 			BatchSize:                   tableProgress.BatchSize,
 		}

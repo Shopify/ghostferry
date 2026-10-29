@@ -247,7 +247,7 @@
                 <td><code>{{.TableName}}</code></td>
                 <td><code>{{.PaginationKeyName}}</code></td>
                 <td>{{.Status}}</td>
-                <td>{{.LastSuccessfulPaginationKey}}</td>
+                <td>{{if .LastSuccessfulPaginationKey}}{{.LastSuccessfulPaginationKey}}{{else}}—{{end}}</td>
                 <td>{{.TargetPaginationKey}}</td>
                 <td>{{.BatchSize}}</td>
               </tr>

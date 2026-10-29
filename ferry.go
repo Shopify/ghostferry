@@ -1095,24 +1095,14 @@ func (f *Ferry) Progress() *Progress {
 		}
 	}
 
-	// ETA
-	var totalPaginationKeysToCopy uint64 = 0
-	var completedPaginationKeys uint64 = 0
+	// ETA is approximate, but signed positions must never be cast to uint64.
 	estimatedPaginationKeysPerSecond := f.StateTracker.EstimatedPaginationKeysPerSecond()
-	for _, targetPaginationKey := range targetPaginationKeys {
-		totalPaginationKeysToCopy += uint64(targetPaginationKey.NumericPosition())
+	s.ETA = estimatePaginationETA(targetPaginationKeys, serializedState, estimatedPaginationKeysPerSecond)
+	if estimatedPaginationKeysPerSecond >= float64(math.MaxUint64) {
+		s.PaginationKeysPerSecond = math.MaxUint64
+	} else if estimatedPaginationKeysPerSecond > 0 {
+		s.PaginationKeysPerSecond = uint64(estimatedPaginationKeysPerSecond)
 	}
-
-	for _, completedPaginationKey := range serializedState.LastSuccessfulPaginationKeys {
-		completedPaginationKeys += uint64(completedPaginationKey.NumericPosition())
-	}
-	var remainingPaginationKeys float64 = 0
-
-	// We do this because if rows are inserted between when ghostferry is started and when all the copy is completed
-	// we can end up with a negative value.
-	remainingPaginationKeys = math.Max(0, float64(totalPaginationKeysToCopy-completedPaginationKeys))
-	s.ETA = (time.Duration(math.Ceil(remainingPaginationKeys/estimatedPaginationKeysPerSecond)) * time.Second).Seconds()
-	s.PaginationKeysPerSecond = uint64(estimatedPaginationKeysPerSecond)
 	end := now
 	if dataCopyDoneTime := f.dataCopyDoneTime.Load(); dataCopyDoneTime != nil {
 		end = *dataCopyDoneTime
