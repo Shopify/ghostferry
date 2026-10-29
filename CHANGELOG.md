@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - Extend `DMLEvent` with `BinlogCoordinate()` and `ResumableBinlogCoordinate()`. `DMLEventBase` implements both; custom implementations must provide these methods.
 - Replace `BinlogCoordinate.Compare` with `HasReached`, using file/position ordering or GTID-set containment. Comparing different coordinate types now returns an error instead of panicking.
 - Compare parsed GTID sets directly during cutover, eliminating per-event GTID serialization and parsing.
+- `ProgressReportFrequency` and `StateReportFrequency` use a 60000 ms default when omitted or set to 0. For configured callbacks, nonzero values below 100 ms are rejected by both `Config.ValidateConfig` and `Ferry.Initialize`; an empty callback URI disables reporting. This prevents accidental callback floods ([#214](https://github.com/Shopify/ghostferry/issues/214)).
 - Updated golang to 1.27.2
 - Updated go packages:
   - `github.com/sirupsen/logrus` to v1.10.2
@@ -31,6 +32,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Release paused interrupt/resume test callbacks when the Ghostferry subprocess exits, so HTTP server shutdown does not hang indefinitely.
 - Ignore binlog row events with NULL sharding keys when they do not belong to the migrating shard, rather than aborting the move. Updates entering or leaving the migrating shard still fail, including transitions to or from NULL.
 - Reject malformed typed binlog coordinates instead of silently decoding them as an unset position.
 - Clear cached GTID sets and inactive fields when decoding into an existing `BinlogCoordinate`, preventing stale reachability results.
