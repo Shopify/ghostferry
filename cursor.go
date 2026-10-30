@@ -84,6 +84,10 @@ type Cursor struct {
 	paginationKeyColumn         *schema.TableColumn
 	lastSuccessfulPaginationKey PaginationKey
 	logger                      Logger
+
+	// copyThrottle, when set, admits each batch instead of WaitForThrottle
+	// and scales its batch size during throttle recovery.
+	copyThrottle *copyThrottleController
 }
 
 func (c *Cursor) Each(f func(*RowBatch) error) error {
@@ -101,10 +105,25 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 		var tx SqlPreparerAndRollbacker
 		var batch *RowBatch
 		var paginationKeypos PaginationKey
+		var permit copyThrottlePermit
 
 		err := WithRetries(c.ReadRetries, 1*time.Second, c.logger, "fetch rows", func() (err error) {
-			if c.Throttler != nil {
+			// Admission happens before the source transaction is opened, so a
+			// waiting batch holds no source row locks.
+			if c.copyThrottle != nil {
+				permit, err = c.copyThrottle.acquire()
+				if err != nil {
+					return err
+				}
+			} else if c.Throttler != nil {
 				WaitForThrottle(c.Throttler)
+			}
+
+			// Read the batch size after admission so that live updates apply
+			// to the next batch.
+			batchSize := c.GetBatchSize(c.Table.Schema, c.Table.Name)
+			if c.copyThrottle != nil {
+				batchSize = permit.batchSize(batchSize)
 			}
 
 			// Only need to use a transaction if RowLock == true. Otherwise
@@ -113,18 +132,20 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 			if c.RowLock {
 				tx, err = c.DB.Begin()
 				if err != nil {
+					c.releaseCopyThrottle(permit, false, err)
 					return err
 				}
 			} else {
 				tx = &SqlDBWithFakeRollback{c.DB}
 			}
 
-			batch, paginationKeypos, err = c.Fetch(tx)
+			batch, paginationKeypos, err = c.fetch(tx, batchSize)
 			if err == nil {
 				return nil
 			}
 
 			tx.Rollback()
+			c.releaseCopyThrottle(permit, false, err)
 			return err
 		})
 
@@ -134,6 +155,7 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 
 		if batch.Size() == 0 {
 			tx.Rollback()
+			c.releaseCopyThrottle(permit, false, nil)
 			c.logger.Debug("did not reach max primary key, but the table is complete as there are no more rows")
 			break
 		}
@@ -141,6 +163,7 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 		if paginationKeypos.Compare(c.lastSuccessfulPaginationKey) <= 0 {
 			tx.Rollback()
 			err = fmt.Errorf("new paginationKeypos %s <= lastSuccessfulPaginationKey %s", paginationKeypos.String(), c.lastSuccessfulPaginationKey.String())
+			c.releaseCopyThrottle(permit, false, err)
 			c.logger.WithError(err).Errorf("last successful paginationKey position did not advance")
 			return err
 		}
@@ -148,11 +171,13 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 		err = f(batch)
 		if err != nil {
 			tx.Rollback()
+			c.releaseCopyThrottle(permit, false, err)
 			c.logger.WithError(err).Error("failed to call each callback")
 			return err
 		}
 
 		tx.Rollback()
+		c.releaseCopyThrottle(permit, true, nil)
 
 		c.lastSuccessfulPaginationKey = paginationKeypos
 	}
@@ -160,9 +185,21 @@ func (c *Cursor) Each(f func(*RowBatch) error) error {
 	return nil
 }
 
+// releaseCopyThrottle returns the batch's permit once its source transaction
+// has been rolled back.
+func (c *Cursor) releaseCopyThrottle(permit copyThrottlePermit, copied bool, err error) {
+	if c.copyThrottle != nil {
+		c.copyThrottle.release(permit, copied, err)
+	}
+}
+
+// Fetch reads the next batch with the configured batch size.
 func (c *Cursor) Fetch(db SqlPreparer) (batch *RowBatch, paginationKeypos PaginationKey, err error) {
+	return c.fetch(db, c.CursorConfig.GetBatchSize(c.Table.Schema, c.Table.Name))
+}
+
+func (c *Cursor) fetch(db SqlPreparer, batchSize uint64) (batch *RowBatch, paginationKeypos PaginationKey, err error) {
 	var selectBuilder squirrel.SelectBuilder
-	batchSize := c.CursorConfig.GetBatchSize(c.Table.Schema, c.Table.Name)
 
 	if c.BuildSelect != nil {
 		selectBuilder, err = c.BuildSelect(c.ColumnsToSelect, c.Table, c.lastSuccessfulPaginationKey, batchSize)

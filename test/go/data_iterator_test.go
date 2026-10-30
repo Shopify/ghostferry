@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Shopify/ghostferry"
+	sql "github.com/Shopify/ghostferry/sqlwrapper"
 	"github.com/Shopify/ghostferry/testhelpers"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -276,4 +279,139 @@ func (this *DataIteratorTestSuite) TestDataIterationBatchSizePerTableOverrideCal
 func TestDataIterator(t *testing.T) {
 	testhelpers.SetupTest()
 	suite.Run(t, &DataIteratorTestSuite{GhostferryUnitTestSuite: &testhelpers.GhostferryUnitTestSuite{}})
+}
+
+// copyThrottleIteratorRun records the batches of a DataIterator copying
+// gftest.t1.
+type copyThrottleIteratorRun struct {
+	ferry  *testhelpers.TestFerry
+	di     *ghostferry.DataIterator
+	tables []*ghostferry.TableSchema
+
+	mu         sync.Mutex
+	batchSizes []int
+	rows       [][2]interface{}
+}
+
+func newCopyThrottleIteratorRun(t *testing.T, rows int, batchSize uint64, throttler ghostferry.Throttler, recovery ghostferry.DataIterationThrottleRecoveryConfig) *copyThrottleIteratorRun {
+	ferry := testhelpers.NewTestFerry()
+	require.NoError(t, ferry.Initialize())
+
+	dropTestSchema := func() {
+		for _, db := range []*sql.DB{ferry.SourceDB, ferry.TargetDB} {
+			_, err := db.Exec("DROP DATABASE IF EXISTS gftest")
+			require.NoError(t, err)
+		}
+	}
+	dropTestSchema()
+	t.Cleanup(dropTestSchema)
+	testhelpers.SeedInitialData(ferry.SourceDB, "gftest", "t1", rows)
+
+	tables, err := ghostferry.LoadTables(ferry.SourceDB, &testhelpers.TestTableFilter{
+		DbsFunc: testhelpers.DbApplicabilityFilter([]string{"gftest"}),
+	}, nil, nil, nil, nil)
+	require.NoError(t, err)
+
+	run := &copyThrottleIteratorRun{ferry: ferry, tables: tables.AsSlice()}
+	run.di = &ghostferry.DataIterator{
+		DB:               ferry.SourceDB,
+		Concurrency:      4,
+		ThrottleRecovery: recovery,
+		ErrorHandler:     ferry.ErrorHandler,
+		CursorConfig: &ghostferry.CursorConfig{
+			DB:          ferry.SourceDB,
+			Throttler:   throttler,
+			BatchSize:   &batchSize,
+			ReadRetries: 1,
+		},
+		StateTracker:         ghostferry.NewStateTracker(10),
+		TargetPaginationKeys: &sync.Map{},
+	}
+	run.di.AddBatchListener(func(batch *ghostferry.RowBatch) error {
+		run.mu.Lock()
+		defer run.mu.Unlock()
+		run.batchSizes = append(run.batchSizes, batch.Size())
+		for _, row := range batch.Values() {
+			run.rows = append(run.rows, [2]interface{}{row[0], string(row[1].([]byte))})
+		}
+		return nil
+	})
+	return run
+}
+
+func (r *copyThrottleIteratorRun) start() <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.di.Run(r.tables)
+	}()
+	return done
+}
+
+func (r *copyThrottleIteratorRun) copiedBatchSizes() []int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]int(nil), r.batchSizes...)
+}
+
+// requireSourceRowsCopied asserts the listener received every source row
+// once, in order.
+func (r *copyThrottleIteratorRun) requireSourceRowsCopied(t *testing.T) {
+	t.Helper()
+	rows, err := r.ferry.SourceDB.Query("SELECT id, data FROM gftest.t1 ORDER BY id")
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var expected [][2]interface{}
+	for rows.Next() {
+		var id int64
+		var data string
+		require.NoError(t, rows.Scan(&id, &data))
+		expected = append(expected, [2]interface{}{id, data})
+	}
+	require.NoError(t, rows.Err())
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	require.Equal(t, expected, r.rows)
+}
+
+func waitForIterator(t *testing.T, done <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("data iterator did not finish")
+	}
+}
+
+func TestCopyThrottleDisabledRecoveryKeepsHardThrottle(t *testing.T) {
+	throttler := &ghostferry.PauserThrottler{}
+	throttler.SetPaused(true)
+	run := newCopyThrottleIteratorRun(t, 1000, 200, throttler, ghostferry.DataIterationThrottleRecoveryConfig{Disabled: true})
+
+	done := run.start()
+	time.Sleep(time.Second)
+	require.Empty(t, run.copiedBatchSizes(), "copied while paused")
+
+	throttler.SetPaused(false)
+	waitForIterator(t, done)
+	require.Equal(t, []int{200, 200, 200, 200, 200}, run.copiedBatchSizes())
+	run.requireSourceRowsCopied(t)
+}
+
+func TestCopyThrottleResumesSingleTableWithOneRowBatches(t *testing.T) {
+	throttler := &ghostferry.PauserThrottler{}
+	throttler.SetPaused(true)
+	run := newCopyThrottleIteratorRun(t, 5, 7, throttler, ghostferry.DataIterationThrottleRecoveryConfig{RecoveryInterval: "1h"})
+
+	done := run.start()
+	time.Sleep(time.Second)
+	require.Empty(t, run.copiedBatchSizes(), "copied while paused")
+
+	// One eighth of 7 rows still copies one row per batch.
+	throttler.SetPaused(false)
+	waitForIterator(t, done)
+	require.Equal(t, []int{1, 1, 1, 1, 1}, run.copiedBatchSizes())
+	run.requireSourceRowsCopied(t)
 }
