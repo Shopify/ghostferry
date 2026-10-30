@@ -415,3 +415,53 @@ func TestCopyThrottleResumesSingleTableWithOneRowBatches(t *testing.T) {
 	require.Equal(t, []int{1, 1, 1, 1, 1}, run.copiedBatchSizes())
 	run.requireSourceRowsCopied(t)
 }
+
+// RunStandaloneDataCopy runs during cutover with the throttler disabled and
+// without Ferry.Run's supporting services. A paused throttler must not block it.
+func TestCopyThrottleStandaloneCopyBypassesPause(t *testing.T) {
+	tables := []string{"t1", "t2"}
+	ferry := testhelpers.NewTestFerry()
+
+	source, err := ferry.Source.SqlDB(nil)
+	require.NoError(t, err)
+	defer source.Close()
+	target, err := ferry.Target.SqlDB(nil)
+	require.NoError(t, err)
+	defer target.Close()
+
+	dropTestSchema := func() {
+		for _, db := range []*sql.DB{source, target} {
+			_, err := db.Exec("DROP DATABASE IF EXISTS gftest")
+			require.NoError(t, err)
+		}
+	}
+	dropTestSchema()
+	defer dropTestSchema()
+	for _, table := range tables {
+		testhelpers.SeedInitialData(source, "gftest", table, 500)
+		testhelpers.SeedInitialData(target, "gftest", table, 0)
+	}
+
+	throttler := &ghostferry.PauserThrottler{}
+	throttler.SetPaused(true)
+	throttler.SetDisabled(true)
+	ferry.Throttler = throttler
+	require.NoError(t, ferry.Initialize())
+
+	done := make(chan error, 1)
+	go func() {
+		done <- ferry.RunStandaloneDataCopy(ferry.Tables.AsSlice())
+	}()
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("standalone data copy did not finish while the throttler was paused and disabled")
+	}
+
+	for _, table := range tables {
+		rows := testhelpers.AssertQueriesHaveEqualResult(t, ferry.Ferry, fmt.Sprintf("SELECT * FROM gftest.%s ORDER BY id", table))
+		require.Len(t, rows, 500)
+	}
+}

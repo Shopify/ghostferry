@@ -1,7 +1,10 @@
 require "test_helper"
 require "json"
+require "net/http"
 
 class InterruptResumeTest < GhostferryTestCase
+  THROTTLE_RECOVERY_GHOSTFERRY = "throttle_recovery_ghostferry"
+
   def setup
     seed_simple_database_with_single_table
   end
@@ -29,6 +32,65 @@ class InterruptResumeTest < GhostferryTestCase
     last_successful_id = result.first["max_id"]
     assert last_successful_id > 0
     assert_equal last_successful_id, dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]["value"]
+  end
+
+  def test_interrupt_resume_during_throttle_recovery
+    ghostferry = new_ghostferry(THROTTLE_RECOVERY_GHOSTFERRY)
+
+    post_control = lambda do |path|
+      attempts = 0
+      begin
+        response = Net::HTTP.new("127.0.0.1", 18000).post(path, "", "Content-Type" => "application/json")
+      rescue Errno::ECONNREFUSED
+        attempts += 1
+        raise if attempts > 50
+        sleep 0.1
+        retry
+      end
+      raise "POST #{path} returned #{response.code}" unless response.code == "200"
+    end
+
+    before_row_copies = 0
+    after_row_copies = 0
+    unpause_thread = nil
+
+    # Pause while the first, full-sized batch is copied, and again while the
+    # first recovery batch is copied.
+    ghostferry.on_status(Ghostferry::Status::BEFORE_ROW_COPY) do
+      before_row_copies += 1
+      post_control.call("/api/pause") if before_row_copies <= 2
+    end
+
+    ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
+      after_row_copies += 1
+      if after_row_copies == 1
+        # The batch finishes while paused, so the next batch is the first
+        # recovery batch with 200 / 8 = 25 rows.
+        unpause_thread = Thread.new do
+          sleep 1
+          post_control.call("/api/unpause")
+        end
+      else
+        # Still paused, so no third batch starts before Ghostferry exits.
+        ghostferry.term_and_wait_for_exit
+      end
+    end
+
+    dumped_state = ghostferry.run_expecting_interrupt
+    refute_nil unpause_thread
+    unpause_thread.join
+    assert_basic_fields_exist_in_dumped_state(dumped_state)
+    assert_equal 2, before_row_copies
+    refute dumped_state.keys.any? { |key| key =~ /throttl|recovery/i }
+
+    result = target_db.query("SELECT COUNT(*) AS cnt, MAX(id) AS max_id FROM #{DEFAULT_FULL_TABLE_NAME}").first
+    assert_equal 200 + 25, result["cnt"]
+    assert_equal result["max_id"], dumped_state["LastSuccessfulPaginationKeys"]["#{DEFAULT_DB}.#{DEFAULT_TABLE}"]["value"]
+
+    ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY)
+    ghostferry.run(dumped_state)
+
+    assert_test_table_is_identical
   end
 
   def test_interrupt_and_resume_without_last_known_schema_cache
