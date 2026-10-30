@@ -89,6 +89,17 @@ The main components, all running as goroutines of one process, are:
 | Target `BinlogStreamer` → `TargetVerifier` | Streams the target's binlog and fails the run on row changes to copied tables that do not carry Ghostferry's expected SQL annotation, i.e. unexpected writers (unless `SkipTargetVerification` is set). |
 | `ControlServer` | Web UI and HTTP endpoints exposing status and actions such as pause, cutover and verification. |
 
+While the throttler reports throttling (lag above `MaxLag`, or a pause from
+the control server), no new copy batch starts and the `BinlogWriter` stops
+writing. Once the throttle clears, binlog replay resumes immediately while the
+data copy recovers gradually: one batch at a time with one eighth of the
+configured batch size, doubling the batch size and then adding one concurrent
+batch after each healthy `DataIterationThrottleRecovery.RecoveryInterval`
+(default `5s`) until `DataIterationConcurrency` full-sized batches run again.
+Batches wait for admission before opening their source transaction, so a
+waiting batch holds no row locks. Set `DataIterationThrottleRecovery.Disabled`
+to resume all workers at full speed instead.
+
 You can see an example of an application built with Ghostferry in the
 `copydb` package.
 

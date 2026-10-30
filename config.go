@@ -419,6 +419,61 @@ func (c *CascadingPaginationColumnConfig) FallbackPaginationColumnName() (string
 	return c.FallbackColumn, true
 }
 
+const defaultDataIterationThrottleRecoveryInterval = "5s"
+
+// DataIterationThrottleRecoveryConfig controls how the data copy resumes
+// after the throttler stops throttling.
+//
+// When a throttle is observed, no new copy batch starts; batches already
+// running finish normally. Once the throttle clears, one batch is copied at
+// a time with one eighth of the configured batch size (at least one row).
+// After each healthy RecoveryInterval, the batch size doubles until it
+// reaches the configured size, then the number of concurrent batches grows by
+// one until DataIterationConcurrency. A new throttle restarts the recovery.
+// Disabling the throttler restores the configured limits immediately.
+//
+// A stage is healthy when the throttler was not observed throttling, at least
+// one batch admitted in that stage completed successfully, and, for the
+// LagThrottler, a new lag sample no older than twice its UpdateInterval was
+// observed during the stage. A failed batch restarts the stage interval.
+//
+// Binlog replay is not affected: it still only stops while throttled.
+type DataIterationThrottleRecoveryConfig struct {
+	// Disabled resumes all data iteration workers with full-sized batches as
+	// soon as the throttle clears. The throttle itself still applies.
+	//
+	// Optional: defaults to false
+	Disabled bool
+
+	// The time each recovery stage must stay healthy before the copy load is
+	// increased. Uses time.ParseDuration syntax and must be positive.
+	//
+	// Optional: defaults to "5s"
+	RecoveryInterval string
+}
+
+func (c *DataIterationThrottleRecoveryConfig) Validate() error {
+	if c.RecoveryInterval == "" {
+		c.RecoveryInterval = defaultDataIterationThrottleRecoveryInterval
+	}
+
+	_, err := c.recoveryInterval()
+	return err
+}
+
+func (c DataIterationThrottleRecoveryConfig) recoveryInterval() (time.Duration, error) {
+	value := c.RecoveryInterval
+	if value == "" {
+		value = defaultDataIterationThrottleRecoveryInterval
+	}
+
+	interval, err := time.ParseDuration(value)
+	if err != nil || interval <= 0 {
+		return 0, fmt.Errorf("DataIterationThrottleRecovery.RecoveryInterval must be a positive duration: %q", c.RecoveryInterval)
+	}
+	return interval, nil
+}
+
 type DataIterationBatchSizePerTableOverride struct {
 	// Lower limit for rowSize, if a rowSize <= MinRowSize, ControlPoints[MinRowSize] will be used
 	MinRowSize int
@@ -603,6 +658,12 @@ type Config struct {
 	//
 	// Optional: defaults to 4
 	DataIterationConcurrency int
+
+	// This specifies how the data copy resumes after throttling. See
+	// DataIterationThrottleRecoveryConfig.
+	//
+	// Optional: recovery is enabled with a 5s RecoveryInterval
+	DataIterationThrottleRecovery DataIterationThrottleRecoveryConfig
 
 	// This specifies if Ghostferry will pause before cutover or not.
 	//
@@ -930,6 +991,14 @@ func (c *Config) ValidateConfig() error {
 
 	if c.DataIterationConcurrency == 0 {
 		c.DataIterationConcurrency = 4
+	}
+
+	if c.DataIterationConcurrency < 0 {
+		return fmt.Errorf("DataIterationConcurrency must be greater than zero")
+	}
+
+	if err := c.DataIterationThrottleRecovery.Validate(); err != nil {
+		return err
 	}
 
 	if c.DBReadRetries == 0 {

@@ -87,9 +87,12 @@ type LagThrottler struct {
 	logger   Logger
 	interval time.Duration
 
-	// lag is written by Run and read by every Throttled caller.
-	lagLock sync.Mutex
-	lag     int
+	// lag and the sample metadata are written by Run and read by Throttled
+	// callers and the data iterator's copy throttle.
+	lagLock          sync.Mutex
+	lag              int
+	sampleSequence   uint64
+	sampleObservedAt time.Time
 }
 
 func NewLagThrottler(config *LagThrottlerConfig) (*LagThrottler, error) {
@@ -108,6 +111,9 @@ func NewLagThrottler(config *LagThrottlerConfig) (*LagThrottler, error) {
 	interval, err := time.ParseDuration(config.UpdateInterval)
 	if err != nil {
 		return nil, fmt.Errorf("invalid UpdateInterval: %s", err)
+	}
+	if interval <= 0 {
+		return nil, fmt.Errorf("invalid UpdateInterval: must be greater than zero")
 	}
 
 	if err := config.Connection.Validate(); err != nil {
@@ -136,6 +142,15 @@ func (t *LagThrottler) Throttled() bool {
 	t.lagLock.Lock()
 	defer t.lagLock.Unlock()
 	return t.lag > t.config.MaxLag
+}
+
+// recoverySample reports the latest successful non-NULL lag sample and the
+// configured polling interval. Copy recovery uses it to require fresh lag
+// evidence before increasing the copy load.
+func (t *LagThrottler) recoverySample() (sequence uint64, observedAt time.Time, interval time.Duration) {
+	t.lagLock.Lock()
+	defer t.lagLock.Unlock()
+	return t.sampleSequence, t.sampleObservedAt, t.interval
 }
 
 func (t *LagThrottler) Run(ctx context.Context) error {
@@ -171,6 +186,8 @@ func (t *LagThrottler) updateLag(ctx context.Context) error {
 
 	t.lagLock.Lock()
 	t.lag = int(newLag.Int64)
+	t.sampleSequence++
+	t.sampleObservedAt = time.Now()
 	t.lagLock.Unlock()
 	return nil
 }

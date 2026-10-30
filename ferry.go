@@ -101,6 +101,7 @@ func (f *Ferry) NewDataIterator() *DataIterator {
 		DB:                f.SourceDB,
 		Concurrency:       f.Config.DataIterationConcurrency,
 		SelectFingerprint: f.Config.VerifierType == VerifierTypeInline,
+		ThrottleRecovery:  f.Config.DataIterationThrottleRecovery,
 
 		ErrorHandler: f.ErrorHandler,
 		CursorConfig: &CursorConfig{

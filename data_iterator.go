@@ -1,6 +1,7 @@
 package ghostferry
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -11,6 +12,7 @@ type DataIterator struct {
 	DB                *sql.DB
 	Concurrency       int
 	SelectFingerprint bool
+	ThrottleRecovery  DataIterationThrottleRecoveryConfig
 
 	ErrorHandler ErrorHandler
 	CursorConfig *CursorConfig
@@ -30,6 +32,13 @@ type TableMaxPaginationKey struct {
 
 func (d *DataIterator) Run(tables []*TableSchema) {
 	d.logger = LogWithField("tag", "data_iterator")
+
+	copyThrottle, err := d.newCopyThrottle()
+	if err != nil {
+		d.logger.WithError(err).Error("failed to configure copy throttle recovery")
+		d.ErrorHandler.Fatal("data_iterator", err)
+		return
+	}
 
 	// If a state tracker is not provided, then the caller doesn't care about
 	// tracking state. However, some methods are still useful so we initialize
@@ -63,6 +72,27 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 	wg := &sync.WaitGroup{}
 	wg.Add(d.Concurrency)
 
+	var stopCopyThrottle func()
+	if copyThrottle != nil {
+		copyThrottle.observe(copyThrottle.now())
+
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			copyThrottle.run(ctx)
+		}()
+
+		var once sync.Once
+		stopCopyThrottle = func() {
+			once.Do(func() {
+				cancel()
+				<-done
+			})
+		}
+		defer stopCopyThrottle()
+	}
+
 	for i := 0; i < d.Concurrency; i++ {
 		go func() {
 			defer wg.Done()
@@ -92,6 +122,7 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 				}
 
 				cursor := d.CursorConfig.NewCursor(table, startPaginationKey, targetPaginationKeyInterface.(PaginationKey))
+				cursor.copyThrottle = copyThrottle
 				if d.SelectFingerprint {
 					if len(cursor.ColumnsToSelect) == 0 {
 						cursor.ColumnsToSelect = []string{"*"}
@@ -191,9 +222,22 @@ func (d *DataIterator) Run(tables []*TableSchema) {
 	close(tablesQueue)
 
 	wg.Wait()
+	if stopCopyThrottle != nil {
+		stopCopyThrottle()
+	}
+
 	for _, listener := range d.doneListeners {
 		listener()
 	}
+}
+
+// newCopyThrottle returns the copy throttle shared by the cursors of one Run,
+// or nil if copying only waits for the hard throttle.
+func (d *DataIterator) newCopyThrottle() (*copyThrottleController, error) {
+	if d.CursorConfig.Throttler == nil || d.ThrottleRecovery.Disabled {
+		return nil, nil
+	}
+	return newCopyThrottleController(d.CursorConfig.Throttler, d.Concurrency, d.ThrottleRecovery)
 }
 
 func (d *DataIterator) AddBatchListener(listener func(*RowBatch) error) {

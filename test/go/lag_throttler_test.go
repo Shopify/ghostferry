@@ -131,6 +131,13 @@ func TestNewThrottlerConfigErrors(t *testing.T) {
 	config.UpdateInterval = "hunter2"
 	_, err = ghostferry.NewLagThrottler(&config)
 	assert.NotNil(t, err)
+
+	for _, interval := range []string{"0s", "-1s"} {
+		config = okConfig
+		config.UpdateInterval = interval
+		_, err = ghostferry.NewLagThrottler(&config)
+		assert.EqualError(t, err, "invalid UpdateInterval: must be greater than zero")
+	}
 }
 
 func TestThrottlerRunErrors(t *testing.T) {

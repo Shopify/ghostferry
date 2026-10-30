@@ -11,12 +11,14 @@ All notable changes to this project will be documented in this file.
 - Experimental MySQL GTID binlog streaming with `BinlogCoordinateMode: "gtid"` for source and target-verification streams. File/position streaming remains the default.
 - Add helpers to read `@@GLOBAL.GTID_EXECUTED` as a GTID coordinate and check that the server's `gtid_mode` is `ON`.
 - GTID cutover uses set containment. GTID mode requires `gtid_mode=ON` on the source and, when target verification is enabled, on the target. Resuming from serialized state is not yet supported in GTID mode and is explicitly rejected.
+- Recover the data copy gradually after throttling ([#471](https://github.com/Shopify/ghostferry/issues/471)). While throttled, no new copy batch starts; batches wait for admission before opening their source transaction, so they hold no row locks while waiting. Once the throttle clears, one batch at a time copies an eighth of the configured batch size; after each healthy `DataIterationThrottleRecovery.RecoveryInterval` (default `5s`) the batch size doubles, then concurrency grows by one up to `DataIterationConcurrency`. With the `LagThrottler`, each increase also requires a fresh lag sample. Binlog replay still resumes as soon as the throttle clears, and disabling the throttler restores full copy speed immediately. Set `DataIterationThrottleRecovery.Disabled` to resume at full speed as before.
 
 ### Changed
 
 - Extend `DMLEvent` with `BinlogCoordinate()` and `ResumableBinlogCoordinate()`. `DMLEventBase` implements both; custom implementations must provide these methods.
 - Replace `BinlogCoordinate.Compare` with `HasReached`, using file/position ordering or GTID-set containment. Comparing different coordinate types now returns an error instead of panicking.
 - Compare parsed GTID sets directly during cutover, eliminating per-event GTID serialization and parsing.
+- `ValidateConfig` rejects a negative `DataIterationConcurrency`, and `NewLagThrottler` rejects a zero or negative `UpdateInterval`, instead of starting without copy workers or polling the lag query in a busy loop.
 - Updated golang to 1.27.2
 - Updated go packages:
   - `github.com/sirupsen/logrus` to v1.10.2

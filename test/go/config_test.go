@@ -1,6 +1,7 @@
 package test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
@@ -120,9 +121,26 @@ func (this *ConfigTestSuite) TestDefaultValues() {
 	this.Require().Equal(5, this.config.DBWriteRetries)
 	this.Require().Equal(uint64(200), this.config.UpdatableConfig.DataIterationBatchSize)
 	this.Require().Equal(4, this.config.DataIterationConcurrency)
+	this.Require().False(this.config.DataIterationThrottleRecovery.Disabled)
+	this.Require().Equal("5s", this.config.DataIterationThrottleRecovery.RecoveryInterval)
 	this.Require().Equal(60, this.config.DBReadRetries)
 	this.Require().Equal("0.0.0.0:8000", this.config.ControlServerConfig.ServerBindAddr)
 	this.Require().Equal(".", this.config.ControlServerConfig.WebBasedir)
+}
+
+func (this *ConfigTestSuite) TestRejectNegativeDataIterationConcurrency() {
+	this.config.DataIterationConcurrency = -1
+	err := this.config.ValidateConfig()
+	this.Require().EqualError(err, "DataIterationConcurrency must be greater than zero")
+}
+
+func (this *ConfigTestSuite) TestRejectInvalidThrottleRecoveryInterval() {
+	for _, interval := range []string{"0s", "-1s", "5"} {
+		this.SetupTest()
+		this.config.DataIterationThrottleRecovery.RecoveryInterval = interval
+		err := this.config.ValidateConfig()
+		this.Require().EqualError(err, fmt.Sprintf("DataIterationThrottleRecovery.RecoveryInterval must be a positive duration: %q", interval))
+	}
 }
 
 func (this *ConfigTestSuite) TestCorruptCert() {
