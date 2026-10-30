@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -369,7 +370,10 @@ func (this *ControlServer) HandleScript(w http.ResponseWriter, r *http.Request) 
 
 func (this *ControlServer) HandleConfigGet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	err := json.NewEncoder(w).Encode(this.F.UpdatableConfig)
+	snapshot := UpdatableConfig{
+		DataIterationBatchSize: atomic.LoadUint64(&this.F.UpdatableConfig.DataIterationBatchSize),
+	}
+	err := json.NewEncoder(w).Encode(snapshot)
 	if err != nil {
 		this.logger.WithError(err).Error("failed to send updatable config")
 	}

@@ -5,6 +5,7 @@ import (
 	sqlorig "database/sql"
 	"fmt"
 	sql "github.com/Shopify/ghostferry/sqlwrapper"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -83,9 +84,12 @@ type LagThrottler struct {
 	config *LagThrottlerConfig
 
 	DB       *sql.DB
-	lag      int
 	logger   Logger
 	interval time.Duration
+
+	// lag is written by Run and read by every Throttled caller.
+	lagLock sync.Mutex
+	lag     int
 }
 
 func NewLagThrottler(config *LagThrottlerConfig) (*LagThrottler, error) {
@@ -125,7 +129,13 @@ func NewLagThrottler(config *LagThrottlerConfig) (*LagThrottler, error) {
 }
 
 func (t *LagThrottler) Throttled() bool {
-	return t.PauserThrottler.Throttled() || t.lag > t.config.MaxLag
+	if t.PauserThrottler.Throttled() {
+		return true
+	}
+
+	t.lagLock.Lock()
+	defer t.lagLock.Unlock()
+	return t.lag > t.config.MaxLag
 }
 
 func (t *LagThrottler) Run(ctx context.Context) error {
@@ -159,6 +169,8 @@ func (t *LagThrottler) updateLag(ctx context.Context) error {
 		return nil
 	}
 
+	t.lagLock.Lock()
 	t.lag = int(newLag.Int64)
+	t.lagLock.Unlock()
 	return nil
 }
