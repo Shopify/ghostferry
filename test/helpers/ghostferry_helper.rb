@@ -381,14 +381,19 @@ module GhostferryHelper
       # Process already exited; nothing to do.
     end
 
+    # Paused callbacks must finish when the child exits so WEBrick can shut down.
+    def wait_for_exit
+      @subprocess_thread.join
+    end
+
     def term_and_wait_for_exit
       send_signal("TERM")
-      @subprocess_thread.join
+      wait_for_exit
     end
 
     def kill_and_wait_for_exit
       send_signal("KILL")
-      @subprocess_thread.join
+      wait_for_exit
     end
 
     def kill

@@ -221,13 +221,18 @@ class InterruptResumeTest < GhostferryTestCase
     ghostferry = new_ghostferry(MINIMAL_GHOSTFERRY, config: { verifier_type: "Inline" })
 
     i = 0
+    row_copy_paused = Queue.new
     ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
-      sleep if i >= 1 # block the DataIterator so it doesn't race with the term_and_wait_for_exit below.
+      if i >= 1
+        row_copy_paused << true
+        next ghostferry.wait_for_exit
+      end
       source_db.query("INSERT INTO #{DEFAULT_FULL_TABLE_NAME} (id, data) VALUES (#{chosen_id}, 'data')")
       i += 1
     end
 
     ghostferry.on_status(Ghostferry::Status::AFTER_BINLOG_APPLY) do
+      raise "timed out waiting for row copy to pause" unless row_copy_paused.pop(timeout: 10)
       ghostferry.term_and_wait_for_exit
     end
 
@@ -265,6 +270,7 @@ class InterruptResumeTest < GhostferryTestCase
     chosen_id = result.first["MIN(id)"] + 1
 
     i = 0
+    row_copy_paused = Queue.new
     ghostferry.on_status(Ghostferry::Status::AFTER_ROW_COPY) do
       if i == 1
         # We need to delete it the second batch because trying to delete the
@@ -272,11 +278,15 @@ class InterruptResumeTest < GhostferryTestCase
         # DataIterator holds a FOR UPDATE lock for the minimum id row.
         source_db.query("DELETE FROM #{DEFAULT_FULL_TABLE_NAME} WHERE id = #{chosen_id}")
       end
-      sleep if i > 1 # block the DataIterator so it doesn't race with the term_and_wait_for_exit below.
+      if i > 1
+        row_copy_paused << true
+        next ghostferry.wait_for_exit
+      end
       i += 1
     end
 
     ghostferry.on_status(Ghostferry::Status::AFTER_BINLOG_APPLY) do
+      raise "timed out waiting for row copy to pause" unless row_copy_paused.pop(timeout: 10)
       ghostferry.term_and_wait_for_exit
     end
 

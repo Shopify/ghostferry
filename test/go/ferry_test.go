@@ -75,6 +75,52 @@ func (t *FerryTestSuite) TestSourceDatabaseWithForeignKeyConstraintFailsInitiali
 	t.Require().Nil(err)
 }
 
+func (t *FerryTestSuite) newFerryWithCleanup() *ghostferry.Ferry {
+	ferry := testhelpers.NewTestFerry().Ferry
+	t.T().Cleanup(func() {
+		if ferry.SourceDB != nil {
+			ferry.SourceDB.Close()
+		}
+		if ferry.TargetDB != nil {
+			ferry.TargetDB.Close()
+		}
+	})
+	return ferry
+}
+
+func (t *FerryTestSuite) TestInitializeRejectsInvalidReportFrequencyBeforeConnecting() {
+	for _, kind := range []string{"progress", "state"} {
+		t.Run(kind, func() {
+			ferry := t.newFerryWithCleanup()
+			// Change the reporting settings without calling ValidateConfig again.
+			if kind == "progress" {
+				ferry.Config.ProgressCallback.URI = "http://example.com/progress"
+				ferry.Config.ProgressReportFrequency = 99
+			} else {
+				ferry.Config.StateCallback.URI = "http://example.com/state"
+				ferry.Config.StateReportFrequency = 99
+			}
+
+			t.Require().Error(ferry.Initialize())
+			t.NotNil(ferry.ErrorHandler)
+			t.Nil(ferry.SourceDB)
+			t.Nil(ferry.TargetDB)
+		})
+	}
+}
+
+func (t *FerryTestSuite) TestInitializeDefaultsReportFrequencies() {
+	ferry := t.newFerryWithCleanup()
+	ferry.Config.ProgressCallback.URI = "http://example.com/progress"
+	ferry.Config.StateCallback.URI = "http://example.com/state"
+	ferry.Config.ProgressReportFrequency = 0
+	ferry.Config.StateReportFrequency = 0
+
+	t.Require().NoError(ferry.Initialize())
+	t.Equal(60000, ferry.Config.ProgressReportFrequency)
+	t.Equal(60000, ferry.Config.StateReportFrequency)
+}
+
 func TestFerryTestSuite(t *testing.T) {
 	suite.Run(t, &FerryTestSuite{GhostferryUnitTestSuite: &testhelpers.GhostferryUnitTestSuite{}})
 }

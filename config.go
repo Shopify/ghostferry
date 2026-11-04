@@ -23,6 +23,9 @@ const (
 	DefaultNet          = "tcp"
 	DefaultMarginalia   = "application:ghostferry"
 	MySQLNumParamsLimit = 1<<16 - 1 // see num_params https://dev.mysql.com/doc/internals/en/com-stmt-prepare-response.html
+
+	defaultReportFrequencyMs = 60000
+	minReportFrequencyMs     = 100
 )
 
 type TLSConfig struct {
@@ -634,12 +637,20 @@ type Config struct {
 	// Report progress via an HTTP callback. The Payload field of the callback
 	// will be sent to the server as the CustomPayload field in the Progress
 	// struct. The unit of ProgressReportFrequency is in milliseconds.
+	//
+	// Optional: 0 uses the default interval of 60000 ms, not disabled reporting.
+	// Nonzero values must be at least 100 ms when ProgressCallback.URI is set.
+	// Leave ProgressCallback.URI empty to disable reporting.
 	ProgressCallback        HTTPCallback
 	ProgressReportFrequency int
 
 	// Report state via an HTTP callback. The serialized SerializableState
 	// (the same JSON as the state dump) will be sent as the Payload parameter.
 	// The unit of StateReportFrequency is in milliseconds.
+	//
+	// Optional: 0 uses the default interval of 60000 ms, not disabled reporting.
+	// Nonzero values must be at least 100 ms when StateCallback.URI is set.
+	// Leave StateCallback.URI empty to disable reporting.
 	StateCallback        HTTPCallback
 	StateReportFrequency int
 
@@ -941,6 +952,24 @@ func (c *Config) ValidateConfig() error {
 
 	if c.CutoverRetryWaitSeconds == 0 {
 		c.CutoverRetryWaitSeconds = 1
+	}
+
+	return c.validateReportFrequencies()
+}
+
+func (c *Config) validateReportFrequencies() error {
+	if c.ProgressReportFrequency == 0 {
+		c.ProgressReportFrequency = defaultReportFrequencyMs
+	}
+	if c.ProgressCallback.URI != "" && c.ProgressReportFrequency < minReportFrequencyMs {
+		return fmt.Errorf("ProgressReportFrequency must be at least %d milliseconds, got %d", minReportFrequencyMs, c.ProgressReportFrequency)
+	}
+
+	if c.StateReportFrequency == 0 {
+		c.StateReportFrequency = defaultReportFrequencyMs
+	}
+	if c.StateCallback.URI != "" && c.StateReportFrequency < minReportFrequencyMs {
+		return fmt.Errorf("StateReportFrequency must be at least %d milliseconds, got %d", minReportFrequencyMs, c.StateReportFrequency)
 	}
 
 	return nil

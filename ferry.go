@@ -362,6 +362,10 @@ func (f *Ferry) Initialize() (err error) {
 		}
 	}
 
+	if err := f.Config.validateReportFrequencies(); err != nil {
+		return err
+	}
+
 	// Connect to the source and target databases and check the validity
 	// of the connections
 	f.SourceDB, err = f.Source.SqlDB(f.logger.WithField("dbname", "source"))
