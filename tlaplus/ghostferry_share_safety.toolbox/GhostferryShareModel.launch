@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<launchConfiguration type="org.lamport.tla.toolbox.tool.tlc.modelCheck">
+    <stringAttribute key="configurationName" value="GhostferryShareModel"/>
+    <intAttribute key="distributedFPSetCount" value="0"/>
+    <stringAttribute key="modelBehaviorInit" value=""/>
+    <stringAttribute key="modelBehaviorNext" value=""/>
+    <intAttribute key="modelBehaviorSpecType" value="0"/>
+    <stringAttribute key="modelBehaviorSpec" value="Spec"/>
+    <stringAttribute key="modelParameterConstants" value="const_Records,const_TableCapacity,const_LockMode,const_TableIterator,const_Application"/>
+    <stringAttribute key="modelParameterDefinitions" value="const_Records = {r1, r2}&#10;const_TableCapacity = 2&#10;const_LockMode = &quot;FOR_UPDATE&quot;&#10;const_TableIterator = TableIterator&#10;const_Application = Application"/>
+    <booleanAttribute key="modelCorrectnessCheckDeadlock" value="true"/>
+    <listAttribute key="modelCorrectnessInvariants">
+        <listEntry value="TypeOK"/>
+        <listEntry value="LockSafety"/>
+        <listEntry value="DataConsistency"/>
+    </listAttribute>
+    <listAttribute key="modelCorrectnessProperties">
+        <listEntry value="FinalConsistency"/>
+        <listEntry value="CopyEventuallyCompletes"/>
+        <listEntry value="ModificationProgress"/>
+    </listAttribute>
+</launchConfiguration> 
